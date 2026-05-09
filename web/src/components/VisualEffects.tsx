@@ -65,9 +65,36 @@ function appendCustomNode(node: Node) {
 
 function applyCustomBackgroundImage() {
   const backgroundImage = (window.CustomBackgroundImage || DEFAULT_BACKGROUND_IMAGE).trim()
-  document.documentElement.style.setProperty('--custom-bg-image', backgroundImage ? `url("${escapeCSSURL(backgroundImage)}")` : 'none')
+  const resolvedBackgroundImage = backgroundImage ? proxiedImageURL(backgroundImage) : ''
+  const cssURL = resolvedBackgroundImage ? `url("${escapeCSSURL(resolvedBackgroundImage)}")` : 'none'
+  document.documentElement.style.setProperty('--custom-bg-image', cssURL)
+  applyShellBackground(cssURL)
 }
 
 function escapeCSSURL(value: string) {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '')
+}
+
+function proxiedImageURL(value: string) {
+  try {
+    const url = new URL(value, window.location.href)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return value
+    }
+    if (url.origin === window.location.origin) {
+      return url.toString()
+    }
+    return `/api/v1/image-proxy?url=${encodeURIComponent(url.toString())}`
+  } catch {
+    return value
+  }
+}
+
+function applyShellBackground(cssURL: string) {
+  const background = cssURL === 'none'
+    ? ''
+    : `var(--custom-bg-overlay), ${cssURL} center / cover fixed no-repeat, var(--page-overlay-strong)`
+  document.querySelectorAll<HTMLElement>('.page-shell, .login-shell').forEach((element) => {
+    element.style.background = background
+  })
 }

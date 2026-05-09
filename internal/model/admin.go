@@ -84,6 +84,37 @@ type UpdateRequest struct {
 }
 
 type UpdateResponse struct {
-	Status string `json:"status"`
-	Count  int    `json:"count,omitempty"`
+	Status      string              `json:"status"`
+	Count       int                 `json:"count,omitempty"`
+	Skipped     int                 `json:"skipped,omitempty"`
+	Latest      *UpdateLatestInfo   `json:"latest,omitempty"`
+	AgentStatus []UpdateAgentStatus `json:"agent_status,omitempty"`
+}
+
+type UpdateLatestInfo struct {
+	Repo                       string              `json:"repo"`
+	PackagePrefix              string              `json:"package_prefix"`
+	CurrentServerVersion       string              `json:"current_server_version"`
+	LatestVersion              string              `json:"latest_version"`
+	LatestTag                  string              `json:"latest_tag"`
+	ServerUpdateAvailable      bool                `json:"server_update_available"`
+	ClientUpdateAvailableCount int                 `json:"client_update_available_count"`
+	SupportedClientCount       int                 `json:"supported_client_count"`
+	UnknownClientCount         int                 `json:"unknown_client_count"`
+	UnsupportedClientCount     int                 `json:"unsupported_client_count"`
+	Assets                     []string            `json:"assets,omitempty"`
+	AgentStatus                []UpdateAgentStatus `json:"agent_status,omitempty"`
+	FetchedAt                  time.Time           `json:"fetched_at"`
+}
+
+type UpdateAgentStatus struct {
+	AgentID         string `json:"agent_id"`
+	AgentName       string `json:"agent_name,omitempty"`
+	Version         string `json:"version,omitempty"`
+	OS              string `json:"os,omitempty"`
+	Arch            string `json:"arch,omitempty"`
+	PackageName     string `json:"package_name,omitempty"`
+	Supported       bool   `json:"supported"`
+	UpdateAvailable bool   `json:"update_available"`
+	Reason          string `json:"reason,omitempty"`
 }

@@ -307,6 +307,7 @@ function AgentRailHeader(props: {
       <div className="agent-title-line">
         <span className={`agent-state-dot agent-state-${statusLevel}`} />
         <span className="agent-order-chip">#{displaySortOrder}</span>
+        <span className="agent-os-icon" title={formatClientPlatform(item)}>{clientOSIcon(item.client_os)}</span>
         <span className="agent-flag" title={locationText || countryCode || '未知地区'}>{countryFlag(countryCode)}</span>
         <span className="agent-name">{item.agent_name || item.agent_id}</span>
       </div>
@@ -322,12 +323,24 @@ function AgentRailTags(props: { item: DashboardAgentView; tags: string[] }) {
       {tags.map((tag) => (
         <span className="agent-tag-chip" key={tag} style={tagChipStyle(tag)}>{tag}</span>
       ))}
-      {item.client_version ? <span className="agent-tag-chip">Client v{item.client_version}</span> : null}
+      {item.client_version ? <span className="agent-tag-chip">{clientOSIcon(item.client_os)} Client v{item.client_version}{item.client_arch ? ` · ${item.client_arch}` : ''}</span> : null}
       {item.renewal?.bandwidth_mbps ? <span className="agent-tag-chip">带宽 {formatBandwidth(item.renewal.bandwidth_mbps)}</span> : null}
       {item.summary.last_collection_err ? <span className="agent-tag-chip agent-tag-warn" title={item.summary.last_collection_err}>x-ui 异常</span> : null}
       {xrayIssueLabel(item) ? <span className="agent-tag-chip agent-tag-warn">{xrayIssueLabel(item)}</span> : null}
     </div>
   )
+}
+
+function clientOSIcon(os?: string) {
+  const value = (os || '').toLowerCase()
+  if (value === 'linux') return '🐧'
+  if (value === 'windows') return '⊞'
+  if (value === 'darwin') return '🍎'
+  return '💻'
+}
+
+function formatClientPlatform(item: DashboardAgentView) {
+  return [item.client_os || '未知系统', item.client_arch].filter(Boolean).join(' / ')
 }
 
 function AgentMeters(props: { item: DashboardAgentView; cpuPercent: number; memPercent: number }) {

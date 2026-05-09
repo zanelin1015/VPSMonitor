@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -87,12 +88,27 @@ func (a *App) handleAdminUpdates(w http.ResponseWriter, r *http.Request, parts [
 	if _, _, ok := a.requireAdmin(w, r); !ok {
 		return
 	}
-	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
 	if len(parts) != 1 {
 		writeError(w, http.StatusNotFound, "update route not found")
+		return
+	}
+	if parts[0] == "latest" {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		repo := firstNonEmptyString(r.URL.Query().Get("repo"), "zanelin1015/VPSMonitor")
+		packagePrefix := firstNonEmptyString(r.URL.Query().Get("package_prefix"), "VPSMonitor")
+		latest, err := a.fetchUpdateLatestInfo(repo, packagePrefix)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, latest)
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	var req model.UpdateRequest
@@ -101,42 +117,53 @@ func (a *App) handleAdminUpdates(w http.ResponseWriter, r *http.Request, parts [
 	}
 	switch parts[0] {
 	case "server":
-		if err := a.startServerUpdate(req); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, model.UpdateResponse{Status: "server update started"})
-	case "clients":
-		count, err := a.createClientUpdateActions(req)
+		latest, err := a.startServerUpdate(req)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, model.UpdateResponse{Status: "client update tasks created", Count: count})
+		writeJSON(w, http.StatusOK, model.UpdateResponse{Status: "server update started", Latest: latest})
+	case "clients":
+		response, err := a.createClientUpdateActions(req)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, response)
 	default:
 		writeError(w, http.StatusNotFound, "update route not found")
 	}
 }
 
-func (a *App) startServerUpdate(req model.UpdateRequest) error {
+func (a *App) startServerUpdate(req model.UpdateRequest) (*model.UpdateLatestInfo, error) {
 	exe, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("resolve server executable: %w", err)
+		return nil, fmt.Errorf("resolve server executable: %w", err)
 	}
 	installDir := filepath.Dir(exe)
-	version := firstNonEmptyString(req.Version, "latest")
 	repo := firstNonEmptyString(req.Repo, "zanelin1015/VPSMonitor")
 	packagePrefix := firstNonEmptyString(req.PackagePrefix, "VPSMonitor")
+	latest, err := a.fetchUpdateLatestInfo(repo, packagePrefix)
+	if err != nil {
+		return nil, err
+	}
+	version := firstNonEmptyString(req.Version, latest.LatestTag, latest.LatestVersion)
+	if !isVersionNewer(version, latest.CurrentServerVersion) {
+		return latest, fmt.Errorf("server is already up to date: current %s, latest %s", latest.CurrentServerVersion, latest.LatestVersion)
+	}
 	scriptURL := firstNonEmptyString(req.ScriptURL, "https://raw.githubusercontent.com/"+repo+"/main/install.sh")
 	serviceName := firstNonEmptyString(req.ServiceName, "vpsmonitor-server")
 	command := fmt.Sprintf(`(sleep 2; tmp="$(mktemp /tmp/vpsmonitor-server-install.XXXXXX.sh)"; (curl -fsSL %[1]q -o "$tmp" || wget -O "$tmp" %[1]q) && chmod +x "$tmp" && env VPSMONITOR_ASSUME_YES=true VPSMONITOR_VERSION=%[2]q VPSMONITOR_REPO=%[3]q VPSMONITOR_PACKAGE_PREFIX=%[4]q VPSMONITOR_SERVER_DIR=%[5]q VPSMONITOR_SERVER_SERVICE=%[6]q bash "$tmp" server >>/tmp/vpsmonitor-server-update.log 2>&1) >/dev/null 2>&1 &`, scriptURL, version, repo, packagePrefix, installDir, serviceName)
-	return exec.Command("sh", "-c", command).Start()
+	if err := exec.Command("sh", "-c", command).Start(); err != nil {
+		return latest, err
+	}
+	return latest, nil
 }
 
-func (a *App) createClientUpdateActions(req model.UpdateRequest) (int, error) {
+func (a *App) createClientUpdateActions(req model.UpdateRequest) (model.UpdateResponse, error) {
 	agents, err := a.store.ListAgents()
 	if err != nil {
-		return 0, err
+		return model.UpdateResponse{}, err
 	}
 	selected := map[string]struct{}{}
 	for _, id := range req.AgentIDs {
@@ -144,18 +171,30 @@ func (a *App) createClientUpdateActions(req model.UpdateRequest) (int, error) {
 			selected[id] = struct{}{}
 		}
 	}
-	version := firstNonEmptyString(req.Version, "latest")
 	repo := firstNonEmptyString(req.Repo, "zanelin1015/VPSMonitor")
 	packagePrefix := firstNonEmptyString(req.PackagePrefix, "VPSMonitor")
+	latest, err := a.fetchUpdateLatestInfo(repo, packagePrefix)
+	if err != nil {
+		return model.UpdateResponse{}, err
+	}
+	version := firstNonEmptyString(req.Version, latest.LatestTag, latest.LatestVersion)
 	scriptURL := firstNonEmptyString(req.ScriptURL, "https://raw.githubusercontent.com/"+repo+"/main/install.sh")
 	psScriptURL := firstNonEmptyString(req.PSScriptURL, "https://raw.githubusercontent.com/"+repo+"/main/install.ps1")
 	serviceName := firstNonEmptyString(req.ServiceName, "")
 	count := 0
+	skipped := 0
+	statuses := make([]model.UpdateAgentStatus, 0, len(agents))
 	for _, agent := range agents {
 		if len(selected) > 0 {
 			if _, ok := selected[agent.AgentID]; !ok {
 				continue
 			}
+		}
+		status := buildUpdateAgentStatus(agent, latest.LatestVersion, packagePrefix, latest.Assets)
+		statuses = append(statuses, status)
+		if !status.UpdateAvailable {
+			skipped++
+			continue
 		}
 		payload := map[string]any{
 			"version":        version,
@@ -163,16 +202,206 @@ func (a *App) createClientUpdateActions(req model.UpdateRequest) (int, error) {
 			"package_prefix": packagePrefix,
 			"script_url":     scriptURL,
 			"ps_script_url":  psScriptURL,
+			"target_os":      status.OS,
+			"target_arch":    status.Arch,
 		}
 		if serviceName != "" {
 			payload["service_name"] = serviceName
 		}
 		if _, err := a.store.CreateXUIAction(agent.AgentID, model.XUIActionRequest{Kind: model.XUIActionUpdateClient, Payload: payload}); err != nil {
-			return count, err
+			return model.UpdateResponse{}, err
 		}
 		count++
 	}
-	return count, nil
+	return model.UpdateResponse{
+		Status:      "client update tasks created",
+		Count:       count,
+		Skipped:     skipped,
+		Latest:      latest,
+		AgentStatus: statuses,
+	}, nil
+}
+
+func (a *App) fetchUpdateLatestInfo(repo string, packagePrefix string) (*model.UpdateLatestInfo, error) {
+	repo = strings.Trim(strings.TrimSpace(repo), "/")
+	if repo == "" || !strings.Contains(repo, "/") {
+		return nil, fmt.Errorf("invalid repo: %s", repo)
+	}
+	packagePrefix = firstNonEmptyString(packagePrefix, "VPSMonitor")
+
+	ctx := contextWithTimeout(15 * time.Second)
+	defer ctx.cancel()
+	req, err := http.NewRequestWithContext(ctx.ctx, http.MethodGet, "https://api.github.com/repos/"+repo+"/releases/latest", nil)
+	if err != nil {
+		return nil, fmt.Errorf("build release request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "VPSMonitor")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch latest release: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("fetch latest release: http %d", resp.StatusCode)
+	}
+
+	var release struct {
+		TagName string `json:"tag_name"`
+		Name    string `json:"name"`
+		Assets  []struct {
+			Name string `json:"name"`
+		} `json:"assets"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return nil, fmt.Errorf("decode latest release: %w", err)
+	}
+	latestTag := firstNonEmptyString(release.TagName, release.Name)
+	latestVersion := normalizeVersion(latestTag)
+	if latestVersion == "" {
+		return nil, fmt.Errorf("latest release has no version tag")
+	}
+	assets := make([]string, 0, len(release.Assets))
+	for _, asset := range release.Assets {
+		if strings.TrimSpace(asset.Name) != "" {
+			assets = append(assets, asset.Name)
+		}
+	}
+
+	agents, err := a.store.ListAgents()
+	if err != nil {
+		return nil, err
+	}
+	info := &model.UpdateLatestInfo{
+		Repo:                  repo,
+		PackagePrefix:         packagePrefix,
+		CurrentServerVersion:  serverSystemInfo().Version,
+		LatestVersion:         latestVersion,
+		LatestTag:             latestTag,
+		ServerUpdateAvailable: isVersionNewer(latestVersion, serverSystemInfo().Version),
+		Assets:                assets,
+		FetchedAt:             time.Now().UTC(),
+	}
+	for _, agent := range agents {
+		status := buildUpdateAgentStatus(agent, latestVersion, packagePrefix, assets)
+		info.AgentStatus = append(info.AgentStatus, status)
+		switch {
+		case status.OS == "" || status.Arch == "":
+			info.UnknownClientCount++
+		case !status.Supported:
+			info.UnsupportedClientCount++
+		default:
+			info.SupportedClientCount++
+		}
+		if status.UpdateAvailable {
+			info.ClientUpdateAvailableCount++
+		}
+	}
+	return info, nil
+}
+
+func buildUpdateAgentStatus(agent model.AgentRecord, latestVersion string, packagePrefix string, assets []string) model.UpdateAgentStatus {
+	osName := strings.ToLower(strings.TrimSpace(agent.OS))
+	arch := strings.ToLower(strings.TrimSpace(agent.Arch))
+	status := model.UpdateAgentStatus{
+		AgentID:   agent.AgentID,
+		AgentName: agent.AgentName,
+		Version:   agent.Version,
+		OS:        osName,
+		Arch:      arch,
+	}
+	if osName == "" || arch == "" {
+		status.Reason = "client has not reported os/arch yet"
+		return status
+	}
+	packageName, ok := updateClientPackageName(packagePrefix, osName, arch)
+	status.PackageName = packageName
+	if !ok {
+		status.Reason = "unsupported client platform"
+		return status
+	}
+	if len(assets) > 0 && !stringInSlice(packageName, assets) {
+		status.Reason = "release asset not found"
+		return status
+	}
+	status.Supported = true
+	if !isVersionNewer(latestVersion, agent.Version) {
+		status.Reason = "client is already up to date"
+		return status
+	}
+	status.UpdateAvailable = true
+	status.Reason = "update available"
+	return status
+}
+
+func updateClientPackageName(packagePrefix string, osName string, arch string) (string, bool) {
+	switch osName {
+	case "linux":
+		return fmt.Sprintf("%s-client-linux-%s.tar.gz", packagePrefix, arch), true
+	case "windows":
+		return fmt.Sprintf("%s-client-windows-%s.zip", packagePrefix, arch), true
+	default:
+		return "", false
+	}
+}
+
+func stringInSlice(value string, items []string) bool {
+	for _, item := range items {
+		if item == value {
+			return true
+		}
+	}
+	return false
+}
+
+func isVersionNewer(candidate string, current string) bool {
+	candidateParts, candidateOK := parseSemver(candidate)
+	currentParts, currentOK := parseSemver(current)
+	if !candidateOK || !currentOK {
+		return normalizeVersion(candidate) != "" && normalizeVersion(candidate) != normalizeVersion(current)
+	}
+	for i := 0; i < len(candidateParts); i++ {
+		if candidateParts[i] != currentParts[i] {
+			return candidateParts[i] > currentParts[i]
+		}
+	}
+	return false
+}
+
+func parseSemver(value string) ([3]int, bool) {
+	var result [3]int
+	parts := strings.Split(normalizeVersion(value), ".")
+	if len(parts) != 3 {
+		return result, false
+	}
+	for i, part := range parts {
+		number, err := strconv.Atoi(part)
+		if err != nil {
+			return result, false
+		}
+		result[i] = number
+	}
+	return result, true
+}
+
+func normalizeVersion(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.TrimPrefix(value, "refs/tags/")
+	value = strings.TrimPrefix(value, "v")
+	if index := strings.IndexAny(value, "+-"); index >= 0 {
+		value = value[:index]
+	}
+	return value
+}
+
+type timeoutContext struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
+func contextWithTimeout(duration time.Duration) timeoutContext {
+	ctx, cancel := context.WithTimeout(context.Background(), duration)
+	return timeoutContext{ctx: ctx, cancel: cancel}
 }
 
 func (a *App) handlePublicFrontendSettings(w http.ResponseWriter, r *http.Request) {

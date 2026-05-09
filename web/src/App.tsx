@@ -43,6 +43,8 @@ import type {
   SystemInfo,
   TelegramBot,
   TagSettingsResponse,
+  UpdateLatestInfo,
+  UpdateResponse,
   VPSSummary,
   XUIAction,
   XUIClientBillingConfig,
@@ -99,6 +101,7 @@ import { LoginScreen } from './components/LoginScreen'
 import { ManagedConfigPanel as renderManagedConfigPanel } from './components/ManagedConfigPanel'
 import { RouteBadge } from './components/RouteBadge'
 import { VisualEffects, applyCustomFrontendCode } from './components/VisualEffects'
+import { useAppTheme, type ThemeMode } from './theme'
 import {
   DASHBOARD_AUTO_REFRESH_MS,
   actionKindLabel,
@@ -172,6 +175,7 @@ interface LoadOptions {
 
 export default function App() {
   const { message } = AntdApp.useApp()
+  const { mode: themeMode, effectiveMode, setMode: setThemeMode } = useAppTheme()
   const [sessionLoading, setSessionLoading] = useState(true)
   const [adminUser, setAdminUser] = useState<AdminUser | null>(null)
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null)
@@ -229,6 +233,9 @@ export default function App() {
   const [frontendSettingsForm, setFrontendSettingsForm] = useState<FrontendSettingsForm>(() => defaultFrontendSettingsForm())
   const [updateModalOpen, setUpdateModalOpen] = useState(false)
   const [updateLoading, setUpdateLoading] = useState(false)
+  const [updateLatestLoading, setUpdateLatestLoading] = useState(false)
+  const [updateLatestInfo, setUpdateLatestInfo] = useState<UpdateLatestInfo | null>(null)
+  const [updateLatestError, setUpdateLatestError] = useState('')
   const [reloadToken, setReloadToken] = useState(0)
   const [activeTabKey, setActiveTabKey] = useState('overview')
   const [topologyVisible, setTopologyVisible] = useState(false)
@@ -275,6 +282,12 @@ export default function App() {
       void loadExchangeRates()
     }
   }, [adminUser])
+
+  useEffect(() => {
+    if (adminUser && updateModalOpen) {
+      void loadUpdateLatestInfo()
+    }
+  }, [adminUser, updateModalOpen])
 
   useEffect(() => {
     try {
@@ -893,11 +906,36 @@ export default function App() {
   }
 
 
+  async function loadUpdateLatestInfo() {
+    setUpdateLatestLoading(true)
+    setUpdateLatestError('')
+    try {
+      const data = await fetchJSON<UpdateLatestInfo>('/api/v1/admin/updates/latest')
+      setUpdateLatestInfo(data)
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      setUpdateLatestError(error instanceof Error ? error.message : '获取最新版本失败')
+    } finally {
+      setUpdateLatestLoading(false)
+    }
+  }
+
   async function updateServerOnline() {
+    if (!updateLatestInfo?.server_update_available) {
+      message.info('当前 Server 已是最新版本')
+      return
+    }
     setUpdateLoading(true)
     try {
-      await fetchJSON<{ status: string }>('/api/v1/admin/updates/server', { method: 'POST' })
+      await fetchJSON<UpdateResponse>('/api/v1/admin/updates/server', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version: updateLatestInfo.latest_tag || updateLatestInfo.latest_version }),
+      })
       message.success('Server 更新已启动，服务会自动重启')
+      await loadUpdateLatestInfo()
     } catch (error) {
       if (isUnauthorized(error)) {
         setAdminUser(null)
@@ -909,10 +947,19 @@ export default function App() {
   }
 
   async function updateAllClientsOnline() {
+    if (!updateLatestInfo?.client_update_available_count) {
+      message.info('没有需要更新的 Client')
+      return
+    }
     setUpdateLoading(true)
     try {
-      const result = await fetchJSON<{ status: string; count?: number }>('/api/v1/admin/updates/clients', { method: 'POST' })
-      message.success(`已下发 Client 更新任务：${result.count || 0} 台`)
+      const result = await fetchJSON<UpdateResponse>('/api/v1/admin/updates/clients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version: updateLatestInfo.latest_tag || updateLatestInfo.latest_version }),
+      })
+      message.success(`已下发 Client 更新任务：${result.count || 0} 台，跳过 ${result.skipped || 0} 台`)
+      await loadUpdateLatestInfo()
     } catch (error) {
       if (isUnauthorized(error)) {
         setAdminUser(null)
@@ -1593,6 +1640,19 @@ export default function App() {
               个人中心
               <span>{adminUser.username}</span>
             </Button>
+            <div className="theme-mode-row">
+              <Text type="secondary">主题</Text>
+              <Select
+                size="small"
+                value={themeMode}
+                options={[
+                  { value: 'system', label: `跟随系统（${effectiveMode === 'dark' ? '暗黑' : '明亮'}）` },
+                  { value: 'light', label: '明亮' },
+                  { value: 'dark', label: '暗黑' },
+                ]}
+                onChange={(value) => setThemeMode(value as ThemeMode)}
+              />
+            </div>
           </div>
         </header>
 
@@ -1630,8 +1690,12 @@ export default function App() {
         <SystemUpdateModal
           open={updateModalOpen}
           loading={updateLoading}
+          latestLoading={updateLatestLoading}
+          latestInfo={updateLatestInfo}
+          latestError={updateLatestError}
           systemInfo={systemInfo}
           onClose={() => setUpdateModalOpen(false)}
+          onRefreshLatest={() => void loadUpdateLatestInfo()}
           onUpdateServer={() => void updateServerOnline()}
           onUpdateClients={() => void updateAllClientsOnline()}
         />

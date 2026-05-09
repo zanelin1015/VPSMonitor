@@ -67,6 +67,8 @@ func (a *App) handleAgents(w http.ResponseWriter, r *http.Request) {
 			AgentID:       agent.AgentID,
 			AgentName:     agent.AgentName,
 			ClientVersion: agent.Version,
+			ClientOS:      agent.OS,
+			ClientArch:    agent.Arch,
 			SortOrder:     agent.SortOrder,
 			Tags:          agent.Tags,
 			Renewal:       agent.Config.Renewal,

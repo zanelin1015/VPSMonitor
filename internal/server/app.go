@@ -67,6 +67,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("/healthz", a.handleHealth)
 	mux.HandleFunc("/api/v1/admin/", a.handleAdmin)
 	mux.HandleFunc("/api/v1/frontend-settings", a.handlePublicFrontendSettings)
+	mux.HandleFunc("/api/v1/image-proxy", a.handleImageProxy)
 	mux.HandleFunc("/api/v1/dashboard/realtime", a.handleDashboardRealtime)
 	mux.HandleFunc("/api/v1/exchange-rates", a.handleAdminExchangeRates)
 	mux.HandleFunc("/api/v1/dashboard", a.handleDashboard)

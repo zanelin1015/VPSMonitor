@@ -22,6 +22,8 @@ export interface AgentListItem {
   agent_id: string
   agent_name?: string
   client_version?: string
+  client_os?: string
+  client_arch?: string
   sort_order?: number
   tags?: string[]
   renewal?: VPSRenewalConfig
@@ -129,6 +131,42 @@ export interface SystemInfo {
   git_commit?: string
   go_version?: string
   platform?: string
+}
+
+export interface UpdateAgentStatus {
+  agent_id: string
+  agent_name?: string
+  version?: string
+  os?: string
+  arch?: string
+  package_name?: string
+  supported: boolean
+  update_available: boolean
+  reason?: string
+}
+
+export interface UpdateLatestInfo {
+  repo: string
+  package_prefix: string
+  current_server_version: string
+  latest_version: string
+  latest_tag: string
+  server_update_available: boolean
+  client_update_available_count: number
+  supported_client_count: number
+  unknown_client_count: number
+  unsupported_client_count: number
+  assets?: string[]
+  agent_status?: UpdateAgentStatus[]
+  fetched_at: string
+}
+
+export interface UpdateResponse {
+  status: string
+  count?: number
+  skipped?: number
+  latest?: UpdateLatestInfo
+  agent_status?: UpdateAgentStatus[]
 }
 
 

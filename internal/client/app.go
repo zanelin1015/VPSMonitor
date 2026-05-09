@@ -112,6 +112,14 @@ func (a *App) startSelfUpdate(payload map[string]any) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve executable: %w", err)
 	}
+	targetOS := payloadString(payload, "target_os", "")
+	targetArch := payloadString(payload, "target_arch", "")
+	if targetOS != "" && targetOS != runtime.GOOS {
+		return nil, fmt.Errorf("update target os mismatch: target=%s current=%s", targetOS, runtime.GOOS)
+	}
+	if targetArch != "" && targetArch != runtime.GOARCH {
+		return nil, fmt.Errorf("update target arch mismatch: target=%s current=%s", targetArch, runtime.GOARCH)
+	}
 	installDir := filepath.Dir(exe)
 	version := payloadString(payload, "version", "latest")
 	repo := payloadString(payload, "repo", "zanelin1015/VPSMonitor")
@@ -150,6 +158,8 @@ func (a *App) collect(ctx context.Context, effectiveConfig model.ManagedAgentCon
 		AgentID:    a.config.AgentID,
 		AgentName:  firstNonEmpty(effectiveConfig.AgentName, a.config.AgentName, a.config.AgentID),
 		Version:    version.Version,
+		OS:         runtime.GOOS,
+		Arch:       runtime.GOARCH,
 		ReportedAt: time.Now().UTC(),
 		Summary: model.VPSSummary{
 			Hostname: currentHostname(),
@@ -255,6 +265,8 @@ func (a *App) register(ctx context.Context) (model.AgentRegisterResponse, error)
 		AgentID:   a.config.AgentID,
 		AgentName: firstNonEmpty(a.config.AgentName, a.config.AgentID),
 		Version:   version.Version,
+		OS:        runtime.GOOS,
+		Arch:      runtime.GOARCH,
 		Hostname:  currentHostname(),
 		SeedConfig: model.ManagedAgentConfig{
 			AgentID:   a.config.AgentID,

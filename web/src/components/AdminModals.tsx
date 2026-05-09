@@ -9,7 +9,7 @@ import {
   SettingOutlined,
 } from '@ant-design/icons'
 
-import type { AdminUser, AgentListItem, SystemInfo, TelegramBot, XUIClientView, XUIOverview } from '../types'
+import type { AdminUser, AgentListItem, SystemInfo, TelegramBot, UpdateLatestInfo, XUIClientView, XUIOverview } from '../types'
 import type {
   ClientInstallCommandForm,
   ClientInstallCommandKind,
@@ -449,29 +449,59 @@ export function ImportURLModal(props: {
 export function SystemUpdateModal(props: {
   open: boolean
   loading: boolean
+  latestLoading: boolean
+  latestInfo?: UpdateLatestInfo | null
+  latestError?: string
   systemInfo?: SystemInfo | null
   onClose: () => void
+  onRefreshLatest: () => void
   onUpdateServer: () => void
   onUpdateClients: () => void
 }) {
-  const { open, loading, systemInfo, onClose, onUpdateServer, onUpdateClients } = props
+  const { open, loading, latestLoading, latestInfo, latestError, systemInfo, onClose, onRefreshLatest, onUpdateServer, onUpdateClients } = props
+  const serverUpdateAvailable = Boolean(latestInfo?.server_update_available)
+  const clientUpdateCount = Number(latestInfo?.client_update_available_count || 0)
 
   return (
-    <Modal title="在线更新" open={open} onCancel={onClose} footer={null} width={680}>
-      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+    <Modal title="在线更新" open={open} onCancel={onClose} footer={null} width={760}>
+      <Spin spinning={latestLoading}>
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Alert
           type="info"
           showIcon
           message="配置会保留"
           description="在线更新会复用现有 install.sh / install.ps1。server 会保留 server.json、数据库和 data；client 会保留 client.json。更新完成后服务会自动重启。"
         />
-        {systemInfo?.version ? (
+        {latestError ? <Alert type="error" showIcon message="获取最新版本失败" description={latestError} /> : null}
+        {latestInfo ? (
           <Alert
-            type="success"
+            type={serverUpdateAvailable || clientUpdateCount > 0 ? 'success' : 'info'}
             showIcon
-            message={`当前 Server 版本：v${systemInfo.version}`}
-            description={systemInfo.git_commit ? `构建提交：${systemInfo.git_commit}` : '版本来自当前运行中的 server 二进制。'}
+            message={`最新 Release：v${latestInfo.latest_version}`}
+            description={`当前 Server：v${latestInfo.current_server_version || systemInfo?.version || '-'}${systemInfo?.git_commit ? ` · 构建提交：${systemInfo.git_commit}` : ''}`}
           />
+        ) : null}
+        {latestInfo ? (
+          <div className="update-status-grid">
+            <div className="update-status-card">
+              <Text type="secondary">Server</Text>
+              <Tag color={serverUpdateAvailable ? 'green' : 'default'}>{serverUpdateAvailable ? '可更新' : '已是最新'}</Tag>
+            </div>
+            <div className="update-status-card">
+              <Text type="secondary">Client 可更新</Text>
+              <Tag color={clientUpdateCount ? 'green' : 'default'}>{clientUpdateCount} 台</Tag>
+            </div>
+            <div className="update-status-card">
+              <Text type="secondary">已识别系统</Text>
+              <Tag color="blue">{latestInfo.supported_client_count} 台</Tag>
+            </div>
+            <div className="update-status-card">
+              <Text type="secondary">未知/不支持</Text>
+              <Tag color={latestInfo.unknown_client_count || latestInfo.unsupported_client_count ? 'orange' : 'default'}>
+                {latestInfo.unknown_client_count + latestInfo.unsupported_client_count} 台
+              </Tag>
+            </div>
+          </div>
         ) : null}
         <Alert
           type="warning"
@@ -480,11 +510,13 @@ export function SystemUpdateModal(props: {
           description="请先把最新的 server/client 包上传到 GitHub Release，否则在线更新会下载到旧包。"
         />
         <Space wrap>
-          <Button type="primary" loading={loading} onClick={onUpdateServer}>更新当前 Server</Button>
-          <Button loading={loading} onClick={onUpdateClients}>下发更新到所有 Client</Button>
+          <Button onClick={onRefreshLatest} loading={latestLoading}>检查最新版本</Button>
+          <Button type="primary" disabled={!serverUpdateAvailable} loading={loading} onClick={onUpdateServer}>更新当前 Server</Button>
+          <Button disabled={clientUpdateCount <= 0} loading={loading} onClick={onUpdateClients}>下发更新到可更新 Client</Button>
         </Space>
-        <Text type="secondary">Client 更新任务会在每个 client 下一次轮询时领取；数量多时无需逐台 SSH。</Text>
-      </Space>
+        <Text type="secondary">Client 更新前会先确认上报的系统和架构，只给存在对应 Release 包且版本落后的 client 下发任务。</Text>
+        </Space>
+      </Spin>
     </Modal>
   )
 }
