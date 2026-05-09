@@ -58,15 +58,22 @@ export interface VPSRenewalConfig {
   cost_amount?: number
   cost_currency?: string
   cost_cycle?: 'month' | 'quarter' | 'year' | ''
-  revenue_amount?: number
-  revenue_currency?: string
-  revenue_cycle?: 'month' | 'quarter' | 'year' | ''
+  client_billings?: XUIClientBillingConfig[]
   traffic_limit_bytes?: number
   bandwidth_mbps?: number
   traffic_baseline_bytes?: number
   traffic_sent_baseline_bytes?: number
   traffic_recv_baseline_bytes?: number
   traffic_baseline_period_start?: string
+}
+
+export interface XUIClientBillingConfig {
+  inbound_id?: number
+  inbound_tag?: string
+  email?: string
+  revenue_amount?: number
+  revenue_currency?: 'CNY' | 'USDT' | ''
+  revenue_cycle?: 'month' | 'quarter' | 'year' | ''
 }
 
 export interface XUIConfig {

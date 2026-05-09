@@ -67,6 +67,7 @@ import type {
   VPSRenewalConfig,
   VPSSummary,
   XUIAction,
+  XUIClientBillingConfig,
   XUIClientView,
   XUIConfig,
   XUILocalCertificate,
@@ -1048,6 +1049,47 @@ export default function App() {
     }
   }
 
+  async function saveClientBilling(record: XUIClientView) {
+    if (!selectedAgentId || !managedConfig) {
+      return
+    }
+    const baseConfig = savedManagedConfig || createEmptyManagedConfig(selectedAgentId, selectedAgent?.agent_name)
+    const billing = findClientBilling(managedConfig.renewal?.client_billings, record) || defaultClientBilling(record)
+    const nextConfig: ManagedAgentConfig = {
+      ...managedConfig,
+      renewal: {
+        ...managedConfig.renewal,
+        client_billings: upsertClientBilling(managedConfig.renewal?.client_billings || [], record, billing),
+      },
+    }
+    const payload = buildSectionSavePayload(baseConfig, nextConfig, 'renewal', selectedAgentId)
+    setConfigSavingSection('renewal')
+    setConfigError('')
+    try {
+      const saved = await fetchJSON<ManagedAgentConfig>(`/api/v1/agents/${selectedAgentId}/config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const normalized = normalizeManagedConfig(saved, selectedAgentId, saved.agent_name || selectedAgent?.agent_name)
+      setSavedManagedConfig(normalized)
+      managedConfigDirtyRef.current = false
+      setManagedConfig(normalized)
+      message.success('客户端收费已保存')
+      await loadAgents()
+      await loadConfigAudits(selectedAgentId, { silent: true })
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      const detail = error instanceof Error ? error.message : '保存客户端收费失败'
+      setConfigError(detail)
+      message.error(detail)
+    } finally {
+      setConfigSavingSection(null)
+    }
+  }
+
   useEffect(() => {
     if (!adminUser) {
       return
@@ -1204,6 +1246,47 @@ export default function App() {
             <span>上传 {formatBytes(up)}</span>
             <span>下载 {formatBytes(down)}</span>
           </div>
+        )
+      },
+    },
+    {
+      title: '收费',
+      key: 'billing',
+      width: 300,
+      render: (_, record) => {
+        const billing = findClientBilling(managedConfig?.renewal?.client_billings, record) || defaultClientBilling(record)
+        return (
+          <Space wrap size={[6, 6]}>
+            <InputNumber
+              size="small"
+              min={0}
+              precision={2}
+              style={{ width: 92 }}
+              value={billing.revenue_amount || 0}
+              onChange={(value) => updateClientBillingDraft(record, { revenue_amount: Number(value || 0) })}
+            />
+            <Select
+              size="small"
+              style={{ width: 78 }}
+              value={billing.revenue_currency || 'CNY'}
+              options={REVENUE_CURRENCIES.map((currency) => ({ value: currency, label: currency }))}
+              onChange={(value) => updateClientBillingDraft(record, { revenue_currency: value as 'CNY' | 'USDT' })}
+            />
+            <Select
+              size="small"
+              style={{ width: 78 }}
+              value={billing.revenue_cycle || 'month'}
+              options={[
+                { value: 'month', label: '月' },
+                { value: 'quarter', label: '季' },
+                { value: 'year', label: '年' },
+              ]}
+              onChange={(value) => updateClientBillingDraft(record, { revenue_cycle: value as 'month' | 'quarter' | 'year' })}
+            />
+            <Button size="small" type="primary" loading={configSavingSection === 'renewal'} onClick={() => void saveClientBilling(record)}>
+              保存
+            </Button>
+          </Space>
         )
       },
     },
@@ -2398,7 +2481,7 @@ export default function App() {
                           columns={clientColumns}
                           dataSource={filteredClients}
                           pagination={{ pageSize: 12, hideOnSinglePage: true }}
-                          scroll={{ x: 1200 }}
+                          scroll={{ x: 1500 }}
                         />
                       </Space>
                     ) : (
@@ -2503,6 +2586,22 @@ export default function App() {
     setManagedConfig((current) => {
       const base = current || createEmptyManagedConfig(selectedAgentId, selectedAgent?.agent_name)
       return updater(base)
+    })
+  }
+
+  function updateClientBillingDraft(record: XUIClientView, patch: Partial<XUIClientBillingConfig>) {
+    updateManagedConfig((current) => {
+      const currentBilling = findClientBilling(current.renewal?.client_billings, record) || defaultClientBilling(record)
+      return {
+        ...current,
+        renewal: {
+          ...current.renewal,
+          client_billings: upsertClientBilling(current.renewal?.client_billings || [], record, {
+            ...currentBilling,
+            ...patch,
+          }),
+        },
+      }
     })
   }
 
@@ -2890,39 +2989,6 @@ function renderManagedConfigPanel(props: ConfigPanelProps) {
                 { value: 'year', label: '每年' },
               ]}
               onChange={(value) => onRenewalChange({ cost_cycle: value })}
-            />
-          </Col>
-          <Col xs={24} md={8}>
-            <Text type="secondary">客户端收费金额</Text>
-            <InputNumber
-              style={{ width: '100%' }}
-              min={0}
-              precision={2}
-              value={managedConfig.renewal?.revenue_amount || 0}
-              onChange={(value) => onRenewalChange({ revenue_amount: Number(value || 0) })}
-              placeholder="例如 30"
-            />
-          </Col>
-          <Col xs={24} md={8}>
-            <Text type="secondary">客户端收费币种</Text>
-            <Select
-              style={{ width: '100%' }}
-              value={managedConfig.renewal?.revenue_currency || 'CNY'}
-              options={REVENUE_CURRENCIES.map((currency) => ({ value: currency, label: currency }))}
-              onChange={(value) => onRenewalChange({ revenue_currency: value })}
-            />
-          </Col>
-          <Col xs={24} md={8}>
-            <Text type="secondary">客户端收费周期</Text>
-            <Select
-              style={{ width: '100%' }}
-              value={managedConfig.renewal?.revenue_cycle || 'month'}
-              options={[
-                { value: 'month', label: '每月' },
-                { value: 'quarter', label: '每季' },
-                { value: 'year', label: '每年' },
-              ]}
-              onChange={(value) => onRenewalChange({ revenue_cycle: value })}
             />
           </Col>
           <Col xs={24} md={8}>
@@ -5156,9 +5222,6 @@ function normalizeRenewalConfig(config?: VPSRenewalConfig): VPSRenewalConfig {
   const costAmount = Math.max(0, Number(config?.cost_amount || 0))
   const costCurrency = normalizeCurrencyCode(config?.cost_currency)
   const costCycle = config?.cost_cycle === 'quarter' || config?.cost_cycle === 'year' ? config.cost_cycle : 'month'
-  const revenueAmount = Math.max(0, Number(config?.revenue_amount || 0))
-  const revenueCurrency = config?.revenue_currency === 'USDT' ? 'USDT' : 'CNY'
-  const revenueCycle = config?.revenue_cycle === 'quarter' || config?.revenue_cycle === 'year' ? config.revenue_cycle : 'month'
   return {
     enabled: Boolean(config?.enabled || config?.start_date || config?.expire_date),
     start_date: config?.start_date || '',
@@ -5168,9 +5231,7 @@ function normalizeRenewalConfig(config?: VPSRenewalConfig): VPSRenewalConfig {
     cost_amount: costAmount,
     cost_currency: costCurrency,
     cost_cycle: costCycle,
-    revenue_amount: revenueAmount,
-    revenue_currency: revenueCurrency,
-    revenue_cycle: revenueCycle,
+    client_billings: normalizeClientBillings(config?.client_billings || []),
     traffic_limit_bytes: trafficLimitBytes,
     bandwidth_mbps: Math.max(0, Number(config?.bandwidth_mbps || 0)),
     traffic_baseline_bytes: trafficLimitBytes > 0 ? Math.max(0, Number(config?.traffic_baseline_bytes || 0)) : 0,
@@ -5178,6 +5239,64 @@ function normalizeRenewalConfig(config?: VPSRenewalConfig): VPSRenewalConfig {
     traffic_recv_baseline_bytes: trafficLimitBytes > 0 ? Math.max(0, Number(config?.traffic_recv_baseline_bytes || 0)) : 0,
     traffic_baseline_period_start: trafficLimitBytes > 0 ? config?.traffic_baseline_period_start || '' : '',
   }
+}
+
+function normalizeClientBillings(items: XUIClientBillingConfig[]): XUIClientBillingConfig[] {
+  const seen = new Set<string>()
+  const normalized: XUIClientBillingConfig[] = []
+  for (const item of items) {
+    const billing: XUIClientBillingConfig = {
+      inbound_id: Number(item.inbound_id || 0),
+      inbound_tag: item.inbound_tag || '',
+      email: item.email || '',
+      revenue_amount: Math.max(0, Number(item.revenue_amount || 0)),
+      revenue_currency: item.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
+      revenue_cycle: item.revenue_cycle === 'quarter' || item.revenue_cycle === 'year' ? item.revenue_cycle : 'month',
+    }
+    const key = clientBillingKey(billing)
+    if (seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    normalized.push(billing)
+  }
+  return normalized
+}
+
+function clientBillingKey(value: Pick<XUIClientBillingConfig, 'inbound_id' | 'inbound_tag' | 'email'>): string {
+  return `${Number(value.inbound_id || 0)}\u0000${value.inbound_tag || ''}\u0000${value.email || ''}`
+}
+
+function billingKeyForClient(client: XUIClientView): string {
+  return clientBillingKey({ inbound_id: client.inbound_id, inbound_tag: client.inbound_tag, email: client.email })
+}
+
+function defaultClientBilling(client: XUIClientView): XUIClientBillingConfig {
+  return {
+    inbound_id: client.inbound_id,
+    inbound_tag: client.inbound_tag || '',
+    email: client.email || '',
+    revenue_amount: 0,
+    revenue_currency: 'CNY',
+    revenue_cycle: 'month',
+  }
+}
+
+function findClientBilling(items: XUIClientBillingConfig[] | undefined, client: XUIClientView): XUIClientBillingConfig | undefined {
+  const key = billingKeyForClient(client)
+  return (items || []).find((item) => clientBillingKey(item) === key)
+}
+
+function upsertClientBilling(items: XUIClientBillingConfig[], client: XUIClientView, billing: XUIClientBillingConfig): XUIClientBillingConfig[] {
+  const next = normalizeClientBillings(items)
+  const normalized = normalizeClientBillings([{ ...defaultClientBilling(client), ...billing }])[0]
+  const key = billingKeyForClient(client)
+  const index = next.findIndex((item) => clientBillingKey(item) === key)
+  if (index >= 0) {
+    next[index] = normalized
+    return next
+  }
+  return [...next, normalized]
 }
 
 function calculateRenewalStatus(config?: VPSRenewalConfig): {
@@ -5384,9 +5503,7 @@ function createEmptyManagedConfig(agentID: string, agentName?: string): ManagedA
       cost_amount: 0,
       cost_currency: DEFAULT_COST_CURRENCY,
       cost_cycle: 'month',
-      revenue_amount: 0,
-      revenue_currency: 'CNY',
-      revenue_cycle: 'month',
+      client_billings: [],
       traffic_limit_bytes: 0,
       bandwidth_mbps: 0,
       traffic_baseline_bytes: 0,

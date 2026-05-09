@@ -17,23 +17,30 @@ type ManagedAgentConfig struct {
 }
 
 type VPSRenewalConfig struct {
-	Enabled                    bool    `json:"enabled,omitempty"`
-	StartDate                  string  `json:"start_date,omitempty"`
-	ExpireDate                 string  `json:"expire_date,omitempty"`
-	Cycle                      string  `json:"cycle,omitempty"`
-	AutoRenew                  bool    `json:"auto_renew,omitempty"`
-	CostAmount                 float64 `json:"cost_amount,omitempty"`
-	CostCurrency               string  `json:"cost_currency,omitempty"`
-	CostCycle                  string  `json:"cost_cycle,omitempty"`
-	RevenueAmount              float64 `json:"revenue_amount,omitempty"`
-	RevenueCurrency            string  `json:"revenue_currency,omitempty"`
-	RevenueCycle               string  `json:"revenue_cycle,omitempty"`
-	TrafficLimitBytes          uint64  `json:"traffic_limit_bytes,omitempty"`
-	BandwidthMbps              float64 `json:"bandwidth_mbps,omitempty"`
-	TrafficBaselineBytes       uint64  `json:"traffic_baseline_bytes,omitempty"`
-	TrafficSentBaselineBytes   uint64  `json:"traffic_sent_baseline_bytes,omitempty"`
-	TrafficRecvBaselineBytes   uint64  `json:"traffic_recv_baseline_bytes,omitempty"`
-	TrafficBaselinePeriodStart string  `json:"traffic_baseline_period_start,omitempty"`
+	Enabled                    bool                     `json:"enabled,omitempty"`
+	StartDate                  string                   `json:"start_date,omitempty"`
+	ExpireDate                 string                   `json:"expire_date,omitempty"`
+	Cycle                      string                   `json:"cycle,omitempty"`
+	AutoRenew                  bool                     `json:"auto_renew,omitempty"`
+	CostAmount                 float64                  `json:"cost_amount,omitempty"`
+	CostCurrency               string                   `json:"cost_currency,omitempty"`
+	CostCycle                  string                   `json:"cost_cycle,omitempty"`
+	ClientBillings             []XUIClientBillingConfig `json:"client_billings,omitempty"`
+	TrafficLimitBytes          uint64                   `json:"traffic_limit_bytes,omitempty"`
+	BandwidthMbps              float64                  `json:"bandwidth_mbps,omitempty"`
+	TrafficBaselineBytes       uint64                   `json:"traffic_baseline_bytes,omitempty"`
+	TrafficSentBaselineBytes   uint64                   `json:"traffic_sent_baseline_bytes,omitempty"`
+	TrafficRecvBaselineBytes   uint64                   `json:"traffic_recv_baseline_bytes,omitempty"`
+	TrafficBaselinePeriodStart string                   `json:"traffic_baseline_period_start,omitempty"`
+}
+
+type XUIClientBillingConfig struct {
+	InboundID       int     `json:"inbound_id,omitempty"`
+	InboundTag      string  `json:"inbound_tag,omitempty"`
+	Email           string  `json:"email,omitempty"`
+	RevenueAmount   float64 `json:"revenue_amount,omitempty"`
+	RevenueCurrency string  `json:"revenue_currency,omitempty"`
+	RevenueCycle    string  `json:"revenue_cycle,omitempty"`
 }
 
 type AgentEntryConfig struct {

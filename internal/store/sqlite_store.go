@@ -298,29 +298,7 @@ func normalizeRenewalConfig(cfg model.VPSRenewalConfig) model.VPSRenewalConfig {
 	if cfg.CostAmount < 0 {
 		cfg.CostAmount = 0
 	}
-	cfg.RevenueCurrency = strings.ToUpper(strings.TrimSpace(cfg.RevenueCurrency))
-	if cfg.RevenueCurrency == "" && cfg.RevenueAmount > 0 {
-		cfg.RevenueCurrency = "CNY"
-	}
-	if cfg.RevenueCurrency != "" && cfg.RevenueCurrency != "CNY" && cfg.RevenueCurrency != "USDT" {
-		cfg.RevenueCurrency = "CNY"
-	}
-	switch strings.ToLower(strings.TrimSpace(cfg.RevenueCycle)) {
-	case "month", "monthly":
-		cfg.RevenueCycle = "month"
-	case "quarter", "quarterly", "season":
-		cfg.RevenueCycle = "quarter"
-	case "year", "yearly":
-		cfg.RevenueCycle = "year"
-	default:
-		cfg.RevenueCycle = ""
-	}
-	if cfg.RevenueCycle == "" && cfg.RevenueAmount > 0 {
-		cfg.RevenueCycle = "month"
-	}
-	if cfg.RevenueAmount < 0 {
-		cfg.RevenueAmount = 0
-	}
+	cfg.ClientBillings = normalizeClientBillings(cfg.ClientBillings)
 	if cfg.Cycle == "" {
 		cfg.AutoRenew = false
 	}
@@ -339,9 +317,43 @@ func normalizeRenewalConfig(cfg model.VPSRenewalConfig) model.VPSRenewalConfig {
 	return cfg
 }
 
+func normalizeClientBillings(items []model.XUIClientBillingConfig) []model.XUIClientBillingConfig {
+	normalized := make([]model.XUIClientBillingConfig, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		item.InboundTag = strings.TrimSpace(item.InboundTag)
+		item.Email = strings.TrimSpace(item.Email)
+		if item.InboundID <= 0 && item.InboundTag == "" && item.Email == "" {
+			continue
+		}
+		if item.RevenueAmount < 0 {
+			item.RevenueAmount = 0
+		}
+		item.RevenueCurrency = strings.ToUpper(strings.TrimSpace(item.RevenueCurrency))
+		if item.RevenueCurrency != "USDT" {
+			item.RevenueCurrency = "CNY"
+		}
+		switch strings.ToLower(strings.TrimSpace(item.RevenueCycle)) {
+		case "quarter", "quarterly", "season":
+			item.RevenueCycle = "quarter"
+		case "year", "yearly":
+			item.RevenueCycle = "year"
+		default:
+			item.RevenueCycle = "month"
+		}
+		key := fmt.Sprintf("%d\x00%s\x00%s", item.InboundID, item.InboundTag, item.Email)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		normalized = append(normalized, item)
+	}
+	return normalized
+}
+
 func hasRenewalConfig(cfg model.VPSRenewalConfig) bool {
 	cfg = normalizeRenewalConfig(cfg)
-	return cfg.Enabled || cfg.StartDate != "" || cfg.ExpireDate != "" || cfg.Cycle != "" || cfg.AutoRenew || cfg.CostAmount > 0 || cfg.RevenueAmount > 0 || cfg.TrafficLimitBytes > 0 || cfg.BandwidthMbps > 0
+	return cfg.Enabled || cfg.StartDate != "" || cfg.ExpireDate != "" || cfg.Cycle != "" || cfg.AutoRenew || cfg.CostAmount > 0 || len(cfg.ClientBillings) > 0 || cfg.TrafficLimitBytes > 0 || cfg.BandwidthMbps > 0
 }
 
 func normalizeEntryConfig(cfg model.AgentEntryConfig) model.AgentEntryConfig {

@@ -31,7 +31,7 @@ export interface MonthlyFinanceSummary {
   missingRevenueCount: number
 }
 
-type BillingConfig = Pick<VPSRenewalConfig, 'cost_amount' | 'cost_currency' | 'cost_cycle' | 'revenue_amount' | 'revenue_currency' | 'revenue_cycle'>
+type BillingConfig = Pick<VPSRenewalConfig, 'cost_amount' | 'cost_currency' | 'cost_cycle'>
 
 export function summarizeMonthlyCost(agents: AgentListItem[], targetCurrency: CurrencyCode, exchangeRates: ExchangeRatesState): MonthlyCostSummary {
   return agents.reduce<MonthlyCostSummary>(
@@ -67,10 +67,21 @@ export function summarizeMonthlyFinance(agents: AgentListItem[], targetCurrency:
         summary.costTotal += cost
         summary.costCount += 1
       }
-      const revenue = monthlyConvertedAmount(billing.revenue_amount, billing.revenue_currency, billing.revenue_cycle, targetCurrency, exchangeRates)
-      if (revenue === null) {
+      const clientBillings = agent.renewal?.client_billings || []
+      if (!clientBillings.length) {
         summary.missingRevenueCount += 1
-      } else {
+      }
+      for (const clientBilling of clientBillings) {
+        const revenue = monthlyConvertedAmount(
+          Math.max(0, Number(clientBilling.revenue_amount || 0)),
+          normalizeCurrencyCode(clientBilling.revenue_currency || 'CNY'),
+          clientBilling.revenue_cycle === 'quarter' || clientBilling.revenue_cycle === 'year' ? clientBilling.revenue_cycle : 'month',
+          targetCurrency,
+          exchangeRates,
+        )
+        if (revenue === null) {
+          continue
+        }
         summary.revenueTotal += revenue
         summary.revenueCount += 1
       }
@@ -102,9 +113,6 @@ function normalizeBillingConfig(config?: VPSRenewalConfig): Required<BillingConf
     cost_amount: Math.max(0, Number(config?.cost_amount || 0)),
     cost_currency: normalizeCurrencyCode(config?.cost_currency),
     cost_cycle: config?.cost_cycle === 'quarter' || config?.cost_cycle === 'year' ? config.cost_cycle : 'month',
-    revenue_amount: Math.max(0, Number(config?.revenue_amount || 0)),
-    revenue_currency: normalizeCurrencyCode(config?.revenue_currency || 'CNY'),
-    revenue_cycle: config?.revenue_cycle === 'quarter' || config?.revenue_cycle === 'year' ? config.revenue_cycle : 'month',
   }
 }
 
