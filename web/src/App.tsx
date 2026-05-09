@@ -112,6 +112,7 @@ const XUI_ACTION_KINDS = [
 ]
 type AgentViewMode = 'card' | 'list'
 type ConfigSectionKey = 'client' | 'renewal' | 'xui' | 'entry'
+type ClientInstallCommandKind = 'linux' | 'windows-powershell' | 'windows-cmd'
 
 interface TLSCertificateSelectionForm {
   mode: 'none' | 'domain_auto' | 'inventory' | 'manual'
@@ -264,6 +265,7 @@ export default function App() {
   const [clientInstallLoading, setClientInstallLoading] = useState(false)
   const [clientInstallSaving, setClientInstallSaving] = useState(false)
   const [clientInstallForm, setClientInstallForm] = useState<ClientInstallCommandForm>(() => defaultClientInstallCommandForm())
+  const [clientInstallCommandKind, setClientInstallCommandKind] = useState<ClientInstallCommandKind>('linux')
   const [reloadToken, setReloadToken] = useState(0)
   const [activeTabKey, setActiveTabKey] = useState('overview')
   const [topologyVisible, setTopologyVisible] = useState(false)
@@ -814,12 +816,11 @@ export default function App() {
     }
   }
 
-  async function copyClientInstallCommand() {
+  async function copyClientInstallCommand(command = buildClientInstallCommand(clientInstallForm)) {
     if (!clientInstallForm.registration_token.trim()) {
       message.warning('当前 server 未配置注册 Token，安装命令无法完成 Client 注册')
       return
     }
-    const command = buildClientInstallCommand(clientInstallForm)
     try {
       await navigator.clipboard.writeText(command)
       message.success('Client 安装命令已复制')
@@ -1343,6 +1344,13 @@ export default function App() {
   }
 
   const clientInstallCommand = buildClientInstallCommand(clientInstallForm)
+  const clientWindowsPowerShellCommand = buildWindowsPowerShellInstallCommand(clientInstallForm)
+  const clientWindowsCMDCommand = buildWindowsCMDInstallCommand(clientInstallForm)
+  const activeClientInstallCommand = clientInstallCommandByKind(clientInstallCommandKind, {
+    linux: clientInstallCommand,
+    windowsPowerShell: clientWindowsPowerShellCommand,
+    windowsCMD: clientWindowsCMDCommand,
+  })
 
   return (
     <div className="page-shell">
@@ -1450,9 +1458,9 @@ export default function App() {
               type="primary"
               icon={<CopyOutlined />}
               disabled={clientInstallLoading}
-              onClick={() => void copyClientInstallCommand()}
+              onClick={() => void copyClientInstallCommand(activeClientInstallCommand)}
             >
-              复制安装命令
+              复制当前分类命令
             </Button>,
           ]}
         >
@@ -1520,20 +1528,48 @@ export default function App() {
                   </div>
                 </Col>
               </Row>
-              <div>
-                <div className="client-install-command-title">
-                  <Text strong>生成的安装命令</Text>
-                  <Button size="small" icon={<CopyOutlined />} onClick={() => void copyClientInstallCommand()}>
-                    复制
-                  </Button>
-                </div>
-                <Input.TextArea
-                  className="client-install-command"
-                  value={clientInstallCommand}
-                  readOnly
-                  autoSize={{ minRows: 5, maxRows: 8 }}
-                />
-              </div>
+              <Tabs
+                activeKey={clientInstallCommandKind}
+                onChange={(key) => setClientInstallCommandKind(key as ClientInstallCommandKind)}
+                items={[
+                  {
+                    key: 'linux',
+                    label: 'Linux / Alpine',
+                    children: (
+                      <ClientInstallCommandBox
+                        title="Linux / Alpine 安装命令"
+                        description="在目标 Linux VPS 上使用 root 执行；支持 systemd 和 OpenRC。"
+                        command={clientInstallCommand}
+                        onCopy={() => void copyClientInstallCommand(clientInstallCommand)}
+                      />
+                    ),
+                  },
+                  {
+                    key: 'windows-powershell',
+                    label: 'Windows PowerShell',
+                    children: (
+                      <ClientInstallCommandBox
+                        title="Windows PowerShell 安装命令"
+                        description="在目标 Windows VPS 上以管理员身份打开 PowerShell 后执行，会安装为 Windows Service 并开机自启。"
+                        command={clientWindowsPowerShellCommand}
+                        onCopy={() => void copyClientInstallCommand(clientWindowsPowerShellCommand)}
+                      />
+                    ),
+                  },
+                  {
+                    key: 'windows-cmd',
+                    label: 'Windows CMD',
+                    children: (
+                      <ClientInstallCommandBox
+                        title="Windows CMD 安装命令"
+                        description="在目标 Windows VPS 上以管理员身份打开 CMD 后执行。"
+                        command={clientWindowsCMDCommand}
+                        onCopy={() => void copyClientInstallCommand(clientWindowsCMDCommand)}
+                      />
+                    ),
+                  },
+                ]}
+              />
             </Space>
           </Spin>
         </Modal>
@@ -4066,6 +4102,33 @@ function renderRoutingActionForm(props: {
   )
 }
 
+interface ClientInstallCommandBoxProps {
+  title: string
+  description: string
+  command: string
+  onCopy: () => void
+}
+
+function ClientInstallCommandBox(props: ClientInstallCommandBoxProps) {
+  return (
+    <div>
+      <Alert type="info" showIcon message={props.title} description={props.description} className="compact-alert" />
+      <div className="client-install-command-title">
+        <Text strong>{props.title}</Text>
+        <Button size="small" icon={<CopyOutlined />} onClick={props.onCopy}>
+          复制
+        </Button>
+      </div>
+      <Input.TextArea
+        className="client-install-command"
+        value={props.command}
+        readOnly
+        autoSize={{ minRows: 5, maxRows: 9 }}
+      />
+    </div>
+  )
+}
+
 interface RouteBadgeProps {
   route: XUIRouteTrace
   onJumpOutbound: (tag?: string) => void
@@ -4313,6 +4376,21 @@ function normalizeClientInstallCommandForm(info: ClientInstallInfo): ClientInsta
   }
 }
 
+function clientInstallCommandByKind(
+  kind: ClientInstallCommandKind,
+  commands: { linux: string; windowsPowerShell: string; windowsCMD: string },
+): string {
+  switch (kind) {
+    case 'windows-powershell':
+      return commands.windowsPowerShell
+    case 'windows-cmd':
+      return commands.windowsCMD
+    case 'linux':
+    default:
+      return commands.linux
+  }
+}
+
 function buildClientInstallCommand(form: ClientInstallCommandForm): string {
   const scriptURL = form.install_script_url.trim() || defaultClientInstallCommandForm().install_script_url
   const envValues: Array<[string, string]> = [
@@ -4327,8 +4405,35 @@ function buildClientInstallCommand(form: ClientInstallCommandForm): string {
   return `curl -L ${shellQuote(scriptURL)} -o vpsmonitor-install.sh && chmod +x vpsmonitor-install.sh && env ${envText} ./vpsmonitor-install.sh client`
 }
 
+function buildWindowsPowerShellInstallCommand(form: ClientInstallCommandForm): string {
+  const scriptURL = windowsInstallScriptURL(form.install_script_url)
+  const envValues: Array<[string, string]> = [
+    ['VPSMONITOR_SERVER_URL', form.server_url.trim()],
+    ['VPSMONITOR_REGISTRATION_TOKEN', form.registration_token.trim()],
+    ['VPSMONITOR_SERVER_SKIP_TLS_VERIFY', String(Boolean(form.server_skip_tls_verify))],
+    ['VPSMONITOR_POLL_INTERVAL', form.poll_interval.trim() || '30s'],
+    ['VPSMONITOR_REQUEST_TIMEOUT_SECONDS', String(Math.max(1, Number(form.request_timeout_seconds || 15)))],
+    ['VPSMONITOR_ASSUME_YES', 'true'],
+  ]
+  const envText = envValues.map(([key, value]) => `$env:${key}=${powerShellQuote(value)}`).join('; ')
+  return `${envText}; iwr -UseBasicParsing ${powerShellQuote(scriptURL)} -OutFile vpsmonitor-install.ps1; powershell -NoProfile -ExecutionPolicy Bypass -File .\\vpsmonitor-install.ps1 client`
+}
+
+function buildWindowsCMDInstallCommand(form: ClientInstallCommandForm): string {
+  return `powershell -NoProfile -ExecutionPolicy Bypass -Command ${powerShellQuote(buildWindowsPowerShellInstallCommand(form))}`
+}
+
+function windowsInstallScriptURL(scriptURL: string): string {
+  const value = (scriptURL || defaultClientInstallCommandForm().install_script_url).trim()
+  return value.endsWith('.sh') ? `${value.slice(0, -3)}.ps1` : value
+}
+
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+function powerShellQuote(value: string): string {
+  return `'${value.replace(/'/g, `''`)}'`
 }
 
 function buildXUIActionPayload(
@@ -5328,13 +5433,13 @@ function explicitCountryCodeFromText(value?: string): string {
   if (direct) {
     return direct
   }
-  const match = /(?:^|[^A-Z0-9])(HK|US|CN|JP|SG|TW|PH|CA|DE|FR|GB|AU)(?=$|[^A-Z0-9])/.exec(text)
+  const match = /(?:^|[^A-Z0-9])(TH|MY|VN|IN|SG|HK|MO|TW|JP|KR|CA|US|CN|PH|DE|FR|GB|AU)(?=$|[^A-Z0-9])/.exec(text)
   return match ? match[1] : ''
 }
 
 function normalizeCountryCode(value?: string): string {
   const code = (value || '').trim().toUpperCase()
-  if (['HK', 'US', 'CN', 'JP', 'SG', 'TW', 'PH', 'CA', 'DE', 'FR', 'GB', 'AU'].includes(code)) {
+  if (['TH', 'MY', 'VN', 'IN', 'SG', 'HK', 'MO', 'TW', 'JP', 'KR', 'CA', 'US', 'CN', 'PH', 'DE', 'FR', 'GB', 'AU'].includes(code)) {
     return code
   }
   return ''
@@ -5365,22 +5470,34 @@ function formatGeoLabel(geo?: IPGeoView): string {
 
 function countryName(code: string): string {
   switch (code) {
+    case 'TH':
+      return 'Thailand'
+    case 'MY':
+      return 'Malaysia'
+    case 'VN':
+      return 'Vietnam'
+    case 'IN':
+      return 'India'
+    case 'SG':
+      return 'Singapore'
     case 'HK':
       return 'Hong Kong'
+    case 'MO':
+      return 'Macao'
+    case 'TW':
+      return 'Taiwan'
+    case 'JP':
+      return 'Japan'
+    case 'KR':
+      return 'South Korea'
+    case 'CA':
+      return 'Canada'
     case 'US':
       return 'United States'
     case 'CN':
       return 'China'
-    case 'JP':
-      return 'Japan'
-    case 'SG':
-      return 'Singapore'
-    case 'TW':
-      return 'Taiwan'
     case 'PH':
       return 'Philippines'
-    case 'CA':
-      return 'Canada'
     case 'DE':
       return 'Germany'
     case 'FR':

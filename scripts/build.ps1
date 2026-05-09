@@ -87,6 +87,10 @@ function Package-Component([string]$AppName, [string]$Entrypoint, [string]$GoOs,
 
   if ($GoOs -eq "windows") {
     Copy-Item (Join-Path $RootDir "scripts\templates\run-$AppName.bat") (Join-Path $outputDir "run.bat")
+    if ($AppName -eq "bridge-client") {
+      Copy-Item (Join-Path $RootDir "install.ps1") (Join-Path $outputDir "install.ps1")
+      Copy-Item (Join-Path $RootDir "install-client.cmd") (Join-Path $outputDir "install-client.cmd")
+    }
     Compress-Archive -Path $outputDir -DestinationPath (Join-Path $DistDir "$packageName.zip") -Force
   }
   else {

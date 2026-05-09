@@ -53,6 +53,10 @@ package_component() {
 
   if [[ "$goos" == "windows" ]]; then
     cp "${ROOT_DIR}/scripts/templates/run-${app_name}.bat" "${output_dir}/run.bat"
+    if [[ "$app_name" == "bridge-client" ]]; then
+      cp "${ROOT_DIR}/install.ps1" "${output_dir}/install.ps1"
+      cp "${ROOT_DIR}/install-client.cmd" "${output_dir}/install-client.cmd"
+    fi
     (
       cd "$DIST_DIR"
       zip -qr "${package_name}.zip" "$package_name"
