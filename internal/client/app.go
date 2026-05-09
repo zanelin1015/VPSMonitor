@@ -155,12 +155,13 @@ func payloadString(payload map[string]any, key string, fallback string) string {
 
 func (a *App) collect(ctx context.Context, effectiveConfig model.ManagedAgentConfig) model.AgentSnapshot {
 	snapshot := model.AgentSnapshot{
-		AgentID:    a.config.AgentID,
-		AgentName:  firstNonEmpty(effectiveConfig.AgentName, a.config.AgentName, a.config.AgentID),
-		Version:    version.Version,
-		OS:         runtime.GOOS,
-		Arch:       runtime.GOARCH,
-		ReportedAt: time.Now().UTC(),
+		AgentID:       a.config.AgentID,
+		AgentName:     firstNonEmpty(effectiveConfig.AgentName, a.config.AgentName, a.config.AgentID),
+		Version:       version.Version,
+		OS:            runtime.GOOS,
+		Arch:          runtime.GOARCH,
+		SystemVersion: currentSystemVersion(),
+		ReportedAt:    time.Now().UTC(),
 		Summary: model.VPSSummary{
 			Hostname: currentHostname(),
 		},
@@ -262,12 +263,13 @@ func normalizeManagedConfig(cfg model.ManagedAgentConfig, fallbackAgentID string
 
 func (a *App) register(ctx context.Context) (model.AgentRegisterResponse, error) {
 	reqBody := model.AgentRegisterRequest{
-		AgentID:   a.config.AgentID,
-		AgentName: firstNonEmpty(a.config.AgentName, a.config.AgentID),
-		Version:   version.Version,
-		OS:        runtime.GOOS,
-		Arch:      runtime.GOARCH,
-		Hostname:  currentHostname(),
+		AgentID:       a.config.AgentID,
+		AgentName:     firstNonEmpty(a.config.AgentName, a.config.AgentID),
+		Version:       version.Version,
+		OS:            runtime.GOOS,
+		Arch:          runtime.GOARCH,
+		SystemVersion: currentSystemVersion(),
+		Hostname:      currentHostname(),
 		SeedConfig: model.ManagedAgentConfig{
 			AgentID:   a.config.AgentID,
 			AgentName: firstNonEmpty(a.config.AgentName, a.config.AgentID),

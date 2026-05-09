@@ -318,12 +318,14 @@ function AgentRailHeader(props: {
 
 function AgentRailTags(props: { item: DashboardAgentView; tags: string[] }) {
   const { item, tags } = props
+  const systemLabel = displayClientSystem(item)
+  const clientChipParts = [systemLabel, item.client_version ? `Client v${item.client_version}` : ''].filter(Boolean)
   return (
     <div className="agent-tag-row">
       {tags.map((tag) => (
         <span className="agent-tag-chip" key={tag} style={tagChipStyle(tag)}>{tag}</span>
       ))}
-      {item.client_version ? <span className="agent-tag-chip">{clientOSIcon(item.client_os)} Client v{item.client_version}{item.client_arch ? ` · ${item.client_arch}` : ''}</span> : null}
+      {clientChipParts.length > 0 ? <span className="agent-tag-chip">{clientOSIcon(item.client_os)} {clientChipParts.join(' · ')}</span> : null}
       {item.renewal?.bandwidth_mbps ? <span className="agent-tag-chip">带宽 {formatBandwidth(item.renewal.bandwidth_mbps)}</span> : null}
       {item.summary.last_collection_err ? <span className="agent-tag-chip agent-tag-warn" title={item.summary.last_collection_err}>x-ui 异常</span> : null}
       {xrayIssueLabel(item) ? <span className="agent-tag-chip agent-tag-warn">{xrayIssueLabel(item)}</span> : null}
@@ -339,8 +341,22 @@ function clientOSIcon(os?: string) {
   return '💻'
 }
 
+function displayClientSystem(item: DashboardAgentView) {
+  const systemVersion = item.system_version?.trim()
+  if (systemVersion) return systemVersion
+  return humanizeClientOS(item.client_os)
+}
+
+function humanizeClientOS(os?: string) {
+  const value = (os || '').trim().toLowerCase()
+  if (value === 'linux') return 'Linux'
+  if (value === 'windows') return 'Windows'
+  if (value === 'darwin') return 'macOS'
+  return os?.trim() || ''
+}
+
 function formatClientPlatform(item: DashboardAgentView) {
-  return [item.client_os || '未知系统', item.client_arch].filter(Boolean).join(' / ')
+  return [displayClientSystem(item), item.client_os, item.client_arch].filter(Boolean).join(' / ')
 }
 
 function AgentMeters(props: { item: DashboardAgentView; cpuPercent: number; memPercent: number }) {

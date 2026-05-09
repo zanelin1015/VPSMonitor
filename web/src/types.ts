@@ -24,6 +24,7 @@ export interface AgentListItem {
   client_version?: string
   client_os?: string
   client_arch?: string
+  system_version?: string
   sort_order?: number
   tags?: string[]
   renewal?: VPSRenewalConfig

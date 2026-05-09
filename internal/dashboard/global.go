@@ -65,6 +65,7 @@ func BuildGlobalDashboard(agents []model.AgentRecord, snapshots []model.AgentSna
 			ClientVersion: agent.Version,
 			ClientOS:      agent.OS,
 			ClientArch:    agent.Arch,
+			SystemVersion: agent.SystemVersion,
 			SortOrder:     agent.SortOrder,
 			Tags:          cloneStrings(agent.Tags),
 			Renewal:       agent.Config.Renewal,

@@ -432,6 +432,7 @@ func (s *SQLiteStore) ListAgents() ([]model.AgentRecord, error) {
 				record.Version = snapshot.Version
 				record.OS = snapshot.OS
 				record.Arch = snapshot.Arch
+				record.SystemVersion = snapshot.SystemVersion
 				record.Summary = snapshot.Summary
 				if record.Hostname == "" {
 					record.Hostname = snapshot.Summary.Hostname

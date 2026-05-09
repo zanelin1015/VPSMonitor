@@ -5,7 +5,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
-$InstallerVersion = "2026.05.09.2"
+$InstallerVersion = "2026.05.10.1"
 
 $Repo = if ($env:VPSMONITOR_REPO) { $env:VPSMONITOR_REPO } else { "zanelin1015/VPSMonitor" }
 $Version = if ($env:VPSMONITOR_VERSION) { $env:VPSMONITOR_VERSION } else { "latest" }
@@ -93,13 +93,62 @@ function Wait-ServiceDeleted([string]$Name) {
   }
 }
 
-function Install-ClientService([string]$BinaryPath, [string]$ConfigPath) {
+function Wait-FileReleased([string]$Path) {
+  if (-not (Test-Path $Path)) { return }
+  for ($i = 0; $i -lt 40; $i++) {
+    try {
+      $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+      $stream.Close()
+      return
+    }
+    catch {
+      Start-Sleep -Milliseconds 500
+    }
+  }
+  throw "Timed out waiting for file to be released: $Path"
+}
+
+function Stop-ClientServiceForUpgrade([string]$BinaryPath) {
   $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
   if ($existing) {
     if ($existing.Status -ne "Stopped") {
       Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
-      Start-Sleep -Seconds 2
     }
+    for ($i = 0; $i -lt 40; $i++) {
+      $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+      if (-not $service -or $service.Status -eq "Stopped") { break }
+      Start-Sleep -Milliseconds 500
+    }
+  }
+
+  $normalizedBinaryPath = ""
+  try {
+    $normalizedBinaryPath = [System.IO.Path]::GetFullPath($BinaryPath)
+  }
+  catch {
+    $normalizedBinaryPath = $BinaryPath
+  }
+
+  $matchingProcesses = Get-CimInstance Win32_Process -Filter "Name = 'bridge-client.exe'" -ErrorAction SilentlyContinue | Where-Object {
+    $path = $_.ExecutablePath
+    if ([string]::IsNullOrWhiteSpace($path)) { return $false }
+    try {
+      [System.StringComparer]::OrdinalIgnoreCase.Equals([System.IO.Path]::GetFullPath($path), $normalizedBinaryPath)
+    }
+    catch {
+      [System.StringComparer]::OrdinalIgnoreCase.Equals($path, $normalizedBinaryPath)
+    }
+  }
+  foreach ($process in $matchingProcesses) {
+    Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+  }
+
+  Wait-FileReleased $BinaryPath
+}
+
+function Install-ClientService([string]$BinaryPath, [string]$ConfigPath) {
+  $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+  if ($existing) {
     $deleteOutput = & sc.exe delete $ServiceName 2>&1
     if ($LASTEXITCODE -ne 0) {
       throw "Delete existing service failed: $deleteOutput"
@@ -176,6 +225,7 @@ try {
   $DownloadedBinary = Get-ChildItem -Path $TempDir -Filter "bridge-client.exe" -Recurse | Select-Object -First 1
   if (-not $DownloadedBinary) { throw "bridge-client.exe was not found in package." }
   New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+  Stop-ClientServiceForUpgrade $BinaryPath
   Copy-Item $DownloadedBinary.FullName $BinaryPath -Force
   $Readme = Get-ChildItem -Path $TempDir -Filter "README.md" -Recurse | Select-Object -First 1
   if ($Readme) { Copy-Item $Readme.FullName (Join-Path $InstallDir "README.md") -Force }

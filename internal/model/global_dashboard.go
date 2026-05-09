@@ -28,6 +28,7 @@ type DashboardAgentView struct {
 	ClientVersion     string           `json:"client_version,omitempty"`
 	ClientOS          string           `json:"client_os,omitempty"`
 	ClientArch        string           `json:"client_arch,omitempty"`
+	SystemVersion     string           `json:"system_version,omitempty"`
 	SortOrder         int              `json:"sort_order,omitempty"`
 	Tags              []string         `json:"tags,omitempty"`
 	Renewal           VPSRenewalConfig `json:"renewal,omitempty"`

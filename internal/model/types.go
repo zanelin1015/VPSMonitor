@@ -6,16 +6,17 @@ import (
 )
 
 type AgentSnapshot struct {
-	AgentID    string          `json:"agent_id"`
-	AgentName  string          `json:"agent_name,omitempty"`
-	Version    string          `json:"version,omitempty"`
-	OS         string          `json:"os,omitempty"`
-	Arch       string          `json:"arch,omitempty"`
-	ReportedAt time.Time       `json:"reported_at"`
-	Summary    VPSSummary      `json:"summary"`
-	XUI        *XUISnapshot    `json:"xui,omitempty"`
-	Nezha      *NezhaSnapshot  `json:"nezha,omitempty"`
-	Logs       []AgentLogEntry `json:"logs,omitempty"`
+	AgentID       string          `json:"agent_id"`
+	AgentName     string          `json:"agent_name,omitempty"`
+	Version       string          `json:"version,omitempty"`
+	OS            string          `json:"os,omitempty"`
+	Arch          string          `json:"arch,omitempty"`
+	SystemVersion string          `json:"system_version,omitempty"`
+	ReportedAt    time.Time       `json:"reported_at"`
+	Summary       VPSSummary      `json:"summary"`
+	XUI           *XUISnapshot    `json:"xui,omitempty"`
+	Nezha         *NezhaSnapshot  `json:"nezha,omitempty"`
+	Logs          []AgentLogEntry `json:"logs,omitempty"`
 }
 
 type AgentLogEntry struct {
@@ -183,6 +184,7 @@ type AgentListItem struct {
 	ClientVersion string           `json:"client_version,omitempty"`
 	ClientOS      string           `json:"client_os,omitempty"`
 	ClientArch    string           `json:"client_arch,omitempty"`
+	SystemVersion string           `json:"system_version,omitempty"`
 	SortOrder     int              `json:"sort_order,omitempty"`
 	Tags          []string         `json:"tags,omitempty"`
 	Renewal       VPSRenewalConfig `json:"renewal,omitempty"`

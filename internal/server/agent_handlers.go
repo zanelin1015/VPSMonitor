@@ -69,6 +69,7 @@ func (a *App) handleAgents(w http.ResponseWriter, r *http.Request) {
 			ClientVersion: agent.Version,
 			ClientOS:      agent.OS,
 			ClientArch:    agent.Arch,
+			SystemVersion: agent.SystemVersion,
 			SortOrder:     agent.SortOrder,
 			Tags:          agent.Tags,
 			Renewal:       agent.Config.Renewal,
@@ -312,6 +313,10 @@ func (a *App) handleAgentRecord(w http.ResponseWriter, r *http.Request, agentID 
 	if snapshot, ok := a.store.GetLatest(agentID); ok {
 		agent.Summary = snapshot.Summary
 		agent.ReportedAt = &snapshot.ReportedAt
+		agent.Version = snapshot.Version
+		agent.OS = snapshot.OS
+		agent.Arch = snapshot.Arch
+		agent.SystemVersion = snapshot.SystemVersion
 	}
 	writeJSON(w, http.StatusOK, agent)
 }

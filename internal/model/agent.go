@@ -60,15 +60,16 @@ type AgentEntryMapping struct {
 }
 
 type AgentRegisterRequest struct {
-	AgentID    string             `json:"agent_id"`
-	AgentName  string             `json:"agent_name,omitempty"`
-	Version    string             `json:"version,omitempty"`
-	OS         string             `json:"os,omitempty"`
-	Arch       string             `json:"arch,omitempty"`
-	Hostname   string             `json:"hostname,omitempty"`
-	PublicIPv4 string             `json:"public_ipv4,omitempty"`
-	PublicIPv6 string             `json:"public_ipv6,omitempty"`
-	SeedConfig ManagedAgentConfig `json:"seed_config"`
+	AgentID       string             `json:"agent_id"`
+	AgentName     string             `json:"agent_name,omitempty"`
+	Version       string             `json:"version,omitempty"`
+	OS            string             `json:"os,omitempty"`
+	Arch          string             `json:"arch,omitempty"`
+	SystemVersion string             `json:"system_version,omitempty"`
+	Hostname      string             `json:"hostname,omitempty"`
+	PublicIPv4    string             `json:"public_ipv4,omitempty"`
+	PublicIPv6    string             `json:"public_ipv6,omitempty"`
+	SeedConfig    ManagedAgentConfig `json:"seed_config"`
 }
 
 type AgentRegisterResponse struct {
@@ -80,22 +81,23 @@ type AgentRegisterResponse struct {
 }
 
 type AgentRecord struct {
-	AgentID      string             `json:"agent_id"`
-	AgentName    string             `json:"agent_name,omitempty"`
-	Version      string             `json:"version,omitempty"`
-	OS           string             `json:"os,omitempty"`
-	Arch         string             `json:"arch,omitempty"`
-	SortOrder    int                `json:"sort_order,omitempty"`
-	Tags         []string           `json:"tags,omitempty"`
-	AgentToken   string             `json:"-"`
-	Hostname     string             `json:"hostname,omitempty"`
-	PublicIPv4   string             `json:"public_ipv4,omitempty"`
-	PublicIPv6   string             `json:"public_ipv6,omitempty"`
-	RegisteredAt time.Time          `json:"registered_at"`
-	UpdatedAt    time.Time          `json:"updated_at"`
-	LastSeenAt   *time.Time         `json:"last_seen_at,omitempty"`
-	ReportedAt   *time.Time         `json:"reported_at,omitempty"`
-	Summary      VPSSummary         `json:"summary"`
-	HasConfig    bool               `json:"has_config"`
-	Config       ManagedAgentConfig `json:"config,omitempty"`
+	AgentID       string             `json:"agent_id"`
+	AgentName     string             `json:"agent_name,omitempty"`
+	Version       string             `json:"version,omitempty"`
+	OS            string             `json:"os,omitempty"`
+	Arch          string             `json:"arch,omitempty"`
+	SystemVersion string             `json:"system_version,omitempty"`
+	SortOrder     int                `json:"sort_order,omitempty"`
+	Tags          []string           `json:"tags,omitempty"`
+	AgentToken    string             `json:"-"`
+	Hostname      string             `json:"hostname,omitempty"`
+	PublicIPv4    string             `json:"public_ipv4,omitempty"`
+	PublicIPv6    string             `json:"public_ipv6,omitempty"`
+	RegisteredAt  time.Time          `json:"registered_at"`
+	UpdatedAt     time.Time          `json:"updated_at"`
+	LastSeenAt    *time.Time         `json:"last_seen_at,omitempty"`
+	ReportedAt    *time.Time         `json:"reported_at,omitempty"`
+	Summary       VPSSummary         `json:"summary"`
+	HasConfig     bool               `json:"has_config"`
+	Config        ManagedAgentConfig `json:"config,omitempty"`
 }
