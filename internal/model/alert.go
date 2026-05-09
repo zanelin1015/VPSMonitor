@@ -27,3 +27,11 @@ type ConfigAuditLog struct {
 	After     any       `json:"after,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+type DailyTrafficUsage struct {
+	AgentID   string `json:"agent_id"`
+	AgentName string `json:"agent_name,omitempty"`
+	Upload    uint64 `json:"upload"`
+	Download  uint64 `json:"download"`
+	Total     uint64 `json:"total"`
+}

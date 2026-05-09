@@ -210,7 +210,82 @@ func (s *SQLiteStore) CompleteXUIAction(agentID string, id int64, req model.XUIA
 	if !found {
 		return model.XUIAction{}, fmt.Errorf("completed x-ui action not found")
 	}
+	if status == model.XUIActionStatusSucceeded && action.Kind == model.XUIActionUpdateClientExpiry {
+		if err := s.applyXUIClientExpiryConfig(agentID, action.Payload); err != nil {
+			return model.XUIAction{}, err
+		}
+	}
 	return action, nil
+}
+
+func (s *SQLiteStore) applyXUIClientExpiryConfig(agentID string, payload map[string]any) error {
+	record, found, err := s.GetAgent(agentID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("agent not found")
+	}
+	inboundID := int(numberFromPayload(payload["inbound_id"]))
+	inboundTag, _ := payload["inbound_tag"].(string)
+	email, _ := payload["email"].(string)
+	expiryTime := numberFromPayload(payload["expiry_time"])
+	if email == "" || expiryTime <= 0 {
+		return nil
+	}
+	foundBilling := false
+	for index := range record.Config.Renewal.ClientBillings {
+		billing := &record.Config.Renewal.ClientBillings[index]
+		if billing.InboundID == inboundID && billing.InboundTag == inboundTag && billing.Email == email {
+			billing.ExpireTime = expiryTime
+			if cycle, _ := payload["expire_cycle"].(string); cycle != "" {
+				billing.ExpireCycle = cycle
+			}
+			if autoRenew, ok := payload["expire_auto_renew"].(bool); ok {
+				billing.ExpireAutoRenew = autoRenew
+			}
+			foundBilling = true
+			break
+		}
+	}
+	if !foundBilling {
+		record.Config.Renewal.ClientBillings = append(record.Config.Renewal.ClientBillings, model.XUIClientBillingConfig{
+			InboundID:       inboundID,
+			InboundTag:      inboundTag,
+			Email:           email,
+			ExpireTime:      expiryTime,
+			ExpireCycle:     stringFromPayload(payload["expire_cycle"]),
+			ExpireAutoRenew: boolFromPayload(payload["expire_auto_renew"]),
+		})
+	}
+	_, err = s.UpdateAgentConfigWithActor(agentID, record.Config, "system:xui-client-expiry")
+	return err
+}
+
+func numberFromPayload(raw any) int64 {
+	switch value := raw.(type) {
+	case int64:
+		return value
+	case int:
+		return int64(value)
+	case float64:
+		return int64(value)
+	case json.Number:
+		n, _ := value.Int64()
+		return n
+	default:
+		return 0
+	}
+}
+
+func stringFromPayload(raw any) string {
+	value, _ := raw.(string)
+	return value
+}
+
+func boolFromPayload(raw any) bool {
+	value, _ := raw.(bool)
+	return value
 }
 
 func scanXUIActions(rows rowsScanner) ([]model.XUIAction, error) {

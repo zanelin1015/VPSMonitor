@@ -10,15 +10,17 @@ import (
 	"strings"
 	"time"
 
+	"bridge-core/internal/dashboard"
 	"bridge-core/internal/model"
 	"bridge-core/internal/store"
 )
 
 const (
-	alertCooldown      = 6 * time.Hour
-	alertSweepInterval = 5 * time.Minute
-	agentOfflineAfter  = 5 * time.Minute
-	telegramAPITimeout = 8 * time.Second
+	alertCooldown          = 6 * time.Hour
+	alertSweepInterval     = 5 * time.Minute
+	agentOfflineAfter      = 5 * time.Minute
+	telegramAPITimeout     = 8 * time.Second
+	dailyTrafficReportHour = 9
 )
 
 type alertService struct {
@@ -46,13 +48,29 @@ func (s *alertService) Start() {
 	if s == nil {
 		return
 	}
-	go func() {
-		ticker := time.NewTicker(alertSweepInterval)
-		defer ticker.Stop()
-		for range ticker.C {
-			s.EvaluateAll()
+	go s.runAlertSweep()
+	go s.runDailyTrafficReports()
+}
+
+func (s *alertService) runAlertSweep() {
+	ticker := time.NewTicker(alertSweepInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		s.EvaluateAll()
+	}
+}
+
+func (s *alertService) runDailyTrafficReports() {
+	for {
+		now := time.Now()
+		next := time.Date(now.Year(), now.Month(), now.Day(), dailyTrafficReportHour, 0, 0, 0, now.Location())
+		if !next.After(now) {
+			next = next.AddDate(0, 0, 1)
 		}
-	}()
+		timer := time.NewTimer(time.Until(next))
+		<-timer.C
+		s.SendDailyTrafficReport(time.Now().AddDate(0, 0, -1))
+	}
 }
 
 func (s *alertService) EvaluateAgent(agentID string) {
@@ -84,7 +102,9 @@ func (s *alertService) EvaluateAll() {
 		latest[snapshot.AgentID] = snapshot
 	}
 	for _, agent := range agents {
-		s.evaluateAgentRecord(agent, latest[agent.AgentID], true)
+		snapshot := latest[agent.AgentID]
+		s.evaluateAgentRecord(agent, snapshot, true)
+		s.evaluateXUIClientExpiryRenewals(agent, snapshot)
 	}
 }
 
@@ -197,6 +217,168 @@ func (s *alertService) sendTelegramMessage(botToken, chatID, text string) error 
 	return nil
 }
 
+func (s *alertService) SendDailyTrafficReport(day time.Time) {
+	if s == nil {
+		return
+	}
+	day = time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
+	items, err := s.store.ListDailyTrafficUsage(day)
+	if err != nil {
+		log.Printf("daily traffic report: %v", err)
+		return
+	}
+	bots, err := s.store.ListEnabledTelegramBotSecrets()
+	if err != nil {
+		log.Printf("daily traffic telegram bots: %v", err)
+		return
+	}
+	if len(bots) == 0 {
+		return
+	}
+	text := formatDailyTrafficReport(day, items)
+	key := "daily_traffic:" + day.Format("2006-01-02")
+	shouldSend, err := s.store.ShouldSendAlert(key, key, text, 48*time.Hour)
+	if err != nil {
+		log.Printf("daily traffic alert state: %v", err)
+		return
+	}
+	if !shouldSend {
+		return
+	}
+	for _, bot := range bots {
+		if err := s.sendTelegramMessage(bot.BotToken, bot.ChatID, text); err != nil {
+			log.Printf("send daily traffic report to %s: %v", bot.Name, err)
+		}
+	}
+}
+
+func formatDailyTrafficReport(day time.Time, items []model.DailyTrafficUsage) string {
+	var upload, download uint64
+	for _, item := range items {
+		upload += item.Upload
+		download += item.Download
+	}
+	lines := []string{
+		fmt.Sprintf("📊 NanFengMonitor 昨日流量日报（%s）", day.Format("2006-01-02")),
+		fmt.Sprintf("Client 数：%d", len(items)),
+		fmt.Sprintf("总流量：%s", formatBytes(upload+download)),
+		fmt.Sprintf("总上传：%s", formatBytes(upload)),
+		fmt.Sprintf("总下载：%s", formatBytes(download)),
+		"前三名：",
+	}
+	if len(items) == 0 {
+		lines = append(lines, "暂无昨日快照数据")
+	} else {
+		limit := 3
+		if len(items) < limit {
+			limit = len(items)
+		}
+		for index := 0; index < limit; index++ {
+			item := items[index]
+			name := item.AgentName
+			if name == "" {
+				name = item.AgentID
+			}
+			lines = append(lines, fmt.Sprintf("%d. %s：%s（上传 %s / 下载 %s）", index+1, name, formatBytes(item.Total), formatBytes(item.Upload), formatBytes(item.Download)))
+		}
+	}
+	lines = append(lines, "发送时间："+time.Now().Format("2006-01-02 15:04:05"))
+	return strings.Join(lines, "\n")
+}
+
+func (s *alertService) evaluateXUIClientExpiryRenewals(agent model.AgentRecord, snapshot model.AgentSnapshot) {
+	if snapshot.XUI == nil || len(agent.Config.Renewal.ClientBillings) == 0 {
+		return
+	}
+	overview := dashboard.BuildXUIOverview(snapshot)
+	if overview == nil {
+		return
+	}
+	now := time.Now()
+	for _, billing := range agent.Config.Renewal.ClientBillings {
+		if !billing.ExpireAutoRenew {
+			continue
+		}
+		client := findOverviewClient(overview.Clients, billing)
+		expiryMillis := billing.ExpireTime
+		if expiryMillis <= 0 && client != nil {
+			expiryMillis = client.ExpiryTime
+		}
+		if expiryMillis <= 0 {
+			continue
+		}
+		expiry := time.UnixMilli(expiryMillis)
+		if expiry.After(now) {
+			continue
+		}
+		cycle := normalizeClientExpireCycle(billing.ExpireCycle)
+		next := expiry
+		for !next.After(now) {
+			next = addClientExpireCycle(next, cycle)
+		}
+		key := fmt.Sprintf("xui_client_expiry:%s:%d:%s:%s", agent.AgentID, billing.InboundID, billing.InboundTag, billing.Email)
+		fingerprint := fmt.Sprintf("%d:%d", expiryMillis, next.UnixMilli())
+		shouldCreate, err := s.store.ShouldSendAlert(key, fingerprint, "x-ui client expiry auto renew", 24*time.Hour)
+		if err != nil {
+			log.Printf("x-ui client expiry state: %v", err)
+			continue
+		}
+		if !shouldCreate {
+			continue
+		}
+		inboundTag := billing.InboundTag
+		if inboundTag == "" && client != nil {
+			inboundTag = client.InboundTag
+		}
+		_, err = s.store.CreateXUIAction(agent.AgentID, model.XUIActionRequest{
+			Kind: model.XUIActionUpdateClientExpiry,
+			Payload: map[string]any{
+				"inbound_id":        billing.InboundID,
+				"inbound_tag":       inboundTag,
+				"email":             billing.Email,
+				"expiry_time":       next.UnixMilli(),
+				"expire_cycle":      cycle,
+				"expire_auto_renew": true,
+			},
+		})
+		if err != nil {
+			log.Printf("create x-ui client expiry action: %v", err)
+		}
+	}
+}
+
+func findOverviewClient(clients []model.XUIClientView, billing model.XUIClientBillingConfig) *model.XUIClientView {
+	for index := range clients {
+		client := &clients[index]
+		if client.InboundID == billing.InboundID && client.InboundTag == billing.InboundTag && client.Email == billing.Email {
+			return client
+		}
+	}
+	return nil
+}
+
+func normalizeClientExpireCycle(cycle string) string {
+	switch strings.ToLower(strings.TrimSpace(cycle)) {
+	case "quarter", "quarterly", "season":
+		return "quarter"
+	case "year", "yearly":
+		return "year"
+	default:
+		return "month"
+	}
+}
+
+func addClientExpireCycle(value time.Time, cycle string) time.Time {
+	switch cycle {
+	case "quarter":
+		return value.AddDate(0, 3, 0)
+	case "year":
+		return value.AddDate(1, 0, 0)
+	default:
+		return value.AddDate(0, 1, 0)
+	}
+}
+
 func newAgentAlert(agent model.AgentRecord, kind, severity, title, fingerprint, detail string) alertMessage {
 	return alertMessage{
 		key:         resolveAgentAlertKey(agent.AgentID, kind),
@@ -294,6 +476,8 @@ func normalizeAlertRenewal(cfg model.VPSRenewalConfig) model.VPSRenewalConfig {
 		cfg.Cycle = "week"
 	case "month", "monthly":
 		cfg.Cycle = "month"
+	case "quarter", "quarterly", "season":
+		cfg.Cycle = "quarter"
 	case "year", "yearly":
 		cfg.Cycle = "year"
 	default:
@@ -358,6 +542,10 @@ func addRenewalCycle(t time.Time, cycle string) time.Time {
 		return t.AddDate(0, 0, 7)
 	case "-week":
 		return t.AddDate(0, 0, -7)
+	case "quarter":
+		return t.AddDate(0, 3, 0)
+	case "-quarter":
+		return t.AddDate(0, -3, 0)
 	case "year":
 		return t.AddDate(1, 0, 0)
 	case "-year":

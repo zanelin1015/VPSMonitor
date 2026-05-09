@@ -341,6 +341,17 @@ func normalizeClientBillings(items []model.XUIClientBillingConfig) []model.XUICl
 		default:
 			item.RevenueCycle = "month"
 		}
+		if item.ExpireTime < 0 {
+			item.ExpireTime = 0
+		}
+		switch strings.ToLower(strings.TrimSpace(item.ExpireCycle)) {
+		case "quarter", "quarterly", "season":
+			item.ExpireCycle = "quarter"
+		case "year", "yearly":
+			item.ExpireCycle = "year"
+		default:
+			item.ExpireCycle = "month"
+		}
 		key := fmt.Sprintf("%d\x00%s\x00%s", item.InboundID, item.InboundTag, item.Email)
 		if _, ok := seen[key]; ok {
 			continue
@@ -449,7 +460,7 @@ func hasXUIConfig(cfg config.XUIConfig) bool {
 
 func isValidXUIActionKind(kind string) bool {
 	switch kind {
-	case model.XUIActionAddOutbound, model.XUIActionAddRoutingRule:
+	case model.XUIActionAddOutbound, model.XUIActionAddRoutingRule, model.XUIActionUpdateClientExpiry:
 		return true
 	default:
 		return false

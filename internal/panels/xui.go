@@ -128,6 +128,8 @@ func (c *XUIClient) executeActionAuthenticated(ctx context.Context, action model
 		return c.addOutbound(ctx, action.Payload)
 	case model.XUIActionAddRoutingRule:
 		return c.addRoutingRule(ctx, action.Payload)
+	case model.XUIActionUpdateClientExpiry:
+		return c.updateClientExpiry(ctx, action.Payload)
 	default:
 		return nil, fmt.Errorf("unsupported x-ui action kind: %s", action.Kind)
 	}
@@ -222,6 +224,109 @@ func (c *XUIClient) addRoutingRule(ctx context.Context, payload map[string]any) 
 		"rule_index": len(rules),
 		"restarted":  true,
 	}, nil
+}
+
+func (c *XUIClient) updateClientExpiry(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	inboundID := intValue(payload["inbound_id"])
+	inboundTag := strings.TrimSpace(stringFromMap(payload, "inbound_tag"))
+	email := strings.TrimSpace(stringFromMap(payload, "email"))
+	expiryTime := int64Value(payload["expiry_time"])
+	if inboundID <= 0 && inboundTag == "" {
+		return nil, fmt.Errorf("inbound_id or inbound_tag is required")
+	}
+	if email == "" {
+		return nil, fmt.Errorf("email is required")
+	}
+	if expiryTime <= 0 {
+		return nil, fmt.Errorf("expiry_time is required")
+	}
+
+	inbounds, err := c.getJSONList(ctx, "/panel/api/inbounds/list")
+	if err != nil {
+		return nil, err
+	}
+	var inbound map[string]any
+	for _, item := range inbounds {
+		if inboundID > 0 && intValue(item["id"]) == inboundID {
+			inbound = item
+			break
+		}
+		if inboundTag != "" && stringValue(item["tag"]) == inboundTag {
+			inbound = item
+			break
+		}
+	}
+	if inbound == nil {
+		return nil, fmt.Errorf("inbound not found for client %s", email)
+	}
+
+	settings, settingsText, err := decodeInboundSettings(inbound["settings"])
+	if err != nil {
+		return nil, err
+	}
+	clients := objectSlice(settings["clients"])
+	var updatedClient map[string]any
+	for _, client := range clients {
+		if strings.TrimSpace(stringValue(client["email"])) == email {
+			client["expiryTime"] = expiryTime
+			updatedClient = client
+			break
+		}
+	}
+	if updatedClient == nil {
+		return nil, fmt.Errorf("client not found in inbound: %s", email)
+	}
+
+	inboundID = intValue(inbound["id"])
+	if clientID := stringValue(updatedClient["id"]); clientID != "" {
+		clientSettings, _ := json.Marshal(map[string]any{"clients": []map[string]any{updatedClient}})
+		if result, err := c.postJSON(ctx, "/panel/api/inbounds/updateClient/"+url.PathEscape(clientID), map[string]any{
+			"id":       inboundID,
+			"settings": string(clientSettings),
+		}); err == nil {
+			if err := c.restartXrayService(ctx); err != nil {
+				return nil, err
+			}
+			return map[string]any{"message": result.Msg, "email": email, "expiry_time": expiryTime, "restarted": true}, nil
+		}
+	}
+
+	settings["clients"] = clients
+	body, err := json.Marshal(settings)
+	if err != nil {
+		return nil, fmt.Errorf("marshal inbound settings: %w", err)
+	}
+	if settingsText {
+		inbound["settings"] = string(body)
+	} else {
+		inbound["settings"] = settings
+	}
+	result, err := c.postJSON(ctx, fmt.Sprintf("/panel/api/inbounds/update/%d", inboundID), inbound)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.restartXrayService(ctx); err != nil {
+		return nil, err
+	}
+	return map[string]any{"message": result.Msg, "email": email, "expiry_time": expiryTime, "restarted": true}, nil
+}
+
+func decodeInboundSettings(raw any) (map[string]any, bool, error) {
+	switch value := raw.(type) {
+	case string:
+		var settings map[string]any
+		if strings.TrimSpace(value) == "" {
+			return map[string]any{"clients": []map[string]any{}}, true, nil
+		}
+		if err := json.Unmarshal([]byte(value), &settings); err != nil {
+			return nil, true, fmt.Errorf("decode inbound settings: %w", err)
+		}
+		return settings, true, nil
+	case map[string]any:
+		return value, false, nil
+	default:
+		return objectMap(raw), false, nil
+	}
 }
 
 func (c *XUIClient) login(ctx context.Context) error {
@@ -551,8 +656,32 @@ func objectSlice(raw any) []map[string]any {
 }
 
 func stringFromMap(obj map[string]any, key string) string {
-	value, _ := obj[key].(string)
+	return stringValue(obj[key])
+}
+
+func stringValue(raw any) string {
+	value, _ := raw.(string)
 	return value
+}
+
+func intValue(raw any) int {
+	return int(int64Value(raw))
+}
+
+func int64Value(raw any) int64 {
+	switch value := raw.(type) {
+	case int64:
+		return value
+	case int:
+		return int64(value)
+	case float64:
+		return int64(value)
+	case json.Number:
+		n, _ := value.Int64()
+		return n
+	default:
+		return 0
+	}
 }
 
 func decodeEnvelopeObject(raw json.RawMessage) any {

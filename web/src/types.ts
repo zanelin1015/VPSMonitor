@@ -74,6 +74,9 @@ export interface XUIClientBillingConfig {
   revenue_amount?: number
   revenue_currency?: 'CNY' | 'USDT' | ''
   revenue_cycle?: 'month' | 'quarter' | 'year' | ''
+  expire_time?: number
+  expire_cycle?: 'month' | 'quarter' | 'year' | ''
+  expire_auto_renew?: boolean
 }
 
 export interface XUIConfig {

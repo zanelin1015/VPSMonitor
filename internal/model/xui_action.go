@@ -3,8 +3,9 @@ package model
 import "time"
 
 const (
-	XUIActionAddOutbound    = "add_outbound"
-	XUIActionAddRoutingRule = "add_routing_rule"
+	XUIActionAddOutbound        = "add_outbound"
+	XUIActionAddRoutingRule     = "add_routing_rule"
+	XUIActionUpdateClientExpiry = "update_client_expiry"
 
 	XUIActionStatusPending   = "pending"
 	XUIActionStatusRunning   = "running"
