@@ -66,6 +66,7 @@ func (a *App) handleAgents(w http.ResponseWriter, r *http.Request) {
 		items = append(items, model.AgentListItem{
 			AgentID:      agent.AgentID,
 			AgentName:    agent.AgentName,
+			SortOrder:    agent.SortOrder,
 			Tags:         agent.Tags,
 			Renewal:      agent.Config.Renewal,
 			Entry:        agent.Config.Entry,

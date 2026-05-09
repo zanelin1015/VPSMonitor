@@ -40,6 +40,7 @@ func (s *SQLiteStore) init() error {
 		CREATE TABLE IF NOT EXISTS agents (
 			agent_id TEXT PRIMARY KEY,
 			agent_name TEXT NOT NULL DEFAULT '',
+			sort_order INTEGER NOT NULL DEFAULT 0,
 			agent_tags_json TEXT NOT NULL DEFAULT '[]',
 			agent_token TEXT NOT NULL DEFAULT '',
 			hostname TEXT NOT NULL DEFAULT '',
@@ -165,11 +166,70 @@ func (s *SQLiteStore) init() error {
 	if err := s.ensureColumn("agents", "agent_tags_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return err
 	}
+	if err := s.ensureColumn("agents", "sort_order", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.ensureAgentSortOrders(); err != nil {
+		return err
+	}
 	if err := s.ensureColumn("agents", "renewal_config_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
 		return err
 	}
 	if err := s.ensureColumn("agents", "entry_config_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (s *SQLiteStore) ensureAgentSortOrders() error {
+	rows, err := s.db.Query(`
+		SELECT agent_id
+		FROM agents
+		WHERE sort_order <= 0
+		ORDER BY created_at ASC, agent_id ASC
+	`)
+	if err != nil {
+		return fmt.Errorf("query agents without sort order: %w", err)
+	}
+	defer rows.Close()
+
+	agentIDs := make([]string, 0)
+	for rows.Next() {
+		var agentID string
+		if err := rows.Scan(&agentID); err != nil {
+			return fmt.Errorf("scan agent without sort order: %w", err)
+		}
+		agentIDs = append(agentIDs, agentID)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate agents without sort order: %w", err)
+	}
+	if len(agentIDs) == 0 {
+		return nil
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin sort order backfill: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	sortOrder, err := s.nextAgentSortOrderTx(tx)
+	if err != nil {
+		return err
+	}
+	for _, agentID := range agentIDs {
+		if _, err = tx.Exec(`UPDATE agents SET sort_order = ? WHERE agent_id = ?`, sortOrder, agentID); err != nil {
+			return fmt.Errorf("backfill sort order for %s: %w", agentID, err)
+		}
+		sortOrder++
+	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("commit sort order backfill: %w", err)
 	}
 	return nil
 }

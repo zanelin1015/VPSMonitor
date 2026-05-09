@@ -484,10 +484,11 @@ export default function App() {
     }
     try {
       const data = await fetchJSON<GlobalDashboardView>('/api/v1/dashboard')
-      setDashboardView(data)
-      setAgents(data.agents)
+      const sortedAgents = sortAgentsByOrder(data.agents || [])
+      setDashboardView({ ...data, agents: sortedAgents })
+      setAgents(sortedAgents)
       setAgentsError('')
-      const filtered = data.agents.filter((item) => hasSelectedTag(item.tags, selectedTag))
+      const filtered = sortedAgents.filter((item) => hasSelectedTag(item.tags, selectedTag))
       if (!filtered.length || (selectedAgentId && !filtered.some((item) => item.agent_id === selectedAgentId))) {
         setSelectedAgentId('')
       }
@@ -1682,7 +1683,7 @@ export default function App() {
                   <List
                     className={`agent-list agent-list-${agentViewMode}`}
                     dataSource={filteredAgents}
-                    renderItem={(item) => {
+                    renderItem={(item, index) => {
                       const active = item.agent_id === selectedAgentId
 	                      const renewalStatus = calculateRenewalStatus(item.renewal)
 	                      const trafficStatus = calculateTrafficStatus(item)
@@ -1691,7 +1692,9 @@ export default function App() {
 	                      const trafficDownloadLabel = trafficStatus.isPeriod ? '周期下载' : '总下载'
 	                      const cpuPercent = clampMetricPercent(item.summary.cpu)
                       const memPercent = calculateMemoryPercent(item.summary)
-                      const statusLevel = agentStatusLevel(item.summary.xray_state)
+                      const displayStatus = agentDisplayStatus(item)
+                      const statusLevel = displayStatus.level
+                      const displaySortOrder = item.sort_order || index + 1
                       const addressText = item.summary.public_ipv4 || item.summary.observed_ip || item.summary.hostname || item.agent_id
                       const countryCode = agentCountryCode(item)
                       const locationText = formatAgentLocation(item, countryCode)
@@ -1721,13 +1724,14 @@ export default function App() {
                                   <div className="agent-card-head">
                                     <div className="agent-title-line">
                                       <span className={`agent-state-dot agent-state-${statusLevel}`} />
+                                      <span className="agent-order-chip">#{displaySortOrder}</span>
                                       <span className="agent-flag" title={locationText || countryCode || '未知地区'}>
                                         {countryFlag(countryCode)}
                                       </span>
                                       <span className="agent-name">{item.agent_name || item.agent_id}</span>
                                     </div>
                                     <span className={`agent-status-pill agent-status-${statusLevel}`}>
-                                      {item.summary.xray_state || (item.reported_at ? 'unknown' : 'waiting')}
+                                      {displayStatus.label}
                                     </span>
                                   </div>
                                   <div className="agent-meta agent-location agent-list-location">
@@ -1793,13 +1797,14 @@ export default function App() {
                                 <div className="agent-card-head">
                                   <div className="agent-title-line">
                                     <span className={`agent-state-dot agent-state-${statusLevel}`} />
+                                    <span className="agent-order-chip">#{displaySortOrder}</span>
                                     <span className="agent-flag" title={locationText || countryCode || '未知地区'}>
                                       {countryFlag(countryCode)}
                                     </span>
                                     <span className="agent-name">{item.agent_name || item.agent_id}</span>
                                   </div>
                                   <span className={`agent-status-pill agent-status-${statusLevel}`}>
-                                    {item.summary.xray_state || (item.reported_at ? 'unknown' : 'waiting')}
+                                    {displayStatus.label}
                                   </span>
                                 </div>
                                 <div className="agent-meta agent-location">
@@ -2021,6 +2026,7 @@ export default function App() {
                         configError,
                         onSave: saveManagedConfigSection,
                         onAgentNameChange: (value) => updateManagedConfig((current) => ({ ...current, agent_name: value })),
+                        onSortOrderChange: (value) => updateManagedConfig((current) => ({ ...current, sort_order: value })),
                         tagInputText,
                         onTagsTextChange: (value) => {
                           setTagInputText(value)
@@ -2322,6 +2328,7 @@ interface ConfigPanelProps {
   configError: string
   onSave: (section: ConfigSectionKey) => void
   onAgentNameChange: (value: string) => void
+  onSortOrderChange: (value: number) => void
   tagInputText: string
   onTagsTextChange: (value: string) => void
   onRenewalChange: (patch: Partial<VPSRenewalConfig>) => void
@@ -2342,6 +2349,7 @@ function renderManagedConfigPanel(props: ConfigPanelProps) {
     configError,
     onSave,
     onAgentNameChange,
+    onSortOrderChange,
     tagInputText,
     onTagsTextChange,
     onRenewalChange,
@@ -2434,13 +2442,23 @@ function renderManagedConfigPanel(props: ConfigPanelProps) {
           {sectionSaveButton('client', '保存 Client 信息')}
         </div>
         <Row gutter={[16, 16]}>
-          <Col xs={24} md={12}>
+          <Col xs={24} md={8}>
             <Text type="secondary">Agent ID</Text>
             <Input value={managedConfig.agent_id || selectedAgent.agent_id} disabled />
           </Col>
-          <Col xs={24} md={12}>
+          <Col xs={24} md={8}>
             <Text type="secondary">展示名称</Text>
             <Input value={managedConfig.agent_name || ''} onChange={(event) => onAgentNameChange(event.target.value)} />
+          </Col>
+          <Col xs={24} md={8}>
+            <Text type="secondary">排序序号</Text>
+            <InputNumber
+              style={{ width: '100%' }}
+              min={1}
+              precision={0}
+              value={managedConfig.sort_order || selectedAgent.sort_order || 1}
+              onChange={(value) => onSortOrderChange(Number(value || selectedAgent.sort_order || 1))}
+            />
           </Col>
           <Col xs={24}>
             <Text type="secondary">标签</Text>
@@ -3954,6 +3972,26 @@ function mergeRealtimeMetricsIntoAgents<T extends AgentListItem>(agents: T[], me
   return changed ? next : agents
 }
 
+function sortAgentsByOrder<T extends AgentListItem>(agents: T[]): T[] {
+  return [...agents].sort((left, right) => {
+    const leftOrder = Number(left.sort_order || 0)
+    const rightOrder = Number(right.sort_order || 0)
+    if (leftOrder > 0 || rightOrder > 0) {
+      if (leftOrder <= 0) return 1
+      if (rightOrder <= 0) return -1
+      if (leftOrder !== rightOrder) return leftOrder - rightOrder
+    }
+    const leftRegistered = Date.parse(left.registered_at || '')
+    const rightRegistered = Date.parse(right.registered_at || '')
+    if (!Number.isNaN(leftRegistered) || !Number.isNaN(rightRegistered)) {
+      if (Number.isNaN(leftRegistered)) return 1
+      if (Number.isNaN(rightRegistered)) return -1
+      if (leftRegistered !== rightRegistered) return leftRegistered - rightRegistered
+    }
+    return left.agent_id.localeCompare(right.agent_id)
+  })
+}
+
 function mergeRealtimeSummary(current: VPSSummary, realtime: VPSSummary): VPSSummary {
   return {
     ...current,
@@ -4541,6 +4579,7 @@ function buildSectionSavePayload(base: ManagedAgentConfig, draft: ManagedAgentCo
     ...base,
     agent_id: agentID,
     agent_name: base.agent_name || draft.agent_name || agentID,
+    sort_order: base.sort_order || draft.sort_order || 0,
     tags: [...(base.tags || [])],
     renewal: { ...(base.renewal || {}) },
     entry: {
@@ -4552,6 +4591,7 @@ function buildSectionSavePayload(base: ManagedAgentConfig, draft: ManagedAgentCo
   switch (section) {
     case 'client':
       payload.agent_name = draft.agent_name || agentID
+      payload.sort_order = Number(draft.sort_order || base.sort_order || 0)
       payload.tags = [...(draft.tags || [])]
       break
     case 'renewal':
@@ -4578,6 +4618,7 @@ function mergeSavedSectionIntoDraft(draft: ManagedAgentConfig, saved: ManagedAge
   switch (section) {
     case 'client':
       next.agent_name = saved.agent_name
+      next.sort_order = saved.sort_order
       next.tags = [...(saved.tags || [])]
       break
     case 'renewal':
@@ -4921,6 +4962,7 @@ function createEmptyManagedConfig(agentID: string, agentName?: string): ManagedA
   return {
     agent_id: agentID,
     agent_name: agentName || agentID,
+    sort_order: 0,
     tags: [],
     renewal: {
       enabled: false,
@@ -4955,6 +4997,7 @@ function normalizeManagedConfig(config: ManagedAgentConfig, agentID: string, age
   return {
     agent_id: config.agent_id || base.agent_id,
     agent_name: config.agent_name || agentName || base.agent_name,
+    sort_order: Number(config.sort_order || base.sort_order || 0),
     tags: parseTagInput((config.tags || []).join(',')),
     renewal: normalizeRenewalConfig(config.renewal || base.renewal),
     entry: normalizeEntryConfig(config.entry || base.entry),
@@ -5189,6 +5232,23 @@ function agentStatusLevel(state?: string): 'ok' | 'warn' | 'bad' | 'neutral' {
     default:
       return 'neutral'
   }
+}
+
+function agentDisplayStatus(agent: AgentListItem): { label: string; level: 'ok' | 'warn' | 'bad' | 'neutral' } {
+  const xrayState = (agent.summary.xray_state || '').trim()
+  if (xrayState) {
+    return { label: xrayState, level: agentStatusLevel(xrayState) }
+  }
+  if (agent.summary.last_collection_err) {
+    return { label: '采集异常', level: 'bad' }
+  }
+  if (agent.realtime_at) {
+    return { label: 'client 在线', level: 'ok' }
+  }
+  if (agent.reported_at) {
+    return { label: 'x-ui 未知', level: 'neutral' }
+  }
+  return { label: '等待上报', level: 'neutral' }
 }
 
 function countryFlag(code?: string): string {

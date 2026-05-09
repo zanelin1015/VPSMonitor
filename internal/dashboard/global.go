@@ -62,6 +62,7 @@ func BuildGlobalDashboard(agents []model.AgentRecord, snapshots []model.AgentSna
 		view := model.DashboardAgentView{
 			AgentID:      agent.AgentID,
 			AgentName:    agent.AgentName,
+			SortOrder:    agent.SortOrder,
 			Tags:         cloneStrings(agent.Tags),
 			Renewal:      agent.Config.Renewal,
 			Entry:        agent.Config.Entry,

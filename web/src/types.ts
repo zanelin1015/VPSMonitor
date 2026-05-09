@@ -21,6 +21,7 @@ export interface VPSSummary {
 export interface AgentListItem {
   agent_id: string
   agent_name?: string
+  sort_order?: number
   tags?: string[]
   renewal?: VPSRenewalConfig
   entry?: AgentEntryConfig
@@ -60,6 +61,7 @@ export interface XUIConfig {
 export interface ManagedAgentConfig {
   agent_id?: string
   agent_name?: string
+  sort_order?: number
   tags?: string[]
   renewal?: VPSRenewalConfig
   entry?: AgentEntryConfig

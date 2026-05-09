@@ -162,6 +162,7 @@ type NezhaSnapshot struct {
 type AgentListItem struct {
 	AgentID      string           `json:"agent_id"`
 	AgentName    string           `json:"agent_name,omitempty"`
+	SortOrder    int              `json:"sort_order,omitempty"`
 	Tags         []string         `json:"tags,omitempty"`
 	Renewal      VPSRenewalConfig `json:"renewal,omitempty"`
 	Entry        AgentEntryConfig `json:"entry,omitempty"`

@@ -118,11 +118,15 @@ func (s *SQLiteStore) SaveSnapshot(snapshot model.AgentSnapshot) error {
 	if err != nil {
 		return err
 	}
+	sortOrder, err := s.nextAgentSortOrderTx(tx)
+	if err != nil {
+		return err
+	}
 	_, err = tx.Exec(`
 		INSERT INTO agents (
-			agent_id, agent_name, agent_tags_json, agent_token, hostname, public_ipv4, public_ipv6,
+			agent_id, agent_name, sort_order, agent_tags_json, agent_token, hostname, public_ipv4, public_ipv6,
 			created_at, updated_at, last_seen_at, xui_config_json, nezha_config_json, renewal_config_json, entry_config_json
-		) VALUES (?, ?, '[]', '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, '[]', '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(agent_id) DO UPDATE SET
 			agent_name = CASE WHEN excluded.agent_name <> '' THEN excluded.agent_name ELSE agents.agent_name END,
 			hostname = CASE WHEN excluded.hostname <> '' THEN excluded.hostname ELSE agents.hostname END,
@@ -133,6 +137,7 @@ func (s *SQLiteStore) SaveSnapshot(snapshot model.AgentSnapshot) error {
 	`,
 		snapshot.AgentID,
 		snapshot.AgentName,
+		sortOrder,
 		summary.Hostname,
 		summary.PublicIPv4,
 		summary.PublicIPv6,

@@ -165,6 +165,21 @@ normalize_listen_addr() {
   fi
 }
 
+absolute_path() {
+  local value="$1"
+  [[ -n "$value" ]] || die "Path cannot be empty."
+  if [[ "$value" == "/" ]]; then
+    echo "/"
+    return
+  fi
+  value="${value%/}"
+  if [[ "$value" == /* ]]; then
+    echo "$value"
+  else
+    echo "$(pwd -P)/$value"
+  fi
+}
+
 listen_port() {
   local value="$1"
   if [[ "$value" =~ ^:([0-9]+)$ ]]; then
@@ -343,6 +358,7 @@ install_server() {
   source_dir="$(fetch_bundle server "$arch")"
   local install_dir="${VPSMONITOR_SERVER_DIR:-$prefix/server}"
   prompt_default install_dir "Install directory for bridge-server" "$install_dir"
+  install_dir="$(absolute_path "$install_dir")"
   local config_path="$install_dir/config/server.json"
   local data_dir="$install_dir/data"
   local listen_addr=":8090"
@@ -361,6 +377,7 @@ install_server() {
       prompt_default listen_addr "Server listen address, e.g. :8090 or 127.0.0.1:8090" "$listen_addr"
       listen_addr="$(normalize_listen_addr "$listen_addr")"
       prompt_default data_dir "Server data directory" "$data_dir"
+      data_dir="$(absolute_path "$data_dir")"
       prompt_default registration_token "Client registration token" "$registration_token"
       prompt_default admin_username "Initial admin username" "$admin_username"
       prompt_secret_or_random admin_password "Initial admin password"
@@ -373,6 +390,7 @@ install_server() {
     prompt_default listen_addr "Server listen address, e.g. :8090 or 127.0.0.1:8090" "$listen_addr"
     listen_addr="$(normalize_listen_addr "$listen_addr")"
     prompt_default data_dir "Server data directory" "$data_dir"
+    data_dir="$(absolute_path "$data_dir")"
     prompt_default registration_token "Client registration token" "$registration_token"
     prompt_default admin_username "Initial admin username" "$admin_username"
     prompt_secret_or_random admin_password "Initial admin password"
@@ -413,6 +431,7 @@ install_client() {
   source_dir="$(fetch_bundle client "$arch")"
   local install_dir="${VPSMONITOR_CLIENT_DIR:-$prefix/client}"
   prompt_default install_dir "Install directory for bridge-client" "$install_dir"
+  install_dir="$(absolute_path "$install_dir")"
   local config_path="$install_dir/config/client.json"
   local server_url="${VPSMONITOR_SERVER_URL:-http://SERVER_IP:8090}"
   local registration_token="${VPSMONITOR_REGISTRATION_TOKEN:-}"
