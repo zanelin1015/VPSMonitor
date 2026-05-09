@@ -4416,7 +4416,7 @@ function buildWindowsPowerShellInstallCommand(form: ClientInstallCommandForm): s
     ['VPSMONITOR_ASSUME_YES', 'true'],
   ]
   const envText = envValues.map(([key, value]) => `$env:${key}=${powerShellQuote(value)}`).join('; ')
-  return `${envText}; iwr -UseBasicParsing ${powerShellQuote(scriptURL)} -OutFile vpsmonitor-install.ps1; powershell -NoProfile -ExecutionPolicy Bypass -File .\\vpsmonitor-install.ps1 client`
+  return `${envText}; $script=Join-Path $env:TEMP 'vpsmonitor-install.ps1'; Remove-Item -Force $script -ErrorAction SilentlyContinue; iwr -UseBasicParsing -Headers @{'Cache-Control'='no-cache'} ${powerShellQuote(scriptURL)} -OutFile $script; Select-String -Path $script -Pattern 'InstallerVersion' | Write-Host; powershell -NoProfile -ExecutionPolicy Bypass -File $script client`
 }
 
 function buildWindowsCMDInstallCommand(form: ClientInstallCommandForm): string {
@@ -4425,7 +4425,11 @@ function buildWindowsCMDInstallCommand(form: ClientInstallCommandForm): string {
 
 function windowsInstallScriptURL(scriptURL: string): string {
   const value = (scriptURL || defaultClientInstallCommandForm().install_script_url).trim()
-  return value.endsWith('.sh') ? `${value.slice(0, -3)}.ps1` : value
+  const psURL = value.endsWith('.sh') ? `${value.slice(0, -3)}.ps1` : value
+  if (psURL.includes('raw.githubusercontent.com') && !psURL.includes('?')) {
+    return `${psURL}?v=2026050902`
+  }
+  return psURL
 }
 
 function shellQuote(value: string): string {
