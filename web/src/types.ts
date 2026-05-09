@@ -58,6 +58,9 @@ export interface VPSRenewalConfig {
   cost_amount?: number
   cost_currency?: string
   cost_cycle?: 'month' | 'quarter' | 'year' | ''
+  revenue_amount?: number
+  revenue_currency?: string
+  revenue_cycle?: 'month' | 'quarter' | 'year' | ''
   traffic_limit_bytes?: number
   bandwidth_mbps?: number
   traffic_baseline_bytes?: number

@@ -25,6 +25,9 @@ type VPSRenewalConfig struct {
 	CostAmount                 float64 `json:"cost_amount,omitempty"`
 	CostCurrency               string  `json:"cost_currency,omitempty"`
 	CostCycle                  string  `json:"cost_cycle,omitempty"`
+	RevenueAmount              float64 `json:"revenue_amount,omitempty"`
+	RevenueCurrency            string  `json:"revenue_currency,omitempty"`
+	RevenueCycle               string  `json:"revenue_cycle,omitempty"`
 	TrafficLimitBytes          uint64  `json:"traffic_limit_bytes,omitempty"`
 	BandwidthMbps              float64 `json:"bandwidth_mbps,omitempty"`
 	TrafficBaselineBytes       uint64  `json:"traffic_baseline_bytes,omitempty"`

@@ -79,6 +79,7 @@ import {
   COMMON_COST_CURRENCIES,
   COST_CURRENCY_STORAGE_KEY,
   DEFAULT_COST_CURRENCY,
+  REVENUE_CURRENCIES,
   type CurrencyCode,
   type ExchangeRatesState,
   defaultExchangeRatesState,
@@ -86,7 +87,7 @@ import {
   mergeCurrencyOptions,
   normalizeCurrencyCode,
   readStoredCostCurrency,
-  summarizeMonthlyCost,
+  summarizeMonthlyFinance,
 } from './lib/currency'
 import {
   bytesToGB,
@@ -1089,7 +1090,7 @@ export default function App() {
   const offlineAgentCount = Math.max(scopedAgentCount - onlineAgentCount, 0)
   const xuiErrorAgentCount = filteredAgents.filter((agent) => Boolean(agent.summary.last_collection_err)).length
   const scopedNetwork = summarizeAgentNetwork(filteredAgents)
-  const monthlyCost = summarizeMonthlyCost(filteredAgents, costCurrency, exchangeRates)
+  const monthlyFinance = summarizeMonthlyFinance(filteredAgents, costCurrency, exchangeRates)
   const filteredTagLinks = (dashboardView?.links || []).filter((link) => topologyMatchesSelectedTag(link, selectedTag))
   const filteredChains = (dashboardView?.client_chains || []).filter((chain) => chainMatchesSelectedTag(chain, selectedTag))
 
@@ -1839,7 +1840,7 @@ export default function App() {
                   </section>
                   <section className="overview-stat-card overview-cost-card">
                     <div className="overview-stat-title overview-cost-title">
-                      <span>月花销</span>
+                      <span>财务月览</span>
                       <Select
                         size="small"
                         value={costCurrency}
@@ -1847,9 +1848,14 @@ export default function App() {
                         onChange={(value) => setCostCurrency(value as CurrencyCode)}
                       />
                     </div>
-                    <div className="overview-cost-value">{formatMoney(monthlyCost.total, costCurrency)}</div>
+                    <div className="overview-cost-value">{formatMoney(monthlyFinance.profitTotal, costCurrency)}</div>
                     <div className="overview-stat-foot">
-                      {exchangeRates.loading ? '汇率加载中' : monthlyCost.missingCount ? `${monthlyCost.count} 台已配置 · ${monthlyCost.missingCount} 台缺少费用/汇率` : `${monthlyCost.count} 台已配置`}
+                      营收 {formatMoney(monthlyFinance.revenueTotal, costCurrency)} · 花销 {formatMoney(monthlyFinance.costTotal, costCurrency)}
+                    </div>
+                    <div className="overview-stat-foot">
+                      {exchangeRates.loading
+                        ? '汇率加载中'
+                        : `营收 ${monthlyFinance.revenueCount} 台 · 花销 ${monthlyFinance.costCount} 台${monthlyFinance.missingRevenueCount || monthlyFinance.missingCostCount ? ' · 部分缺少金额/汇率' : ''}`}
                       {exchangeRates.date ? ` · 汇率 ${exchangeRates.date}` : ''}
                     </div>
                     {exchangeRates.error ? <div className="overview-stat-foot">汇率加载失败：{exchangeRates.error}</div> : null}
@@ -2884,6 +2890,39 @@ function renderManagedConfigPanel(props: ConfigPanelProps) {
                 { value: 'year', label: '每年' },
               ]}
               onChange={(value) => onRenewalChange({ cost_cycle: value })}
+            />
+          </Col>
+          <Col xs={24} md={8}>
+            <Text type="secondary">客户端收费金额</Text>
+            <InputNumber
+              style={{ width: '100%' }}
+              min={0}
+              precision={2}
+              value={managedConfig.renewal?.revenue_amount || 0}
+              onChange={(value) => onRenewalChange({ revenue_amount: Number(value || 0) })}
+              placeholder="例如 30"
+            />
+          </Col>
+          <Col xs={24} md={8}>
+            <Text type="secondary">客户端收费币种</Text>
+            <Select
+              style={{ width: '100%' }}
+              value={managedConfig.renewal?.revenue_currency || 'CNY'}
+              options={REVENUE_CURRENCIES.map((currency) => ({ value: currency, label: currency }))}
+              onChange={(value) => onRenewalChange({ revenue_currency: value })}
+            />
+          </Col>
+          <Col xs={24} md={8}>
+            <Text type="secondary">客户端收费周期</Text>
+            <Select
+              style={{ width: '100%' }}
+              value={managedConfig.renewal?.revenue_cycle || 'month'}
+              options={[
+                { value: 'month', label: '每月' },
+                { value: 'quarter', label: '每季' },
+                { value: 'year', label: '每年' },
+              ]}
+              onChange={(value) => onRenewalChange({ revenue_cycle: value })}
             />
           </Col>
           <Col xs={24} md={8}>
@@ -5117,6 +5156,9 @@ function normalizeRenewalConfig(config?: VPSRenewalConfig): VPSRenewalConfig {
   const costAmount = Math.max(0, Number(config?.cost_amount || 0))
   const costCurrency = normalizeCurrencyCode(config?.cost_currency)
   const costCycle = config?.cost_cycle === 'quarter' || config?.cost_cycle === 'year' ? config.cost_cycle : 'month'
+  const revenueAmount = Math.max(0, Number(config?.revenue_amount || 0))
+  const revenueCurrency = config?.revenue_currency === 'USDT' ? 'USDT' : 'CNY'
+  const revenueCycle = config?.revenue_cycle === 'quarter' || config?.revenue_cycle === 'year' ? config.revenue_cycle : 'month'
   return {
     enabled: Boolean(config?.enabled || config?.start_date || config?.expire_date),
     start_date: config?.start_date || '',
@@ -5126,6 +5168,9 @@ function normalizeRenewalConfig(config?: VPSRenewalConfig): VPSRenewalConfig {
     cost_amount: costAmount,
     cost_currency: costCurrency,
     cost_cycle: costCycle,
+    revenue_amount: revenueAmount,
+    revenue_currency: revenueCurrency,
+    revenue_cycle: revenueCycle,
     traffic_limit_bytes: trafficLimitBytes,
     bandwidth_mbps: Math.max(0, Number(config?.bandwidth_mbps || 0)),
     traffic_baseline_bytes: trafficLimitBytes > 0 ? Math.max(0, Number(config?.traffic_baseline_bytes || 0)) : 0,
@@ -5339,6 +5384,9 @@ function createEmptyManagedConfig(agentID: string, agentName?: string): ManagedA
       cost_amount: 0,
       cost_currency: DEFAULT_COST_CURRENCY,
       cost_cycle: 'month',
+      revenue_amount: 0,
+      revenue_currency: 'CNY',
+      revenue_cycle: 'month',
       traffic_limit_bytes: 0,
       bandwidth_mbps: 0,
       traffic_baseline_bytes: 0,

@@ -59,7 +59,7 @@ export function clientTrafficTotal(client: XUIClientView): number {
 function buildTrafficMeter(used: number, total: number): TrafficMeterStatus {
   if (!total) {
     return {
-      label: formatBytes(used),
+      label: `${formatBytes(used)} / 无上限`,
       level: 'ok',
       used,
       total,
