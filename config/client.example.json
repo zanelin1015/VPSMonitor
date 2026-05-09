@@ -1,0 +1,8 @@
+{
+  "registration_token": "replace-with-registration-token",
+  "agent_token": "",
+  "server_url": "http://your-server-ip:8090",
+  "server_skip_tls_verify": false,
+  "poll_interval": "30s",
+  "request_timeout_seconds": 15
+}

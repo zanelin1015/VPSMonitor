@@ -1,0 +1,12 @@
+{
+  "listen_addr": ":8090",
+  "data_dir": "./data",
+  "database_path": "./data/bridge.db",
+  "credential_key_path": "./data/credential.key",
+  "registration_token": "replace-with-registration-token",
+  "admin_username": "admin",
+  "admin_password": "replace-with-admin-password",
+  "snapshot_retention_days": 30,
+  "snapshot_retention_count": 5000,
+  "agents": []
+}

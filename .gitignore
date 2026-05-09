@@ -1,0 +1,13 @@
+/.cache/
+/dist/
+/data/
+web/node_modules/
+web/.vite/
+web/*.tsbuildinfo
+web/vite.config.js
+web/vite.config.d.ts
+*.db
+*.db-shm
+*.db-wal
+config/client.json
+config/server.json

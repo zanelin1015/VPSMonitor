@@ -1,0 +1,77 @@
+package model
+
+import (
+	"time"
+
+	"bridge-core/internal/config"
+)
+
+type ManagedAgentConfig struct {
+	AgentID   string           `json:"agent_id,omitempty"`
+	AgentName string           `json:"agent_name,omitempty"`
+	Tags      []string         `json:"tags,omitempty"`
+	Renewal   VPSRenewalConfig `json:"renewal,omitempty"`
+	Entry     AgentEntryConfig `json:"entry,omitempty"`
+	XUI       config.XUIConfig `json:"xui"`
+}
+
+type VPSRenewalConfig struct {
+	Enabled                    bool    `json:"enabled,omitempty"`
+	StartDate                  string  `json:"start_date,omitempty"`
+	ExpireDate                 string  `json:"expire_date,omitempty"`
+	Cycle                      string  `json:"cycle,omitempty"`
+	AutoRenew                  bool    `json:"auto_renew,omitempty"`
+	TrafficLimitBytes          uint64  `json:"traffic_limit_bytes,omitempty"`
+	BandwidthMbps              float64 `json:"bandwidth_mbps,omitempty"`
+	TrafficBaselineBytes       uint64  `json:"traffic_baseline_bytes,omitempty"`
+	TrafficSentBaselineBytes   uint64  `json:"traffic_sent_baseline_bytes,omitempty"`
+	TrafficRecvBaselineBytes   uint64  `json:"traffic_recv_baseline_bytes,omitempty"`
+	TrafficBaselinePeriodStart string  `json:"traffic_baseline_period_start,omitempty"`
+}
+
+type AgentEntryConfig struct {
+	Addresses []string            `json:"addresses,omitempty"`
+	Mappings  []AgentEntryMapping `json:"mappings,omitempty"`
+}
+
+type AgentEntryMapping struct {
+	Address      string `json:"address,omitempty"`
+	ExternalPort int    `json:"external_port,omitempty"`
+	InternalPort int    `json:"internal_port,omitempty"`
+	Protocol     string `json:"protocol,omitempty"`
+	Note         string `json:"note,omitempty"`
+}
+
+type AgentRegisterRequest struct {
+	AgentID    string             `json:"agent_id"`
+	AgentName  string             `json:"agent_name,omitempty"`
+	Hostname   string             `json:"hostname,omitempty"`
+	PublicIPv4 string             `json:"public_ipv4,omitempty"`
+	PublicIPv6 string             `json:"public_ipv6,omitempty"`
+	SeedConfig ManagedAgentConfig `json:"seed_config"`
+}
+
+type AgentRegisterResponse struct {
+	AgentID      string             `json:"agent_id"`
+	AgentName    string             `json:"agent_name,omitempty"`
+	AgentToken   string             `json:"agent_token"`
+	RegisteredAt time.Time          `json:"registered_at"`
+	Config       ManagedAgentConfig `json:"config"`
+}
+
+type AgentRecord struct {
+	AgentID      string             `json:"agent_id"`
+	AgentName    string             `json:"agent_name,omitempty"`
+	Tags         []string           `json:"tags,omitempty"`
+	AgentToken   string             `json:"-"`
+	Hostname     string             `json:"hostname,omitempty"`
+	PublicIPv4   string             `json:"public_ipv4,omitempty"`
+	PublicIPv6   string             `json:"public_ipv6,omitempty"`
+	RegisteredAt time.Time          `json:"registered_at"`
+	UpdatedAt    time.Time          `json:"updated_at"`
+	LastSeenAt   *time.Time         `json:"last_seen_at,omitempty"`
+	ReportedAt   *time.Time         `json:"reported_at,omitempty"`
+	Summary      VPSSummary         `json:"summary"`
+	HasConfig    bool               `json:"has_config"`
+	Config       ManagedAgentConfig `json:"config,omitempty"`
+}
