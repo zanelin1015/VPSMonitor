@@ -1,8 +1,6 @@
 :root {
   color-scheme: light;
-  --custom-bg-image: url("https://pic.netbian.com/uploads/allimg/260211/223628-17708205888f2f.jpg");
-  --cursor-default: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cdefs%3E%3Cfilter id='g' x='-50%25' y='-50%25' width='200%25' height='200%25'%3E%3CfeGaussianBlur stdDeviation='1.5' result='b'/%3E%3CfeMerge%3E%3CfeMergeNode in='b'/%3E%3CfeMergeNode in='SourceGraphic'/%3E%3C/feMerge%3E%3C/filter%3E%3C/defs%3E%3Cpath fill='%23ffffff' stroke='%2316a34a' stroke-width='1.6' filter='url(%23g)' d='M7 3.5 21.5 14 14 15.4 10.4 23.4z'/%3E%3Ccircle cx='20.5' cy='6.5' r='2.2' fill='%23ff9fbd'/%3E%3C/svg%3E") 7 4;
-  --cursor-pointer: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='30' height='30' viewBox='0 0 30 30'%3E%3Cdefs%3E%3Cfilter id='g' x='-50%25' y='-50%25' width='200%25' height='200%25'%3E%3CfeGaussianBlur stdDeviation='1.4' result='b'/%3E%3CfeMerge%3E%3CfeMergeNode in='b'/%3E%3CfeMergeNode in='SourceGraphic'/%3E%3C/feMerge%3E%3C/filter%3E%3C/defs%3E%3Cpath fill='%23fff7fb' stroke='%23ff6f9f' stroke-width='1.7' filter='url(%23g)' d='M14.7 4.4 17.8 11l7.2 1-5.2 5 1.3 7.1-6.4-3.4-6.4 3.4 1.3-7.1-5.2-5 7.2-1z'/%3E%3C/svg%3E") 14 14;
+  --custom-bg-image: none;
   --bg: #f7fbf8;
   --surface: rgba(255, 255, 255, 0.34);
   --surface-soft: rgba(255, 255, 255, 0.20);
@@ -89,7 +87,6 @@ body {
     "Noto Sans SC",
     sans-serif;
   text-rendering: optimizeLegibility;
-  cursor: var(--cursor-default), auto;
 }
 
 .page-shell {
@@ -1708,7 +1705,7 @@ a,
 .route-link,
 .route-rule-link,
 .outbound-card {
-  cursor: var(--cursor-pointer), pointer !important;
+  cursor: pointer !important;
 }
 
 input,
@@ -1718,111 +1715,6 @@ textarea,
 .ant-input-number-input,
 .ant-select-selection-search-input {
   cursor: text !important;
-}
-
-.js-cursor-container {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.click-heart,
-.cursor-star,
-.sakura-petal {
-  position: fixed;
-  display: inline-flex;
-  width: 1em;
-  height: 1em;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-  user-select: none;
-  will-change: transform, opacity;
-}
-
-.click-heart {
-  color: #ff6f9f;
-  font-size: 22px;
-  line-height: 1;
-  text-shadow: 0 6px 16px rgba(255, 84, 135, 0.32);
-  transform: translate(-50%, -50%);
-  animation: heart-pop 1.15s ease-out forwards;
-}
-
-.cursor-star {
-  color: #fff1a8;
-  font-size: 15px;
-  line-height: 1;
-  text-shadow:
-    0 0 10px rgba(255, 232, 124, 0.9),
-    0 0 18px rgba(255, 153, 204, 0.36);
-  transform: translate(-50%, -50%);
-  animation: star-fade 0.9s ease-out forwards;
-}
-
-.sakura-petal {
-  top: -36px;
-  color: #ffc0d6;
-  opacity: 0.85;
-  text-shadow: 0 5px 14px rgba(255, 134, 178, 0.28);
-  animation-name: sakura-fall;
-  animation-timing-function: linear;
-  animation-fill-mode: forwards;
-}
-
-@keyframes heart-pop {
-  0% {
-    opacity: 0;
-    transform: translate(-50%, -45%) scale(0.5) rotate(-14deg);
-  }
-
-  22% {
-    opacity: 1;
-    transform: translate(-50%, -82%) scale(1.18) rotate(8deg);
-  }
-
-  100% {
-    opacity: 0;
-    transform: translate(-50%, -168%) scale(0.82) rotate(20deg);
-  }
-}
-
-@keyframes star-fade {
-  0% {
-    opacity: 0.95;
-    transform: translate(-50%, -50%) scale(0.8) rotate(0deg);
-  }
-
-  100% {
-    opacity: 0;
-    transform: translate(-50%, -92%) scale(0.2) rotate(90deg);
-  }
-}
-
-@keyframes sakura-fall {
-  0% {
-    opacity: 0;
-    transform: translate3d(0, -24px, 0) rotate(0deg);
-  }
-
-  12% {
-    opacity: 0.9;
-  }
-
-  100% {
-    opacity: 0;
-    transform: translate3d(var(--sakura-drift, 80px), calc(100vh + 60px), 0) rotate(420deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .click-heart,
-  .cursor-star,
-  .sakura-petal {
-    display: none;
-  }
 }
 
 @media (max-width: 1120px) {

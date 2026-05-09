@@ -108,7 +108,7 @@ import {
 } from './lib/traffic'
 
 const { Paragraph, Text, Title } = Typography
-const DEFAULT_BACKGROUND_IMAGE = 'https://pic.netbian.com/uploads/allimg/260211/223628-17708205888f2f.jpg'
+const DEFAULT_BACKGROUND_IMAGE = ''
 const DASHBOARD_AUTO_REFRESH_MS = 20_000
 const AGENT_VIEW_MODE_STORAGE_PREFIX = 'bridge-core.agent-view-mode.'
 const XUI_ACTION_KINDS = [
@@ -1173,8 +1173,6 @@ export default function App() {
   const selectedTagView = selectedTag ? dashboardView?.tags.find((tag) => tag.tag === selectedTag) : undefined
   const scopedAgentCount = dashboardView ? selectedTagView?.agent_count ?? filteredAgents.length : filteredAgents.length
   const scopedNodeCount = dashboardView ? selectedTagView?.node_count ?? dashboardView.totals.node_count : 0
-  const scopedClientCount = dashboardView ? selectedTagView?.client_count ?? dashboardView.totals.client_count : 0
-  const scopedOnlineClientCount = dashboardView ? selectedTagView?.online_client_count ?? dashboardView.totals.online_client_count : 0
   const onlineAgentCount = filteredAgents.filter(isAgentRunning).length
   const offlineAgentCount = Math.max(scopedAgentCount - onlineAgentCount, 0)
   const xuiErrorAgentCount = filteredAgents.filter((agent) => Boolean(agent.summary.last_collection_err)).length
@@ -1988,7 +1986,6 @@ export default function App() {
                       <span className="overview-stat-dot" />
                       <strong>{onlineAgentCount}</strong>
                     </div>
-                    <div className="overview-stat-foot">以 client 心跳/实时连接判断 · 节点客户端 {scopedOnlineClientCount}/{scopedClientCount}</div>
                   </section>
                   <section className="overview-stat-card overview-stat-red">
                     <div className="overview-stat-title">Client 离线</div>
@@ -2022,12 +2019,6 @@ export default function App() {
                     <div className="overview-cost-value">{formatMoney(monthlyFinance.profitTotal, costCurrency)}</div>
                     <div className="overview-stat-foot">
                       营收 {formatMoney(monthlyFinance.revenueTotal, costCurrency)} · 花销 {formatMoney(monthlyFinance.costTotal, costCurrency)}
-                    </div>
-                    <div className="overview-stat-foot">
-                      {exchangeRates.loading
-                        ? '汇率加载中'
-                        : `营收 ${monthlyFinance.revenueCount} 台 · 花销 ${monthlyFinance.costCount} 台${monthlyFinance.missingRevenueCount || monthlyFinance.missingCostCount ? ' · 部分缺少金额/汇率' : ''}`}
-                      {exchangeRates.date ? ` · 汇率 ${exchangeRates.date}` : ''}
                     </div>
                     {exchangeRates.error ? <div className="overview-stat-foot">汇率加载失败：{exchangeRates.error}</div> : null}
                   </section>
@@ -2800,7 +2791,7 @@ function appendCustomNode(node: Node) {
 
 function applyCustomBackgroundImage() {
   const backgroundImage = window.CustomBackgroundImage || DEFAULT_BACKGROUND_IMAGE
-  document.documentElement.style.setProperty('--custom-bg-image', `url("${backgroundImage}")`)
+  document.documentElement.style.setProperty('--custom-bg-image', backgroundImage ? `url("${backgroundImage}")` : 'none')
 }
 
 interface LoginScreenProps {
