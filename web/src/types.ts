@@ -21,6 +21,7 @@ export interface VPSSummary {
 export interface AgentListItem {
   agent_id: string
   agent_name?: string
+  client_version?: string
   sort_order?: number
   tags?: string[]
   renewal?: VPSRenewalConfig
@@ -118,6 +119,16 @@ export interface AdminUser {
 
 export interface AdminAuthResponse {
   user: AdminUser
+  system?: SystemInfo
+}
+
+export interface SystemInfo {
+  role: string
+  version: string
+  build_time?: string
+  git_commit?: string
+  go_version?: string
+  platform?: string
 }
 
 

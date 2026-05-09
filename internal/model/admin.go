@@ -19,7 +19,17 @@ type AdminLoginRequest struct {
 }
 
 type AdminLoginResponse struct {
-	User AdminUser `json:"user"`
+	User   AdminUser  `json:"user"`
+	System SystemInfo `json:"system,omitempty"`
+}
+
+type SystemInfo struct {
+	Role      string `json:"role"`
+	Version   string `json:"version"`
+	BuildTime string `json:"build_time,omitempty"`
+	GitCommit string `json:"git_commit,omitempty"`
+	GoVersion string `json:"go_version,omitempty"`
+	Platform  string `json:"platform,omitempty"`
 }
 
 type AdminAccountUpdateRequest struct {
@@ -61,4 +71,19 @@ type TagSettingsResponse struct {
 
 type FrontendSettings struct {
 	CustomCode string `json:"custom_code"`
+}
+
+type UpdateRequest struct {
+	Version       string   `json:"version,omitempty"`
+	Repo          string   `json:"repo,omitempty"`
+	PackagePrefix string   `json:"package_prefix,omitempty"`
+	ScriptURL     string   `json:"script_url,omitempty"`
+	PSScriptURL   string   `json:"ps_script_url,omitempty"`
+	ServiceName   string   `json:"service_name,omitempty"`
+	AgentIDs      []string `json:"agent_ids,omitempty"`
+}
+
+type UpdateResponse struct {
+	Status string `json:"status"`
+	Count  int    `json:"count,omitempty"`
 }

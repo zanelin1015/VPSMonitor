@@ -8,6 +8,7 @@ import (
 	"bridge-core/internal/config"
 	"bridge-core/internal/model"
 	"bridge-core/internal/store"
+	"bridge-core/internal/version"
 	"bridge-core/webui"
 )
 
@@ -77,5 +78,21 @@ func (a *App) Handler() http.Handler {
 }
 
 func (a *App) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	info := serverSystemInfo()
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "ok",
+		"version": info.Version,
+	})
+}
+
+func serverSystemInfo() model.SystemInfo {
+	info := version.Get("server")
+	return model.SystemInfo{
+		Role:      info.Role,
+		Version:   info.Version,
+		BuildTime: info.BuildTime,
+		GitCommit: info.GitCommit,
+		GoVersion: info.GoVersion,
+		Platform:  info.Platform,
+	}
 }

@@ -230,10 +230,29 @@ chmod +x ./scripts/build.sh
 ./scripts/build.sh
 ```
 
+版本号保存在 `VERSION`。正常打包会自动把最后一位版本号加 1；如果要指定版本，可以这样执行：
+
+```bash
+VPSMONITOR_BUILD_VERSION=0.2.0 ./scripts/build.sh
+```
+
 Windows PowerShell：
 
 ```powershell
 ./scripts/build.ps1
+```
+
+PowerShell 指定版本：
+
+```powershell
+$env:VPSMONITOR_BUILD_VERSION="0.2.0"; ./scripts/build.ps1
+```
+
+server / client 二进制都支持查看版本：
+
+```bash
+./bridge-server --version
+./bridge-client --version
 ```
 
 打包需要本机具备：

@@ -35,6 +35,7 @@ export function VisualEffects() {
 
 export function applyCustomFrontendCode(customCode: string) {
   document.querySelectorAll('[data-vpsmonitor-custom-code="true"]').forEach((node) => node.remove())
+  delete window.CustomBackgroundImage
   const template = document.createElement('template')
   template.innerHTML = customCode
   Array.from(template.content.childNodes).forEach((node) => appendCustomNode(node))
@@ -63,7 +64,10 @@ function appendCustomNode(node: Node) {
 }
 
 function applyCustomBackgroundImage() {
-  const backgroundImage = window.CustomBackgroundImage || DEFAULT_BACKGROUND_IMAGE
-  document.documentElement.style.setProperty('--custom-bg-image', backgroundImage ? `url("${backgroundImage}")` : 'none')
+  const backgroundImage = (window.CustomBackgroundImage || DEFAULT_BACKGROUND_IMAGE).trim()
+  document.documentElement.style.setProperty('--custom-bg-image', backgroundImage ? `url("${escapeCSSURL(backgroundImage)}")` : 'none')
 }
 
+function escapeCSSURL(value: string) {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '')
+}

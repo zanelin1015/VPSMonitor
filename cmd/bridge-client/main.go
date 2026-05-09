@@ -3,17 +3,25 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"time"
 
 	"bridge-core/internal/client"
 	"bridge-core/internal/config"
+	"bridge-core/internal/version"
 )
 
 func main() {
 	configPath := flag.String("config", "./config/client.json", "path to client config")
 	runOnce := flag.Bool("once", false, "collect and push one snapshot, then exit")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version.String("client"))
+		return
+	}
 
 	if !*runOnce && runWindowsServiceIfNeeded(*configPath) {
 		return

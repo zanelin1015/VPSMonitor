@@ -2,16 +2,24 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 
 	"bridge-core/internal/config"
 	"bridge-core/internal/server"
+	"bridge-core/internal/version"
 )
 
 func main() {
 	configPath := flag.String("config", "./config/server.json", "path to server config")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version.String("server"))
+		return
+	}
 
 	cfg, err := config.LoadServerConfig(*configPath)
 	if err != nil {

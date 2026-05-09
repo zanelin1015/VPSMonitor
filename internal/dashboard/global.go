@@ -60,19 +60,20 @@ func BuildGlobalDashboard(agents []model.AgentRecord, snapshots []model.AgentSna
 			summary.PublicIPv6 = agent.PublicIPv6
 		}
 		view := model.DashboardAgentView{
-			AgentID:      agent.AgentID,
-			AgentName:    agent.AgentName,
-			SortOrder:    agent.SortOrder,
-			Tags:         cloneStrings(agent.Tags),
-			Renewal:      agent.Config.Renewal,
-			Entry:        agent.Config.Entry,
-			ReportedAt:   agent.ReportedAt,
-			RegisteredAt: &agent.RegisteredAt,
-			UpdatedAt:    &agent.UpdatedAt,
-			LastSeenAt:   agent.LastSeenAt,
-			HasConfig:    agent.HasConfig,
-			Summary:      summary,
-			Geo:          lookupAgentGeo(summary, resolver),
+			AgentID:       agent.AgentID,
+			AgentName:     agent.AgentName,
+			ClientVersion: agent.Version,
+			SortOrder:     agent.SortOrder,
+			Tags:          cloneStrings(agent.Tags),
+			Renewal:       agent.Config.Renewal,
+			Entry:         agent.Config.Entry,
+			ReportedAt:    agent.ReportedAt,
+			RegisteredAt:  &agent.RegisteredAt,
+			UpdatedAt:     &agent.UpdatedAt,
+			LastSeenAt:    agent.LastSeenAt,
+			HasConfig:     agent.HasConfig,
+			Summary:       summary,
+			Geo:           lookupAgentGeo(summary, resolver),
 		}
 		if view.Geo == nil && overview != nil {
 			view.Geo = lookupOverviewGeo(overview, resolver)

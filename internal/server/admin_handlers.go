@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +19,10 @@ func (a *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/admin/"), "/")
 	if strings.HasPrefix(path, "telegram-bots") {
 		a.handleAdminTelegramBots(w, r, strings.Split(path, "/")[1:])
+		return
+	}
+	if strings.HasPrefix(path, "updates") {
+		a.handleAdminUpdates(w, r, strings.Split(path, "/")[1:])
 		return
 	}
 	switch path {
@@ -34,7 +41,7 @@ func (a *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
-		writeJSON(w, http.StatusOK, model.AdminLoginResponse{User: user})
+		writeJSON(w, http.StatusOK, model.AdminLoginResponse{User: user, System: serverSystemInfo()})
 	case "logout":
 		if r.Method != http.MethodPost {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -74,6 +81,98 @@ func (a *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusNotFound, "route not found")
 	}
+}
+
+func (a *App) handleAdminUpdates(w http.ResponseWriter, r *http.Request, parts []string) {
+	if _, _, ok := a.requireAdmin(w, r); !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if len(parts) != 1 {
+		writeError(w, http.StatusNotFound, "update route not found")
+		return
+	}
+	var req model.UpdateRequest
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+	switch parts[0] {
+	case "server":
+		if err := a.startServerUpdate(req); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, model.UpdateResponse{Status: "server update started"})
+	case "clients":
+		count, err := a.createClientUpdateActions(req)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, model.UpdateResponse{Status: "client update tasks created", Count: count})
+	default:
+		writeError(w, http.StatusNotFound, "update route not found")
+	}
+}
+
+func (a *App) startServerUpdate(req model.UpdateRequest) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve server executable: %w", err)
+	}
+	installDir := filepath.Dir(exe)
+	version := firstNonEmptyString(req.Version, "latest")
+	repo := firstNonEmptyString(req.Repo, "zanelin1015/VPSMonitor")
+	packagePrefix := firstNonEmptyString(req.PackagePrefix, "VPSMonitor")
+	scriptURL := firstNonEmptyString(req.ScriptURL, "https://raw.githubusercontent.com/"+repo+"/main/install.sh")
+	serviceName := firstNonEmptyString(req.ServiceName, "vpsmonitor-server")
+	command := fmt.Sprintf(`(sleep 2; tmp="$(mktemp /tmp/vpsmonitor-server-install.XXXXXX.sh)"; (curl -fsSL %[1]q -o "$tmp" || wget -O "$tmp" %[1]q) && chmod +x "$tmp" && env VPSMONITOR_ASSUME_YES=true VPSMONITOR_VERSION=%[2]q VPSMONITOR_REPO=%[3]q VPSMONITOR_PACKAGE_PREFIX=%[4]q VPSMONITOR_SERVER_DIR=%[5]q VPSMONITOR_SERVER_SERVICE=%[6]q bash "$tmp" server >>/tmp/vpsmonitor-server-update.log 2>&1) >/dev/null 2>&1 &`, scriptURL, version, repo, packagePrefix, installDir, serviceName)
+	return exec.Command("sh", "-c", command).Start()
+}
+
+func (a *App) createClientUpdateActions(req model.UpdateRequest) (int, error) {
+	agents, err := a.store.ListAgents()
+	if err != nil {
+		return 0, err
+	}
+	selected := map[string]struct{}{}
+	for _, id := range req.AgentIDs {
+		if id = strings.TrimSpace(id); id != "" {
+			selected[id] = struct{}{}
+		}
+	}
+	version := firstNonEmptyString(req.Version, "latest")
+	repo := firstNonEmptyString(req.Repo, "zanelin1015/VPSMonitor")
+	packagePrefix := firstNonEmptyString(req.PackagePrefix, "VPSMonitor")
+	scriptURL := firstNonEmptyString(req.ScriptURL, "https://raw.githubusercontent.com/"+repo+"/main/install.sh")
+	psScriptURL := firstNonEmptyString(req.PSScriptURL, "https://raw.githubusercontent.com/"+repo+"/main/install.ps1")
+	serviceName := firstNonEmptyString(req.ServiceName, "")
+	count := 0
+	for _, agent := range agents {
+		if len(selected) > 0 {
+			if _, ok := selected[agent.AgentID]; !ok {
+				continue
+			}
+		}
+		payload := map[string]any{
+			"version":        version,
+			"repo":           repo,
+			"package_prefix": packagePrefix,
+			"script_url":     scriptURL,
+			"ps_script_url":  psScriptURL,
+		}
+		if serviceName != "" {
+			payload["service_name"] = serviceName
+		}
+		if _, err := a.store.CreateXUIAction(agent.AgentID, model.XUIActionRequest{Kind: model.XUIActionUpdateClient, Payload: payload}); err != nil {
+			return count, err
+		}
+		count++
+	}
+	return count, nil
 }
 
 func (a *App) handlePublicFrontendSettings(w http.ResponseWriter, r *http.Request) {
@@ -168,7 +267,7 @@ func (a *App) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setAdminSessionCookie(w, r, token, session.ExpiresAt)
-	writeJSON(w, http.StatusOK, model.AdminLoginResponse{User: user})
+	writeJSON(w, http.StatusOK, model.AdminLoginResponse{User: user, System: serverSystemInfo()})
 }
 
 func (a *App) handleAdminLogout(w http.ResponseWriter, r *http.Request) {
@@ -198,7 +297,7 @@ func (a *App) handleAdminAccountUpdate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, model.AdminLoginResponse{User: user})
+	writeJSON(w, http.StatusOK, model.AdminLoginResponse{User: user, System: serverSystemInfo()})
 }
 
 func (a *App) handleAdminTelegramBots(w http.ResponseWriter, r *http.Request, parts []string) {

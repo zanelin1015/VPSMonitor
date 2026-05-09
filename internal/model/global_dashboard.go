@@ -25,6 +25,7 @@ type DashboardTagView struct {
 type DashboardAgentView struct {
 	AgentID           string           `json:"agent_id"`
 	AgentName         string           `json:"agent_name,omitempty"`
+	ClientVersion     string           `json:"client_version,omitempty"`
 	SortOrder         int              `json:"sort_order,omitempty"`
 	Tags              []string         `json:"tags,omitempty"`
 	Renewal           VPSRenewalConfig `json:"renewal,omitempty"`

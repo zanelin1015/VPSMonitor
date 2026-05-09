@@ -9,6 +9,9 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +19,7 @@ import (
 	"bridge-core/internal/config"
 	"bridge-core/internal/model"
 	"bridge-core/internal/panels"
+	"bridge-core/internal/version"
 )
 
 type App struct {
@@ -56,30 +60,45 @@ func (a *App) RunOnce(ctx context.Context) error {
 }
 
 func (a *App) executePendingXUIActions(ctx context.Context, effectiveConfig model.ManagedAgentConfig) {
-	if !effectiveConfig.XUI.Enabled {
-		return
-	}
 	actionsCtx, cancel := context.WithTimeout(ctx, a.requestTimeout)
 	actions, err := a.fetchPendingXUIActions(actionsCtx)
 	cancel()
 	if err != nil || len(actions) == 0 {
 		return
 	}
-	xuiClient, err := a.xuiClientFor(effectiveConfig.XUI)
+	var xuiClient *panels.XUIClient
+	var xuiErr error
+	if effectiveConfig.XUI.Enabled {
+		xuiClient, xuiErr = a.xuiClientFor(effectiveConfig.XUI)
+	}
 	for _, action := range actions {
 		result := model.XUIActionResultRequest{Status: model.XUIActionStatusSucceeded}
-		if err != nil {
-			result.Status = model.XUIActionStatusFailed
-			result.Error = err.Error()
-		} else {
-			actionCtx, actionCancel := context.WithTimeout(ctx, a.requestTimeout)
-			output, actionErr := xuiClient.ExecuteAction(actionCtx, action)
-			actionCancel()
+		switch action.Kind {
+		case model.XUIActionUpdateClient:
+			output, actionErr := a.startSelfUpdate(action.Payload)
 			if actionErr != nil {
 				result.Status = model.XUIActionStatusFailed
 				result.Error = actionErr.Error()
 			} else {
 				result.Result = output
+			}
+		default:
+			if !effectiveConfig.XUI.Enabled {
+				result.Status = model.XUIActionStatusFailed
+				result.Error = "x-ui config is disabled"
+			} else if xuiErr != nil {
+				result.Status = model.XUIActionStatusFailed
+				result.Error = xuiErr.Error()
+			} else {
+				actionCtx, actionCancel := context.WithTimeout(ctx, a.requestTimeout)
+				output, actionErr := xuiClient.ExecuteAction(actionCtx, action)
+				actionCancel()
+				if actionErr != nil {
+					result.Status = model.XUIActionStatusFailed
+					result.Error = actionErr.Error()
+				} else {
+					result.Result = output
+				}
 			}
 		}
 		resultCtx, resultCancel := context.WithTimeout(ctx, a.requestTimeout)
@@ -88,10 +107,49 @@ func (a *App) executePendingXUIActions(ctx context.Context, effectiveConfig mode
 	}
 }
 
+func (a *App) startSelfUpdate(payload map[string]any) (map[string]any, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("resolve executable: %w", err)
+	}
+	installDir := filepath.Dir(exe)
+	version := payloadString(payload, "version", "latest")
+	repo := payloadString(payload, "repo", "zanelin1015/VPSMonitor")
+	packagePrefix := payloadString(payload, "package_prefix", "VPSMonitor")
+
+	if runtime.GOOS == "windows" {
+		scriptURL := payloadString(payload, "ps_script_url", "https://raw.githubusercontent.com/"+repo+"/main/install.ps1")
+		serviceName := payloadString(payload, "service_name", "VPSMonitorClient")
+		command := fmt.Sprintf(`Start-Sleep -Seconds 2; $env:VPSMONITOR_ASSUME_YES='true'; $env:VPSMONITOR_VERSION=%q; $env:VPSMONITOR_REPO=%q; $env:VPSMONITOR_PACKAGE_PREFIX=%q; $env:VPSMONITOR_CLIENT_DIR=%q; $env:VPSMONITOR_CLIENT_SERVICE=%q; iwr -UseBasicParsing %q -OutFile "$env:TEMP\vpsmonitor-install.ps1"; powershell -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\vpsmonitor-install.ps1" client *> "$env:TEMP\vpsmonitor-client-update.log"`, version, repo, packagePrefix, installDir, serviceName, scriptURL)
+		cmd := exec.Command("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-Command", command)
+		if err := cmd.Start(); err != nil {
+			return nil, fmt.Errorf("start windows update: %w", err)
+		}
+		return map[string]any{"status": "started", "install_dir": installDir, "service_name": serviceName}, nil
+	}
+
+	scriptURL := payloadString(payload, "script_url", "https://raw.githubusercontent.com/"+repo+"/main/install.sh")
+	serviceName := payloadString(payload, "service_name", "vpsmonitor-client")
+	command := fmt.Sprintf(`(sleep 2; tmp="$(mktemp /tmp/vpsmonitor-install.XXXXXX.sh)"; (curl -fsSL %[1]q -o "$tmp" || wget -O "$tmp" %[1]q) && chmod +x "$tmp" && env VPSMONITOR_ASSUME_YES=true VPSMONITOR_VERSION=%[2]q VPSMONITOR_REPO=%[3]q VPSMONITOR_PACKAGE_PREFIX=%[4]q VPSMONITOR_CLIENT_DIR=%[5]q VPSMONITOR_CLIENT_SERVICE=%[6]q bash "$tmp" client >>/tmp/vpsmonitor-client-update.log 2>&1) >/dev/null 2>&1 &`, scriptURL, version, repo, packagePrefix, installDir, serviceName)
+	cmd := exec.Command("sh", "-c", command)
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start linux update: %w", err)
+	}
+	return map[string]any{"status": "started", "install_dir": installDir, "service_name": serviceName}, nil
+}
+
+func payloadString(payload map[string]any, key string, fallback string) string {
+	if value, ok := payload[key].(string); ok && strings.TrimSpace(value) != "" {
+		return strings.TrimSpace(value)
+	}
+	return fallback
+}
+
 func (a *App) collect(ctx context.Context, effectiveConfig model.ManagedAgentConfig) model.AgentSnapshot {
 	snapshot := model.AgentSnapshot{
 		AgentID:    a.config.AgentID,
 		AgentName:  firstNonEmpty(effectiveConfig.AgentName, a.config.AgentName, a.config.AgentID),
+		Version:    version.Version,
 		ReportedAt: time.Now().UTC(),
 		Summary: model.VPSSummary{
 			Hostname: currentHostname(),
@@ -196,6 +254,7 @@ func (a *App) register(ctx context.Context) (model.AgentRegisterResponse, error)
 	reqBody := model.AgentRegisterRequest{
 		AgentID:   a.config.AgentID,
 		AgentName: firstNonEmpty(a.config.AgentName, a.config.AgentID),
+		Version:   version.Version,
 		Hostname:  currentHostname(),
 		SeedConfig: model.ManagedAgentConfig{
 			AgentID:   a.config.AgentID,

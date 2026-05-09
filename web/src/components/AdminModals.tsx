@@ -9,7 +9,7 @@ import {
   SettingOutlined,
 } from '@ant-design/icons'
 
-import type { AdminUser, AgentListItem, TelegramBot, XUIClientView, XUIOverview } from '../types'
+import type { AdminUser, AgentListItem, SystemInfo, TelegramBot, XUIClientView, XUIOverview } from '../types'
 import type {
   ClientInstallCommandForm,
   ClientInstallCommandKind,
@@ -35,14 +35,16 @@ export interface AccountFormState {
 export function PersonalCenterModal(props: {
   open: boolean
   adminUser: AdminUser
+  systemInfo?: SystemInfo | null
   onClose: () => void
   onOpenAccount: () => void
   onOpenClientInstall: () => void
   onOpenTelegram: () => void
   onOpenFrontendSettings: () => void
+  onOpenUpdates: () => void
   onLogout: () => void
 }) {
-  const { open, adminUser, onClose, onOpenAccount, onOpenClientInstall, onOpenTelegram, onOpenFrontendSettings, onLogout } = props
+  const { open, adminUser, systemInfo, onClose, onOpenAccount, onOpenClientInstall, onOpenTelegram, onOpenFrontendSettings, onOpenUpdates, onLogout } = props
 
   return (
     <Modal title="个人中心" open={open} onCancel={onClose} footer={null} width={520}>
@@ -54,7 +56,10 @@ export function PersonalCenterModal(props: {
           <div>
             <Text type="secondary">当前管理员</Text>
             <Title level={3}>{adminUser.username}</Title>
-            <Tag color="success">已登录</Tag>
+            <Space wrap size={6}>
+              <Tag color="success">已登录</Tag>
+              {systemInfo?.version ? <Tag color="blue">Server v{systemInfo.version}</Tag> : null}
+            </Space>
           </div>
         </div>
         <div className="personal-center-actions">
@@ -62,6 +67,7 @@ export function PersonalCenterModal(props: {
           <Button icon={<CloudDownloadOutlined />} onClick={onOpenClientInstall}>Client 安装命令</Button>
           <Button icon={<BellOutlined />} onClick={onOpenTelegram}>TG 告警机器人</Button>
           <Button icon={<SettingOutlined />} onClick={onOpenFrontendSettings}>前端样式自定义</Button>
+          <Button icon={<SettingOutlined />} onClick={onOpenUpdates}>在线更新</Button>
           <Button danger icon={<LogoutOutlined />} onClick={onLogout}>退出登录</Button>
         </div>
       </div>
@@ -435,6 +441,50 @@ export function ImportURLModal(props: {
       ) : (
         <Empty description="当前客户端暂不支持生成单节点导入 URL" />
       )}
+    </Modal>
+  )
+}
+
+
+export function SystemUpdateModal(props: {
+  open: boolean
+  loading: boolean
+  systemInfo?: SystemInfo | null
+  onClose: () => void
+  onUpdateServer: () => void
+  onUpdateClients: () => void
+}) {
+  const { open, loading, systemInfo, onClose, onUpdateServer, onUpdateClients } = props
+
+  return (
+    <Modal title="在线更新" open={open} onCancel={onClose} footer={null} width={680}>
+      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Alert
+          type="info"
+          showIcon
+          message="配置会保留"
+          description="在线更新会复用现有 install.sh / install.ps1。server 会保留 server.json、数据库和 data；client 会保留 client.json。更新完成后服务会自动重启。"
+        />
+        {systemInfo?.version ? (
+          <Alert
+            type="success"
+            showIcon
+            message={`当前 Server 版本：v${systemInfo.version}`}
+            description={systemInfo.git_commit ? `构建提交：${systemInfo.git_commit}` : '版本来自当前运行中的 server 二进制。'}
+          />
+        ) : null}
+        <Alert
+          type="warning"
+          showIcon
+          message="先上传 GitHub Release"
+          description="请先把最新的 server/client 包上传到 GitHub Release，否则在线更新会下载到旧包。"
+        />
+        <Space wrap>
+          <Button type="primary" loading={loading} onClick={onUpdateServer}>更新当前 Server</Button>
+          <Button loading={loading} onClick={onUpdateClients}>下发更新到所有 Client</Button>
+        </Space>
+        <Text type="secondary">Client 更新任务会在每个 client 下一次轮询时领取；数量多时无需逐台 SSH。</Text>
+      </Space>
     </Modal>
   )
 }

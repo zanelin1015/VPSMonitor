@@ -40,6 +40,7 @@ import type {
   FrontendSettings,
   GlobalDashboardView,
   ManagedAgentConfig,
+  SystemInfo,
   TelegramBot,
   TagSettingsResponse,
   VPSSummary,
@@ -88,6 +89,7 @@ import {
   FrontendSettingsModal,
   ImportURLModal,
   PersonalCenterModal,
+  SystemUpdateModal,
   TelegramBotSettingsModal,
   XUIActionModal,
 } from './components/AdminModals'
@@ -172,6 +174,7 @@ export default function App() {
   const { message } = AntdApp.useApp()
   const [sessionLoading, setSessionLoading] = useState(true)
   const [adminUser, setAdminUser] = useState<AdminUser | null>(null)
+  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null)
   const [loginLoading, setLoginLoading] = useState(false)
   const [loginForm, setLoginForm] = useState({ username: '', password: '' })
   const [accountModalOpen, setAccountModalOpen] = useState(false)
@@ -224,6 +227,8 @@ export default function App() {
   const [frontendSettingsLoading, setFrontendSettingsLoading] = useState(false)
   const [frontendSettingsSaving, setFrontendSettingsSaving] = useState(false)
   const [frontendSettingsForm, setFrontendSettingsForm] = useState<FrontendSettingsForm>(() => defaultFrontendSettingsForm())
+  const [updateModalOpen, setUpdateModalOpen] = useState(false)
+  const [updateLoading, setUpdateLoading] = useState(false)
   const [reloadToken, setReloadToken] = useState(0)
   const [activeTabKey, setActiveTabKey] = useState('overview')
   const [topologyVisible, setTopologyVisible] = useState(false)
@@ -408,9 +413,11 @@ export default function App() {
     try {
       const data = await fetchJSON<AdminAuthResponse>('/api/v1/admin/session')
       setAdminUser(data.user)
+      setSystemInfo(data.system || null)
       setAccountForm((current) => ({ ...current, new_username: data.user.username }))
     } catch {
       setAdminUser(null)
+      setSystemInfo(null)
     } finally {
       setSessionLoading(false)
     }
@@ -425,6 +432,7 @@ export default function App() {
         body: JSON.stringify(loginForm),
       })
       setAdminUser(data.user)
+      setSystemInfo(data.system || null)
       setAccountForm((current) => ({ ...current, new_username: data.user.username }))
       setLoginForm({ username: data.user.username, password: '' })
       message.success('登录成功')
@@ -442,6 +450,7 @@ export default function App() {
       // Session cleanup is best-effort; local state is cleared either way.
     }
     setAdminUser(null)
+    setSystemInfo(null)
     setDashboardView(null)
     setSelectedTag('')
     setAgents([])
@@ -470,6 +479,7 @@ export default function App() {
         }),
       })
       setAdminUser(data.user)
+      setSystemInfo(data.system || systemInfo)
       setAccountForm({
         current_password: '',
         new_username: data.user.username,
@@ -879,6 +889,37 @@ export default function App() {
       if (!silent) {
         setTelegramBotsLoading(false)
       }
+    }
+  }
+
+
+  async function updateServerOnline() {
+    setUpdateLoading(true)
+    try {
+      await fetchJSON<{ status: string }>('/api/v1/admin/updates/server', { method: 'POST' })
+      message.success('Server 更新已启动，服务会自动重启')
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      message.error(error instanceof Error ? error.message : '启动 Server 更新失败')
+    } finally {
+      setUpdateLoading(false)
+    }
+  }
+
+  async function updateAllClientsOnline() {
+    setUpdateLoading(true)
+    try {
+      const result = await fetchJSON<{ status: string; count?: number }>('/api/v1/admin/updates/clients', { method: 'POST' })
+      message.success(`已下发 Client 更新任务：${result.count || 0} 台`)
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      message.error(error instanceof Error ? error.message : '下发 Client 更新失败')
+    } finally {
+      setUpdateLoading(false)
     }
   }
 
@@ -1558,6 +1599,7 @@ export default function App() {
         <PersonalCenterModal
           open={personalCenterOpen}
           adminUser={adminUser}
+          systemInfo={systemInfo}
           onClose={() => setPersonalCenterOpen(false)}
           onOpenAccount={() => {
             setAccountForm({
@@ -1575,10 +1617,23 @@ export default function App() {
             setTelegramBotModalOpen(true)
           }}
           onOpenFrontendSettings={() => void openFrontendSettingsModal()}
+          onOpenUpdates={() => {
+            setPersonalCenterOpen(false)
+            setUpdateModalOpen(true)
+          }}
           onLogout={() => {
             setPersonalCenterOpen(false)
             void logout()
           }}
+        />
+
+        <SystemUpdateModal
+          open={updateModalOpen}
+          loading={updateLoading}
+          systemInfo={systemInfo}
+          onClose={() => setUpdateModalOpen(false)}
+          onUpdateServer={() => void updateServerOnline()}
+          onUpdateClients={() => void updateAllClientsOnline()}
         />
 
         <ClientInstallModal

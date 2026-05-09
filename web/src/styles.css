@@ -19,6 +19,7 @@
   --red: #ef4444;
   --red-soft: #fef2f2;
   --shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+  --custom-bg-overlay: linear-gradient(180deg, rgba(251, 252, 253, 0.68), rgba(247, 248, 250, 0.82));
   --page-overlay: linear-gradient(180deg, #fbfcfd, #f7f8fa);
   --page-overlay-strong: linear-gradient(180deg, #fbfcfd, #f7f8fa);
   background: var(--bg);
@@ -45,6 +46,7 @@
   --red: #ff7875;
   --red-soft: rgba(255, 120, 117, 0.13);
   --shadow: 0 24px 80px rgba(0, 0, 0, 0.36);
+  --custom-bg-overlay: linear-gradient(135deg, rgba(5, 13, 10, 0.62), rgba(9, 22, 18, 0.54));
   --page-overlay:
     radial-gradient(circle at 16% 10%, rgba(42, 92, 72, 0.3), transparent 28%),
     linear-gradient(135deg, rgba(2, 8, 6, 0.58), rgba(8, 20, 17, 0.5) 48%, rgba(24, 12, 22, 0.5));
@@ -87,7 +89,10 @@ body {
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-gutter: stable;
-  background: var(--page-overlay-strong);
+  background:
+    var(--custom-bg-overlay),
+    var(--custom-bg-image) center / cover fixed no-repeat,
+    var(--page-overlay-strong);
   scrollbar-color: rgba(37, 99, 235, 0.38) #eef2f7;
   scrollbar-width: thin;
 }
@@ -287,7 +292,7 @@ body {
   place-items: center;
   padding: 24px;
   background:
-    var(--page-overlay-strong),
+    var(--custom-bg-overlay),
     var(--custom-bg-image) center / cover no-repeat,
     var(--bg);
 }

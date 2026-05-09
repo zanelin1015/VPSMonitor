@@ -64,18 +64,19 @@ func (a *App) handleAgents(w http.ResponseWriter, r *http.Request) {
 	items := make([]model.AgentListItem, 0, len(agents))
 	for _, agent := range agents {
 		items = append(items, model.AgentListItem{
-			AgentID:      agent.AgentID,
-			AgentName:    agent.AgentName,
-			SortOrder:    agent.SortOrder,
-			Tags:         agent.Tags,
-			Renewal:      agent.Config.Renewal,
-			Entry:        agent.Config.Entry,
-			ReportedAt:   agent.ReportedAt,
-			RegisteredAt: &agent.RegisteredAt,
-			UpdatedAt:    &agent.UpdatedAt,
-			LastSeenAt:   agent.LastSeenAt,
-			Summary:      agent.Summary,
-			HasConfig:    agent.HasConfig,
+			AgentID:       agent.AgentID,
+			AgentName:     agent.AgentName,
+			ClientVersion: agent.Version,
+			SortOrder:     agent.SortOrder,
+			Tags:          agent.Tags,
+			Renewal:       agent.Config.Renewal,
+			Entry:         agent.Config.Entry,
+			ReportedAt:    agent.ReportedAt,
+			RegisteredAt:  &agent.RegisteredAt,
+			UpdatedAt:     &agent.UpdatedAt,
+			LastSeenAt:    agent.LastSeenAt,
+			Summary:       agent.Summary,
+			HasConfig:     agent.HasConfig,
 		})
 	}
 	a.realtime.applyToAgentItems(items)

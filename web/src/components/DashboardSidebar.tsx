@@ -322,6 +322,7 @@ function AgentRailTags(props: { item: DashboardAgentView; tags: string[] }) {
       {tags.map((tag) => (
         <span className="agent-tag-chip" key={tag} style={tagChipStyle(tag)}>{tag}</span>
       ))}
+      {item.client_version ? <span className="agent-tag-chip">Client v{item.client_version}</span> : null}
       {item.renewal?.bandwidth_mbps ? <span className="agent-tag-chip">带宽 {formatBandwidth(item.renewal.bandwidth_mbps)}</span> : null}
       {item.summary.last_collection_err ? <span className="agent-tag-chip agent-tag-warn" title={item.summary.last_collection_err}>x-ui 异常</span> : null}
       {xrayIssueLabel(item) ? <span className="agent-tag-chip agent-tag-warn">{xrayIssueLabel(item)}</span> : null}

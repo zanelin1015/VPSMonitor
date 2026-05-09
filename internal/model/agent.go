@@ -62,6 +62,7 @@ type AgentEntryMapping struct {
 type AgentRegisterRequest struct {
 	AgentID    string             `json:"agent_id"`
 	AgentName  string             `json:"agent_name,omitempty"`
+	Version    string             `json:"version,omitempty"`
 	Hostname   string             `json:"hostname,omitempty"`
 	PublicIPv4 string             `json:"public_ipv4,omitempty"`
 	PublicIPv6 string             `json:"public_ipv6,omitempty"`
@@ -79,6 +80,7 @@ type AgentRegisterResponse struct {
 type AgentRecord struct {
 	AgentID      string             `json:"agent_id"`
 	AgentName    string             `json:"agent_name,omitempty"`
+	Version      string             `json:"version,omitempty"`
 	SortOrder    int                `json:"sort_order,omitempty"`
 	Tags         []string           `json:"tags,omitempty"`
 	AgentToken   string             `json:"-"`
