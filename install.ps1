@@ -83,6 +83,13 @@ function Write-ClientConfig([string]$Path, [string]$ServerUrl, [string]$Registra
   $payload | ConvertTo-Json -Depth 5 | Set-Content -Path $Path -Encoding UTF8
 }
 
+function Wait-ServiceDeleted([string]$Name) {
+  for ($i = 0; $i -lt 20; $i++) {
+    if (-not (Get-Service -Name $Name -ErrorAction SilentlyContinue)) { return }
+    Start-Sleep -Milliseconds 500
+  }
+}
+
 function Install-ClientService([string]$BinaryPath, [string]$ConfigPath) {
   $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
   if ($existing) {
@@ -90,13 +97,25 @@ function Install-ClientService([string]$BinaryPath, [string]$ConfigPath) {
       Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
       Start-Sleep -Seconds 2
     }
-    & sc.exe delete $ServiceName | Out-Null
-    Start-Sleep -Seconds 2
+    $deleteOutput = & sc.exe delete $ServiceName 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      throw "Delete existing service failed: $deleteOutput"
+    }
+    Wait-ServiceDeleted $ServiceName
   }
+
   $binPath = '"{0}" -config "{1}"' -f $BinaryPath, $ConfigPath
-  & sc.exe create $ServiceName binPath= $binPath start= auto DisplayName= "VPSMonitor Client" | Out-Null
+  New-Service -Name $ServiceName -BinaryPathName $binPath -DisplayName "VPSMonitor Client" -StartupType Automatic | Out-Null
+  $created = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+  if (-not $created) {
+    throw "Create service failed: $ServiceName was not found after New-Service."
+  }
+
   & sc.exe description $ServiceName "VPSMonitor Windows Client" | Out-Null
-  & sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/5000/restart/5000 | Out-Null
+  $failureOutput = & sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/5000/restart/5000 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    Write-Warn "Configure service failure actions failed: $failureOutput"
+  }
   Start-Service -Name $ServiceName
 }
 
