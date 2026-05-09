@@ -228,6 +228,10 @@ package_url() {
   fi
 }
 
+use_local_bundle() {
+  is_truthy "${VPSMONITOR_USE_LOCAL_BUNDLE:-}"
+}
+
 script_dir() {
   local src="${BASH_SOURCE[0]}"
   if [[ -e "$src" ]]; then
@@ -252,7 +256,9 @@ fetch_bundle() {
   local component="$1"
   local arch="$2"
   local local_dir
-  if local_dir="$(local_bundle_dir "$component")"; then
+  if use_local_bundle && local_dir="$(local_bundle_dir "$component")"; then
+    info "Using local bridge-$component bundle:"
+    echo "  $local_dir" >&2
     echo "$local_dir"
     return
   fi
@@ -580,6 +586,7 @@ Environment overrides:
   VPSMONITOR_REPO=zanelin1015/VPSMonitor
   VPSMONITOR_VERSION=latest
   VPSMONITOR_PACKAGE_PREFIX=VPSMonitor
+  VPSMONITOR_USE_LOCAL_BUNDLE=true
   VPSMONITOR_BASE_URL=https://example.com/downloads
   VPSMONITOR_SERVER_PACKAGE_URL=https://example.com/VPSMonitor-server-linux-amd64.tar.gz
   VPSMONITOR_CLIENT_PACKAGE_URL=https://example.com/VPSMonitor-client-linux-amd64.tar.gz
@@ -620,6 +627,11 @@ main() {
   echo "  Repo:   $repo"
   echo "  Ver:    $version"
   echo "  Package prefix: $package_prefix"
+  if use_local_bundle; then
+    echo "  Bundle source: local"
+  else
+    echo "  Bundle source: release download"
+  fi
   echo "  Service manager: $(service_manager)"
   echo
 

@@ -8,12 +8,14 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
 
 	"bridge-core/internal/model"
+	"bridge-core/internal/version"
 )
 
 const defaultRealtimeMetricsInterval = 2 * time.Second
@@ -98,10 +100,14 @@ connected:
 
 	for {
 		metric := model.AgentRealtimeMetrics{
-			AgentID:    a.config.AgentID,
-			AgentName:  firstNonEmpty(effectiveConfig.AgentName, a.config.AgentName, a.config.AgentID),
-			ReportedAt: time.Now().UTC(),
-			Summary:    sampler.sample(),
+			AgentID:       a.config.AgentID,
+			AgentName:     firstNonEmpty(effectiveConfig.AgentName, a.config.AgentName, a.config.AgentID),
+			ClientVersion: version.Version,
+			ClientOS:      runtime.GOOS,
+			ClientArch:    runtime.GOARCH,
+			SystemVersion: currentSystemVersion(),
+			ReportedAt:    time.Now().UTC(),
+			Summary:       sampler.sample(),
 		}
 		if err := conn.SetWriteDeadline(time.Now().Add(a.requestTimeout)); err != nil {
 			return err

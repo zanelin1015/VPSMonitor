@@ -257,6 +257,7 @@ function AgentRailItem(props: {
               <AgentRailTags item={item} tags={tags} />
               <div className="agent-meta agent-footer-line">{item.has_config ? '已托管配置' : '待配置'} · {activityText}</div>
             </div>
+            <AgentRailRuntime item={item} />
             <div className="agent-list-metrics">
               <AgentMeters item={item} cpuPercent={cpuPercent} memPercent={memPercent} />
             </div>
@@ -279,6 +280,7 @@ function AgentRailItem(props: {
               {locationText ? <span>{locationText}</span> : null}
             </div>
             <AgentRailTags item={item} tags={tags} />
+            <AgentRailRuntime item={item} />
             <div className="agent-meter-grid">
               <AgentMeters item={item} cpuPercent={cpuPercent} memPercent={memPercent} />
             </div>
@@ -307,7 +309,7 @@ function AgentRailHeader(props: {
       <div className="agent-title-line">
         <span className={`agent-state-dot agent-state-${statusLevel}`} />
         <span className="agent-order-chip">#{displaySortOrder}</span>
-        <span className="agent-os-icon" title={formatClientPlatform(item)}>{clientOSIcon(item.client_os)}</span>
+        <SystemIcon item={item} compact title={formatClientPlatform(item)} />
         <span className="agent-flag" title={locationText || countryCode || '未知地区'}>{countryFlag(countryCode)}</span>
         <span className="agent-name">{item.agent_name || item.agent_id}</span>
       </div>
@@ -318,27 +320,65 @@ function AgentRailHeader(props: {
 
 function AgentRailTags(props: { item: DashboardAgentView; tags: string[] }) {
   const { item, tags } = props
-  const systemLabel = displayClientSystem(item)
-  const clientChipParts = [systemLabel, item.client_version ? `Client v${item.client_version}` : ''].filter(Boolean)
   return (
     <div className="agent-tag-row">
       {tags.map((tag) => (
         <span className="agent-tag-chip" key={tag} style={tagChipStyle(tag)}>{tag}</span>
       ))}
-      {clientChipParts.length > 0 ? <span className="agent-tag-chip">{clientOSIcon(item.client_os)} {clientChipParts.join(' · ')}</span> : null}
-      {item.renewal?.bandwidth_mbps ? <span className="agent-tag-chip">带宽 {formatBandwidth(item.renewal.bandwidth_mbps)}</span> : null}
       {item.summary.last_collection_err ? <span className="agent-tag-chip agent-tag-warn" title={item.summary.last_collection_err}>x-ui 异常</span> : null}
       {xrayIssueLabel(item) ? <span className="agent-tag-chip agent-tag-warn">{xrayIssueLabel(item)}</span> : null}
     </div>
   )
 }
 
-function clientOSIcon(os?: string) {
-  const value = (os || '').toLowerCase()
-  if (value === 'linux') return '🐧'
-  if (value === 'windows') return '⊞'
-  if (value === 'darwin') return '🍎'
-  return '💻'
+function AgentRailRuntime(props: { item: DashboardAgentView }) {
+  const { item } = props
+  const systemLabel = displayClientSystem(item)
+  const clientVersion = item.client_version ? `Client v${item.client_version}` : ''
+  return (
+    <div className="agent-runtime-row">
+      <div className="agent-runtime-pill" title={formatClientPlatform(item)}>
+        <SystemIcon item={item} />
+        <span className="agent-runtime-text">{systemLabel || '未知系统'}</span>
+        {clientVersion ? <span className="agent-runtime-divider">·</span> : null}
+        {clientVersion ? <span className="agent-runtime-subtle">{clientVersion}</span> : null}
+      </div>
+      {item.renewal?.bandwidth_mbps ? <div className="agent-runtime-pill agent-runtime-pill-bandwidth">带宽 {formatBandwidth(item.renewal.bandwidth_mbps)}</div> : null}
+    </div>
+  )
+}
+
+function SystemIcon(props: { item: DashboardAgentView; compact?: boolean; title?: string }) {
+  const { item, compact = false, title } = props
+  const flavor = resolveSystemFlavor(item)
+  return (
+    <span
+      className={`agent-system-icon agent-system-${flavor.key}${compact ? ' compact' : ''}`}
+      title={title}
+      aria-label={flavor.label}
+    >
+      {compact ? flavor.compactMark : flavor.mark}
+    </span>
+  )
+}
+
+function resolveSystemFlavor(item: DashboardAgentView) {
+  const systemVersion = (item.system_version || '').trim()
+  const clientOS = (item.client_os || '').trim().toLowerCase()
+  const value = `${systemVersion} ${clientOS}`.toLowerCase()
+  if (value.includes('debian')) return { key: 'debian', mark: 'DEB', compactMark: 'D', label: 'Debian' }
+  if (value.includes('ubuntu')) return { key: 'ubuntu', mark: 'UBU', compactMark: 'U', label: 'Ubuntu' }
+  if (value.includes('alpine')) return { key: 'alpine', mark: 'ALP', compactMark: 'A', label: 'Alpine' }
+  if (value.includes('windows')) return { key: 'windows', mark: 'WIN', compactMark: 'W', label: 'Windows' }
+  if (value.includes('centos')) return { key: 'centos', mark: 'COS', compactMark: 'C', label: 'CentOS' }
+  if (value.includes('rocky')) return { key: 'rocky', mark: 'RKY', compactMark: 'R', label: 'Rocky Linux' }
+  if (value.includes('alma')) return { key: 'alma', mark: 'ALM', compactMark: 'A', label: 'AlmaLinux' }
+  if (value.includes('fedora')) return { key: 'fedora', mark: 'FED', compactMark: 'F', label: 'Fedora' }
+  if (value.includes('mac') || value.includes('darwin')) return { key: 'macos', mark: 'MAC', compactMark: 'M', label: 'macOS' }
+  if (clientOS === 'linux') return { key: 'linux', mark: 'LNX', compactMark: 'L', label: 'Linux' }
+  if (clientOS === 'windows') return { key: 'windows', mark: 'WIN', compactMark: 'W', label: 'Windows' }
+  if (clientOS === 'darwin') return { key: 'macos', mark: 'MAC', compactMark: 'M', label: 'macOS' }
+  return { key: 'generic', mark: 'SYS', compactMark: 'S', label: 'System' }
 }
 
 function displayClientSystem(item: DashboardAgentView) {

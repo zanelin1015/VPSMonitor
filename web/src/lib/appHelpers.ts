@@ -186,6 +186,10 @@ function mergeRealtimeMetricsIntoAgents<T extends AgentListItem>(agents: T[], me
     return {
       ...agent,
       agent_name: agent.agent_name || metric.agent_name,
+      client_version: metric.client_version || agent.client_version,
+      client_os: metric.client_os || agent.client_os,
+      client_arch: metric.client_arch || agent.client_arch,
+      system_version: metric.system_version || agent.system_version,
       realtime_at: metric.reported_at || agent.realtime_at,
       summary: mergeRealtimeSummary(agent.summary, metric.summary),
     }

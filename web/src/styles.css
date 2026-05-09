@@ -512,6 +512,8 @@ body {
   display: grid;
   min-width: 0;
   gap: 6px;
+  grid-column: 1;
+  grid-row: 1 / span 2;
 }
 
 .agent-list-main .agent-card-head {
@@ -540,6 +542,25 @@ body {
   display: grid;
   min-width: 0;
   gap: 6px;
+}
+
+.agent-list-runtime {
+  display: flex;
+}
+
+.agent-list-metrics {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.agent-list-flow {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.agent-button-list .agent-runtime-row {
+  grid-column: 2 / 4;
+  grid-row: 1;
 }
 
 .agent-list-metrics {
@@ -643,19 +664,6 @@ body {
   line-height: 1.2;
 }
 
-.agent-os-icon {
-  display: inline-grid;
-  width: 24px;
-  height: 24px;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--chip-bg);
-  font-size: 14px;
-  line-height: 1;
-}
-
 .agent-flag {
   display: grid;
   width: 26px;
@@ -728,6 +736,112 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.agent-runtime-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+}
+
+.agent-runtime-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-strong) 76%, transparent);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.agent-runtime-pill-bandwidth {
+  color: var(--muted-strong);
+}
+
+.agent-runtime-text {
+  color: var(--text);
+}
+
+.agent-runtime-divider,
+.agent-runtime-subtle {
+  color: var(--muted);
+}
+
+.agent-system-icon {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.agent-system-icon.compact {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0;
+}
+
+.agent-system-debian {
+  border-color: color-mix(in srgb, #e11d48 35%, var(--border));
+  background: color-mix(in srgb, #ffe4ec 82%, var(--card));
+  color: #be123c;
+}
+
+.agent-system-ubuntu {
+  border-color: color-mix(in srgb, #ea580c 35%, var(--border));
+  background: color-mix(in srgb, #ffedd5 82%, var(--card));
+  color: #c2410c;
+}
+
+.agent-system-alpine {
+  border-color: color-mix(in srgb, #2563eb 36%, var(--border));
+  background: color-mix(in srgb, #dbeafe 82%, var(--card));
+  color: #1d4ed8;
+}
+
+.agent-system-windows {
+  border-color: color-mix(in srgb, #0ea5e9 36%, var(--border));
+  background: color-mix(in srgb, #e0f2fe 82%, var(--card));
+  color: #0369a1;
+}
+
+.agent-system-centos,
+.agent-system-rocky,
+.agent-system-alma,
+.agent-system-fedora,
+.agent-system-linux {
+  border-color: color-mix(in srgb, #22c55e 34%, var(--border));
+  background: color-mix(in srgb, #dcfce7 82%, var(--card));
+  color: #15803d;
+}
+
+.agent-system-macos {
+  border-color: color-mix(in srgb, #64748b 35%, var(--border));
+  background: color-mix(in srgb, #e2e8f0 84%, var(--card));
+  color: #334155;
+}
+
+.agent-system-generic {
+  border-color: color-mix(in srgb, var(--blue) 34%, var(--border));
+  background: color-mix(in srgb, var(--blue-soft) 68%, var(--card));
+  color: var(--blue);
 }
 
 .agent-tag-chip {
@@ -828,6 +942,18 @@ body {
 
 .agent-footer-line {
   margin-top: auto;
+}
+
+.agent-button-list .agent-runtime-row .agent-runtime-pill {
+  min-height: 32px;
+  padding: 4px 9px;
+  font-size: 11px;
+}
+
+.agent-button-list .agent-runtime-row .agent-system-icon {
+  width: 28px;
+  height: 28px;
+  font-size: 9px;
 }
 
 .renewal-ok {

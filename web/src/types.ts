@@ -394,6 +394,10 @@ export interface DashboardAgentView extends AgentListItem {
 export interface AgentRealtimeMetrics {
   agent_id: string
   agent_name?: string
+  client_version?: string
+  client_os?: string
+  client_arch?: string
+  system_version?: string
   reported_at?: string
   summary: VPSSummary
 }
