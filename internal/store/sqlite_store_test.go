@@ -343,6 +343,90 @@ func TestSQLiteStoreXUIActionLifecycle(t *testing.T) {
 	}
 }
 
+func TestSQLiteStoreRenewalTrafficBaselineResetsByCycle(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "bridge.db")
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+
+	now := time.Date(2026, 5, 9, 8, 0, 0, 0, time.UTC)
+	start := now.AddDate(0, 0, -1)
+	startDate := start.Format("2006-01-02")
+
+	if _, err := store.RegisterAgent(model.AgentRegisterRequest{
+		AgentID:   "traffic-01",
+		AgentName: "Traffic 01",
+	}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	if err := store.SaveSnapshot(model.AgentSnapshot{
+		AgentID:    "traffic-01",
+		AgentName:  "Traffic 01",
+		ReportedAt: now,
+		Summary: model.VPSSummary{
+			NetTrafficSent:  200,
+			NetTrafficRecv:  300,
+			NetTrafficTotal: 500,
+		},
+	}); err != nil {
+		t.Fatalf("SaveSnapshot: %v", err)
+	}
+
+	updated, err := store.UpdateAgentConfig("traffic-01", model.ManagedAgentConfig{
+		AgentID:   "traffic-01",
+		AgentName: "Traffic 01",
+		Renewal: model.VPSRenewalConfig{
+			Enabled:           true,
+			StartDate:         startDate,
+			Cycle:             "month",
+			AutoRenew:         true,
+			TrafficLimitBytes: 1024,
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateAgentConfig: %v", err)
+	}
+	if updated.Config.Renewal.TrafficBaselinePeriodStart != startDate {
+		t.Fatalf("expected baseline period %s, got %s", startDate, updated.Config.Renewal.TrafficBaselinePeriodStart)
+	}
+	if updated.Config.Renewal.TrafficBaselineBytes != 500 {
+		t.Fatalf("expected total baseline 500, got %d", updated.Config.Renewal.TrafficBaselineBytes)
+	}
+	if updated.Config.Renewal.TrafficSentBaselineBytes != 200 || updated.Config.Renewal.TrafficRecvBaselineBytes != 300 {
+		t.Fatalf("unexpected upload/download baselines: %#v", updated.Config.Renewal)
+	}
+
+	nextPeriod := start.AddDate(0, 1, 1)
+	if err := store.SaveSnapshot(model.AgentSnapshot{
+		AgentID:    "traffic-01",
+		AgentName:  "Traffic 01",
+		ReportedAt: nextPeriod,
+		Summary: model.VPSSummary{
+			NetTrafficSent:  350,
+			NetTrafficRecv:  450,
+			NetTrafficTotal: 800,
+		},
+	}); err != nil {
+		t.Fatalf("SaveSnapshot next period: %v", err)
+	}
+	reloaded, found, err := store.GetAgentConfig("traffic-01")
+	if err != nil {
+		t.Fatalf("GetAgentConfig: %v", err)
+	}
+	if !found {
+		t.Fatalf("expected agent config")
+	}
+	expectedNextPeriod := start.AddDate(0, 1, 0).Format("2006-01-02")
+	if reloaded.Renewal.TrafficBaselinePeriodStart != expectedNextPeriod {
+		t.Fatalf("expected next baseline period %s, got %s", expectedNextPeriod, reloaded.Renewal.TrafficBaselinePeriodStart)
+	}
+	if reloaded.Renewal.TrafficBaselineBytes != 800 {
+		t.Fatalf("expected next total baseline 800, got %d", reloaded.Renewal.TrafficBaselineBytes)
+	}
+}
+
 func TestSQLiteStoreAdminAuthLifecycle(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "bridge.db")
 	store, err := NewSQLiteStore(dbPath)

@@ -26,19 +26,24 @@ package_component() {
   local entrypoint="$2"
   local goos="$3"
   local goarch="$4"
+  local package_role="${app_name#bridge-}"
+  local package_prefix="${PACKAGE_PREFIX:-VPSMonitor}"
 
   local ext=""
   if [[ "$goos" == "windows" ]]; then
     ext=".exe"
   fi
 
-  local package_name="${app_name}-${goos}-${goarch}"
+  local package_name="${package_prefix}-${package_role}-${goos}-${goarch}"
   local output_dir="${DIST_DIR}/${package_name}"
-  local config_src="${ROOT_DIR}/config/${app_name#bridge-}.example.json"
-  local config_dst="${output_dir}/config/${app_name#bridge-}.json"
+  local config_src="${ROOT_DIR}/config/${package_role}.example.json"
+  local config_dst="${output_dir}/config/${package_role}.json"
   local binary_path="${output_dir}/${app_name}${ext}"
 
   rm -rf "$output_dir"
+  rm -f "${DIST_DIR}/${package_name}.tar.gz" "${DIST_DIR}/${package_name}.zip"
+  rm -rf "${DIST_DIR}/${app_name}-${goos}-${goarch}"
+  rm -f "${DIST_DIR}/${app_name}-${goos}-${goarch}.tar.gz" "${DIST_DIR}/${app_name}-${goos}-${goarch}.zip"
   mkdir -p "${output_dir}/config"
 
   GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags="-s -w" -o "$binary_path" "$entrypoint"
@@ -55,7 +60,7 @@ package_component() {
   else
     cp "${ROOT_DIR}/scripts/templates/run-${app_name}.sh" "${output_dir}/run.sh"
     if [[ "$app_name" == "bridge-server" ]]; then
-      cp "${ROOT_DIR}/scripts/templates/install-bridge-server.sh" "${output_dir}/install.sh"
+      cp "${ROOT_DIR}/install.sh" "${output_dir}/install.sh"
       chmod +x "${output_dir}/install.sh"
     fi
     chmod +x "${output_dir}/run.sh" "$binary_path"

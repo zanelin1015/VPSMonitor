@@ -29,14 +29,36 @@ func updateRenewalTrafficBaselineTx(tx *sql.Tx, agentID string, trafficSent uint
 	if renewalJSON != "" {
 		_ = json.Unmarshal([]byte(renewalJSON), &cfg)
 	}
-	cfg = normalizeRenewalConfig(cfg)
-	if cfg.TrafficLimitBytes == 0 || !cfg.AutoRenew || cfg.Cycle == "" {
+	if !applyRenewalTrafficBaseline(&cfg, trafficSent, trafficRecv, trafficTotal, now) {
 		return nil
 	}
 
-	periodStart, ok := currentRenewalPeriodStart(cfg, now)
+	body, err := json.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(`UPDATE agents SET renewal_config_json = ?, updated_at = ? WHERE agent_id = ?`, string(body), time.Now().UTC().Format(time.RFC3339Nano), agentID)
+	return err
+}
+
+func applyRenewalTrafficBaseline(cfg *model.VPSRenewalConfig, trafficSent uint64, trafficRecv uint64, trafficTotal uint64, now time.Time) bool {
+	if cfg == nil {
+		return false
+	}
+	if trafficTotal == 0 {
+		trafficTotal = trafficSent + trafficRecv
+	}
+	if trafficTotal == 0 && trafficSent == 0 && trafficRecv == 0 {
+		return false
+	}
+	*cfg = normalizeRenewalConfig(*cfg)
+	if cfg.TrafficLimitBytes == 0 || !cfg.AutoRenew || cfg.Cycle == "" {
+		return false
+	}
+
+	periodStart, ok := currentRenewalPeriodStart(*cfg, now)
 	if !ok {
-		return nil
+		return false
 	}
 	periodKey := periodStart.Format("2006-01-02")
 	changed := false
@@ -77,16 +99,7 @@ func updateRenewalTrafficBaselineTx(tx *sql.Tx, agentID string, trafficSent uint
 		cfg.TrafficRecvBaselineBytes = trafficRecv
 		changed = true
 	}
-	if !changed {
-		return nil
-	}
-
-	body, err := json.Marshal(cfg)
-	if err != nil {
-		return err
-	}
-	_, err = tx.Exec(`UPDATE agents SET renewal_config_json = ?, updated_at = ? WHERE agent_id = ?`, string(body), time.Now().UTC().Format(time.RFC3339Nano), agentID)
-	return err
+	return changed
 }
 
 func currentRenewalPeriodStart(cfg model.VPSRenewalConfig, now time.Time) (time.Time, bool) {

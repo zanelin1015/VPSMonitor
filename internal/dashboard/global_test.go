@@ -150,6 +150,97 @@ func TestBuildGlobalDashboardMatchesCrossClientTopology(t *testing.T) {
 	}
 }
 
+func TestBuildGlobalDashboardMatchesDirectIPOutbound(t *testing.T) {
+	now := time.Now().UTC()
+	agents := []model.AgentRecord{
+		{AgentID: "edge", AgentName: "Edge", RegisteredAt: now, UpdatedAt: now},
+		{
+			AgentID:      "landing",
+			AgentName:    "Landing",
+			RegisteredAt: now,
+			UpdatedAt:    now,
+			Summary: model.VPSSummary{
+				PublicIPv4: "203.0.113.20",
+			},
+		},
+	}
+
+	snapshots := []model.AgentSnapshot{
+		{
+			AgentID:    "edge",
+			AgentName:  "Edge",
+			ReportedAt: now,
+			XUI: &model.XUISnapshot{
+				CollectedAt: now,
+				Inbounds: []map[string]any{
+					{
+						"id":       1,
+						"tag":      "edge-in",
+						"protocol": "vmess",
+						"port":     443,
+						"settings": `{"clients":[{"email":"alice","enable":true}]}`,
+					},
+				},
+				Outbounds: []map[string]any{
+					{
+						"tag":      "relay-by-ip",
+						"protocol": "vmess",
+						"settings": map[string]any{
+							"vnext": []map[string]any{
+								{"address": "203.0.113.20", "port": 20001},
+							},
+						},
+						"streamSettings": map[string]any{
+							"network": "tcp",
+						},
+					},
+				},
+				RoutingRules: []map[string]any{
+					{"type": "field", "user": []string{"alice"}, "outboundTag": "relay-by-ip"},
+				},
+			},
+		},
+		{
+			AgentID:    "landing",
+			AgentName:  "Landing",
+			ReportedAt: now,
+			Summary:    agents[1].Summary,
+			XUI: &model.XUISnapshot{
+				CollectedAt: now,
+				Inbounds: []map[string]any{
+					{
+						"id":             2,
+						"tag":            "landing-vmess",
+						"remark":         "Landing VMess",
+						"protocol":       "vmess",
+						"port":           20001,
+						"settings":       `{"clients":[]}`,
+						"streamSettings": `{"network":"tcp"}`,
+					},
+				},
+				Outbounds: []map[string]any{
+					{"tag": "direct", "protocol": "freedom"},
+				},
+			},
+		},
+	}
+
+	view := BuildGlobalDashboard(agents, snapshots)
+	if view.Totals.LinkCount != 1 {
+		t.Fatalf("expected direct IP outbound to match one link, got %d", view.Totals.LinkCount)
+	}
+	link := view.Links[0]
+	if link.Target.AgentID != "landing" {
+		t.Fatalf("expected landing target, got %#v", link)
+	}
+	if !containsString(link.MatchFields, "address_ip") {
+		t.Fatalf("expected address_ip match field, got %#v", link.MatchFields)
+	}
+	if !containsString(link.MatchFields, "port") {
+		t.Fatalf("expected port match field, got %#v", link.MatchFields)
+	}
+}
+
 func TestBuildGlobalDashboardExpandsBalancerRoute(t *testing.T) {
 	now := time.Now().UTC()
 

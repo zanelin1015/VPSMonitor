@@ -60,15 +60,22 @@ function Package-Component([string]$AppName, [string]$Entrypoint, [string]$GoOs,
     $ext = ".exe"
   }
 
-  $packageName = "$AppName-$GoOs-$GoArch"
+  $packagePrefix = if ($env:PACKAGE_PREFIX) { $env:PACKAGE_PREFIX } else { "VPSMonitor" }
+  $packageRole = $AppName -replace "^bridge-", ""
+  $packageName = "$packagePrefix-$packageRole-$GoOs-$GoArch"
   $outputDir = Join-Path $DistDir $packageName
-  $configName = ($AppName -replace "^bridge-", "") + ".json"
-  $configExample = Join-Path $RootDir "config\$($AppName -replace '^bridge-', '').example.json"
+  $configName = "$packageRole.json"
+  $configExample = Join-Path $RootDir "config\$packageRole.example.json"
   $binaryPath = Join-Path $outputDir "$AppName$ext"
 
   if (Test-Path $outputDir) {
     Remove-Item -Recurse -Force $outputDir
   }
+  Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $DistDir "$packageName.zip")
+  Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $DistDir "$packageName.tar.gz")
+  Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $DistDir "$AppName-$GoOs-$GoArch")
+  Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $DistDir "$AppName-$GoOs-$GoArch.zip")
+  Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $DistDir "$AppName-$GoOs-$GoArch.tar.gz")
   New-Item -ItemType Directory -Force -Path (Join-Path $outputDir "config") | Out-Null
 
   $env:GOOS = $GoOs
@@ -84,6 +91,9 @@ function Package-Component([string]$AppName, [string]$Entrypoint, [string]$GoOs,
   }
   else {
     Copy-Item (Join-Path $RootDir "scripts\templates\run-$AppName.sh") (Join-Path $outputDir "run.sh")
+    if ($AppName -eq "bridge-server") {
+      Copy-Item (Join-Path $RootDir "install.sh") (Join-Path $outputDir "install.sh")
+    }
     if (Get-Command tar -ErrorAction SilentlyContinue) {
       & tar -czf (Join-Path $DistDir "$packageName.tar.gz") -C $DistDir $packageName
     }

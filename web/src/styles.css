@@ -217,19 +217,65 @@ body {
   width: 100%;
 }
 
-.account-bar {
-  justify-content: flex-end;
+.personal-center-button {
+  width: 100%;
+  min-height: 48px;
+  justify-content: flex-start;
+  border-color: color-mix(in srgb, var(--green) 35%, transparent);
+  background: color-mix(in srgb, var(--card) 78%, var(--green-soft));
+  box-shadow: 0 12px 28px rgba(15, 118, 110, 0.12);
+  color: var(--text);
+  font-weight: 800;
 }
 
-.account-bar .ant-tag {
-  display: inline-flex;
-  align-items: center;
-  min-height: 32px;
-  margin-inline-end: 0;
-  padding: 0 10px;
-  border-color: color-mix(in srgb, var(--green) 35%, transparent);
-  background: var(--green-soft);
+.personal-center-button span:last-child {
+  margin-left: auto;
   color: var(--green);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.personal-center-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.personal-center-profile {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--green) 24%, transparent);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 15% 15%, color-mix(in srgb, var(--green) 22%, transparent), transparent 32%),
+    color-mix(in srgb, var(--card) 82%, white);
+}
+
+.personal-center-profile .ant-typography {
+  margin: 0;
+}
+
+.personal-center-avatar {
+  display: grid;
+  width: 64px;
+  height: 64px;
+  place-items: center;
+  border-radius: 22px;
+  background: var(--green);
+  color: #fff;
+  font-size: 28px;
+  box-shadow: 0 18px 36px rgba(15, 118, 110, 0.22);
+}
+
+.personal-center-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.personal-center-actions .ant-btn {
+  min-height: 44px;
+  justify-content: flex-start;
 }
 
 .login-shell {

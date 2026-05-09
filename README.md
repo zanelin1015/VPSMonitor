@@ -53,19 +53,19 @@
 
 ## 目录
 
-- [cmd/bridge-server/main.go](/Users/alan/Desktop/WorkPlace/Projects/NanFengMonitor/bridge-core/cmd/bridge-server/main.go)
-- [cmd/bridge-client/main.go](/Users/alan/Desktop/WorkPlace/Projects/NanFengMonitor/bridge-core/cmd/bridge-client/main.go)
-- [cmd/bridge-devseed/main.go](/Users/alan/Desktop/WorkPlace/Projects/NanFengMonitor/bridge-core/cmd/bridge-devseed/main.go)
-- [cmd/bridge-devpanels/main.go](/Users/alan/Desktop/WorkPlace/Projects/NanFengMonitor/bridge-core/cmd/bridge-devpanels/main.go)
-- [internal/server/app.go](/Users/alan/Desktop/WorkPlace/Projects/NanFengMonitor/bridge-core/internal/server/app.go)
-- [internal/client/app.go](/Users/alan/Desktop/WorkPlace/Projects/NanFengMonitor/bridge-core/internal/client/app.go)
-- [internal/store/sqlite_store.go](/Users/alan/Desktop/WorkPlace/Projects/NanFengMonitor/bridge-core/internal/store/sqlite_store.go)
-- [internal/panels/xui.go](/Users/alan/Desktop/WorkPlace/Projects/NanFengMonitor/bridge-core/internal/panels/xui.go)
+- [cmd/bridge-server/main.go](cmd/bridge-server/main.go)
+- [cmd/bridge-client/main.go](cmd/bridge-client/main.go)
+- [cmd/bridge-devseed/main.go](cmd/bridge-devseed/main.go)
+- [cmd/bridge-devpanels/main.go](cmd/bridge-devpanels/main.go)
+- [internal/server/app.go](internal/server/app.go)
+- [internal/client/app.go](internal/client/app.go)
+- [internal/store/sqlite_store.go](internal/store/sqlite_store.go)
+- [internal/panels/xui.go](internal/panels/xui.go)
 
 ## 配置
 
-- 服务端示例: [config/server.example.json](/Users/alan/Desktop/WorkPlace/Projects/NanFengMonitor/bridge-core/config/server.example.json)
-- 客户端示例: [config/client.example.json](/Users/alan/Desktop/WorkPlace/Projects/NanFengMonitor/bridge-core/config/client.example.json)
+- 服务端示例: [config/server.example.json](config/server.example.json)
+- 客户端示例: [config/client.example.json](config/client.example.json)
 
 ### `server.json`
 
@@ -112,10 +112,11 @@
 
 ## 运行
 
+以下命令都在项目根目录执行。项目可以放在任意路径，不依赖固定的本机绝对目录。
+
 ### 1. 启动服务端
 
 ```bash
-cd /Users/alan/Desktop/WorkPlace/Projects/NanFengMonitor/bridge-core
 cp config/server.example.json config/server.json
 go run ./cmd/bridge-server -config ./config/server.json
 ```
@@ -129,7 +130,6 @@ http://127.0.0.1:8090/
 ### 2. 启动客户端
 
 ```bash
-cd /Users/alan/Desktop/WorkPlace/Projects/NanFengMonitor/bridge-core
 cp config/client.example.json config/client.json
 go run ./cmd/bridge-client -config ./config/client.json -once
 ```
@@ -226,7 +226,6 @@ go run ./cmd/bridge-client -config ./config/client.json -once
 Linux/macOS：
 
 ```bash
-cd /Users/alan/Desktop/WorkPlace/Projects/NanFengMonitor/bridge-core
 chmod +x ./scripts/build.sh
 ./scripts/build.sh
 ```
@@ -234,7 +233,6 @@ chmod +x ./scripts/build.sh
 Windows PowerShell：
 
 ```powershell
-Set-Location /Users/alan/Desktop/WorkPlace/Projects/NanFengMonitor/bridge-core
 ./scripts/build.ps1
 ```
 
@@ -244,4 +242,4 @@ Set-Location /Users/alan/Desktop/WorkPlace/Projects/NanFengMonitor/bridge-core
 - Node.js 18+
 - npm
 
-脚本会先构建前端静态资源，再把页面嵌入 `bridge-server` 二进制，并输出 Linux / Windows 可直接运行的包。
+脚本会先构建前端静态资源，再把页面嵌入 `bridge-server` 二进制，并输出 Linux / Windows 可直接运行的包，默认包名为 `VPSMonitor-server-linux-amd64.tar.gz`、`VPSMonitor-client-linux-amd64.tar.gz`。

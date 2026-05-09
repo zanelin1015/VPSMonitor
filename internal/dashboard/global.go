@@ -427,6 +427,7 @@ func scoreTopologyMatch(outbound model.TopologyOutboundRef, inbound model.Topolo
 	score := 0
 	hostMatched := false
 
+	addressHost := extractEndpointHost(outbound.Address)
 	address := normalizeHost(outbound.Address)
 	serverName := normalizeHost(outbound.TLSServerName)
 	wsHost := normalizeHost(outbound.WSHost)
@@ -440,7 +441,7 @@ func scoreTopologyMatch(outbound model.TopologyOutboundRef, inbound model.Topolo
 		}
 	}
 
-	if normalized := normalizeIP(address); normalized != "" {
+	if normalized := normalizeIP(addressHost); normalized != "" {
 		if _, ok := inboundIPs[normalized]; ok {
 			score += 120
 			fields = append(fields, "address_ip")

@@ -1,4 +1,4 @@
-import { startTransition, useDeferredValue, useEffect, useState } from 'react'
+import { startTransition, useDeferredValue, useEffect, useRef, useState } from 'react'
 import {
   Alert,
   App as AntdApp,
@@ -36,6 +36,7 @@ import {
   SaveOutlined,
   SafetyCertificateOutlined,
   SettingOutlined,
+  UserOutlined,
 } from '@ant-design/icons'
 
 import type {
@@ -73,11 +74,12 @@ const DEFAULT_BACKGROUND_IMAGE = 'https://pic.netbian.com/uploads/allimg/260211/
 const DASHBOARD_AUTO_REFRESH_MS = 20_000
 const AGENT_VIEW_MODE_STORAGE_PREFIX = 'bridge-core.agent-view-mode.'
 const XUI_ACTION_KINDS = [
-  { value: 'add_outbound', label: '新增出站' },
+  { value: 'add_outbound', label: '从内部导入出站' },
   { value: 'add_routing_rule', label: '新增转发 / 路由规则' },
 ]
 
 type AgentViewMode = 'card' | 'list'
+type ConfigSectionKey = 'client' | 'renewal' | 'xui' | 'entry'
 
 interface TLSCertificateSelectionForm {
   mode: 'none' | 'domain_auto' | 'inventory' | 'manual'
@@ -177,6 +179,7 @@ export default function App() {
   const [loginLoading, setLoginLoading] = useState(false)
   const [loginForm, setLoginForm] = useState({ username: '', password: '' })
   const [accountModalOpen, setAccountModalOpen] = useState(false)
+  const [personalCenterOpen, setPersonalCenterOpen] = useState(false)
   const [accountSaving, setAccountSaving] = useState(false)
   const [accountForm, setAccountForm] = useState({
     current_password: '',
@@ -195,10 +198,12 @@ export default function App() {
   const [overviewLoading, setOverviewLoading] = useState(false)
   const [overviewError, setOverviewError] = useState('')
   const [managedConfig, setManagedConfig] = useState<ManagedAgentConfig | null>(null)
+  const [savedManagedConfig, setSavedManagedConfig] = useState<ManagedAgentConfig | null>(null)
+  const managedConfigDirtyRef = useRef(false)
   const [tagInputText, setTagInputText] = useState('')
   const [entryAddressInputText, setEntryAddressInputText] = useState('')
   const [configLoading, setConfigLoading] = useState(false)
-  const [configSaving, setConfigSaving] = useState(false)
+  const [configSavingSection, setConfigSavingSection] = useState<ConfigSectionKey | null>(null)
   const [configError, setConfigError] = useState('')
   const [configAudits, setConfigAudits] = useState<ConfigAuditLog[]>([])
   const [configAuditsLoading, setConfigAuditsLoading] = useState(false)
@@ -230,7 +235,7 @@ export default function App() {
   const selectedAgent = agents.find((item) => item.agent_id === selectedAgentId)
   const selectedSummary = overview?.summary || selectedAgent?.summary || {}
   const topologyScopeLabel = selectedAgentId ? selectedAgent?.agent_name || selectedAgentId : selectedTag ? `${selectedTag} 标签` : '全部 Client'
-  const heroTitle = 'Bridge Core Console'
+  const heroTitle = '南风VPS监控'
   useEffect(() => {
     void loadSession()
   }, [])
@@ -302,6 +307,8 @@ export default function App() {
       setActiveTabKey((current) => (current === 'config' ? 'overview' : current))
       setOverview(null)
       setManagedConfig(null)
+      setSavedManagedConfig(null)
+      managedConfigDirtyRef.current = false
       setTagInputText('')
       setEntryAddressInputText('')
       setOverviewError('')
@@ -543,6 +550,12 @@ export default function App() {
     try {
       const data = await fetchJSON<ManagedAgentConfig>(`/api/v1/agents/${agentID}/config`)
       const normalized = normalizeManagedConfig(data, agentID, selectedAgent?.agent_name)
+      setSavedManagedConfig(normalized)
+      if (silent && managedConfigDirtyRef.current) {
+        setConfigError('')
+        return
+      }
+      managedConfigDirtyRef.current = false
       setManagedConfig(normalized)
       setTagInputText(formatTagInput(normalized.tags))
       setEntryAddressInputText(formatAddressInput(normalized.entry?.addresses))
@@ -552,6 +565,8 @@ export default function App() {
         setAdminUser(null)
       } else if (!silent) {
         const emptyConfig = createEmptyManagedConfig(agentID, selectedAgent?.agent_name)
+        managedConfigDirtyRef.current = false
+        setSavedManagedConfig(emptyConfig)
         setManagedConfig(emptyConfig)
         setTagInputText(formatTagInput(emptyConfig.tags))
         setEntryAddressInputText(formatAddressInput(emptyConfig.entry?.addresses))
@@ -753,23 +768,32 @@ export default function App() {
     }
   }
 
-  async function saveManagedConfig() {
+  async function saveManagedConfigSection(section: ConfigSectionKey) {
     if (!selectedAgentId || !managedConfig) {
       return
     }
-    setConfigSaving(true)
+    const baseConfig = savedManagedConfig || createEmptyManagedConfig(selectedAgentId, selectedAgent?.agent_name)
+    const payload = buildSectionSavePayload(baseConfig, managedConfig, section, selectedAgentId)
+    setConfigSavingSection(section)
     setConfigError('')
     try {
       const saved = await fetchJSON<ManagedAgentConfig>(`/api/v1/agents/${selectedAgentId}/config`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(managedConfig),
+        body: JSON.stringify(payload),
       })
       const normalized = normalizeManagedConfig(saved, selectedAgentId, saved.agent_name || selectedAgent?.agent_name)
-      setManagedConfig(normalized)
-      setTagInputText(formatTagInput(normalized.tags))
-      setEntryAddressInputText(formatAddressInput(normalized.entry?.addresses))
-      message.success('托管配置已更新，client 下一次轮询会自动生效')
+      setSavedManagedConfig(normalized)
+      const nextDraft = mergeSavedSectionIntoDraft(managedConfig, normalized, section)
+      managedConfigDirtyRef.current = configSignature(nextDraft) !== configSignature(normalized)
+      setManagedConfig(nextDraft)
+      if (section === 'client') {
+        setTagInputText(formatTagInput(normalized.tags))
+      }
+      if (section === 'entry') {
+        setEntryAddressInputText(formatAddressInput(normalized.entry?.addresses))
+      }
+      message.success(`${configSectionLabel(section)}已保存，client 下一次轮询会自动生效`)
       await loadAgents()
       await loadConfigAudits(selectedAgentId, { silent: true })
     } catch (error) {
@@ -780,7 +804,7 @@ export default function App() {
       setConfigError(detail)
       message.error(detail)
     } finally {
-      setConfigSaving(false)
+      setConfigSavingSection(null)
     }
   }
 
@@ -1124,17 +1148,43 @@ export default function App() {
       <div className="app-shell">
         <header className="hero-panel">
           <div>
-            <div className="eyebrow">Bridge Core / Unified Client Center</div>
+            <div className="eyebrow">南风 VPS 监控中心</div>
             <Title level={1}>{heroTitle}</Title>
             <Paragraph className="hero-copy">
               这里统一管理 client 注册、x-ui 托管配置，以及跨 client 的出站与转发编排。节点新增仍在各自 x-ui 面板内完成，中心只负责汇总和联动。
             </Paragraph>
           </div>
           <div className="hero-actions hero-actions-column">
-            <Space className="account-bar" wrap>
-              <Tag icon={<SafetyCertificateOutlined />} color="success">
-                {adminUser.username}
-              </Tag>
+            <Button
+              className="personal-center-button"
+              icon={<UserOutlined />}
+              onClick={() => setPersonalCenterOpen(true)}
+            >
+              个人中心
+              <span>{adminUser.username}</span>
+            </Button>
+          </div>
+        </header>
+
+        <Modal
+          title="个人中心"
+          open={personalCenterOpen}
+          onCancel={() => setPersonalCenterOpen(false)}
+          footer={null}
+          width={520}
+        >
+          <div className="personal-center-panel">
+            <div className="personal-center-profile">
+              <div className="personal-center-avatar">
+                <SafetyCertificateOutlined />
+              </div>
+              <div>
+                <Text type="secondary">当前管理员</Text>
+                <Title level={3}>{adminUser.username}</Title>
+                <Tag color="success">已登录</Tag>
+              </div>
+            </div>
+            <div className="personal-center-actions">
               <Button
                 icon={<EditOutlined />}
                 onClick={() => {
@@ -1144,20 +1194,34 @@ export default function App() {
                     new_password: '',
                     confirm_password: '',
                   })
+                  setPersonalCenterOpen(false)
                   setAccountModalOpen(true)
                 }}
               >
                 修改账号密码
               </Button>
-              <Button icon={<BellOutlined />} onClick={() => setTelegramBotModalOpen(true)}>
+              <Button
+                icon={<BellOutlined />}
+                onClick={() => {
+                  setPersonalCenterOpen(false)
+                  setTelegramBotModalOpen(true)
+                }}
+              >
                 TG 告警机器人
               </Button>
-              <Button icon={<LogoutOutlined />} onClick={() => void logout()}>
-                退出
+              <Button
+                danger
+                icon={<LogoutOutlined />}
+                onClick={() => {
+                  setPersonalCenterOpen(false)
+                  void logout()
+                }}
+              >
+                退出登录
               </Button>
-            </Space>
+            </div>
           </div>
-        </header>
+        </Modal>
 
         <Modal
           title="修改管理员账号"
@@ -1251,7 +1315,7 @@ export default function App() {
               type="info"
               showIcon
               message="执行方式"
-              description="server 只保存任务；client 下一次轮询领取后，使用已托管的 x-ui 账号密码调用 3x-ui API 执行。这里仅负责出站和转发规则编排。"
+              description="server 只保存任务；client 下一次轮询领取后，使用已托管的 x-ui 账号密码调用 3x-ui API 执行。这里仅允许把内部 Client 节点导入为出站，再配置转发规则。"
             />
             <div>
               <Text type="secondary">操作类型</Text>
@@ -1434,9 +1498,12 @@ export default function App() {
                     dataSource={filteredAgents}
                     renderItem={(item) => {
                       const active = item.agent_id === selectedAgentId
-                      const renewalStatus = calculateRenewalStatus(item.renewal)
-                      const trafficStatus = calculateTrafficStatus(item)
-                      const cpuPercent = clampMetricPercent(item.summary.cpu)
+	                      const renewalStatus = calculateRenewalStatus(item.renewal)
+	                      const trafficStatus = calculateTrafficStatus(item)
+	                      const trafficTotalLabel = trafficStatus.isPeriod ? '周期流量' : '总流量'
+	                      const trafficUploadLabel = trafficStatus.isPeriod ? '周期上传' : '总上传'
+	                      const trafficDownloadLabel = trafficStatus.isPeriod ? '周期下载' : '总下载'
+	                      const cpuPercent = clampMetricPercent(item.summary.cpu)
                       const memPercent = calculateMemoryPercent(item.summary)
                       const statusLevel = agentStatusLevel(item.summary.xray_state)
                       const addressText = item.summary.public_ipv4 || item.summary.observed_ip || item.summary.hostname || item.agent_id
@@ -1504,31 +1571,31 @@ export default function App() {
                                 <div className="agent-list-flow">
                                   {renewalStatus ? (
                                     <MiniProgress
-                                      label="周期"
+                                      label="周期剩余"
                                       value={`${renewalStatus.remainingLabel} · ${renewalStatus.endLabel} · ${renewalStatus.autoRenew ? '自动刷新' : '不自动刷新'}`}
                                       percent={renewalStatus.percent}
                                       level={renewalStatus.level}
                                       className="agent-wide-progress"
                                     />
                                   ) : null}
-                                  <MiniProgress
-                                    label="总流量"
-                                    value={`${trafficStatus.total.label} · 上传 ${formatBytes(trafficStatus.upload.used)} · 下载 ${formatBytes(trafficStatus.download.used)}`}
-                                    percent={trafficStatus.total.percent}
+	                                  <MiniProgress
+	                                    label={trafficTotalLabel}
+	                                    value={`${trafficStatus.total.label} · 上传 ${formatBytes(trafficStatus.upload.used)} · 下载 ${formatBytes(trafficStatus.download.used)}`}
+	                                    percent={trafficStatus.total.percent}
                                     showTrack
                                     level={trafficStatus.total.level}
                                     className="agent-wide-progress"
                                   />
                                   <div className="agent-list-traffic-pair">
-                                    <MiniProgress
-                                      label="总上传"
-                                      value={trafficStatus.upload.label}
+	                                    <MiniProgress
+	                                      label={trafficUploadLabel}
+	                                      value={trafficStatus.upload.label}
                                       percent={trafficStatus.upload.percent}
                                       level={trafficStatus.upload.level}
                                     />
-                                    <MiniProgress
-                                      label="总下载"
-                                      value={trafficStatus.download.label}
+	                                    <MiniProgress
+	                                      label={trafficDownloadLabel}
+	                                      value={trafficStatus.download.label}
                                       percent={trafficStatus.download.percent}
                                       level={trafficStatus.download.level}
                                     />
@@ -1571,7 +1638,7 @@ export default function App() {
                                 </div>
                                 {renewalStatus ? (
                                   <MiniProgress
-                                    label="周期"
+                                    label="周期剩余"
                                     value={`${renewalStatus.remainingLabel} · ${renewalStatus.endLabel} · ${renewalStatus.autoRenew ? '自动刷新' : '不自动刷新'}`}
                                     percent={renewalStatus.percent}
                                     level={renewalStatus.level}
@@ -1579,23 +1646,23 @@ export default function App() {
                                   />
                                 ) : null}
                                 <div className="agent-traffic-grid">
-                                  <MiniProgress
-                                    label="总流量"
-                                    value={`${trafficStatus.total.label} · 上传 ${formatBytes(trafficStatus.upload.used)} · 下载 ${formatBytes(trafficStatus.download.used)}`}
+	                                  <MiniProgress
+	                                    label={trafficTotalLabel}
+	                                    value={`${trafficStatus.total.label} · 上传 ${formatBytes(trafficStatus.upload.used)} · 下载 ${formatBytes(trafficStatus.download.used)}`}
                                     percent={trafficStatus.total.percent}
                                     showTrack
                                     level={trafficStatus.total.level}
                                     className="agent-wide-progress"
                                   />
-                                  <MiniProgress
-                                    label="总上传"
-                                    value={trafficStatus.upload.label}
+	                                  <MiniProgress
+	                                    label={trafficUploadLabel}
+	                                    value={trafficStatus.upload.label}
                                     percent={trafficStatus.upload.percent}
                                     level={trafficStatus.upload.level}
                                   />
-                                  <MiniProgress
-                                    label="总下载"
-                                    value={trafficStatus.download.label}
+	                                  <MiniProgress
+	                                    label={trafficDownloadLabel}
+	                                    value={trafficStatus.download.label}
                                     percent={trafficStatus.download.percent}
                                     level={trafficStatus.download.level}
                                   />
@@ -1764,9 +1831,9 @@ export default function App() {
                         selectedAgent,
                         managedConfig,
                         configLoading,
-                        configSaving,
+                        configSavingSection,
                         configError,
-                        onSave: saveManagedConfig,
+                        onSave: saveManagedConfigSection,
                         onAgentNameChange: (value) => updateManagedConfig((current) => ({ ...current, agent_name: value })),
                         tagInputText,
                         onTagsTextChange: (value) => {
@@ -1924,6 +1991,7 @@ export default function App() {
   )
 
   function updateManagedConfig(updater: (current: ManagedAgentConfig) => ManagedAgentConfig) {
+    managedConfigDirtyRef.current = true
     setManagedConfig((current) => {
       const base = current || createEmptyManagedConfig(selectedAgentId, selectedAgent?.agent_name)
       return updater(base)
@@ -2011,7 +2079,7 @@ function LoginScreen({ loginForm, loginLoading, onChange, onLogin }: LoginScreen
             <LockOutlined />
           </div>
           <div>
-            <Title level={2}>Bridge Core</Title>
+            <Title level={2}>南风VPS监控</Title>
             <Text type="secondary">管理员登录</Text>
           </div>
         </div>
@@ -2064,9 +2132,9 @@ interface ConfigPanelProps {
   selectedAgent?: AgentListItem
   managedConfig: ManagedAgentConfig | null
   configLoading: boolean
-  configSaving: boolean
+  configSavingSection: ConfigSectionKey | null
   configError: string
-  onSave: () => void
+  onSave: (section: ConfigSectionKey) => void
   onAgentNameChange: (value: string) => void
   tagInputText: string
   onTagsTextChange: (value: string) => void
@@ -2084,7 +2152,7 @@ function renderManagedConfigPanel(props: ConfigPanelProps) {
     selectedAgent,
     managedConfig,
     configLoading,
-    configSaving,
+    configSavingSection,
     configError,
     onSave,
     onAgentNameChange,
@@ -2140,6 +2208,19 @@ function renderManagedConfigPanel(props: ConfigPanelProps) {
   const removeEntryMapping = (index: number) => {
     onEntryChange({ mappings: (entryConfig.mappings || []).filter((_, currentIndex) => currentIndex !== index) })
   }
+  const sectionSaving = Boolean(configSavingSection)
+  const sectionSaveButton = (section: ConfigSectionKey, label: string) => (
+    <Button
+      type="primary"
+      size="small"
+      icon={<SaveOutlined />}
+      onClick={() => onSave(section)}
+      loading={configSavingSection === section}
+      disabled={sectionSaving && configSavingSection !== section}
+    >
+      {label}
+    </Button>
+  )
 
   return (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -2162,7 +2243,10 @@ function renderManagedConfigPanel(props: ConfigPanelProps) {
       />
 
       <Card className="config-section-card" bordered={false}>
-        <Title level={4}>Client 信息</Title>
+        <div className="section-title-row">
+          <Title level={4}>Client 信息</Title>
+          {sectionSaveButton('client', '保存 Client 信息')}
+        </div>
         <Row gutter={[16, 16]}>
           <Col xs={24} md={12}>
             <Text type="secondary">Agent ID</Text>
@@ -2185,7 +2269,10 @@ function renderManagedConfigPanel(props: ConfigPanelProps) {
       </Card>
 
       <Card className="config-section-card" bordered={false}>
-        <Title level={4}>VPS 信息</Title>
+        <div className="section-title-row">
+          <Title level={4}>VPS 信息</Title>
+          {sectionSaveButton('renewal', '保存 VPS 信息')}
+        </div>
         <Row gutter={[16, 16]}>
           <Col xs={24} md={8}>
             <div className="switch-row">
@@ -2257,7 +2344,10 @@ function renderManagedConfigPanel(props: ConfigPanelProps) {
       </Card>
 
       <Card className="config-section-card" bordered={false}>
-        <Title level={4}>X-UI 托管配置</Title>
+        <div className="section-title-row">
+          <Title level={4}>X-UI 托管配置</Title>
+          {sectionSaveButton('xui', '保存 X-UI 配置')}
+        </div>
         <Row gutter={[16, 16]}>
           <Col xs={24} md={12}>
             <div className="switch-row">
@@ -2297,9 +2387,12 @@ function renderManagedConfigPanel(props: ConfigPanelProps) {
       <Card className="config-section-card" bordered={false}>
         <div className="section-title-row">
           <Title level={4}>入口地址 / NAT 映射</Title>
-          <Button size="small" icon={<PlusOutlined />} onClick={addEntryMapping}>
-            添加映射
-          </Button>
+          <Space wrap>
+            <Button size="small" icon={<PlusOutlined />} onClick={addEntryMapping}>
+              添加映射
+            </Button>
+            {sectionSaveButton('entry', '保存入口/NAT')}
+          </Space>
         </div>
         <Alert
           type="info"
@@ -2392,11 +2485,6 @@ function renderManagedConfigPanel(props: ConfigPanelProps) {
         </Spin>
       </Card>
 
-      <Space>
-        <Button type="primary" icon={<SaveOutlined />} onClick={onSave} loading={configSaving}>
-          保存托管配置
-        </Button>
-      </Space>
     </Space>
   )
 }
@@ -3356,7 +3444,6 @@ function renderOutboundActionForm(props: {
 }) {
   const { form, agents, targetAgentID, currentOverview, sourceOverview, sourceLoading, onChange } = props
   const update = (patch: Partial<XUIOutboundActionForm>) => onChange({ ...form, ...patch })
-  const requiresRemote = ['vless', 'vmess', 'trojan', 'socks'].includes(form.protocol)
   const activeSourceOverview = form.source_agent_id && currentOverview?.agent_id === form.source_agent_id ? currentOverview : sourceOverview
   const sourceClientOptions = (activeSourceOverview?.clients || []).map((client) => ({
     key: sourceClientKey(client),
@@ -3366,7 +3453,14 @@ function renderOutboundActionForm(props: {
   return (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
       <Card className="config-section-card" bordered={false}>
-        <Title level={4}>从其它 Client 节点导入</Title>
+        <Title level={4}>从内部 Client 节点导入</Title>
+        <Alert
+          type="info"
+          showIcon
+          className="compact-alert"
+          message="只允许内部导入"
+          description="选择一个已有 Client 节点客户端后，系统会自动生成当前 Client 的出站配置；不再开放手动填写协议、地址和端口。"
+        />
         <Row gutter={[16, 16]}>
           <Col xs={24} md={12}>
             <Text type="secondary">源 Client</Text>
@@ -3410,130 +3504,14 @@ function renderOutboundActionForm(props: {
               }}
             />
           </Col>
-        </Row>
-      </Card>
-
-      <Card className="config-section-card" bordered={false}>
-        <Title level={4}>出站基础配置</Title>
-        <Row gutter={[16, 16]}>
-          <Col xs={24} md={12}>
-            <Text type="secondary">标签</Text>
-            <Input value={form.tag} onChange={(event) => update({ tag: event.target.value })} />
-          </Col>
-          <Col xs={24} md={12}>
-            <Text type="secondary">协议</Text>
-            <Select
-              style={{ width: '100%' }}
-              value={form.protocol}
-              options={[
-                { value: 'freedom', label: 'Freedom' },
-                { value: 'vless', label: 'VLESS' },
-                { value: 'vmess', label: 'VMESS' },
-                { value: 'trojan', label: 'Trojan' },
-                { value: 'socks', label: 'SOCKS' },
-                { value: 'blackhole', label: 'Blackhole' },
-              ]}
-              onChange={(value) => update({ protocol: value })}
-            />
-          </Col>
-          <Col xs={24} md={12}>
-            <Text type="secondary">sendThrough</Text>
-            <Input value={form.send_through} onChange={(event) => update({ send_through: event.target.value })} />
-          </Col>
-          <Col xs={24} md={12}>
+          <Col xs={24}>
             <div className="switch-row">
               <span>提交后重启 Xray</span>
               <Tag color="success">自动执行</Tag>
             </div>
           </Col>
-          {requiresRemote ? (
-            <>
-              <Col xs={24} md={12}>
-                <Text type="secondary">远端地址</Text>
-                <Input value={form.address} onChange={(event) => update({ address: event.target.value })} />
-              </Col>
-              <Col xs={24} md={12}>
-                <Text type="secondary">远端端口</Text>
-                <InputNumber style={{ width: '100%' }} min={1} max={65535} value={form.port} onChange={(value) => update({ port: Number(value || 0) })} />
-              </Col>
-            </>
-          ) : null}
         </Row>
       </Card>
-
-      {requiresRemote ? (
-        <Card className="config-section-card" bordered={false}>
-          <Title level={4}>连接参数</Title>
-          <Row gutter={[16, 16]}>
-            {form.protocol === 'vless' || form.protocol === 'vmess' ? (
-              <Col xs={24} md={12}>
-                <Text type="secondary">UUID</Text>
-                <Input value={form.uuid} onChange={(event) => update({ uuid: event.target.value })} />
-              </Col>
-            ) : null}
-            {form.protocol === 'socks' ? (
-              <Col xs={24} md={12}>
-                <Text type="secondary">用户名</Text>
-                <Input value={form.uuid} onChange={(event) => update({ uuid: event.target.value })} />
-              </Col>
-            ) : null}
-            {form.protocol === 'trojan' || form.protocol === 'socks' ? (
-              <Col xs={24} md={12}>
-                <Text type="secondary">{form.protocol === 'trojan' ? '密码' : '认证密码'}</Text>
-                <Input value={form.password} onChange={(event) => update({ password: event.target.value })} />
-              </Col>
-            ) : null}
-            {form.protocol === 'vless' ? (
-              <Col xs={24} md={12}>
-                <Text type="secondary">Flow</Text>
-                <Input value={form.flow} onChange={(event) => update({ flow: event.target.value })} />
-              </Col>
-            ) : null}
-            <Col xs={24} md={12}>
-              <Text type="secondary">传输层</Text>
-              <Select
-                style={{ width: '100%' }}
-                value={form.network}
-                options={[
-                  { value: 'tcp', label: 'TCP' },
-                  { value: 'ws', label: 'WebSocket' },
-                ]}
-                onChange={(value) => update({ network: value })}
-              />
-            </Col>
-            <Col xs={24} md={12}>
-              <Text type="secondary">安全</Text>
-              <Select
-                style={{ width: '100%' }}
-                value={form.security}
-                options={[
-                  { value: 'none', label: 'None' },
-                  { value: 'tls', label: 'TLS' },
-                ]}
-                onChange={(value) => update({ security: value })}
-              />
-            </Col>
-            {form.network === 'ws' ? (
-              <>
-                <Col xs={24} md={12}>
-                  <Text type="secondary">WS Path</Text>
-                  <Input value={form.ws_path} onChange={(event) => update({ ws_path: event.target.value })} />
-                </Col>
-                <Col xs={24} md={12}>
-                  <Text type="secondary">WS Host</Text>
-                  <Input value={form.ws_host} onChange={(event) => update({ ws_host: event.target.value })} />
-                </Col>
-              </>
-            ) : null}
-            {form.security === 'tls' ? (
-              <Col xs={24}>
-                <Text type="secondary">TLS Server Name</Text>
-                <Input value={form.server_name} onChange={(event) => update({ server_name: event.target.value })} />
-              </Col>
-            ) : null}
-          </Row>
-        </Card>
-      ) : null}
     </Space>
   )
 }
@@ -4017,10 +3995,13 @@ function buildInboundClientPayload(client: XUIInboundClientForm, protocol: strin
 }
 
 function buildOutboundActionPayload(form: XUIOutboundActionForm): Record<string, unknown> {
+  if (!form.source_agent_id || !form.source_client_key) {
+    throw new Error('请选择源 Client 和源节点客户端')
+  }
   const protocol = form.protocol.toLowerCase()
   const tag = form.tag.trim()
   if (!tag) {
-    throw new Error('出站标签不能为空')
+    throw new Error('未能从源节点生成出站标签')
   }
 
   const outbound: Record<string, unknown> = {
@@ -4329,6 +4310,83 @@ function normalizeEntryProtocol(protocol?: string): AgentEntryMapping['protocol'
   }
 }
 
+function buildSectionSavePayload(base: ManagedAgentConfig, draft: ManagedAgentConfig, section: ConfigSectionKey, agentID: string): ManagedAgentConfig {
+  const payload: ManagedAgentConfig = {
+    ...base,
+    agent_id: agentID,
+    agent_name: base.agent_name || draft.agent_name || agentID,
+    tags: [...(base.tags || [])],
+    renewal: { ...(base.renewal || {}) },
+    entry: {
+      addresses: [...(base.entry?.addresses || [])],
+      mappings: (base.entry?.mappings || []).map((mapping) => ({ ...mapping })),
+    },
+    xui: { ...base.xui },
+  }
+  switch (section) {
+    case 'client':
+      payload.agent_name = draft.agent_name || agentID
+      payload.tags = [...(draft.tags || [])]
+      break
+    case 'renewal':
+      payload.renewal = { ...(draft.renewal || {}) }
+      break
+    case 'xui':
+      payload.xui = { ...draft.xui }
+      break
+    case 'entry':
+      payload.entry = {
+        addresses: [...(draft.entry?.addresses || [])],
+        mappings: (draft.entry?.mappings || []).map((mapping) => ({ ...mapping })),
+      }
+      break
+  }
+  return payload
+}
+
+function mergeSavedSectionIntoDraft(draft: ManagedAgentConfig, saved: ManagedAgentConfig, section: ConfigSectionKey): ManagedAgentConfig {
+  const next: ManagedAgentConfig = {
+    ...draft,
+    agent_id: saved.agent_id || draft.agent_id,
+  }
+  switch (section) {
+    case 'client':
+      next.agent_name = saved.agent_name
+      next.tags = [...(saved.tags || [])]
+      break
+    case 'renewal':
+      next.renewal = { ...(saved.renewal || {}) }
+      break
+    case 'xui':
+      next.xui = { ...saved.xui }
+      break
+    case 'entry':
+      next.entry = {
+        addresses: [...(saved.entry?.addresses || [])],
+        mappings: (saved.entry?.mappings || []).map((mapping) => ({ ...mapping })),
+      }
+      break
+  }
+  return next
+}
+
+function configSectionLabel(section: ConfigSectionKey): string {
+  switch (section) {
+    case 'client':
+      return 'Client 信息'
+    case 'renewal':
+      return 'VPS 信息'
+    case 'xui':
+      return 'X-UI 配置'
+    case 'entry':
+      return '入口/NAT 配置'
+  }
+}
+
+function configSignature(config: ManagedAgentConfig): string {
+  return JSON.stringify(config)
+}
+
 function normalizeRenewalConfig(config?: VPSRenewalConfig): VPSRenewalConfig {
   const cycle = config?.cycle === 'week' || config?.cycle === 'year' ? config.cycle : 'month'
   const trafficLimitBytes = Math.max(0, Number(config?.traffic_limit_bytes || 0))
@@ -4385,13 +4443,13 @@ function calculateRenewalStatus(config?: VPSRenewalConfig): {
     }
   }
   const totalDays = Math.max(1, daysBetween(period.start, period.end))
-  const elapsedDays = Math.max(0, daysBetween(period.start, now))
+  const remainingPercent = (Math.max(0, remainingDays) / totalDays) * 100
   return {
     remainingLabel: remainingDays === 0 ? '今天到期' : `剩余 ${remainingDays} 天`,
     endLabel: `到期 ${formatLocalDate(period.end)}`,
     level: remainingDays <= 3 ? 'bad' : remainingDays <= 7 ? 'warn' : 'ok',
     autoRenew: Boolean(normalized.auto_renew),
-    percent: clampMetricPercent((elapsedDays / totalDays) * 100),
+    percent: clampMetricPercent(remainingPercent),
   }
 }
 
@@ -4488,6 +4546,7 @@ function daysBetween(start: Date, end: Date): number {
 }
 
 function calculateTrafficStatus(agent: AgentListItem): {
+  isPeriod: boolean
   total: TrafficMeterStatus
   upload: TrafficMeterStatus
   download: TrafficMeterStatus
@@ -4503,10 +4562,21 @@ function calculateTrafficStatus(agent: AgentListItem): {
   const uploadUsed = periodTrafficUsed(currentUpload, baselineUpload)
   const downloadUsed = periodTrafficUsed(currentDownload, baselineDownload)
   return {
+    isPeriod: usesRenewalTrafficCycle(agent.renewal),
     total: buildTrafficMeter(totalUsed, limit),
     upload: buildTrafficMeter(uploadUsed, limit),
     download: buildTrafficMeter(downloadUsed, limit),
   }
+}
+
+function usesRenewalTrafficCycle(config?: VPSRenewalConfig): boolean {
+  const normalized = normalizeRenewalConfig(config)
+  return Boolean(
+    normalized.traffic_limit_bytes &&
+      normalized.auto_renew &&
+      normalized.cycle &&
+      (normalized.start_date || normalized.expire_date),
+  )
 }
 
 function clientTrafficTotal(client: XUIClientView): number {
@@ -4915,14 +4985,27 @@ function agentCountryCode(agent: AgentListItem): string {
 }
 
 function explicitAgentCountryCode(agent: AgentListItem): string {
-  const candidates = [...(agent.tags || []), agent.agent_name || '', agent.summary.hostname || '', agent.agent_id || '']
+  const candidates = [agent.agent_name || '', ...(agent.tags || []), agent.summary.hostname || '', agent.agent_id || '']
   for (const value of candidates) {
-    const code = normalizeCountryCode(value)
+    const code = explicitCountryCodeFromText(value)
     if (code) {
       return code
     }
   }
   return ''
+}
+
+function explicitCountryCodeFromText(value?: string): string {
+  const text = (value || '').trim().toUpperCase()
+  if (!text) {
+    return ''
+  }
+  const direct = normalizeCountryCode(text)
+  if (direct) {
+    return direct
+  }
+  const match = /(?:^|[^A-Z0-9])(HK|US|CN|JP|SG|TW)(?=$|[^A-Z0-9])/.exec(text)
+  return match ? match[1] : ''
 }
 
 function normalizeCountryCode(value?: string): string {

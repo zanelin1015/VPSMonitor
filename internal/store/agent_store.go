@@ -259,6 +259,10 @@ func (s *SQLiteStore) updateAgentConfig(agentID string, cfg model.ManagedAgentCo
 	}
 	record.Tags = cloneStrings(record.Config.Tags)
 	record.UpdatedAt = time.Now().UTC()
+	if snapshot, ok := s.GetLatest(agentID); ok {
+		summary := snapshot.Summary
+		applyRenewalTrafficBaseline(&record.Config.Renewal, summary.NetTrafficSent, summary.NetTrafficRecv, summary.NetTrafficTotal, snapshot.ReportedAt)
+	}
 	record.HasConfig = hasManagedConfig(record.Config)
 
 	xuiJSON, err := s.storedXUIConfigJSON(record.Config.XUI)
