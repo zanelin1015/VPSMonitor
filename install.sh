@@ -29,6 +29,17 @@ lower() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
 }
 
+is_truthy() {
+  case "$(lower "${1:-}")" in
+    y | yes | true | 1 | on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+assume_yes() {
+  is_truthy "${VPSMONITOR_ASSUME_YES:-${VPSMONITOR_NON_INTERACTIVE:-}}"
+}
+
 require_root() {
   [[ "${EUID:-$(id -u)}" -eq 0 ]] || die "Please run this script as root."
 }
@@ -83,6 +94,10 @@ prompt_default() {
   local label="$2"
   local default="$3"
   local value=""
+  if assume_yes; then
+    printf -v "$__var" '%s' "$default"
+    return
+  fi
   read -r -p "$label [$default]: " value || true
   printf -v "$__var" '%s' "${value:-$default}"
 }
@@ -122,6 +137,9 @@ prompt_secret_or_random() {
 confirm_default_no() {
   local label="$1"
   local value=""
+  if assume_yes; then
+    return 1
+  fi
   read -r -p "$label [y/N]: " value || true
   value="$(lower "$value")"
   [[ "$value" == "y" || "$value" == "yes" ]]
@@ -130,6 +148,9 @@ confirm_default_no() {
 confirm_default_yes() {
   local label="$1"
   local value=""
+  if assume_yes; then
+    return 0
+  fi
   read -r -p "$label [Y/n]: " value || true
   value="$(lower "$value")"
   [[ -z "$value" || "$value" == "y" || "$value" == "yes" ]]
@@ -393,19 +414,21 @@ install_client() {
   local install_dir="${VPSMONITOR_CLIENT_DIR:-$prefix/client}"
   prompt_default install_dir "Install directory for bridge-client" "$install_dir"
   local config_path="$install_dir/config/client.json"
-  local server_url="http://SERVER_IP:8090"
-  local registration_token=""
-  local skip_tls_verify="n"
-  local poll_interval="30s"
-  local request_timeout="15"
+  local server_url="${VPSMONITOR_SERVER_URL:-http://SERVER_IP:8090}"
+  local registration_token="${VPSMONITOR_REGISTRATION_TOKEN:-}"
+  local skip_tls_verify="${VPSMONITOR_SERVER_SKIP_TLS_VERIFY:-n}"
+  local poll_interval="${VPSMONITOR_POLL_INTERVAL:-30s}"
+  local request_timeout="${VPSMONITOR_REQUEST_TIMEOUT_SECONDS:-15}"
 
   if [[ -f "$config_path" ]]; then
     warn "Existing client config found: $config_path"
-    if ! confirm_default_no "Overwrite and reconfigure it"; then
+    if ! is_truthy "${VPSMONITOR_FORCE_CONFIG:-}" && ! confirm_default_no "Overwrite and reconfigure it"; then
       info "Keeping existing client config."
     else
       prompt_default server_url "Server URL" "$server_url"
-      prompt_required registration_token "Client registration token"
+      if [[ -z "$registration_token" ]]; then
+        prompt_required registration_token "Client registration token"
+      fi
       prompt_default skip_tls_verify "Skip server TLS verification? y/N" "$skip_tls_verify"
       prompt_default poll_interval "Poll interval" "$poll_interval"
       prompt_default request_timeout "Request timeout seconds" "$request_timeout"
@@ -414,7 +437,12 @@ install_client() {
   else
     info "Client config"
     prompt_default server_url "Server URL" "$server_url"
-    prompt_required registration_token "Client registration token"
+    if [[ -z "$registration_token" ]]; then
+      if assume_yes; then
+        die "VPSMONITOR_REGISTRATION_TOKEN is required for non-interactive client installation."
+      fi
+      prompt_required registration_token "Client registration token"
+    fi
     prompt_default skip_tls_verify "Skip server TLS verification? y/N" "$skip_tls_verify"
     prompt_default poll_interval "Poll interval" "$poll_interval"
     prompt_default request_timeout "Request timeout seconds" "$request_timeout"
@@ -448,6 +476,13 @@ Environment overrides:
   VPSMONITOR_BASE_URL=https://example.com/downloads
   VPSMONITOR_SERVER_PACKAGE_URL=https://example.com/VPSMonitor-server-linux-amd64.tar.gz
   VPSMONITOR_CLIENT_PACKAGE_URL=https://example.com/VPSMonitor-client-linux-amd64.tar.gz
+  VPSMONITOR_SERVER_URL=https://panel.example.com
+  VPSMONITOR_REGISTRATION_TOKEN=token-from-server
+  VPSMONITOR_SERVER_SKIP_TLS_VERIFY=false
+  VPSMONITOR_POLL_INTERVAL=30s
+  VPSMONITOR_REQUEST_TIMEOUT_SECONDS=15
+  VPSMONITOR_ASSUME_YES=true
+  VPSMONITOR_FORCE_CONFIG=true
 EOF
 }
 

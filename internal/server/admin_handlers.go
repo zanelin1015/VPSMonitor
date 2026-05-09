@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -52,6 +53,12 @@ func (a *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.handleConfigAuditLogs(w, r)
+	case "client-install":
+		if r.Method != http.MethodGet && r.Method != http.MethodPut {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		a.handleClientInstallInfo(w, r)
 	default:
 		writeError(w, http.StatusNotFound, "route not found")
 	}
@@ -220,6 +227,125 @@ func (a *App) handleConfigAuditLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, items)
+}
+
+func (a *App) handleClientInstallInfo(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := a.requireAdmin(w, r); !ok {
+		return
+	}
+	if r.Method == http.MethodPut {
+		var req model.ClientInstallSettingsRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode client install settings: %v", err))
+			return
+		}
+		settings, err := validateClientInstallSettings(req)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		saved, err := a.store.SaveClientInstallSettings(settings)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, a.clientInstallInfo(r, saved))
+		return
+	}
+
+	settings, found, err := a.store.GetClientInstallSettings()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !found {
+		settings = model.ClientInstallSettingsRequest{}
+	}
+	writeJSON(w, http.StatusOK, a.clientInstallInfo(r, settings))
+}
+
+const defaultClientInstallScriptURL = "https://raw.githubusercontent.com/zanelin1015/VPSMonitor/main/install.sh"
+
+func (a *App) clientInstallInfo(r *http.Request, settings model.ClientInstallSettingsRequest) model.ClientInstallInfo {
+	serverURL := firstNonEmptyString(settings.ServerURL, requestPublicBaseURL(r))
+	installScriptURL := firstNonEmptyString(settings.InstallScriptURL, defaultClientInstallScriptURL)
+	pollInterval := firstNonEmptyString(settings.PollInterval, "30s")
+	requestTimeoutSeconds := settings.RequestTimeoutSeconds
+	if requestTimeoutSeconds <= 0 {
+		requestTimeoutSeconds = 15
+	}
+	return model.ClientInstallInfo{
+		ServerURL:             serverURL,
+		RegistrationToken:     a.config.RegistrationToken,
+		InstallScriptURL:      installScriptURL,
+		PollInterval:          pollInterval,
+		RequestTimeoutSeconds: requestTimeoutSeconds,
+		ServerSkipTLSVerify:   settings.ServerSkipTLSVerify,
+	}
+}
+
+func validateClientInstallSettings(req model.ClientInstallSettingsRequest) (model.ClientInstallSettingsRequest, error) {
+	req.ServerURL = strings.TrimSpace(req.ServerURL)
+	req.InstallScriptURL = strings.TrimSpace(req.InstallScriptURL)
+	req.PollInterval = strings.TrimSpace(req.PollInterval)
+	if req.ServerURL == "" {
+		return req, fmt.Errorf("server url is required")
+	}
+	if err := validateHTTPURL(req.ServerURL, "server url"); err != nil {
+		return req, err
+	}
+	if req.InstallScriptURL == "" {
+		return req, fmt.Errorf("install script url is required")
+	}
+	if err := validateHTTPURL(req.InstallScriptURL, "install script url"); err != nil {
+		return req, err
+	}
+	if req.PollInterval == "" {
+		req.PollInterval = "30s"
+	}
+	if d, err := time.ParseDuration(req.PollInterval); err != nil || d <= 0 {
+		return req, fmt.Errorf("poll interval must be a positive Go duration, e.g. 30s")
+	}
+	if req.RequestTimeoutSeconds <= 0 {
+		req.RequestTimeoutSeconds = 15
+	}
+	return req, nil
+}
+
+func validateHTTPURL(value, label string) error {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("%s must be a valid URL", label)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("%s must start with http:// or https://", label)
+	}
+	return nil
+}
+
+func requestPublicBaseURL(r *http.Request) string {
+	proto := firstNonEmptyString(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0], r.Header.Get("X-Forwarded-Protocol"), r.Header.Get("X-Scheme"))
+	if proto == "" {
+		if r.TLS != nil {
+			proto = "https"
+		} else {
+			proto = "http"
+		}
+	}
+	host := firstNonEmptyString(strings.Split(r.Header.Get("X-Forwarded-Host"), ",")[0], r.Host)
+	if host == "" {
+		host = "SERVER_IP:8090"
+	}
+	return strings.TrimRight(strings.TrimSpace(proto), ":/") + "://" + strings.TrimSpace(host)
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (a *App) requireAdmin(w http.ResponseWriter, r *http.Request) (model.AdminUser, string, bool) {

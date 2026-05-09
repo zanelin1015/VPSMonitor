@@ -491,3 +491,43 @@ func TestSQLiteStoreAdminAuthLifecycle(t *testing.T) {
 		t.Fatalf("expected updated session user, got ok=%v username=%q", ok, sessionUser.Username)
 	}
 }
+
+func TestSQLiteStoreClientInstallSettings(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "bridge.db")
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+
+	if _, found, err := store.GetClientInstallSettings(); err != nil {
+		t.Fatalf("GetClientInstallSettings empty: %v", err)
+	} else if found {
+		t.Fatalf("expected no saved client install settings")
+	}
+
+	saved, err := store.SaveClientInstallSettings(model.ClientInstallSettingsRequest{
+		ServerURL:             " https://panel.example.com ",
+		InstallScriptURL:      " https://example.com/install.sh ",
+		PollInterval:          "45s",
+		RequestTimeoutSeconds: 20,
+		ServerSkipTLSVerify:   true,
+	})
+	if err != nil {
+		t.Fatalf("SaveClientInstallSettings: %v", err)
+	}
+	if saved.ServerURL != "https://panel.example.com" || saved.InstallScriptURL != "https://example.com/install.sh" {
+		t.Fatalf("settings were not normalized: %#v", saved)
+	}
+
+	loaded, found, err := store.GetClientInstallSettings()
+	if err != nil {
+		t.Fatalf("GetClientInstallSettings loaded: %v", err)
+	}
+	if !found {
+		t.Fatalf("expected saved client install settings")
+	}
+	if loaded != saved {
+		t.Fatalf("unexpected loaded settings: got %#v want %#v", loaded, saved)
+	}
+}

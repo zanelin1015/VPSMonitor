@@ -278,6 +278,28 @@ body {
   justify-content: flex-start;
 }
 
+.client-install-switch {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  gap: 10px;
+}
+
+.client-install-command-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.client-install-command,
+.client-install-command textarea {
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
 .login-shell {
   display: grid;
   min-height: 100vh;

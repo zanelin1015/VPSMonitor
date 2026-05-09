@@ -88,6 +88,15 @@ export interface AdminAuthResponse {
   user: AdminUser
 }
 
+export interface ClientInstallInfo {
+  server_url: string
+  registration_token: string
+  install_script_url: string
+  poll_interval: string
+  request_timeout_seconds: number
+  server_skip_tls_verify: boolean
+}
+
 export interface TelegramBot {
   id: number
   name: string

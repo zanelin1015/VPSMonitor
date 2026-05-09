@@ -27,6 +27,8 @@ import {
   BarsOutlined,
   CloudServerOutlined,
   BellOutlined,
+  CloudDownloadOutlined,
+  CopyOutlined,
   DeleteOutlined,
   EditOutlined,
   LockOutlined,
@@ -48,6 +50,7 @@ import type {
   AgentRealtimeMetrics,
   ClientChainStep,
   ClientChainView,
+  ClientInstallInfo,
   ConfigAuditLog,
   DashboardAgentView,
   DashboardRealtimeMessage,
@@ -162,6 +165,15 @@ interface TelegramBotForm {
   enabled: boolean
 }
 
+interface ClientInstallCommandForm {
+  server_url: string
+  registration_token: string
+  install_script_url: string
+  poll_interval: string
+  request_timeout_seconds: number
+  server_skip_tls_verify: boolean
+}
+
 declare global {
   interface Window {
     CustomBackgroundImage?: string
@@ -213,6 +225,10 @@ export default function App() {
   const [telegramBotSaving, setTelegramBotSaving] = useState(false)
   const [editingTelegramBotId, setEditingTelegramBotId] = useState<number | null>(null)
   const [telegramBotForm, setTelegramBotForm] = useState<TelegramBotForm>(() => defaultTelegramBotForm())
+  const [clientInstallModalOpen, setClientInstallModalOpen] = useState(false)
+  const [clientInstallLoading, setClientInstallLoading] = useState(false)
+  const [clientInstallSaving, setClientInstallSaving] = useState(false)
+  const [clientInstallForm, setClientInstallForm] = useState<ClientInstallCommandForm>(() => defaultClientInstallCommandForm())
   const [reloadToken, setReloadToken] = useState(0)
   const [activeTabKey, setActiveTabKey] = useState('overview')
   const [topologyVisible, setTopologyVisible] = useState(false)
@@ -626,6 +642,63 @@ export default function App() {
       if (!silent) {
         setConfigAuditsLoading(false)
       }
+    }
+  }
+
+  async function openClientInstallModal() {
+    setPersonalCenterOpen(false)
+    setClientInstallModalOpen(true)
+    setClientInstallLoading(true)
+    try {
+      const data = await fetchJSON<ClientInstallInfo>('/api/v1/admin/client-install')
+      setClientInstallForm(normalizeClientInstallCommandForm(data))
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      message.error(error instanceof Error ? error.message : '加载 Client 安装信息失败')
+    } finally {
+      setClientInstallLoading(false)
+    }
+  }
+
+  async function saveClientInstallSettings() {
+    setClientInstallSaving(true)
+    try {
+      const data = await fetchJSON<ClientInstallInfo>('/api/v1/admin/client-install', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          server_url: clientInstallForm.server_url,
+          install_script_url: clientInstallForm.install_script_url,
+          poll_interval: clientInstallForm.poll_interval,
+          request_timeout_seconds: clientInstallForm.request_timeout_seconds,
+          server_skip_tls_verify: clientInstallForm.server_skip_tls_verify,
+        }),
+      })
+      setClientInstallForm(normalizeClientInstallCommandForm(data))
+      message.success('Client 安装参数已保存')
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      message.error(error instanceof Error ? error.message : '保存 Client 安装参数失败')
+    } finally {
+      setClientInstallSaving(false)
+    }
+  }
+
+  async function copyClientInstallCommand() {
+    if (!clientInstallForm.registration_token.trim()) {
+      message.warning('当前 server 未配置注册 Token，安装命令无法完成 Client 注册')
+      return
+    }
+    const command = buildClientInstallCommand(clientInstallForm)
+    try {
+      await navigator.clipboard.writeText(command)
+      message.success('Client 安装命令已复制')
+    } catch {
+      message.warning('浏览器不允许直接复制，请手动复制命令')
     }
   }
 
@@ -1140,6 +1213,8 @@ export default function App() {
     )
   }
 
+  const clientInstallCommand = buildClientInstallCommand(clientInstallForm)
+
   return (
     <div className="page-shell">
       <VisualEffects />
@@ -1201,6 +1276,12 @@ export default function App() {
                 修改账号密码
               </Button>
               <Button
+                icon={<CloudDownloadOutlined />}
+                onClick={() => void openClientInstallModal()}
+              >
+                Client 安装命令
+              </Button>
+              <Button
                 icon={<BellOutlined />}
                 onClick={() => {
                   setPersonalCenterOpen(false)
@@ -1221,6 +1302,111 @@ export default function App() {
               </Button>
             </div>
           </div>
+        </Modal>
+
+        <Modal
+          title="Client 一键安装命令"
+          open={clientInstallModalOpen}
+          onCancel={() => setClientInstallModalOpen(false)}
+          width={820}
+          footer={[
+            <Button key="cancel" onClick={() => setClientInstallModalOpen(false)}>
+              关闭
+            </Button>,
+            <Button key="save" loading={clientInstallSaving} onClick={() => void saveClientInstallSettings()}>
+              保存参数
+            </Button>,
+            <Button
+              key="copy"
+              type="primary"
+              icon={<CopyOutlined />}
+              disabled={clientInstallLoading}
+              onClick={() => void copyClientInstallCommand()}
+            >
+              复制安装命令
+            </Button>,
+          ]}
+        >
+          <Spin spinning={clientInstallLoading}>
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              <Alert
+                type="info"
+                showIcon
+                message="复制命令到目标 VPS 上执行"
+                description="这里会把 server 地址、注册 Token 和通用 client 参数写进 env，安装脚本会自动生成 client.json 并注册到当前 server。建议在目标 Linux 机器上使用 root 执行。"
+              />
+              {!clientInstallForm.registration_token.trim() ? (
+                <Alert
+                  type="warning"
+                  showIcon
+                  message="缺少注册 Token"
+                  description="请先在 server 配置里填写 registration_token，否则 Client 安装后无法完成注册。"
+                />
+              ) : null}
+              <Row gutter={[14, 14]}>
+                <Col xs={24} md={12}>
+                  <Text type="secondary">Server 地址</Text>
+                  <Input
+                    value={clientInstallForm.server_url}
+                    placeholder="https://panel.example.com"
+                    onChange={(event) => setClientInstallForm((current) => ({ ...current, server_url: event.target.value }))}
+                  />
+                </Col>
+                <Col xs={24} md={12}>
+                  <Text type="secondary">Client 注册 Token</Text>
+                  <Input.Password value={clientInstallForm.registration_token} readOnly />
+                </Col>
+                <Col xs={24}>
+                  <Text type="secondary">安装脚本地址</Text>
+                  <Input
+                    value={clientInstallForm.install_script_url}
+                    onChange={(event) => setClientInstallForm((current) => ({ ...current, install_script_url: event.target.value }))}
+                  />
+                </Col>
+                <Col xs={24} md={8}>
+                  <Text type="secondary">轮询间隔</Text>
+                  <Input
+                    value={clientInstallForm.poll_interval}
+                    placeholder="30s"
+                    onChange={(event) => setClientInstallForm((current) => ({ ...current, poll_interval: event.target.value }))}
+                  />
+                </Col>
+                <Col xs={24} md={8}>
+                  <Text type="secondary">请求超时（秒）</Text>
+                  <InputNumber
+                    style={{ width: '100%' }}
+                    min={1}
+                    value={clientInstallForm.request_timeout_seconds}
+                    onChange={(value) => setClientInstallForm((current) => ({ ...current, request_timeout_seconds: Number(value || 15) }))}
+                  />
+                </Col>
+                <Col xs={24} md={8}>
+                  <Text type="secondary">跳过 TLS 校验</Text>
+                  <div className="client-install-switch">
+                    <Switch
+                      checked={clientInstallForm.server_skip_tls_verify}
+                      onChange={(checked) => setClientInstallForm((current) => ({ ...current, server_skip_tls_verify: checked }))}
+                    />
+                    <Text type="secondary">自签证书时开启</Text>
+                  </div>
+                </Col>
+              </Row>
+              <div>
+                <div className="client-install-command-title">
+                  <Text strong>生成的安装命令</Text>
+                  <Button size="small" icon={<CopyOutlined />} onClick={() => void copyClientInstallCommand()}>
+                    复制
+                  </Button>
+                </div>
+                <Input.TextArea
+                  className="client-install-command"
+                  value={clientInstallCommand}
+                  readOnly
+                  autoSize={{ minRows: 5, maxRows: 8 }}
+                />
+              </div>
+            </Space>
+          </Spin>
         </Modal>
 
         <Modal
@@ -3882,6 +4068,46 @@ function defaultTelegramBotForm(): TelegramBotForm {
     chat_id: '',
     enabled: true,
   }
+}
+
+function defaultClientInstallCommandForm(): ClientInstallCommandForm {
+  return {
+    server_url: typeof window !== 'undefined' ? window.location.origin : 'http://SERVER_IP:8090',
+    registration_token: '',
+    install_script_url: 'https://raw.githubusercontent.com/zanelin1015/VPSMonitor/main/install.sh',
+    poll_interval: '30s',
+    request_timeout_seconds: 15,
+    server_skip_tls_verify: false,
+  }
+}
+
+function normalizeClientInstallCommandForm(info: ClientInstallInfo): ClientInstallCommandForm {
+  return {
+    server_url: info.server_url || defaultClientInstallCommandForm().server_url,
+    registration_token: info.registration_token || '',
+    install_script_url: info.install_script_url || defaultClientInstallCommandForm().install_script_url,
+    poll_interval: info.poll_interval || '30s',
+    request_timeout_seconds: Number(info.request_timeout_seconds || 15),
+    server_skip_tls_verify: Boolean(info.server_skip_tls_verify),
+  }
+}
+
+function buildClientInstallCommand(form: ClientInstallCommandForm): string {
+  const scriptURL = form.install_script_url.trim() || defaultClientInstallCommandForm().install_script_url
+  const envValues: Array<[string, string]> = [
+    ['VPSMONITOR_SERVER_URL', form.server_url.trim()],
+    ['VPSMONITOR_REGISTRATION_TOKEN', form.registration_token.trim()],
+    ['VPSMONITOR_SERVER_SKIP_TLS_VERIFY', String(Boolean(form.server_skip_tls_verify))],
+    ['VPSMONITOR_POLL_INTERVAL', form.poll_interval.trim() || '30s'],
+    ['VPSMONITOR_REQUEST_TIMEOUT_SECONDS', String(Math.max(1, Number(form.request_timeout_seconds || 15)))],
+    ['VPSMONITOR_ASSUME_YES', 'true'],
+  ]
+  const envText = envValues.map(([key, value]) => `${key}=${shellQuote(value)}`).join(' ')
+  return `curl -L ${shellQuote(scriptURL)} -o vpsmonitor-install.sh && chmod +x vpsmonitor-install.sh && env ${envText} ./vpsmonitor-install.sh client`
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
 }
 
 function buildXUIActionPayload(
