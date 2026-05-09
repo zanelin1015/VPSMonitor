@@ -141,6 +141,10 @@ export interface TagSettingsResponse {
   tags: string[]
 }
 
+export interface FrontendSettings {
+  custom_code: string
+}
+
 export interface TelegramBot {
   id: number
   name: string

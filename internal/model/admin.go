@@ -58,3 +58,7 @@ type ExchangeRatesResponse struct {
 type TagSettingsResponse struct {
 	Tags []string `json:"tags"`
 }
+
+type FrontendSettings struct {
+	CustomCode string `json:"custom_code"`
+}

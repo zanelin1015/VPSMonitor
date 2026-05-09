@@ -13,6 +13,7 @@ import (
 const (
 	clientInstallSettingsKey = "client_install"
 	tagSettingsKey           = "tag_settings"
+	frontendSettingsKey      = "frontend_settings"
 )
 
 func (s *SQLiteStore) GetClientInstallSettings() (model.ClientInstallSettingsRequest, bool, error) {
@@ -91,4 +92,37 @@ func (s *SQLiteStore) SaveTagSettings(tags []string) ([]string, error) {
 		return nil, fmt.Errorf("save tag settings: %w", err)
 	}
 	return normalized, nil
+}
+
+func (s *SQLiteStore) GetFrontendSettings() (model.FrontendSettings, bool, error) {
+	var raw string
+	err := s.db.QueryRow(`SELECT value_json FROM app_settings WHERE key = ?`, frontendSettingsKey).Scan(&raw)
+	if err == sql.ErrNoRows {
+		return model.FrontendSettings{}, false, nil
+	}
+	if err != nil {
+		return model.FrontendSettings{}, false, fmt.Errorf("load frontend settings: %w", err)
+	}
+	var settings model.FrontendSettings
+	if err := json.Unmarshal([]byte(raw), &settings); err != nil {
+		return model.FrontendSettings{}, false, fmt.Errorf("decode frontend settings: %w", err)
+	}
+	return settings, true, nil
+}
+
+func (s *SQLiteStore) SaveFrontendSettings(settings model.FrontendSettings) (model.FrontendSettings, error) {
+	data, err := json.Marshal(settings)
+	if err != nil {
+		return model.FrontendSettings{}, fmt.Errorf("encode frontend settings: %w", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err = s.db.Exec(`
+		INSERT INTO app_settings (key, value_json, updated_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
+	`, frontendSettingsKey, string(data), now)
+	if err != nil {
+		return model.FrontendSettings{}, fmt.Errorf("save frontend settings: %w", err)
+	}
+	return settings, nil
 }

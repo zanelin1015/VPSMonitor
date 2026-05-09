@@ -58,6 +58,7 @@ import type {
   DashboardRealtimeMessage,
   DashboardTagView,
   ExchangeRatesResponse,
+  FrontendSettings,
   GlobalDashboardView,
   IPGeoView,
   ManagedAgentConfig,
@@ -208,6 +209,10 @@ interface ClientInstallCommandForm {
   server_skip_tls_verify: boolean
 }
 
+interface FrontendSettingsForm {
+  custom_code: string
+}
+
 declare global {
   interface Window {
     CustomBackgroundImage?: string
@@ -270,6 +275,10 @@ export default function App() {
   const [clientInstallSaving, setClientInstallSaving] = useState(false)
   const [clientInstallForm, setClientInstallForm] = useState<ClientInstallCommandForm>(() => defaultClientInstallCommandForm())
   const [clientInstallCommandKind, setClientInstallCommandKind] = useState<ClientInstallCommandKind>('linux')
+  const [frontendSettingsModalOpen, setFrontendSettingsModalOpen] = useState(false)
+  const [frontendSettingsLoading, setFrontendSettingsLoading] = useState(false)
+  const [frontendSettingsSaving, setFrontendSettingsSaving] = useState(false)
+  const [frontendSettingsForm, setFrontendSettingsForm] = useState<FrontendSettingsForm>(() => defaultFrontendSettingsForm())
   const [reloadToken, setReloadToken] = useState(0)
   const [activeTabKey, setActiveTabKey] = useState('overview')
   const [topologyVisible, setTopologyVisible] = useState(false)
@@ -853,6 +862,44 @@ export default function App() {
       message.error(error instanceof Error ? error.message : '保存 Client 安装参数失败')
     } finally {
       setClientInstallSaving(false)
+    }
+  }
+
+  async function openFrontendSettingsModal() {
+    setPersonalCenterOpen(false)
+    setFrontendSettingsModalOpen(true)
+    setFrontendSettingsLoading(true)
+    try {
+      const data = await fetchJSON<FrontendSettings>('/api/v1/admin/frontend-settings')
+      setFrontendSettingsForm(normalizeFrontendSettingsForm(data))
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      message.error(error instanceof Error ? error.message : '加载前端样式设置失败')
+    } finally {
+      setFrontendSettingsLoading(false)
+    }
+  }
+
+  async function saveFrontendSettings() {
+    setFrontendSettingsSaving(true)
+    try {
+      const data = await fetchJSON<FrontendSettings>('/api/v1/admin/frontend-settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(frontendSettingsForm),
+      })
+      setFrontendSettingsForm(normalizeFrontendSettingsForm(data))
+      applyCustomFrontendCode(data.custom_code || '')
+      message.success('前端自定义样式已保存')
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      message.error(error instanceof Error ? error.message : '保存前端样式设置失败')
+    } finally {
+      setFrontendSettingsSaving(false)
     }
   }
 
@@ -1578,6 +1625,12 @@ export default function App() {
                 TG 告警机器人
               </Button>
               <Button
+                icon={<SettingOutlined />}
+                onClick={() => void openFrontendSettingsModal()}
+              >
+                前端样式自定义
+              </Button>
+              <Button
                 danger
                 icon={<LogoutOutlined />}
                 onClick={() => {
@@ -1765,6 +1818,41 @@ export default function App() {
               />
             </div>
           </Space>
+        </Modal>
+
+        <Modal
+          title="前端样式自定义"
+          open={frontendSettingsModalOpen}
+          onCancel={() => setFrontendSettingsModalOpen(false)}
+          width={920}
+          footer={[
+            <Button key="cancel" onClick={() => setFrontendSettingsModalOpen(false)}>
+              关闭
+            </Button>,
+            <Button key="save" type="primary" loading={frontendSettingsSaving} onClick={() => void saveFrontendSettings()}>
+              保存并应用
+            </Button>,
+          ]}
+        >
+          <Spin spinning={frontendSettingsLoading}>
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              <Alert
+                type="warning"
+                showIcon
+                message="支持自定义 CSS / HTML / script"
+                description="这里的代码会在所有访问者浏览器中执行，请只填写你信任的样式和脚本。背景图可以用 window.CustomBackgroundImage = '图片地址'。"
+              />
+              <div>
+                <Text strong>自定义代码（样式和脚本）</Text>
+                <Input.TextArea
+                  value={frontendSettingsForm.custom_code}
+                  onChange={(event) => setFrontendSettingsForm({ custom_code: event.target.value })}
+                  autoSize={{ minRows: 12, maxRows: 22 }}
+                  placeholder={`<style>\n:root { --green: #22c55e; }\n</style>\n<script>\nwindow.CustomBackgroundImage = 'https://example.com/bg.jpg'\n</script>`}
+                />
+              </div>
+            </Space>
+          </Spin>
         </Modal>
 
         <Modal
@@ -2661,11 +2749,58 @@ export default function App() {
 
 function VisualEffects() {
   useEffect(() => {
-    const backgroundImage = window.CustomBackgroundImage || DEFAULT_BACKGROUND_IMAGE
-    document.documentElement.style.setProperty('--custom-bg-image', `url("${backgroundImage}")`)
+    let cancelled = false
+    void fetchJSON<FrontendSettings>('/api/v1/frontend-settings')
+      .then((settings) => {
+        if (!cancelled) {
+          applyCustomFrontendCode(settings.custom_code || '')
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          applyCustomFrontendCode('')
+        }
+      })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   return null
+}
+
+function applyCustomFrontendCode(customCode: string) {
+  document.querySelectorAll('[data-vpsmonitor-custom-code="true"]').forEach((node) => node.remove())
+  const template = document.createElement('template')
+  template.innerHTML = customCode
+  Array.from(template.content.childNodes).forEach((node) => appendCustomNode(node))
+  applyCustomBackgroundImage()
+}
+
+function appendCustomNode(node: Node) {
+  if (node.nodeType === Node.TEXT_NODE && !node.textContent?.trim()) {
+    return
+  }
+  if (node.nodeName.toLowerCase() === 'script') {
+    const source = node as HTMLScriptElement
+    const script = document.createElement('script')
+    Array.from(source.attributes).forEach((attr) => script.setAttribute(attr.name, attr.value))
+    script.text = source.text
+    script.dataset.vpsmonitorCustomCode = 'true'
+    script.async = false
+    document.body.appendChild(script)
+    return
+  }
+  const element = node.cloneNode(true) as HTMLElement
+  if (element instanceof HTMLElement) {
+    element.dataset.vpsmonitorCustomCode = 'true'
+  }
+  document.body.appendChild(element)
+}
+
+function applyCustomBackgroundImage() {
+  const backgroundImage = window.CustomBackgroundImage || DEFAULT_BACKGROUND_IMAGE
+  document.documentElement.style.setProperty('--custom-bg-image', `url("${backgroundImage}")`)
 }
 
 interface LoginScreenProps {
@@ -4627,6 +4762,14 @@ function normalizeClientInstallCommandForm(info: ClientInstallInfo): ClientInsta
     request_timeout_seconds: Number(info.request_timeout_seconds || 15),
     server_skip_tls_verify: Boolean(info.server_skip_tls_verify),
   }
+}
+
+function defaultFrontendSettingsForm(): FrontendSettingsForm {
+  return { custom_code: '' }
+}
+
+function normalizeFrontendSettingsForm(settings: FrontendSettings): FrontendSettingsForm {
+  return { custom_code: settings.custom_code || '' }
 }
 
 function clientInstallCommandByKind(

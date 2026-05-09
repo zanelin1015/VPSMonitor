@@ -65,8 +65,56 @@ func (a *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.handleAdminTags(w, r)
+	case "frontend-settings":
+		if r.Method != http.MethodGet && r.Method != http.MethodPut {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		a.handleAdminFrontendSettings(w, r)
 	default:
 		writeError(w, http.StatusNotFound, "route not found")
+	}
+}
+
+func (a *App) handlePublicFrontendSettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	settings, _, err := a.store.GetFrontendSettings()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
+}
+
+func (a *App) handleAdminFrontendSettings(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := a.requireAdmin(w, r); !ok {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		settings, _, err := a.store.GetFrontendSettings()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, settings)
+	case http.MethodPut:
+		var req model.FrontendSettings
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode frontend settings: %v", err))
+			return
+		}
+		settings, err := a.store.SaveFrontendSettings(req)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, settings)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
 }
 
