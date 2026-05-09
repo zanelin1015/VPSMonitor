@@ -144,6 +144,8 @@ func addRenewalPeriod(date time.Time, cycle string) time.Time {
 	switch cycle {
 	case "week":
 		return date.AddDate(0, 0, 7)
+	case "quarter":
+		return date.AddDate(0, 3, 0)
 	case "year":
 		return date.AddDate(1, 0, 0)
 	default:
@@ -155,6 +157,8 @@ func subtractRenewalPeriod(date time.Time, cycle string) time.Time {
 	switch cycle {
 	case "week":
 		return date.AddDate(0, 0, -7)
+	case "quarter":
+		return date.AddDate(0, -3, 0)
 	case "year":
 		return date.AddDate(-1, 0, 0)
 	default:

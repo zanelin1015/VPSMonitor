@@ -266,10 +266,37 @@ func normalizeRenewalConfig(cfg model.VPSRenewalConfig) model.VPSRenewalConfig {
 		cfg.Cycle = "week"
 	case "month", "monthly":
 		cfg.Cycle = "month"
+	case "quarter", "quarterly", "season":
+		cfg.Cycle = "quarter"
 	case "year", "yearly":
 		cfg.Cycle = "year"
 	default:
 		cfg.Cycle = ""
+	}
+	cfg.CostCurrency = strings.ToUpper(strings.TrimSpace(cfg.CostCurrency))
+	if cfg.CostCurrency == "" && cfg.CostAmount > 0 {
+		cfg.CostCurrency = "USD"
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.CostCycle)) {
+	case "month", "monthly":
+		cfg.CostCycle = "month"
+	case "quarter", "quarterly", "season":
+		cfg.CostCycle = "quarter"
+	case "year", "yearly":
+		cfg.CostCycle = "year"
+	default:
+		cfg.CostCycle = ""
+	}
+	if cfg.CostCycle == "" && cfg.CostAmount > 0 {
+		switch cfg.Cycle {
+		case "quarter", "year":
+			cfg.CostCycle = cfg.Cycle
+		default:
+			cfg.CostCycle = "month"
+		}
+	}
+	if cfg.CostAmount < 0 {
+		cfg.CostAmount = 0
 	}
 	if cfg.Cycle == "" {
 		cfg.AutoRenew = false
@@ -291,7 +318,7 @@ func normalizeRenewalConfig(cfg model.VPSRenewalConfig) model.VPSRenewalConfig {
 
 func hasRenewalConfig(cfg model.VPSRenewalConfig) bool {
 	cfg = normalizeRenewalConfig(cfg)
-	return cfg.Enabled || cfg.StartDate != "" || cfg.ExpireDate != "" || cfg.Cycle != "" || cfg.AutoRenew || cfg.TrafficLimitBytes > 0 || cfg.BandwidthMbps > 0
+	return cfg.Enabled || cfg.StartDate != "" || cfg.ExpireDate != "" || cfg.Cycle != "" || cfg.AutoRenew || cfg.CostAmount > 0 || cfg.TrafficLimitBytes > 0 || cfg.BandwidthMbps > 0
 }
 
 func normalizeEntryConfig(cfg model.AgentEntryConfig) model.AgentEntryConfig {

@@ -44,8 +44,20 @@ require_root() {
   [[ "${EUID:-$(id -u)}" -eq 0 ]] || die "Please run this script as root."
 }
 
-require_systemd() {
-  command -v systemctl >/dev/null 2>&1 || die "systemctl is required for service installation."
+service_manager() {
+  if command -v systemctl >/dev/null 2>&1; then
+    echo "systemd"
+    return
+  fi
+  if command -v rc-service >/dev/null 2>&1 && command -v rc-update >/dev/null 2>&1; then
+    echo "openrc"
+    return
+  fi
+  echo ""
+}
+
+require_service_manager() {
+  [[ -n "$(service_manager)" ]] || die "systemd or OpenRC is required for service installation."
 }
 
 detect_arch() {
@@ -327,6 +339,27 @@ install_service() {
   local install_dir="$3"
   local binary_name="$4"
   local config_path="$5"
+  local manager
+  manager="$(service_manager)"
+  case "$manager" in
+    systemd)
+      install_systemd_service "$service_name" "$description" "$install_dir" "$binary_name" "$config_path"
+      ;;
+    openrc)
+      install_openrc_service "$service_name" "$description" "$install_dir" "$binary_name" "$config_path"
+      ;;
+    *)
+      die "systemd or OpenRC is required for service installation."
+      ;;
+  esac
+}
+
+install_systemd_service() {
+  local service_name="$1"
+  local description="$2"
+  local install_dir="$3"
+  local binary_name="$4"
+  local config_path="$5"
   local service_file="/etc/systemd/system/${service_name}.service"
 
   cat >"$service_file" <<EOF
@@ -350,6 +383,61 @@ EOF
   systemctl daemon-reload
   systemctl enable "$service_name" >/dev/null
   systemctl restart "$service_name"
+}
+
+install_openrc_service() {
+  local service_name="$1"
+  local description="$2"
+  local install_dir="$3"
+  local binary_name="$4"
+  local config_path="$5"
+  local service_file="/etc/init.d/${service_name}"
+  mkdir -p /run /var/log
+
+  cat >"$service_file" <<EOF
+#!/sbin/openrc-run
+name="$description"
+description="$description"
+directory="$install_dir"
+command="$install_dir/$binary_name"
+command_args="-config $config_path"
+command_background=true
+pidfile="/run/\${RC_SVCNAME}.pid"
+output_log="/var/log/\${RC_SVCNAME}.log"
+error_log="/var/log/\${RC_SVCNAME}.log"
+start_stop_daemon_args="--make-pidfile"
+
+depend() {
+  need net
+  after firewall
+}
+EOF
+
+  chmod +x "$service_file"
+  rc-update add "$service_name" default >/dev/null
+  if rc-service "$service_name" status >/dev/null 2>&1; then
+    rc-service "$service_name" restart
+  else
+    rc-service "$service_name" start
+  fi
+}
+
+service_status_hint() {
+  local service_name="$1"
+  case "$(service_manager)" in
+    systemd) echo "systemctl status $service_name" ;;
+    openrc) echo "rc-service $service_name status" ;;
+    *) echo "check service status manually" ;;
+  esac
+}
+
+service_logs_hint() {
+  local service_name="$1"
+  case "$(service_manager)" in
+    systemd) echo "journalctl -u $service_name -f" ;;
+    openrc) echo "tail -f /var/log/$service_name.log" ;;
+    *) echo "check service logs manually" ;;
+  esac
 }
 
 install_server() {
@@ -404,13 +492,13 @@ install_server() {
   [[ -f "$source_dir/README.md" ]] && install -m 0644 "$source_dir/README.md" "$install_dir/README.md"
 
   local service_name="${VPSMONITOR_SERVER_SERVICE:-vpsmonitor-server}"
-  prompt_default service_name "Systemd service name" "$service_name"
+  prompt_default service_name "Service name" "$service_name"
   install_service "$service_name" "VPSMonitor Bridge Server" "$install_dir" "bridge-server" "$config_path"
 
   ok "bridge-server installed."
   echo "  Service: $service_name"
   echo "  Config:  $config_path"
-  echo "  Status:  systemctl status $service_name"
+  echo "  Status:  $(service_status_hint "$service_name")"
   local port
   port="$(listen_port "$listen_addr")"
   if [[ -n "$port" ]]; then
@@ -473,14 +561,14 @@ install_client() {
   [[ -f "$source_dir/README.md" ]] && install -m 0644 "$source_dir/README.md" "$install_dir/README.md"
 
   local service_name="${VPSMONITOR_CLIENT_SERVICE:-vpsmonitor-client}"
-  prompt_default service_name "Systemd service name" "$service_name"
+  prompt_default service_name "Service name" "$service_name"
   install_service "$service_name" "VPSMonitor Bridge Client" "$install_dir" "bridge-client" "$config_path"
 
   ok "bridge-client installed."
   echo "  Service: $service_name"
   echo "  Config:  $config_path"
-  echo "  Status:  systemctl status $service_name"
-  echo "  Logs:    journalctl -u $service_name -f"
+  echo "  Status:  $(service_status_hint "$service_name")"
+  echo "  Logs:    $(service_logs_hint "$service_name")"
 }
 
 usage() {
@@ -521,7 +609,7 @@ main() {
   esac
 
   require_root
-  require_systemd
+  require_service_manager
   command -v tar >/dev/null 2>&1 || die "tar is required."
 
   local arch
@@ -532,6 +620,7 @@ main() {
   echo "  Repo:   $repo"
   echo "  Ver:    $version"
   echo "  Package prefix: $package_prefix"
+  echo "  Service manager: $(service_manager)"
   echo
 
   case "$action" in

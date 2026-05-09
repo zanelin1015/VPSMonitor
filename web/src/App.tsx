@@ -71,6 +71,34 @@ import type {
   XUIRouteTrace,
   XUIRoutingRuleView,
 } from './types'
+import {
+  COMMON_COST_CURRENCIES,
+  COST_CURRENCY_STORAGE_KEY,
+  DEFAULT_COST_CURRENCY,
+  type CurrencyCode,
+  type ExchangeRatesState,
+  defaultExchangeRatesState,
+  formatMoney,
+  mergeCurrencyOptions,
+  normalizeCurrencyCode,
+  readStoredCostCurrency,
+  summarizeMonthlyCost,
+} from './lib/currency'
+import {
+  bytesToGB,
+  calculateMemoryPercent,
+  calculateTrafficStatus,
+  clampMetricPercent,
+  clientTrafficTotal,
+  formatBandwidth,
+  formatBytes,
+  formatMem,
+  formatPercent,
+  formatSpeed,
+  gbToBytes,
+  metricLevel,
+  summarizeAgentNetwork,
+} from './lib/traffic'
 
 const { Paragraph, Text, Title } = Typography
 const DEFAULT_BACKGROUND_IMAGE = 'https://pic.netbian.com/uploads/allimg/260211/223628-17708205888f2f.jpg'
@@ -80,7 +108,6 @@ const XUI_ACTION_KINDS = [
   { value: 'add_outbound', label: '从内部导入出站' },
   { value: 'add_routing_rule', label: '新增转发 / 路由规则' },
 ]
-
 type AgentViewMode = 'card' | 'list'
 type ConfigSectionKey = 'client' | 'renewal' | 'xui' | 'entry'
 
@@ -203,6 +230,9 @@ export default function App() {
   const [agentsLoading, setAgentsLoading] = useState(false)
   const [agentsError, setAgentsError] = useState('')
   const [dashboardView, setDashboardView] = useState<GlobalDashboardView | null>(null)
+  const [costCurrency, setCostCurrency] = useState<CurrencyCode>(() => readStoredCostCurrency())
+  const [exchangeRates, setExchangeRates] = useState<ExchangeRatesState>(() => defaultExchangeRatesState())
+  const [currencyOptions, setCurrencyOptions] = useState<CurrencyCode[]>(() => [...COMMON_COST_CURRENCIES])
   const [selectedTag, setSelectedTag] = useState('')
   const [agentViewMode, setAgentViewMode] = useState<AgentViewMode>('card')
   const [selectedAgentId, setSelectedAgentId] = useState('')
@@ -268,8 +298,17 @@ export default function App() {
     if (adminUser) {
       void loadAgents()
       void loadTelegramBots()
+      void loadExchangeRates()
     }
   }, [adminUser])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(COST_CURRENCY_STORAGE_KEY, costCurrency)
+    } catch {
+      // Ignore storage errors; the selector still works for the current session.
+    }
+  }, [costCurrency])
 
   useEffect(() => {
     if (!adminUser) {
@@ -504,6 +543,39 @@ export default function App() {
       if (!silent) {
         setAgentsLoading(false)
       }
+    }
+  }
+
+  async function loadExchangeRates() {
+    setExchangeRates((current) => ({ ...current, loading: true, error: '' }))
+    try {
+      const response = await fetch('https://api.frankfurter.app/latest?from=EUR')
+      if (!response.ok) {
+        throw new Error(`汇率接口返回 ${response.status}`)
+      }
+      const data = (await response.json()) as { base?: string; date?: string; rates?: Record<string, number> }
+      const rates: Record<CurrencyCode, number> = { EUR: 1 }
+      for (const [rawCurrency, rawRate] of Object.entries(data.rates || {})) {
+        const currency = normalizeCurrencyCode(rawCurrency)
+        const value = Number(rawRate)
+        if (Number.isFinite(value) && value > 0) {
+          rates[currency] = value
+        }
+      }
+      setCurrencyOptions(mergeCurrencyOptions(Object.keys(rates)))
+      setExchangeRates({
+        base: 'EUR',
+        date: data.date || '',
+        rates,
+        loading: false,
+        error: '',
+      })
+    } catch (error) {
+      setExchangeRates((current) => ({
+        ...current,
+        loading: false,
+        error: error instanceof Error ? error.message : '加载汇率失败',
+      }))
     }
   }
 
@@ -921,6 +993,7 @@ export default function App() {
   const onlineAgentCount = filteredAgents.filter(isAgentRunning).length
   const offlineAgentCount = Math.max(scopedAgentCount - onlineAgentCount, 0)
   const scopedNetwork = summarizeAgentNetwork(filteredAgents)
+  const monthlyCost = summarizeMonthlyCost(filteredAgents, costCurrency, exchangeRates)
   const filteredTagLinks = (dashboardView?.links || []).filter((link) => topologyMatchesSelectedTag(link, selectedTag))
   const filteredChains = (dashboardView?.client_chains || []).filter((chain) => chainMatchesSelectedTag(chain, selectedTag))
 
@@ -1607,6 +1680,23 @@ export default function App() {
                       <span>⬇ {formatSpeed(scopedNetwork.down)}</span>
                     </div>
                   </section>
+                  <section className="overview-stat-card overview-cost-card">
+                    <div className="overview-stat-title overview-cost-title">
+                      <span>月花销</span>
+                      <Select
+                        size="small"
+                        value={costCurrency}
+                        options={currencyOptions.map((currency) => ({ value: currency, label: currency }))}
+                        onChange={(value) => setCostCurrency(value as CurrencyCode)}
+                      />
+                    </div>
+                    <div className="overview-cost-value">{formatMoney(monthlyCost.total, costCurrency)}</div>
+                    <div className="overview-stat-foot">
+                      {exchangeRates.loading ? '汇率加载中' : monthlyCost.missingCount ? `${monthlyCost.count} 台已配置 · ${monthlyCost.missingCount} 台缺少费用/汇率` : `${monthlyCost.count} 台已配置`}
+                      {exchangeRates.date ? ` · 汇率 ${exchangeRates.date}` : ''}
+                    </div>
+                    {exchangeRates.error ? <div className="overview-stat-foot">汇率加载失败：{exchangeRates.error}</div> : null}
+                  </section>
                 </div>
                 <div className="overview-summary-strip">
                   <span>已匹配链路 · {dashboardView.totals.link_count}</span>
@@ -1685,12 +1775,11 @@ export default function App() {
                     dataSource={filteredAgents}
                     renderItem={(item, index) => {
                       const active = item.agent_id === selectedAgentId
-	                      const renewalStatus = calculateRenewalStatus(item.renewal)
-	                      const trafficStatus = calculateTrafficStatus(item)
-	                      const trafficTotalLabel = trafficStatus.isPeriod ? '周期流量' : '总流量'
-	                      const trafficUploadLabel = trafficStatus.isPeriod ? '周期上传' : '总上传'
-	                      const trafficDownloadLabel = trafficStatus.isPeriod ? '周期下载' : '总下载'
-	                      const cpuPercent = clampMetricPercent(item.summary.cpu)
+                      const renewalStatus = calculateRenewalStatus(item.renewal)
+                      const trafficStatus = calculateTrafficStatus(item)
+                      const trafficTotalLabel = trafficStatus.isPeriod ? '周期总流量' : '总流量'
+                      const trafficSummaryValue = `${trafficStatus.total.label} · 上传 ${formatBytes(trafficStatus.upload.used)} · 下载 ${formatBytes(trafficStatus.download.used)}`
+                      const cpuPercent = clampMetricPercent(item.summary.cpu)
                       const memPercent = calculateMemoryPercent(item.summary)
                       const displayStatus = agentDisplayStatus(item)
                       const statusLevel = displayStatus.level
@@ -1768,28 +1857,14 @@ export default function App() {
                                       className="agent-wide-progress"
                                     />
                                   ) : null}
-	                                  <MiniProgress
-	                                    label={trafficTotalLabel}
-	                                    value={`${trafficStatus.total.label} · 上传 ${formatBytes(trafficStatus.upload.used)} · 下载 ${formatBytes(trafficStatus.download.used)}`}
-	                                    percent={trafficStatus.total.percent}
+                                  <MiniProgress
+                                    label={trafficTotalLabel}
+                                    value={trafficSummaryValue}
+                                    percent={trafficStatus.total.percent}
                                     showTrack
                                     level={trafficStatus.total.level}
                                     className="agent-wide-progress"
                                   />
-                                  <div className="agent-list-traffic-pair">
-	                                    <MiniProgress
-	                                      label={trafficUploadLabel}
-	                                      value={trafficStatus.upload.label}
-                                      percent={trafficStatus.upload.percent}
-                                      level={trafficStatus.upload.level}
-                                    />
-	                                    <MiniProgress
-	                                      label={trafficDownloadLabel}
-	                                      value={trafficStatus.download.label}
-                                      percent={trafficStatus.download.percent}
-                                      level={trafficStatus.download.level}
-                                    />
-                                  </div>
                                 </div>
                               </>
                             ) : (
@@ -1837,25 +1912,13 @@ export default function App() {
                                   />
                                 ) : null}
                                 <div className="agent-traffic-grid">
-	                                  <MiniProgress
-	                                    label={trafficTotalLabel}
-	                                    value={`${trafficStatus.total.label} · 上传 ${formatBytes(trafficStatus.upload.used)} · 下载 ${formatBytes(trafficStatus.download.used)}`}
+                                  <MiniProgress
+                                    label={trafficTotalLabel}
+                                    value={trafficSummaryValue}
                                     percent={trafficStatus.total.percent}
                                     showTrack
                                     level={trafficStatus.total.level}
                                     className="agent-wide-progress"
-                                  />
-	                                  <MiniProgress
-	                                    label={trafficUploadLabel}
-	                                    value={trafficStatus.upload.label}
-                                    percent={trafficStatus.upload.percent}
-                                    level={trafficStatus.upload.level}
-                                  />
-	                                  <MiniProgress
-	                                    label={trafficDownloadLabel}
-	                                    value={trafficStatus.download.label}
-                                    percent={trafficStatus.download.percent}
-                                    level={trafficStatus.download.level}
                                   />
                                 </div>
                                 <div className="agent-meta agent-footer-line">
@@ -2042,6 +2105,7 @@ export default function App() {
                         onXUIChange: (patch) => updateManagedConfig((current) => ({ ...current, xui: { ...current.xui, ...patch } })),
                         configAudits,
                         configAuditsLoading,
+                        currencyOptions,
                       }),
                     },
                   {
@@ -2338,6 +2402,7 @@ interface ConfigPanelProps {
   onXUIChange: (patch: Partial<XUIConfig>) => void
   configAudits: ConfigAuditLog[]
   configAuditsLoading: boolean
+  currencyOptions: CurrencyCode[]
 }
 
 function renderManagedConfigPanel(props: ConfigPanelProps) {
@@ -2359,6 +2424,7 @@ function renderManagedConfigPanel(props: ConfigPanelProps) {
     onXUIChange,
     configAudits,
     configAuditsLoading,
+    currencyOptions,
   } = props
 
   if (!selectedAgent) {
@@ -2514,9 +2580,43 @@ function renderManagedConfigPanel(props: ConfigPanelProps) {
               options={[
                 { value: 'week', label: '每周' },
                 { value: 'month', label: '每月' },
+                { value: 'quarter', label: '每季' },
                 { value: 'year', label: '每年' },
               ]}
               onChange={(value) => onRenewalChange({ cycle: value })}
+            />
+          </Col>
+          <Col xs={24} md={8}>
+            <Text type="secondary">费用金额</Text>
+            <InputNumber
+              style={{ width: '100%' }}
+              min={0}
+              precision={2}
+              value={managedConfig.renewal?.cost_amount || 0}
+              onChange={(value) => onRenewalChange({ cost_amount: Number(value || 0) })}
+              placeholder="例如 8.99"
+            />
+          </Col>
+          <Col xs={24} md={8}>
+            <Text type="secondary">费用币种</Text>
+            <Select
+              style={{ width: '100%' }}
+              value={managedConfig.renewal?.cost_currency || DEFAULT_COST_CURRENCY}
+              options={currencyOptions.map((currency) => ({ value: currency, label: currency }))}
+              onChange={(value) => onRenewalChange({ cost_currency: value })}
+            />
+          </Col>
+          <Col xs={24} md={8}>
+            <Text type="secondary">费用续费周期</Text>
+            <Select
+              style={{ width: '100%' }}
+              value={managedConfig.renewal?.cost_cycle || 'month'}
+              options={[
+                { value: 'month', label: '每月' },
+                { value: 'quarter', label: '每季' },
+                { value: 'year', label: '每年' },
+              ]}
+              onChange={(value) => onRenewalChange({ cost_cycle: value })}
             />
           </Col>
           <Col xs={24} md={8}>
@@ -4655,14 +4755,20 @@ function configSignature(config: ManagedAgentConfig): string {
 }
 
 function normalizeRenewalConfig(config?: VPSRenewalConfig): VPSRenewalConfig {
-  const cycle = config?.cycle === 'week' || config?.cycle === 'year' ? config.cycle : 'month'
+  const cycle = config?.cycle === 'week' || config?.cycle === 'quarter' || config?.cycle === 'year' ? config.cycle : 'month'
   const trafficLimitBytes = Math.max(0, Number(config?.traffic_limit_bytes || 0))
+  const costAmount = Math.max(0, Number(config?.cost_amount || 0))
+  const costCurrency = normalizeCurrencyCode(config?.cost_currency)
+  const costCycle = config?.cost_cycle === 'quarter' || config?.cost_cycle === 'year' ? config.cost_cycle : 'month'
   return {
     enabled: Boolean(config?.enabled || config?.start_date || config?.expire_date),
     start_date: config?.start_date || '',
     expire_date: config?.expire_date || '',
     cycle,
     auto_renew: Boolean(config?.auto_renew),
+    cost_amount: costAmount,
+    cost_currency: costCurrency,
+    cost_cycle: costCycle,
     traffic_limit_bytes: trafficLimitBytes,
     bandwidth_mbps: Math.max(0, Number(config?.bandwidth_mbps || 0)),
     traffic_baseline_bytes: trafficLimitBytes > 0 ? Math.max(0, Number(config?.traffic_baseline_bytes || 0)) : 0,
@@ -4784,6 +4890,9 @@ function addRenewalCycle(date: Date, cycle: VPSRenewalConfig['cycle']): Date {
   if (cycle === 'week') {
     return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 7)
   }
+  if (cycle === 'quarter') {
+    return addClampedMonths(date, 3)
+  }
   if (cycle === 'year') {
     return addClampedMonths(date, 12)
   }
@@ -4793,6 +4902,9 @@ function addRenewalCycle(date: Date, cycle: VPSRenewalConfig['cycle']): Date {
 function subtractRenewalCycle(date: Date, cycle: VPSRenewalConfig['cycle']): Date {
   if (cycle === 'week') {
     return new Date(date.getFullYear(), date.getMonth(), date.getDate() - 7)
+  }
+  if (cycle === 'quarter') {
+    return addClampedMonths(date, -3)
   }
   if (cycle === 'year') {
     return addClampedMonths(date, -12)
@@ -4812,93 +4924,6 @@ function daysBetween(start: Date, end: Date): number {
   return Math.ceil((startOfLocalDay(end).getTime() - startOfLocalDay(start).getTime()) / msPerDay)
 }
 
-function calculateTrafficStatus(agent: AgentListItem): {
-  isPeriod: boolean
-  total: TrafficMeterStatus
-  upload: TrafficMeterStatus
-  download: TrafficMeterStatus
-} {
-  const limit = Number(agent.renewal?.traffic_limit_bytes || 0)
-  const currentTotal = Number(agent.summary.net_traffic_total || 0)
-  const currentUpload = Number(agent.summary.net_traffic_sent || 0)
-  const currentDownload = Number(agent.summary.net_traffic_recv || 0)
-  const baselineTotal = Number(agent.renewal?.traffic_baseline_bytes || 0)
-  const baselineUpload = Number(agent.renewal?.traffic_sent_baseline_bytes || 0)
-  const baselineDownload = Number(agent.renewal?.traffic_recv_baseline_bytes || 0)
-  const totalUsed = periodTrafficUsed(currentTotal || currentUpload + currentDownload, baselineTotal)
-  const uploadUsed = periodTrafficUsed(currentUpload, baselineUpload)
-  const downloadUsed = periodTrafficUsed(currentDownload, baselineDownload)
-  return {
-    isPeriod: usesRenewalTrafficCycle(agent.renewal),
-    total: buildTrafficMeter(totalUsed, limit),
-    upload: buildTrafficMeter(uploadUsed, limit),
-    download: buildTrafficMeter(downloadUsed, limit),
-  }
-}
-
-function usesRenewalTrafficCycle(config?: VPSRenewalConfig): boolean {
-  const normalized = normalizeRenewalConfig(config)
-  return Boolean(
-    normalized.traffic_limit_bytes &&
-      normalized.auto_renew &&
-      normalized.cycle &&
-      (normalized.start_date || normalized.expire_date),
-  )
-}
-
-function clientTrafficTotal(client: XUIClientView): number {
-  const up = Number(client.up || 0)
-  const down = Number(client.down || 0)
-  const allTime = Number(client.all_time || 0)
-  const trafficTotal = Number(client.traffic_total || 0)
-  return allTime || up + down || trafficTotal
-}
-
-interface TrafficMeterStatus {
-  label: string
-  level: 'ok' | 'warn' | 'bad'
-  used: number
-  total: number
-  percent?: number
-}
-
-function buildTrafficMeter(used: number, total: number): TrafficMeterStatus {
-  if (!total) {
-    return {
-      label: formatBytes(used),
-      level: 'ok',
-      used,
-      total,
-    }
-  }
-  const percent = total ? (used / total) * 100 : 0
-  return {
-    label: `${formatBytes(used)} / ${formatBytes(total)} (${Math.min(999, percent).toFixed(1)}%)`,
-    level: percent >= 90 ? 'bad' : percent >= 75 ? 'warn' : 'ok',
-    used,
-    total,
-    percent: clampMetricPercent(percent),
-  }
-}
-
-function periodTrafficUsed(current: number, baseline: number): number {
-  if (!current) {
-    return 0
-  }
-  return current >= baseline ? current - baseline : current
-}
-
-function gbToBytes(value: number): number {
-  return Math.round(Math.max(0, value) * 1024 * 1024 * 1024)
-}
-
-function bytesToGB(value: number): number | undefined {
-  if (!value) {
-    return undefined
-  }
-  return Number((value / 1024 / 1024 / 1024).toFixed(2))
-}
-
 function formatLocalDate(date: Date): string {
   const year = date.getFullYear()
   const month = `${date.getMonth() + 1}`.padStart(2, '0')
@@ -4915,26 +4940,6 @@ function hasSelectedTag(tags: string[] | undefined, selectedTag: string): boolea
 
 function isAgentRunning(agent: AgentListItem): boolean {
   return (agent.summary.xray_state || '').toLowerCase() === 'running'
-}
-
-interface AgentNetworkSummary {
-  sent: number
-  recv: number
-  up: number
-  down: number
-}
-
-function summarizeAgentNetwork(agents: AgentListItem[]): AgentNetworkSummary {
-  return agents.reduce<AgentNetworkSummary>(
-    (summary, agent) => {
-      summary.sent += Number(agent.summary.net_traffic_sent || 0)
-      summary.recv += Number(agent.summary.net_traffic_recv || 0)
-      summary.up += Number(agent.summary.net_io_up || 0)
-      summary.down += Number(agent.summary.net_io_down || 0)
-      return summary
-    },
-    { sent: 0, recv: 0, up: 0, down: 0 },
-  )
 }
 
 function topologyMatchesSelectedTag(link: TopologyLinkView, selectedTag: string): boolean {
@@ -4970,6 +4975,9 @@ function createEmptyManagedConfig(agentID: string, agentName?: string): ManagedA
       expire_date: '',
       cycle: 'month',
       auto_renew: false,
+      cost_amount: 0,
+      cost_currency: DEFAULT_COST_CURRENCY,
+      cost_cycle: 'month',
       traffic_limit_bytes: 0,
       bandwidth_mbps: 0,
       traffic_baseline_bytes: 0,
@@ -5040,76 +5048,6 @@ function storeAgentViewMode(username: string, mode: AgentViewMode) {
 
 function agentViewModeStorageKey(username: string): string {
   return `${AGENT_VIEW_MODE_STORAGE_PREFIX}${username || 'default'}`
-}
-
-function formatBytes(value: number): string {
-  if (!value) {
-    return '0 B'
-  }
-  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
-  let current = value
-  let unitIndex = 0
-  while (current >= 1024 && unitIndex < units.length - 1) {
-    current /= 1024
-    unitIndex++
-  }
-  return `${current >= 100 || unitIndex === 0 ? current.toFixed(0) : current.toFixed(1)} ${units[unitIndex]}`
-}
-
-function formatBandwidth(value: number): string {
-  if (!value) {
-    return '-'
-  }
-  if (value >= 1000) {
-    return `${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 2)} Gbps`
-  }
-  return `${value.toFixed(value % 1 === 0 ? 0 : 2)} Mbps`
-}
-
-function formatSpeed(value?: number): string {
-  return `${formatBytes(Number(value || 0))}/s`
-}
-
-function formatPercent(value?: number): string {
-  if (!value) {
-    return '0%'
-  }
-  return `${value.toFixed(1)}%`
-}
-
-function clampMetricPercent(value?: number): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return 0
-  }
-  return Math.max(0, Math.min(100, value))
-}
-
-function calculateMemoryPercent(summary?: VPSSummary): number {
-  if (!summary?.mem_total) {
-    return 0
-  }
-  return clampMetricPercent(((summary.mem_used || 0) / summary.mem_total) * 100)
-}
-
-function metricLevel(percent: number): 'ok' | 'warn' | 'bad' {
-  if (percent >= 90) {
-    return 'bad'
-  }
-  if (percent >= 75) {
-    return 'warn'
-  }
-  return 'ok'
-}
-
-function formatMem(used?: number, total?: number): string {
-  if (!used && !total) {
-    return '-'
-  }
-  if (!total) {
-    return formatBytes(used || 0)
-  }
-  const percent = total ? ((used || 0) / total) * 100 : 0
-  return `${formatBytes(used || 0)} / ${formatBytes(total)} (${percent.toFixed(1)}%)`
 }
 
 function formatDateTime(value?: string): string {

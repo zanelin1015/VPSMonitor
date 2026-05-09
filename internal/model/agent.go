@@ -22,6 +22,9 @@ type VPSRenewalConfig struct {
 	ExpireDate                 string  `json:"expire_date,omitempty"`
 	Cycle                      string  `json:"cycle,omitempty"`
 	AutoRenew                  bool    `json:"auto_renew,omitempty"`
+	CostAmount                 float64 `json:"cost_amount,omitempty"`
+	CostCurrency               string  `json:"cost_currency,omitempty"`
+	CostCycle                  string  `json:"cost_cycle,omitempty"`
 	TrafficLimitBytes          uint64  `json:"traffic_limit_bytes,omitempty"`
 	BandwidthMbps              float64 `json:"bandwidth_mbps,omitempty"`
 	TrafficBaselineBytes       uint64  `json:"traffic_baseline_bytes,omitempty"`

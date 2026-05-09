@@ -39,8 +39,11 @@ export interface VPSRenewalConfig {
   enabled?: boolean
   start_date?: string
   expire_date?: string
-  cycle?: 'week' | 'month' | 'year' | ''
+  cycle?: 'week' | 'month' | 'quarter' | 'year' | ''
   auto_renew?: boolean
+  cost_amount?: number
+  cost_currency?: string
+  cost_cycle?: 'month' | 'quarter' | 'year' | ''
   traffic_limit_bytes?: number
   bandwidth_mbps?: number
   traffic_baseline_bytes?: number
