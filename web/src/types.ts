@@ -93,6 +93,17 @@ export interface AdminAuthResponse {
   user: AdminUser
 }
 
+
+export interface ExchangeRatesResponse {
+  base: string
+  date: string
+  rates: Record<string, number>
+  source?: string
+  fetched_at?: string
+  stale?: boolean
+  error?: string
+}
+
 export interface ClientInstallInfo {
   server_url: string
   registration_token: string
@@ -100,6 +111,10 @@ export interface ClientInstallInfo {
   poll_interval: string
   request_timeout_seconds: number
   server_skip_tls_verify: boolean
+}
+
+export interface TagSettingsResponse {
+  tags: string[]
 }
 
 export interface TelegramBot {

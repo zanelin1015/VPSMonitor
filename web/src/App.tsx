@@ -55,11 +55,13 @@ import type {
   DashboardAgentView,
   DashboardRealtimeMessage,
   DashboardTagView,
+  ExchangeRatesResponse,
   GlobalDashboardView,
   IPGeoView,
   ManagedAgentConfig,
   TopologyLinkView,
   TelegramBot,
+  TagSettingsResponse,
   VPSRenewalConfig,
   VPSSummary,
   XUIAction,
@@ -243,6 +245,9 @@ export default function App() {
   const [savedManagedConfig, setSavedManagedConfig] = useState<ManagedAgentConfig | null>(null)
   const managedConfigDirtyRef = useRef(false)
   const [tagInputText, setTagInputText] = useState('')
+  const [tagOptions, setTagOptions] = useState<string[]>([])
+  const [newTagName, setNewTagName] = useState('')
+  const [tagSaving, setTagSaving] = useState(false)
   const [entryAddressInputText, setEntryAddressInputText] = useState('')
   const [configLoading, setConfigLoading] = useState(false)
   const [configSavingSection, setConfigSavingSection] = useState<ConfigSectionKey | null>(null)
@@ -298,6 +303,7 @@ export default function App() {
     if (adminUser) {
       void loadAgents()
       void loadTelegramBots()
+      void loadTagSettings()
       void loadExchangeRates()
     }
   }, [adminUser])
@@ -526,6 +532,7 @@ export default function App() {
       const sortedAgents = sortAgentsByOrder(data.agents || [])
       setDashboardView({ ...data, agents: sortedAgents })
       setAgents(sortedAgents)
+      setTagOptions((current) => mergeTagOptions(current, sortedAgents.flatMap((agent) => agent.tags || [])))
       setAgentsError('')
       const filtered = sortedAgents.filter((item) => hasSelectedTag(item.tags, selectedTag))
       if (!filtered.length || (selectedAgentId && !filtered.some((item) => item.agent_id === selectedAgentId))) {
@@ -549,11 +556,7 @@ export default function App() {
   async function loadExchangeRates() {
     setExchangeRates((current) => ({ ...current, loading: true, error: '' }))
     try {
-      const response = await fetch('https://api.frankfurter.app/latest?from=EUR')
-      if (!response.ok) {
-        throw new Error(`汇率接口返回 ${response.status}`)
-      }
-      const data = (await response.json()) as { base?: string; date?: string; rates?: Record<string, number> }
+      const data = await fetchJSON<ExchangeRatesResponse>('/api/v1/exchange-rates')
       const rates: Record<CurrencyCode, number> = { EUR: 1 }
       for (const [rawCurrency, rawRate] of Object.entries(data.rates || {})) {
         const currency = normalizeCurrencyCode(rawCurrency)
@@ -564,13 +567,16 @@ export default function App() {
       }
       setCurrencyOptions(mergeCurrencyOptions(Object.keys(rates)))
       setExchangeRates({
-        base: 'EUR',
+        base: normalizeCurrencyCode(data.base || 'EUR'),
         date: data.date || '',
         rates,
         loading: false,
-        error: '',
+        error: data.stale && data.error ? `使用缓存汇率：${data.error}` : '',
       })
     } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
       setExchangeRates((current) => ({
         ...current,
         loading: false,
@@ -715,6 +721,53 @@ export default function App() {
       if (!silent) {
         setConfigAuditsLoading(false)
       }
+    }
+  }
+
+  async function loadTagSettings() {
+    try {
+      const data = await fetchJSON<TagSettingsResponse>('/api/v1/admin/tags')
+      setTagOptions((current) => mergeTagOptions(current, data.tags || []))
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+    }
+  }
+
+  async function saveTagOptions(nextTags: string[]) {
+    setTagSaving(true)
+    try {
+      const normalized = mergeTagOptions([], nextTags)
+      const data = await fetchJSON<TagSettingsResponse>('/api/v1/admin/tags', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tags: normalized }),
+      })
+      setTagOptions(mergeTagOptions(normalized, data.tags || []))
+      return true
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      message.error(error instanceof Error ? error.message : '保存标签失败')
+      return false
+    } finally {
+      setTagSaving(false)
+    }
+  }
+
+  async function createTagOption() {
+    const parsed = parseTagInput(newTagName)
+    if (!parsed.length) {
+      message.warning('请输入标签名称')
+      return
+    }
+    const nextTags = mergeTagOptions(tagOptions, parsed)
+    const ok = await saveTagOptions(nextTags)
+    if (ok) {
+      setNewTagName('')
+      message.success('标签已创建')
     }
   }
 
@@ -935,6 +988,7 @@ export default function App() {
       setManagedConfig(nextDraft)
       if (section === 'client') {
         setTagInputText(formatTagInput(normalized.tags))
+        setTagOptions((current) => mergeTagOptions(current, normalized.tags || []))
       }
       if (section === 'entry') {
         setEntryAddressInputText(formatAddressInput(normalized.entry?.addresses))
@@ -985,6 +1039,7 @@ export default function App() {
     : []
 
   const filteredAgents = agents.filter((item) => hasSelectedTag(item.tags, selectedTag))
+  const tagFilterOptions = mergeDashboardTagOptions(dashboardView?.tags || [], tagOptions)
   const selectedTagView = selectedTag ? dashboardView?.tags.find((tag) => tag.tag === selectedTag) : undefined
   const scopedAgentCount = dashboardView ? selectedTagView?.agent_count ?? filteredAgents.length : filteredAgents.length
   const scopedNodeCount = dashboardView ? selectedTagView?.node_count ?? dashboardView.totals.node_count : 0
@@ -1754,7 +1809,7 @@ export default function App() {
                 >
                   全部
                 </Tag>
-                {dashboardView?.tags.map((tag: DashboardTagView) => (
+                {tagFilterOptions.map((tag: DashboardTagView) => (
                   <Tag
                     key={tag.tag}
                     color={selectedTag === tag.tag ? 'green' : 'default'}
@@ -1773,6 +1828,7 @@ export default function App() {
                   <List
                     className={`agent-list agent-list-${agentViewMode}`}
                     dataSource={filteredAgents}
+                    pagination={{ pageSize: 10, hideOnSinglePage: true, showSizeChanger: false }}
                     renderItem={(item, index) => {
                       const active = item.agent_id === selectedAgentId
                       const renewalStatus = calculateRenewalStatus(item.renewal)
@@ -2090,10 +2146,16 @@ export default function App() {
                         onSave: saveManagedConfigSection,
                         onAgentNameChange: (value) => updateManagedConfig((current) => ({ ...current, agent_name: value })),
                         onSortOrderChange: (value) => updateManagedConfig((current) => ({ ...current, sort_order: value })),
-                        tagInputText,
-                        onTagsTextChange: (value) => {
-                          setTagInputText(value)
-                          updateManagedConfig((current) => ({ ...current, tags: parseTagInput(value) }))
+                        tagOptions,
+                        newTagName,
+                        tagSaving,
+                        onNewTagNameChange: setNewTagName,
+                        onCreateTag: createTagOption,
+                        onTagsChange: (values) => {
+                          const tags = mergeTagOptions([], values)
+                          setTagInputText(formatTagInput(tags))
+                          setTagOptions((current) => mergeTagOptions(current, tags))
+                          updateManagedConfig((current) => ({ ...current, tags }))
                         },
                         onRenewalChange: (patch) => updateManagedConfig((current) => ({ ...current, renewal: { ...current.renewal, ...patch } })),
                         entryAddressInputText,
@@ -2393,8 +2455,12 @@ interface ConfigPanelProps {
   onSave: (section: ConfigSectionKey) => void
   onAgentNameChange: (value: string) => void
   onSortOrderChange: (value: number) => void
-  tagInputText: string
-  onTagsTextChange: (value: string) => void
+  tagOptions: string[]
+  newTagName: string
+  tagSaving: boolean
+  onNewTagNameChange: (value: string) => void
+  onCreateTag: () => void
+  onTagsChange: (values: string[]) => void
   onRenewalChange: (patch: Partial<VPSRenewalConfig>) => void
   entryAddressInputText: string
   onEntryAddressesTextChange: (value: string) => void
@@ -2415,8 +2481,12 @@ function renderManagedConfigPanel(props: ConfigPanelProps) {
     onSave,
     onAgentNameChange,
     onSortOrderChange,
-    tagInputText,
-    onTagsTextChange,
+    tagOptions,
+    newTagName,
+    tagSaving,
+    onNewTagNameChange,
+    onCreateTag,
+    onTagsChange,
     onRenewalChange,
     entryAddressInputText,
     onEntryAddressesTextChange,
@@ -2528,12 +2598,25 @@ function renderManagedConfigPanel(props: ConfigPanelProps) {
           </Col>
           <Col xs={24}>
             <Text type="secondary">标签</Text>
-            <Input
-              value={tagInputText}
-              placeholder="例如: HK, 线路机, 家宽"
-              onChange={(event) => onTagsTextChange(event.target.value)}
+            <Select
+              mode="multiple"
+              allowClear
+              style={{ width: '100%' }}
+              value={managedConfig.tags || []}
+              placeholder="选择已创建标签"
+              options={tagOptions.map((tag) => ({ value: tag, label: tag }))}
+              onChange={(values) => onTagsChange(values)}
             />
-            <Text type="secondary">支持英文逗号、中文逗号、顿号或换行分隔多个标签。</Text>
+            <Space.Compact style={{ width: '100%', marginTop: 8 }}>
+              <Input
+                value={newTagName}
+                placeholder="创建固定标签，例如 PH、家宽、NAT"
+                onChange={(event) => onNewTagNameChange(event.target.value)}
+                onPressEnter={onCreateTag}
+              />
+              <Button onClick={onCreateTag} loading={tagSaving}>创建标签</Button>
+            </Space.Compact>
+            <Text type="secondary">标签先创建再多选；保存 Client 信息后会应用到当前 Client。</Text>
           </Col>
         </Row>
       </Card>
@@ -4624,6 +4707,23 @@ function formatTagInput(tags: string[] | undefined): string {
 	return (tags || []).join(', ')
 }
 
+function mergeTagOptions(current: string[], incoming: string[]): string[] {
+  return parseTagInput([...current, ...incoming].join(','))
+}
+
+function mergeDashboardTagOptions(dashboardTags: DashboardTagView[], tagOptions: string[]): DashboardTagView[] {
+  const byTag = new Map<string, DashboardTagView>()
+  for (const tag of dashboardTags) {
+    byTag.set(tag.tag, tag)
+  }
+  for (const tag of tagOptions) {
+    if (!byTag.has(tag)) {
+      byTag.set(tag, { tag, agent_count: 0, node_count: 0, client_count: 0, online_client_count: 0 })
+    }
+  }
+  return Array.from(byTag.values()).sort((left, right) => left.tag.localeCompare(right.tag))
+}
+
 function parseAddressInput(rawText: string): string[] {
   const seen = new Set<string>()
   const result: string[] = []
@@ -5228,13 +5328,13 @@ function explicitCountryCodeFromText(value?: string): string {
   if (direct) {
     return direct
   }
-  const match = /(?:^|[^A-Z0-9])(HK|US|CN|JP|SG|TW)(?=$|[^A-Z0-9])/.exec(text)
+  const match = /(?:^|[^A-Z0-9])(HK|US|CN|JP|SG|TW|PH|CA|DE|FR|GB|AU)(?=$|[^A-Z0-9])/.exec(text)
   return match ? match[1] : ''
 }
 
 function normalizeCountryCode(value?: string): string {
   const code = (value || '').trim().toUpperCase()
-  if (['HK', 'US', 'CN', 'JP', 'SG', 'TW'].includes(code)) {
+  if (['HK', 'US', 'CN', 'JP', 'SG', 'TW', 'PH', 'CA', 'DE', 'FR', 'GB', 'AU'].includes(code)) {
     return code
   }
   return ''
@@ -5277,6 +5377,18 @@ function countryName(code: string): string {
       return 'Singapore'
     case 'TW':
       return 'Taiwan'
+    case 'PH':
+      return 'Philippines'
+    case 'CA':
+      return 'Canada'
+    case 'DE':
+      return 'Germany'
+    case 'FR':
+      return 'France'
+    case 'GB':
+      return 'United Kingdom'
+    case 'AU':
+      return 'Australia'
     default:
       return code
   }

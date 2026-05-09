@@ -44,3 +44,17 @@ type ClientInstallSettingsRequest struct {
 	RequestTimeoutSeconds int    `json:"request_timeout_seconds"`
 	ServerSkipTLSVerify   bool   `json:"server_skip_tls_verify"`
 }
+
+type ExchangeRatesResponse struct {
+	Base      string             `json:"base"`
+	Date      string             `json:"date"`
+	Rates     map[string]float64 `json:"rates"`
+	Source    string             `json:"source,omitempty"`
+	FetchedAt time.Time          `json:"fetched_at"`
+	Stale     bool               `json:"stale,omitempty"`
+	Error     string             `json:"error,omitempty"`
+}
+
+type TagSettingsResponse struct {
+	Tags []string `json:"tags"`
+}

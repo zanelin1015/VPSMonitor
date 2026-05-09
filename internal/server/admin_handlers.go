@@ -59,8 +59,43 @@ func (a *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.handleClientInstallInfo(w, r)
+	case "tags":
+		if r.Method != http.MethodGet && r.Method != http.MethodPut {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		a.handleAdminTags(w, r)
 	default:
 		writeError(w, http.StatusNotFound, "route not found")
+	}
+}
+
+func (a *App) handleAdminTags(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := a.requireAdmin(w, r); !ok {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		tags, _, err := a.store.GetTagSettings()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, model.TagSettingsResponse{Tags: tags})
+	case http.MethodPut:
+		var req model.TagSettingsResponse
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode tags request: %v", err))
+			return
+		}
+		tags, err := a.store.SaveTagSettings(req.Tags)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, model.TagSettingsResponse{Tags: tags})
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
 }
 
