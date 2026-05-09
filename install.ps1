@@ -81,7 +81,9 @@ function Write-ClientConfig([string]$Path, [string]$ServerUrl, [string]$Registra
     poll_interval = $PollInterval
     request_timeout_seconds = $RequestTimeoutSeconds
   }
-  $payload | ConvertTo-Json -Depth 5 | Set-Content -Path $Path -Encoding UTF8
+  $json = $payload | ConvertTo-Json -Depth 5
+  $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+  [System.IO.File]::WriteAllText($Path, $json, $utf8NoBom)
 }
 
 function Wait-ServiceDeleted([string]$Name) {
@@ -117,7 +119,17 @@ function Install-ClientService([string]$BinaryPath, [string]$ConfigPath) {
   if ($LASTEXITCODE -ne 0) {
     Write-Warn "Configure service failure actions failed: $failureOutput"
   }
-  Start-Service -Name $ServiceName
+  try {
+    Start-Service -Name $ServiceName
+  }
+  catch {
+    $logPath = Join-Path $InstallDir "vpsmonitor-client.log"
+    if (Test-Path $logPath) {
+      Write-Warn "Service start failed. Last client log lines:"
+      Get-Content $logPath -Tail 40 | ForEach-Object { Write-Host $_ }
+    }
+    throw
+  }
 }
 
 Assert-Admin

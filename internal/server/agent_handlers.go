@@ -149,6 +149,12 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, history)
 	case "config":
 		a.handleAgentConfig(w, r, agentID)
+	case "logs":
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		a.handleAgentLogs(w, r, agentID)
 	case "xui":
 		if len(parts) >= 3 && parts[2] == "actions" {
 			a.handleXUIActions(w, r, agentID, parts[3:])
@@ -179,6 +185,27 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusNotFound, "route not found")
 	}
+}
+
+func (a *App) handleAgentLogs(w http.ResponseWriter, r *http.Request, agentID string) {
+	if _, _, ok := a.requireAdmin(w, r); !ok {
+		return
+	}
+	snapshot, ok := a.store.GetLatest(agentID)
+	if !ok {
+		writeError(w, http.StatusNotFound, "snapshot not found")
+		return
+	}
+	logs := snapshot.Logs
+	if logs == nil {
+		logs = []model.AgentLogEntry{}
+	}
+	writeJSON(w, http.StatusOK, model.AgentLogsResponse{
+		AgentID:           agentID,
+		ReportedAt:        snapshot.ReportedAt,
+		LastCollectionErr: snapshot.Summary.LastCollectionErr,
+		Logs:              logs,
+	})
 }
 
 func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID string, parts []string) {

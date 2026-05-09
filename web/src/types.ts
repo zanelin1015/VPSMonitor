@@ -35,6 +35,20 @@ export interface AgentListItem {
   geo?: IPGeoView
 }
 
+export interface AgentLogEntry {
+  time: string
+  level?: string
+  source?: string
+  message: string
+}
+
+export interface AgentLogsResponse {
+  agent_id: string
+  reported_at?: string
+  last_collection_err?: string
+  logs: AgentLogEntry[]
+}
+
 export interface VPSRenewalConfig {
   enabled?: boolean
   start_date?: string

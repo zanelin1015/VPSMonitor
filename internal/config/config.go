@@ -146,7 +146,8 @@ func loadJSON(path string, target any) error {
 	if err != nil {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
-	if err := json.Unmarshal(data, target); err != nil {
+	raw := strings.TrimPrefix(string(data), "\ufeff")
+	if err := json.Unmarshal([]byte(raw), target); err != nil {
 		return fmt.Errorf("unmarshal %s: %w", path, err)
 	}
 	return nil

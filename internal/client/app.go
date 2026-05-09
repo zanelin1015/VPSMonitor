@@ -102,7 +102,9 @@ func (a *App) collect(ctx context.Context, effectiveConfig model.ManagedAgentCon
 	if effectiveConfig.XUI.Enabled {
 		xuiClient, err := a.xuiClientFor(effectiveConfig.XUI)
 		if err != nil {
-			lastErrs = append(lastErrs, "x-ui: "+err.Error())
+			xuiErr := "x-ui: " + err.Error()
+			lastErrs = append(lastErrs, xuiErr)
+			snapshot.Logs = append(snapshot.Logs, xuiLogEntry(xuiErr))
 		} else {
 			xuiCtx, cancel := context.WithTimeout(ctx, a.requestTimeout)
 			snapshot.XUI = xuiClient.Collect(xuiCtx)
@@ -111,7 +113,9 @@ func (a *App) collect(ctx context.Context, effectiveConfig model.ManagedAgentCon
 				snapshot.XUI.Certificates = a.localCertificates()
 			}
 			if snapshot.XUI != nil && snapshot.XUI.Error != "" {
-				lastErrs = append(lastErrs, "x-ui: "+snapshot.XUI.Error)
+				xuiErr := "x-ui: " + snapshot.XUI.Error
+				lastErrs = append(lastErrs, xuiErr)
+				snapshot.Logs = append(snapshot.Logs, xuiLogEntry(xuiErr))
 			}
 		}
 	}
@@ -121,6 +125,15 @@ func (a *App) collect(ctx context.Context, effectiveConfig model.ManagedAgentCon
 		snapshot.Summary.LastCollectionErr = strings.Join(lastErrs, "; ")
 	}
 	return snapshot
+}
+
+func xuiLogEntry(message string) model.AgentLogEntry {
+	return model.AgentLogEntry{
+		Time:    time.Now().UTC(),
+		Level:   "error",
+		Source:  "x-ui",
+		Message: strings.TrimSpace(message),
+	}
 }
 
 func (a *App) xuiClientFor(cfg config.XUIConfig) (*panels.XUIClient, error) {
@@ -305,10 +318,7 @@ func (a *App) doJSON(req *http.Request, target any) error {
 }
 
 func buildSummary(snapshot model.AgentSnapshot) model.VPSSummary {
-	summary := model.VPSSummary{
-		Hostname:   snapshot.Summary.Hostname,
-		ObservedIP: snapshot.Summary.ObservedIP,
-	}
+	summary := snapshot.Summary
 
 	if snapshot.XUI != nil {
 		summary.PublicIPv4 = snapshot.XUI.ServerStatus.PublicIP.IPv4

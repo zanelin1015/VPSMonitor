@@ -6,12 +6,27 @@ import (
 )
 
 type AgentSnapshot struct {
-	AgentID    string         `json:"agent_id"`
-	AgentName  string         `json:"agent_name,omitempty"`
-	ReportedAt time.Time      `json:"reported_at"`
-	Summary    VPSSummary     `json:"summary"`
-	XUI        *XUISnapshot   `json:"xui,omitempty"`
-	Nezha      *NezhaSnapshot `json:"nezha,omitempty"`
+	AgentID    string          `json:"agent_id"`
+	AgentName  string          `json:"agent_name,omitempty"`
+	ReportedAt time.Time       `json:"reported_at"`
+	Summary    VPSSummary      `json:"summary"`
+	XUI        *XUISnapshot    `json:"xui,omitempty"`
+	Nezha      *NezhaSnapshot  `json:"nezha,omitempty"`
+	Logs       []AgentLogEntry `json:"logs,omitempty"`
+}
+
+type AgentLogEntry struct {
+	Time    time.Time `json:"time"`
+	Level   string    `json:"level,omitempty"`
+	Source  string    `json:"source,omitempty"`
+	Message string    `json:"message"`
+}
+
+type AgentLogsResponse struct {
+	AgentID           string          `json:"agent_id"`
+	ReportedAt        time.Time       `json:"reported_at"`
+	LastCollectionErr string          `json:"last_collection_err,omitempty"`
+	Logs              []AgentLogEntry `json:"logs"`
 }
 
 type VPSSummary struct {

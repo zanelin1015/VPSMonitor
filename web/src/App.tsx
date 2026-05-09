@@ -47,6 +47,8 @@ import type {
   AgentEntryConfig,
   AgentEntryMapping,
   AgentListItem,
+  AgentLogEntry,
+  AgentLogsResponse,
   AgentRealtimeMetrics,
   ClientChainStep,
   ClientChainView,
@@ -274,6 +276,9 @@ export default function App() {
   const [selectedNodeAnchor, setSelectedNodeAnchor] = useState('')
   const [xuiActions, setXUIActions] = useState<XUIAction[]>([])
   const [xuiActionsLoading, setXUIActionsLoading] = useState(false)
+  const [agentLogs, setAgentLogs] = useState<AgentLogsResponse | null>(null)
+  const [agentLogsLoading, setAgentLogsLoading] = useState(false)
+  const [agentLogsError, setAgentLogsError] = useState('')
   const [xuiActionModalOpen, setXUIActionModalOpen] = useState(false)
   const [xuiActionSaving, setXUIActionSaving] = useState(false)
   const [xuiActionKind, setXUIActionKind] = useState('add_outbound')
@@ -377,6 +382,8 @@ export default function App() {
       setOverviewError('')
       setConfigError('')
       setXUIActions([])
+      setAgentLogs(null)
+      setAgentLogsError('')
       setConfigAudits([])
       return
     }
@@ -384,6 +391,7 @@ export default function App() {
     void loadOverview(selectedAgentId)
     void loadManagedConfig(selectedAgentId)
     void loadXUIActions(selectedAgentId)
+    void loadAgentLogs(selectedAgentId)
     void loadConfigAudits(selectedAgentId)
   }, [selectedAgentId, reloadToken, adminUser])
 
@@ -485,6 +493,7 @@ export default function App() {
     setOverview(null)
     setManagedConfig(null)
     setTelegramBots([])
+    setAgentLogs(null)
     setConfigAudits([])
   }
 
@@ -697,6 +706,35 @@ export default function App() {
     } finally {
       if (!silent) {
         setXUIActionsLoading(false)
+      }
+    }
+  }
+
+  async function loadAgentLogs(agentID = selectedAgentId, options: LoadOptions = {}) {
+    if (!agentID) {
+      setAgentLogs(null)
+      setAgentLogsError('')
+      return
+    }
+    const silent = Boolean(options.silent)
+    if (!silent) {
+      setAgentLogsLoading(true)
+      setAgentLogsError('')
+    }
+    try {
+      const data = await fetchJSON<AgentLogsResponse>(`/api/v1/agents/${agentID}/logs`)
+      setAgentLogs({ ...data, logs: Array.isArray(data.logs) ? data.logs : [] })
+      setAgentLogsError('')
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      } else if (!silent) {
+        setAgentLogs(null)
+        setAgentLogsError(error instanceof Error ? error.message : '加载日志失败')
+      }
+    } finally {
+      if (!silent) {
+        setAgentLogsLoading(false)
       }
     }
   }
@@ -1019,6 +1057,7 @@ export default function App() {
         void loadOverview(selectedAgentId, { silent: true })
         void loadManagedConfig(selectedAgentId, { silent: true })
         void loadXUIActions(selectedAgentId, { silent: true })
+        void loadAgentLogs(selectedAgentId, { silent: true })
       }
     }, DASHBOARD_AUTO_REFRESH_MS)
     return () => {
@@ -1048,6 +1087,7 @@ export default function App() {
   const scopedOnlineClientCount = dashboardView ? selectedTagView?.online_client_count ?? dashboardView.totals.online_client_count : 0
   const onlineAgentCount = filteredAgents.filter(isAgentRunning).length
   const offlineAgentCount = Math.max(scopedAgentCount - onlineAgentCount, 0)
+  const xuiErrorAgentCount = filteredAgents.filter((agent) => Boolean(agent.summary.last_collection_err)).length
   const scopedNetwork = summarizeAgentNetwork(filteredAgents)
   const monthlyCost = summarizeMonthlyCost(filteredAgents, costCurrency, exchangeRates)
   const filteredTagLinks = (dashboardView?.links || []).filter((link) => topologyMatchesSelectedTag(link, selectedTag))
@@ -1277,6 +1317,32 @@ export default function App() {
           <div className="muted-line">创建 {formatDateTime(record.created_at)}{record.completed_at ? ` · 完成 ${formatDateTime(record.completed_at)}` : ''}</div>
         </div>
       ),
+    },
+  ]
+
+  const agentLogColumns: ColumnsType<AgentLogEntry> = [
+    {
+      title: '时间',
+      dataIndex: 'time',
+      width: 180,
+      render: (value?: string) => formatDateTime(value),
+    },
+    {
+      title: '来源',
+      dataIndex: 'source',
+      width: 100,
+      render: (value?: string) => value || '-',
+    },
+    {
+      title: '级别',
+      dataIndex: 'level',
+      width: 100,
+      render: (value?: string) => <Tag color={value === 'error' ? 'red' : 'default'}>{value || 'info'}</Tag>,
+    },
+    {
+      title: '内容',
+      dataIndex: 'message',
+      render: (value?: string) => <Text copyable={Boolean(value)}>{value || '-'}</Text>,
     },
   ]
 
@@ -1745,20 +1811,20 @@ export default function App() {
                     <div className="overview-stat-foot">节点 {scopedNodeCount} · 标签 {dashboardView.totals.tagged_agent_count}</div>
                   </section>
                   <section className="overview-stat-card overview-stat-green">
-                    <div className="overview-stat-title">在线服务器</div>
+                    <div className="overview-stat-title">Client 在线</div>
                     <div className="overview-stat-value">
                       <span className="overview-stat-dot" />
                       <strong>{onlineAgentCount}</strong>
                     </div>
-                    <div className="overview-stat-foot">在线客户端 {scopedOnlineClientCount} · 总客户端 {scopedClientCount}</div>
+                    <div className="overview-stat-foot">以 client 心跳/实时连接判断 · 节点客户端 {scopedOnlineClientCount}/{scopedClientCount}</div>
                   </section>
                   <section className="overview-stat-card overview-stat-red">
-                    <div className="overview-stat-title">离线服务器</div>
+                    <div className="overview-stat-title">Client 离线</div>
                     <div className="overview-stat-value">
                       <span className="overview-stat-dot" />
                       <strong>{offlineAgentCount}</strong>
                     </div>
-                    <div className="overview-stat-foot">出站 {dashboardView.totals.outbound_count} · 转发规则 {dashboardView.totals.routing_rule_count}</div>
+                    <div className="overview-stat-foot">x-ui 异常 {xuiErrorAgentCount} · 出站 {dashboardView.totals.outbound_count} · 规则 {dashboardView.totals.routing_rule_count}</div>
                   </section>
                   <section className="overview-stat-card overview-network-card">
                     <div className="overview-stat-title">网络</div>
@@ -1928,6 +1994,8 @@ export default function App() {
                                     {item.renewal?.bandwidth_mbps ? (
                                       <span className="agent-tag-chip">带宽 {formatBandwidth(item.renewal.bandwidth_mbps)}</span>
                                     ) : null}
+                                    {item.summary.last_collection_err ? <span className="agent-tag-chip agent-tag-warn" title={item.summary.last_collection_err}>x-ui 异常</span> : null}
+                                    {xrayIssueLabel(item) ? <span className="agent-tag-chip agent-tag-warn">{xrayIssueLabel(item)}</span> : null}
                                   </div>
                                   <div className="agent-meta agent-footer-line">
                                     {item.has_config ? '已托管配置' : '待配置'} · {activityText}
@@ -1987,6 +2055,8 @@ export default function App() {
                                   {item.renewal?.bandwidth_mbps ? (
                                     <span className="agent-tag-chip">带宽 {formatBandwidth(item.renewal.bandwidth_mbps)}</span>
                                   ) : null}
+                                  {item.summary.last_collection_err ? <span className="agent-tag-chip agent-tag-warn" title={item.summary.last_collection_err}>x-ui 异常</span> : null}
+                                  {xrayIssueLabel(item) ? <span className="agent-tag-chip agent-tag-warn">{xrayIssueLabel(item)}</span> : null}
                                 </div>
                                 <div className="agent-meter-grid">
                                   <MiniProgress label="CPU" value={formatPercent(cpuPercent)} percent={cpuPercent} level={metricLevel(cpuPercent)} />
@@ -2090,6 +2160,47 @@ export default function App() {
 
             {selectedAgent ? (
               <Card className="surface-card tabs-card" bordered={false}>
+                <div className="selected-agent-toolbar">
+                  <div>
+                    <Text type="secondary">当前 Client</Text>
+                    <Title level={4}>{selectedAgent.agent_name || selectedAgent.agent_id}</Title>
+                  </div>
+                  <Space wrap>
+                    {selectedAgent.summary.last_collection_err ? (
+                      <Tag
+                        color="orange"
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => {
+                          setActiveTabKey('logs')
+                          void loadAgentLogs(selectedAgentId)
+                        }}
+                      >
+                        x-ui 异常
+                      </Tag>
+                    ) : null}
+                    <Button
+                      onClick={() => {
+                        setActiveTabKey('logs')
+                        void loadAgentLogs(selectedAgentId)
+                      }}
+                    >
+                      查看日志
+                    </Button>
+                    <Button
+                      disabled={!managedConfig?.xui?.base_url}
+                      onClick={() => {
+                        if (managedConfig?.xui?.base_url) {
+                          window.open(managedConfig.xui.base_url, '_blank', 'noopener,noreferrer')
+                        }
+                      }}
+                    >
+                      打开 x-ui 面板
+                    </Button>
+                    <Button icon={<ReloadOutlined />} loading={overviewLoading || configLoading} onClick={() => setReloadToken((current) => current + 1)}>
+                      刷新当前 Client
+                    </Button>
+                  </Space>
+                </div>
                 <Tabs
                   activeKey={activeTabKey}
                   onChange={setActiveTabKey}
@@ -2146,6 +2257,43 @@ export default function App() {
                           loading={xuiActionsLoading}
                           pagination={{ pageSize: 8, hideOnSinglePage: true }}
                           scroll={{ x: 820 }}
+                        />
+                      </Space>
+                    ),
+                  },
+                  {
+                    key: 'logs',
+                    label: `日志 (${agentLogs?.logs.length || 0})`,
+                    children: (
+                      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                        {agentLogs?.last_collection_err ? (
+                          <Alert
+                            type="warning"
+                            showIcon
+                            message="最近一次 x-ui 采集异常"
+                            description={agentLogs.last_collection_err}
+                          />
+                        ) : null}
+                        {agentLogsError ? <Alert type="error" showIcon message={agentLogsError} /> : null}
+                        <Space wrap>
+                          <Button
+                            icon={<ReloadOutlined />}
+                            disabled={!selectedAgentId}
+                            loading={agentLogsLoading}
+                            onClick={() => void loadAgentLogs()}
+                          >
+                            刷新日志
+                          </Button>
+                          <Text type="secondary">当前显示 client 最近一次上报附带的异常日志</Text>
+                        </Space>
+                        <Table
+                          rowKey={(record, index) => `${record.time}-${record.source || 'log'}-${index}`}
+                          columns={agentLogColumns}
+                          dataSource={agentLogs?.logs || []}
+                          loading={agentLogsLoading}
+                          pagination={{ pageSize: 10, hideOnSinglePage: true }}
+                          scroll={{ x: 760 }}
+                          locale={{ emptyText: <Empty description="暂无异常日志" /> }}
                         />
                       </Space>
                     ),
@@ -5148,7 +5296,11 @@ function hasSelectedTag(tags: string[] | undefined, selectedTag: string): boolea
 }
 
 function isAgentRunning(agent: AgentListItem): boolean {
-  return (agent.summary.xray_state || '').toLowerCase() === 'running'
+  const seenAt = Date.parse(agent.realtime_at || agent.last_seen_at || agent.reported_at || '')
+  if (Number.isNaN(seenAt)) {
+    return false
+  }
+  return Date.now() - seenAt <= 5 * 60 * 1000
 }
 
 function topologyMatchesSelectedTag(link: TopologyLinkView, selectedTag: string): boolean {
@@ -5382,20 +5534,21 @@ function agentStatusLevel(state?: string): 'ok' | 'warn' | 'bad' | 'neutral' {
 }
 
 function agentDisplayStatus(agent: AgentListItem): { label: string; level: 'ok' | 'warn' | 'bad' | 'neutral' } {
-  const xrayState = (agent.summary.xray_state || '').trim()
-  if (xrayState) {
-    return { label: xrayState, level: agentStatusLevel(xrayState) }
-  }
-  if (agent.summary.last_collection_err) {
-    return { label: '采集异常', level: 'bad' }
-  }
-  if (agent.realtime_at) {
+  if (isAgentRunning(agent)) {
     return { label: 'client 在线', level: 'ok' }
   }
-  if (agent.reported_at) {
-    return { label: 'x-ui 未知', level: 'neutral' }
+  if (agent.last_seen_at || agent.reported_at || agent.realtime_at) {
+    return { label: 'client 离线', level: 'bad' }
   }
   return { label: '等待上报', level: 'neutral' }
+}
+
+function xrayIssueLabel(agent: AgentListItem): string {
+  const xrayState = (agent.summary.xray_state || '').trim()
+  if (!xrayState || xrayState.toLowerCase() === 'running') {
+    return ''
+  }
+  return `Xray ${xrayState}`
 }
 
 function countryFlag(code?: string): string {

@@ -114,7 +114,8 @@ func buildAgentAlerts(agent model.AgentRecord, snapshot model.AgentSnapshot, inc
 		xuiError = strings.TrimSpace(snapshot.XUI.Error)
 	}
 	if xuiError != "" {
-		alerts = append(alerts, newAgentAlert(agent, "xui_error", "warning", "X-UI 采集异常", xuiError, xuiError))
+		detail := xuiError + "\n日志：VPSMonitor 后台 → 选择 Client → 日志"
+		alerts = append(alerts, newAgentAlert(agent, "xui_error", "warning", "X-UI 采集异常", xuiError, detail))
 	} else {
 		alerts = append(alerts, newResolvedAlert(agent.AgentID, "xui_error"))
 	}
