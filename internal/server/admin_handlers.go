@@ -231,7 +231,7 @@ func (a *App) fetchUpdateLatestInfo(repo string, packagePrefix string) (*model.U
 
 	ctx := contextWithTimeout(15 * time.Second)
 	defer ctx.cancel()
-	req, err := http.NewRequestWithContext(ctx.ctx, http.MethodGet, "https://api.github.com/repos/"+repo+"/releases/latest", nil)
+	req, err := http.NewRequestWithContext(ctx.ctx, http.MethodGet, "https://api.github.com/repos/"+repo+"/releases?per_page=20", nil)
 	if err != nil {
 		return nil, fmt.Errorf("build release request: %w", err)
 	}
@@ -239,33 +239,57 @@ func (a *App) fetchUpdateLatestInfo(repo string, packagePrefix string) (*model.U
 	req.Header.Set("User-Agent", "VPSMonitor")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetch latest release: %w", err)
+		return nil, fmt.Errorf("fetch releases: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("fetch latest release: http %d", resp.StatusCode)
+		return nil, fmt.Errorf("fetch releases: http %d", resp.StatusCode)
 	}
 
-	var release struct {
+	var releases []struct {
 		TagName string `json:"tag_name"`
 		Name    string `json:"name"`
 		Assets  []struct {
 			Name string `json:"name"`
 		} `json:"assets"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return nil, fmt.Errorf("decode latest release: %w", err)
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return nil, fmt.Errorf("decode releases: %w", err)
 	}
-	latestTag := firstNonEmptyString(release.TagName, release.Name)
-	latestVersion := normalizeVersion(latestTag)
+	var latestTag string
+	var latestVersion string
+	var assets []string
+	for _, release := range releases {
+		tag := firstNonEmptyString(release.TagName, release.Name)
+		version := normalizeVersion(tag)
+		if _, ok := parseSemver(version); !ok {
+			continue
+		}
+		if latestVersion != "" && !isVersionNewer(version, latestVersion) {
+			continue
+		}
+		latestTag = tag
+		latestVersion = version
+		assets = assets[:0]
+		for _, asset := range release.Assets {
+			if strings.TrimSpace(asset.Name) != "" {
+				assets = append(assets, asset.Name)
+			}
+		}
+	}
+	if latestVersion == "" && len(releases) > 0 {
+		release := releases[0]
+		latestTag = firstNonEmptyString(release.TagName, release.Name)
+		latestVersion = normalizeVersion(latestTag)
+		assets = assets[:0]
+		for _, asset := range release.Assets {
+			if strings.TrimSpace(asset.Name) != "" {
+				assets = append(assets, asset.Name)
+			}
+		}
+	}
 	if latestVersion == "" {
 		return nil, fmt.Errorf("latest release has no version tag")
-	}
-	assets := make([]string, 0, len(release.Assets))
-	for _, asset := range release.Assets {
-		if strings.TrimSpace(asset.Name) != "" {
-			assets = append(assets, asset.Name)
-		}
 	}
 
 	agents, err := a.store.ListAgents()
@@ -358,7 +382,7 @@ func isVersionNewer(candidate string, current string) bool {
 	candidateParts, candidateOK := parseSemver(candidate)
 	currentParts, currentOK := parseSemver(current)
 	if !candidateOK || !currentOK {
-		return normalizeVersion(candidate) != "" && normalizeVersion(candidate) != normalizeVersion(current)
+		return false
 	}
 	for i := 0; i < len(candidateParts); i++ {
 		if candidateParts[i] != currentParts[i] {
