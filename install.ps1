@@ -5,6 +5,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+$InstallerVersion = "2026.05.09.2"
 
 $Repo = if ($env:VPSMONITOR_REPO) { $env:VPSMONITOR_REPO } else { "zanelin1015/VPSMonitor" }
 $Version = if ($env:VPSMONITOR_VERSION) { $env:VPSMONITOR_VERSION } else { "latest" }
@@ -126,6 +127,7 @@ $ConfigPath = Join-Path $InstallDir "config\client.json"
 $BinaryPath = Join-Path $InstallDir "bridge-client.exe"
 
 Write-Info "VPSMonitor Windows client installer"
+Write-Host "  Installer: $InstallerVersion"
 Write-Host "  Arch: windows/$Arch"
 Write-Host "  Install: $InstallDir"
 Write-Host "  Service: $ServiceName"
