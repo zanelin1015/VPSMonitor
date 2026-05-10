@@ -1,0 +1,441 @@
+package server
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"time"
+
+	"bridge-core/internal/model"
+)
+
+func (a *App) handleAdminUpdates(w http.ResponseWriter, r *http.Request, parts []string) {
+	if _, _, ok := a.requireAdmin(w, r); !ok {
+		return
+	}
+	if len(parts) != 1 {
+		writeError(w, http.StatusNotFound, "update route not found")
+		return
+	}
+	if parts[0] == "latest" {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		repo := firstNonEmptyString(r.URL.Query().Get("repo"), "zanelin1015/VPSMonitor")
+		packagePrefix := firstNonEmptyString(r.URL.Query().Get("package_prefix"), "VPSMonitor")
+		latest, err := a.fetchUpdateLatestInfo(repo, packagePrefix)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, latest)
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var req model.UpdateRequest
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+	switch parts[0] {
+	case "server":
+		latest, err := a.startServerUpdate(req)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, model.UpdateResponse{Status: "server update started", Latest: latest})
+	case "clients":
+		response, err := a.createClientUpdateActions(req)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, response)
+	default:
+		writeError(w, http.StatusNotFound, "update route not found")
+	}
+}
+
+func (a *App) startServerUpdate(req model.UpdateRequest) (*model.UpdateLatestInfo, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("resolve server executable: %w", err)
+	}
+	installDir := filepath.Dir(exe)
+	repo := firstNonEmptyString(req.Repo, "zanelin1015/VPSMonitor")
+	packagePrefix := firstNonEmptyString(req.PackagePrefix, "VPSMonitor")
+	latest, err := a.fetchUpdateLatestInfo(repo, packagePrefix)
+	if err != nil {
+		return nil, err
+	}
+	version := firstNonEmptyString(req.Version, latest.LatestServerTag, latest.LatestServerVersion, latest.LatestTag, latest.LatestVersion)
+	if !isVersionNewer(version, latest.CurrentServerVersion) {
+		return latest, fmt.Errorf("server is already up to date: current %s, latest %s", latest.CurrentServerVersion, firstNonEmptyString(latest.LatestServerVersion, latest.LatestVersion))
+	}
+	scriptURL := firstNonEmptyString(req.ScriptURL, "https://raw.githubusercontent.com/"+repo+"/main/install.sh")
+	serviceName := firstNonEmptyString(req.ServiceName, "vpsmonitor-server")
+	command := fmt.Sprintf(`(sleep 2; tmp="$(mktemp /tmp/vpsmonitor-server-install.XXXXXX.sh)"; (curl -fsSL %[1]q -o "$tmp" || wget -O "$tmp" %[1]q) && chmod +x "$tmp" && env VPSMONITOR_ASSUME_YES=true VPSMONITOR_VERSION=%[2]q VPSMONITOR_REPO=%[3]q VPSMONITOR_PACKAGE_PREFIX=%[4]q VPSMONITOR_SERVER_DIR=%[5]q VPSMONITOR_SERVER_SERVICE=%[6]q bash "$tmp" server >>/tmp/vpsmonitor-server-update.log 2>&1) >/dev/null 2>&1 &`, scriptURL, version, repo, packagePrefix, installDir, serviceName)
+	if err := exec.Command("sh", "-c", command).Start(); err != nil {
+		return latest, err
+	}
+	return latest, nil
+}
+
+func (a *App) createClientUpdateActions(req model.UpdateRequest) (model.UpdateResponse, error) {
+	agents, err := a.store.ListAgents()
+	if err != nil {
+		return model.UpdateResponse{}, err
+	}
+	selected := map[string]struct{}{}
+	for _, id := range req.AgentIDs {
+		if id = strings.TrimSpace(id); id != "" {
+			selected[id] = struct{}{}
+		}
+	}
+	repo := firstNonEmptyString(req.Repo, "zanelin1015/VPSMonitor")
+	packagePrefix := firstNonEmptyString(req.PackagePrefix, "VPSMonitor")
+	latest, err := a.fetchUpdateLatestInfo(repo, packagePrefix)
+	if err != nil {
+		return model.UpdateResponse{}, err
+	}
+	version := firstNonEmptyString(req.Version, latest.LatestClientTag, latest.LatestClientVersion, latest.LatestTag, latest.LatestVersion)
+	scriptURL := firstNonEmptyString(req.ScriptURL, "https://raw.githubusercontent.com/"+repo+"/main/install.sh")
+	psScriptURL := firstNonEmptyString(req.PSScriptURL, "https://raw.githubusercontent.com/"+repo+"/main/install.ps1")
+	serviceName := firstNonEmptyString(req.ServiceName, "")
+	count := 0
+	skipped := 0
+	statuses := make([]model.UpdateAgentStatus, 0, len(agents))
+	for _, agent := range agents {
+		if len(selected) > 0 {
+			if _, ok := selected[agent.AgentID]; !ok {
+				continue
+			}
+		}
+		status := buildUpdateAgentStatus(agent, latest.LatestClientVersion, packagePrefix, latest.ClientAssets)
+		statuses = append(statuses, status)
+		if !status.UpdateAvailable {
+			skipped++
+			continue
+		}
+		payload := map[string]any{
+			"version":        version,
+			"repo":           repo,
+			"package_prefix": packagePrefix,
+			"script_url":     scriptURL,
+			"ps_script_url":  psScriptURL,
+			"target_os":      status.OS,
+			"target_arch":    status.Arch,
+		}
+		if serviceName != "" {
+			payload["service_name"] = serviceName
+		}
+		if _, err := a.store.CreateXUIAction(agent.AgentID, model.XUIActionRequest{Kind: model.XUIActionUpdateClient, Payload: payload}); err != nil {
+			return model.UpdateResponse{}, err
+		}
+		count++
+	}
+	return model.UpdateResponse{
+		Status:      "client update tasks created",
+		Count:       count,
+		Skipped:     skipped,
+		Latest:      latest,
+		AgentStatus: statuses,
+	}, nil
+}
+
+func (a *App) fetchUpdateLatestInfo(repo string, packagePrefix string) (*model.UpdateLatestInfo, error) {
+	repo = strings.Trim(strings.TrimSpace(repo), "/")
+	if repo == "" || !strings.Contains(repo, "/") {
+		return nil, fmt.Errorf("invalid repo: %s", repo)
+	}
+	packagePrefix = firstNonEmptyString(packagePrefix, "VPSMonitor")
+
+	ctx := contextWithTimeout(15 * time.Second)
+	defer ctx.cancel()
+	req, err := http.NewRequestWithContext(ctx.ctx, http.MethodGet, "https://api.github.com/repos/"+repo+"/releases?per_page=20", nil)
+	if err != nil {
+		return nil, fmt.Errorf("build release request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "VPSMonitor")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch releases: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("fetch releases: http %d", resp.StatusCode)
+	}
+
+	var releases []struct {
+		TagName string `json:"tag_name"`
+		Name    string `json:"name"`
+		Assets  []struct {
+			Name string `json:"name"`
+		} `json:"assets"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return nil, fmt.Errorf("decode releases: %w", err)
+	}
+	var latest releaseUpdateInfo
+	var serverLatest releaseUpdateInfo
+	var clientLatest releaseUpdateInfo
+	serverPackageName, serverPackageOK := updateServerPackageName(packagePrefix, runtime.GOOS, runtime.GOARCH)
+	for _, release := range releases {
+		tag := firstNonEmptyString(release.TagName, release.Name)
+		version := normalizeVersion(tag)
+		if _, ok := parseSemver(version); !ok {
+			continue
+		}
+		assets := make([]string, 0, len(release.Assets))
+		for _, asset := range release.Assets {
+			if strings.TrimSpace(asset.Name) != "" {
+				assets = append(assets, asset.Name)
+			}
+		}
+		candidate := releaseUpdateInfo{Tag: tag, Version: version, Assets: assets}
+		if latest.Version == "" || isVersionNewer(version, latest.Version) {
+			latest = candidate
+		}
+		if serverPackageOK && stringInSlice(serverPackageName, assets) && (serverLatest.Version == "" || isVersionNewer(version, serverLatest.Version)) {
+			serverLatest = candidate
+		}
+		if hasClientUpdateAsset(packagePrefix, assets) && (clientLatest.Version == "" || isVersionNewer(version, clientLatest.Version)) {
+			clientLatest = candidate
+		}
+	}
+	if latest.Version == "" && len(releases) > 0 {
+		release := releases[0]
+		assets := make([]string, 0, len(release.Assets))
+		for _, asset := range release.Assets {
+			if strings.TrimSpace(asset.Name) != "" {
+				assets = append(assets, asset.Name)
+			}
+		}
+		latest = releaseUpdateInfo{Tag: firstNonEmptyString(release.TagName, release.Name), Version: normalizeVersion(firstNonEmptyString(release.TagName, release.Name)), Assets: assets}
+	}
+	if latest.Version == "" {
+		return nil, fmt.Errorf("latest release has no version tag")
+	}
+	if serverLatest.Version == "" {
+		serverLatest = latest
+	}
+	if clientLatest.Version == "" {
+		clientLatest = latest
+	}
+
+	agents, err := a.store.ListAgents()
+	if err != nil {
+		return nil, err
+	}
+	info := &model.UpdateLatestInfo{
+		Repo:                  repo,
+		PackagePrefix:         packagePrefix,
+		CurrentServerVersion:  serverSystemInfo().Version,
+		LatestVersion:         latest.Version,
+		LatestTag:             latest.Tag,
+		LatestServerVersion:   serverLatest.Version,
+		LatestServerTag:       serverLatest.Tag,
+		LatestClientVersion:   clientLatest.Version,
+		LatestClientTag:       clientLatest.Tag,
+		ServerUpdateAvailable: isVersionNewer(serverLatest.Version, serverSystemInfo().Version),
+		Assets:                latest.Assets,
+		ServerAssets:          serverLatest.Assets,
+		ClientAssets:          clientLatest.Assets,
+		FetchedAt:             time.Now().UTC(),
+	}
+	for _, agent := range agents {
+		status := buildUpdateAgentStatus(agent, clientLatest.Version, packagePrefix, clientLatest.Assets)
+		info.AgentStatus = append(info.AgentStatus, status)
+		switch {
+		case status.OS == "" || status.Arch == "":
+			info.UnknownClientCount++
+		case !status.Supported:
+			info.UnsupportedClientCount++
+		default:
+			info.SupportedClientCount++
+		}
+		if status.UpdateAvailable {
+			info.ClientUpdateAvailableCount++
+		}
+	}
+	return info, nil
+}
+
+type releaseUpdateInfo struct {
+	Tag     string
+	Version string
+	Assets  []string
+}
+
+func buildUpdateAgentStatus(agent model.AgentRecord, latestVersion string, packagePrefix string, assets []string) model.UpdateAgentStatus {
+	osName := strings.ToLower(strings.TrimSpace(agent.OS))
+	arch := strings.ToLower(strings.TrimSpace(agent.Arch))
+	status := model.UpdateAgentStatus{
+		AgentID:   agent.AgentID,
+		AgentName: agent.AgentName,
+		Version:   agent.Version,
+		OS:        osName,
+		Arch:      arch,
+	}
+	if osName == "" || arch == "" {
+		status.Reason = "client has not reported os/arch yet"
+		return status
+	}
+	packageName, ok := updateClientPackageName(packagePrefix, osName, arch)
+	status.PackageName = packageName
+	if !ok {
+		status.Reason = "unsupported client platform"
+		return status
+	}
+	if len(assets) > 0 && !stringInSlice(packageName, assets) {
+		status.Reason = "release asset not found"
+		return status
+	}
+	status.Supported = true
+	if !isVersionNewer(latestVersion, agent.Version) {
+		status.Reason = "client is already up to date"
+		return status
+	}
+	status.UpdateAvailable = true
+	status.Reason = "update available"
+	return status
+}
+
+func updateServerPackageName(packagePrefix string, osName string, arch string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(osName)) {
+	case "linux":
+		return fmt.Sprintf("%s-server-linux-%s.tar.gz", packagePrefix, strings.ToLower(strings.TrimSpace(arch))), true
+	case "windows":
+		return fmt.Sprintf("%s-server-windows-%s.zip", packagePrefix, strings.ToLower(strings.TrimSpace(arch))), true
+	default:
+		return "", false
+	}
+}
+
+func updateClientPackageName(packagePrefix string, osName string, arch string) (string, bool) {
+	switch osName {
+	case "linux":
+		return fmt.Sprintf("%s-client-linux-%s.tar.gz", packagePrefix, arch), true
+	case "windows":
+		return fmt.Sprintf("%s-client-windows-%s.zip", packagePrefix, arch), true
+	default:
+		return "", false
+	}
+}
+
+func hasClientUpdateAsset(packagePrefix string, assets []string) bool {
+	prefix := packagePrefix + "-client-"
+	for _, asset := range assets {
+		if strings.HasPrefix(asset, prefix) && (strings.HasSuffix(asset, ".tar.gz") || strings.HasSuffix(asset, ".zip")) {
+			return true
+		}
+	}
+	return false
+}
+
+func stringInSlice(value string, items []string) bool {
+	for _, item := range items {
+		if item == value {
+			return true
+		}
+	}
+	return false
+}
+
+func isVersionNewer(candidate string, current string) bool {
+	candidateParts, candidateOK := parseSemver(candidate)
+	currentParts, currentOK := parseSemver(current)
+	if !candidateOK || !currentOK {
+		return false
+	}
+	for i := 0; i < len(candidateParts); i++ {
+		if candidateParts[i] != currentParts[i] {
+			return candidateParts[i] > currentParts[i]
+		}
+	}
+	return false
+}
+
+func parseSemver(value string) ([3]int, bool) {
+	return parseSemverParts(normalizeVersion(value))
+}
+
+func parseSemverParts(value string) ([3]int, bool) {
+	var result [3]int
+	parts := strings.Split(value, ".")
+	if len(parts) != 3 {
+		return result, false
+	}
+	for i, part := range parts {
+		number, err := strconv.Atoi(part)
+		if err != nil {
+			return result, false
+		}
+		result[i] = number
+	}
+	return result, true
+}
+
+func normalizeVersion(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.TrimPrefix(value, "refs/tags/")
+	if version := extractSemver(value); version != "" {
+		return version
+	}
+	value = strings.TrimPrefix(value, "v")
+	if index := strings.IndexAny(value, "+-"); index >= 0 {
+		value = value[:index]
+	}
+	return value
+}
+
+func extractSemver(value string) string {
+	for start := 0; start < len(value); start++ {
+		if value[start] < '0' || value[start] > '9' {
+			continue
+		}
+		end := start
+		dots := 0
+		for end < len(value) {
+			ch := value[end]
+			if ch == '.' {
+				dots++
+				end++
+				continue
+			}
+			if ch < '0' || ch > '9' {
+				break
+			}
+			end++
+		}
+		candidate := value[start:end]
+		if dots == 2 {
+			if _, ok := parseSemverParts(candidate); ok {
+				return candidate
+			}
+		}
+	}
+	return ""
+}
+
+type timeoutContext struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
+func contextWithTimeout(duration time.Duration) timeoutContext {
+	ctx, cancel := context.WithTimeout(context.Background(), duration)
+	return timeoutContext{ctx: ctx, cancel: cancel}
+}
