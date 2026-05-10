@@ -40,6 +40,7 @@ type XUINodeView struct {
 	Network            string        `json:"network,omitempty"`
 	Security           string        `json:"security,omitempty"`
 	TLSServerName      string        `json:"tls_server_name,omitempty"`
+	ALPN               string        `json:"alpn,omitempty"`
 	WSPath             string        `json:"ws_path,omitempty"`
 	WSHost             string        `json:"ws_host,omitempty"`
 	GRPCService        string        `json:"grpc_service,omitempty"`

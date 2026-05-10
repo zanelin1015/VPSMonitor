@@ -96,6 +96,8 @@ import {
 } from './components/AdminModals'
 import { renderCNFlowPanel, renderGlobalOverviewPanel } from './components/DashboardTopologyPanels'
 import { AgentRail, OverviewSummaryCard } from './components/DashboardSidebar'
+import { CustomerManagementModal } from './components/CustomerManagementModal'
+import { CustomerPortal } from './components/CustomerPortal'
 import { LoginScreen } from './components/LoginScreen'
 import { ManagedConfigPanel as renderManagedConfigPanel } from './components/ManagedConfigPanel'
 import { RouteBadge } from './components/RouteBadge'
@@ -221,6 +223,7 @@ export default function App() {
   const [telegramBotSaving, setTelegramBotSaving] = useState(false)
   const [editingTelegramBotId, setEditingTelegramBotId] = useState<number | null>(null)
   const [telegramBotForm, setTelegramBotForm] = useState<TelegramBotForm>(() => defaultTelegramBotForm())
+  const [customerModalOpen, setCustomerModalOpen] = useState(false)
   const [clientInstallModalOpen, setClientInstallModalOpen] = useState(false)
   const [clientInstallLoading, setClientInstallLoading] = useState(false)
   const [clientInstallSaving, setClientInstallSaving] = useState(false)
@@ -262,9 +265,14 @@ export default function App() {
   const centerPanelOpen = topologyVisible || Boolean(selectedAgent)
   const topologyScopeLabel = selectedAgentId ? selectedAgent?.agent_name || selectedAgentId : selectedTag ? `${selectedTag} 标签` : '全部 Client'
   const heroTitle = '南风VPS监控'
+  const customerMode = window.location.pathname.replace(/\/+$/, '') === '/customer'
   useEffect(() => {
+    if (customerMode) {
+      setSessionLoading(false)
+      return
+    }
     void loadSession()
-  }, [])
+  }, [customerMode])
 
   useEffect(() => {
     if (!adminUser) {
@@ -1589,6 +1597,10 @@ export default function App() {
     },
   ]
 
+  if (customerMode) {
+    return <CustomerPortal />
+  }
+
   if (sessionLoading) {
     return (
       <>
@@ -1647,6 +1659,7 @@ export default function App() {
               }}
               onOpenClientInstall={() => void openClientInstallModal()}
               onOpenTelegram={() => setTelegramBotModalOpen(true)}
+              onOpenCustomers={() => setCustomerModalOpen(true)}
               onOpenFrontendSettings={() => void openFrontendSettingsModal()}
               onOpenUpdates={() => setUpdateModalOpen(true)}
               onLogout={() => void logout()}
@@ -1729,6 +1742,12 @@ export default function App() {
           onEditIDChange={setEditingTelegramBotId}
           onDelete={(id) => void deleteTelegramBot(id)}
           onTest={(id) => void testTelegramBot(id)}
+        />
+
+        <CustomerManagementModal
+          open={customerModalOpen}
+          agents={agents}
+          onClose={() => setCustomerModalOpen(false)}
         />
 
         <XUIActionModal

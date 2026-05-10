@@ -6,11 +6,13 @@ const { Text, Title } = Typography
 export interface LoginScreenProps {
   loginForm: { username: string; password: string }
   loginLoading: boolean
+  title?: string
+  subtitle?: string
   onChange: (value: { username: string; password: string }) => void
   onLogin: () => void
 }
 
-export function LoginScreen({ loginForm, loginLoading, onChange, onLogin }: LoginScreenProps) {
+export function LoginScreen({ loginForm, loginLoading, title = '南风VPS监控', subtitle = '管理员登录', onChange, onLogin }: LoginScreenProps) {
   const canLogin = Boolean(loginForm.username && loginForm.password)
 
   return (
@@ -21,8 +23,8 @@ export function LoginScreen({ loginForm, loginLoading, onChange, onLogin }: Logi
             <LockOutlined />
           </div>
           <div>
-            <Title level={2}>南风VPS监控</Title>
-            <Text type="secondary">管理员登录</Text>
+            <Title level={2}>{title}</Title>
+            <Text type="secondary">{subtitle}</Text>
           </div>
         </div>
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -69,4 +71,3 @@ export function LoginScreen({ loginForm, loginLoading, onChange, onLogin }: Logi
     </div>
   )
 }
-

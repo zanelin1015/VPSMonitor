@@ -8,6 +8,7 @@ import {
   EditOutlined,
   LogoutOutlined,
   SettingOutlined,
+  TeamOutlined,
   UploadOutlined,
 } from '@ant-design/icons'
 
@@ -41,11 +42,12 @@ export function PersonalCenterDropdown(props: {
   onOpenAccount: () => void
   onOpenClientInstall: () => void
   onOpenTelegram: () => void
+  onOpenCustomers: () => void
   onOpenFrontendSettings: () => void
   onOpenUpdates: () => void
   onLogout: () => void
 }) {
-  const { adminUser, systemInfo, onOpenAccount, onOpenClientInstall, onOpenTelegram, onOpenFrontendSettings, onOpenUpdates, onLogout } = props
+  const { adminUser, systemInfo, onOpenAccount, onOpenClientInstall, onOpenTelegram, onOpenCustomers, onOpenFrontendSettings, onOpenUpdates, onLogout } = props
   const items: MenuProps['items'] = [
     {
       key: 'profile',
@@ -68,6 +70,7 @@ export function PersonalCenterDropdown(props: {
     { key: 'account', icon: <EditOutlined />, label: '账号与头像' },
     { key: 'client-install', icon: <CloudDownloadOutlined />, label: 'Client 安装命令' },
     { key: 'telegram', icon: <BellOutlined />, label: 'TG 告警机器人' },
+    { key: 'customers', icon: <TeamOutlined />, label: '人员管理' },
     { key: 'frontend', icon: <SettingOutlined />, label: '前端样式自定义' },
     { key: 'updates', icon: <SettingOutlined />, label: '在线更新' },
     { type: 'divider' },
@@ -83,6 +86,9 @@ export function PersonalCenterDropdown(props: {
         break
       case 'telegram':
         onOpenTelegram()
+        break
+      case 'customers':
+        onOpenCustomers()
         break
       case 'frontend':
         onOpenFrontendSettings()

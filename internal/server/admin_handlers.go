@@ -23,6 +23,10 @@ func (a *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		a.handleAdminTelegramBots(w, r, strings.Split(path, "/")[1:])
 		return
 	}
+	if path == "customers" || strings.HasPrefix(path, "customers/") {
+		a.handleAdminCustomers(w, r, strings.Split(path, "/")[1:])
+		return
+	}
 	if strings.HasPrefix(path, "updates") {
 		a.handleAdminUpdates(w, r, strings.Split(path, "/")[1:])
 		return

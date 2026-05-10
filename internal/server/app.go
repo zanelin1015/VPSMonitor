@@ -24,8 +24,10 @@ type App struct {
 }
 
 const (
-	adminSessionCookieName = "bridge_core_session"
-	adminSessionTTL        = 24 * time.Hour
+	adminSessionCookieName    = "bridge_core_session"
+	adminSessionTTL           = 24 * time.Hour
+	customerSessionCookieName = "bridge_core_customer_session"
+	customerSessionTTL        = 7 * 24 * time.Hour
 )
 
 func New(cfg config.ServerConfig) (*App, error) {
@@ -77,11 +79,13 @@ func (a *App) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", a.handleHealth)
 	if a.demoDataSource != nil {
+		mux.HandleFunc("/api/v1/customer/", a.handleCustomer)
 		mux.Handle("/api/", a.demoDataSource)
 		mux.Handle("/", webui.NewHandler())
 		return mux
 	}
 	mux.HandleFunc("/api/v1/admin/", a.handleAdmin)
+	mux.HandleFunc("/api/v1/customer/", a.handleCustomer)
 	mux.HandleFunc("/api/v1/frontend-settings", a.handlePublicFrontendSettings)
 	mux.HandleFunc("/api/v1/image-proxy", a.handleImageProxy)
 	mux.HandleFunc("/api/v1/dashboard/realtime", a.handleDashboardRealtime)

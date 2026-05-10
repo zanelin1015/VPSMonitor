@@ -536,3 +536,80 @@ func TestSQLiteStoreClientInstallSettings(t *testing.T) {
 		t.Fatalf("unexpected loaded settings: got %#v want %#v", loaded, saved)
 	}
 }
+
+func TestSQLiteStoreCustomerAccountsAssignmentsAndSessions(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "bridge.db")
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+
+	if _, err := store.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk-01", AgentName: "HK Entry"}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	enabled := true
+	customer, err := store.CreateCustomer(model.CustomerAccountRequest{
+		Username:    "alice",
+		Password:    "customer-pass",
+		DisplayName: "Alice",
+		Enabled:     &enabled,
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
+	if customer.ID == 0 || !customer.Enabled {
+		t.Fatalf("unexpected customer: %#v", customer)
+	}
+
+	user, ok, err := store.AuthenticateCustomer("ALICE", "customer-pass")
+	if err != nil {
+		t.Fatalf("AuthenticateCustomer: %v", err)
+	}
+	if !ok || user.ID != customer.ID {
+		t.Fatalf("expected customer authentication, ok=%v user=%#v", ok, user)
+	}
+	token, session, err := store.CreateCustomerSession(customer.ID, time.Hour)
+	if err != nil {
+		t.Fatalf("CreateCustomerSession: %v", err)
+	}
+	if token == "" || session.CustomerID != customer.ID {
+		t.Fatalf("unexpected session: token=%q session=%#v", token, session)
+	}
+	if _, _, ok, err := store.ValidateCustomerSession(token); err != nil || !ok {
+		t.Fatalf("ValidateCustomerSession ok=%v err=%v", ok, err)
+	}
+
+	assignment, err := store.CreateCustomerAssignment(customer.ID, model.CustomerAssignmentRequest{
+		AgentID:          "hk-01",
+		InboundID:        7,
+		InboundTag:       "entry-hk",
+		ClientEmail:      "alice@example.com",
+		PublicClientName: "香港入口 A",
+		Enabled:          &enabled,
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomerAssignment: %v", err)
+	}
+	if assignment.PublicClientName != "香港入口 A" {
+		t.Fatalf("unexpected assignment: %#v", assignment)
+	}
+	if _, err := store.UpdateCustomerAssignmentRemark(customer.ID, assignment.ID, "主业务链路"); err != nil {
+		t.Fatalf("UpdateCustomerAssignmentRemark: %v", err)
+	}
+	assignments, err := store.ListEnabledCustomerAssignments(customer.ID)
+	if err != nil {
+		t.Fatalf("ListEnabledCustomerAssignments: %v", err)
+	}
+	if len(assignments) != 1 || assignments[0].Remark != "主业务链路" {
+		t.Fatalf("unexpected assignments: %#v", assignments)
+	}
+
+	disabled := false
+	if _, err := store.UpdateCustomer(customer.ID, model.CustomerAccountRequest{Username: "alice", DisplayName: "Alice", Enabled: &disabled}); err != nil {
+		t.Fatalf("UpdateCustomer disable: %v", err)
+	}
+	if _, _, ok, err := store.ValidateCustomerSession(token); err != nil || ok {
+		t.Fatalf("expected disabled customer session to be invalid, ok=%v err=%v", ok, err)
+	}
+}

@@ -38,6 +38,27 @@ func (s *SQLiteStore) init() error {
 		);
 		`,
 		`
+		CREATE TABLE IF NOT EXISTS customer_accounts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+			password_hash TEXT NOT NULL,
+			display_name TEXT NOT NULL DEFAULT '',
+			enabled INTEGER NOT NULL DEFAULT 1,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+		`,
+		`
+		CREATE TABLE IF NOT EXISTS customer_sessions (
+			token_hash TEXT PRIMARY KEY,
+			customer_id INTEGER NOT NULL,
+			created_at TEXT NOT NULL,
+			expires_at TEXT NOT NULL,
+			last_seen_at TEXT NOT NULL,
+			FOREIGN KEY(customer_id) REFERENCES customer_accounts(id) ON DELETE CASCADE
+		);
+		`,
+		`
 		CREATE TABLE IF NOT EXISTS agents (
 			agent_id TEXT PRIMARY KEY,
 			agent_name TEXT NOT NULL DEFAULT '',
@@ -54,6 +75,24 @@ func (s *SQLiteStore) init() error {
 			nezha_config_json TEXT NOT NULL DEFAULT '{}',
 			renewal_config_json TEXT NOT NULL DEFAULT '{}',
 			entry_config_json TEXT NOT NULL DEFAULT '{}'
+		);
+		`,
+		`
+		CREATE TABLE IF NOT EXISTS customer_assignments (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			customer_id INTEGER NOT NULL,
+			agent_id TEXT NOT NULL,
+			inbound_id INTEGER NOT NULL DEFAULT 0,
+			inbound_tag TEXT NOT NULL DEFAULT '',
+			client_email TEXT NOT NULL DEFAULT '',
+			public_client_name TEXT NOT NULL DEFAULT '',
+			customer_remark TEXT NOT NULL DEFAULT '',
+			enabled INTEGER NOT NULL DEFAULT 1,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			FOREIGN KEY(customer_id) REFERENCES customer_accounts(id) ON DELETE CASCADE,
+			FOREIGN KEY(agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE,
+			UNIQUE(customer_id, agent_id, inbound_id, inbound_tag, client_email)
 		);
 		`,
 		`
@@ -156,6 +195,9 @@ func (s *SQLiteStore) init() error {
 		`,
 		`CREATE INDEX IF NOT EXISTS idx_snapshots_agent_reported_at ON snapshots(agent_id, reported_at DESC, id DESC);`,
 		`CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires_at ON admin_sessions(expires_at);`,
+		`CREATE INDEX IF NOT EXISTS idx_customer_sessions_expires_at ON customer_sessions(expires_at);`,
+		`CREATE INDEX IF NOT EXISTS idx_customer_assignments_customer ON customer_assignments(customer_id, enabled, id);`,
+		`CREATE INDEX IF NOT EXISTS idx_customer_assignments_agent ON customer_assignments(agent_id, inbound_id, client_email);`,
 		`CREATE INDEX IF NOT EXISTS idx_xui_actions_agent_status_id ON xui_actions(agent_id, status, id);`,
 		`CREATE INDEX IF NOT EXISTS idx_config_audit_agent_id ON config_audit_logs(agent_id, id DESC);`,
 	}

@@ -156,7 +156,7 @@ export function AgentRail(props: {
     <aside className="agent-rail">
       <Card
         title={
-          <Space>
+          <Space className="agent-rail-title">
             <CloudServerOutlined />
             <span>Client 列表</span>
           </Space>

@@ -25,10 +25,14 @@ type outboundTraffic struct {
 }
 
 type inboundRecord struct {
-	view        model.XUINodeView
-	clientStats map[string]clientStat
-	clients     []clientConfig
-	importHost  string
+	view                model.XUINodeView
+	clientStats         map[string]clientStat
+	clients             []clientConfig
+	importHost          string
+	vlessEncryption     string
+	shadowsocksMethod   string
+	shadowsocksPassword string
+	hysteriaVersion     int
 }
 
 type clientConfig struct {
@@ -37,6 +41,7 @@ type clientConfig struct {
 	enable       bool
 	authUUID     string
 	authPassword string
+	auth         string
 	alterID      int
 	security     string
 	flow         string
@@ -53,6 +58,7 @@ type inboundStreamMeta struct {
 	security       string
 	tlsServerName  string
 	tlsFingerprint string
+	alpn           string
 	wsPath         string
 	wsHost         string
 	grpcService    string
@@ -61,6 +67,13 @@ type inboundStreamMeta struct {
 	realityShortID string
 	realityFP      string
 	realitySpider  string
+}
+
+type inboundProtocolMeta struct {
+	vlessEncryption     string
+	shadowsocksMethod   string
+	shadowsocksPassword string
+	hysteriaVersion     int
 }
 
 type clientStat struct {
@@ -133,6 +146,7 @@ func normalizeInbounds(rawInbounds []map[string]any, rules []routeRule, defaultO
 	result := make([]inboundRecord, 0, len(rawInbounds))
 	for _, raw := range rawInbounds {
 		streamMeta := parseInboundStreamSettings(raw["streamSettings"])
+		protocolMeta := parseInboundProtocolSettings(raw["settings"])
 		record := inboundRecord{
 			view: model.XUINodeView{
 				ID:                 intValue(raw["id"]),
@@ -144,6 +158,7 @@ func normalizeInbounds(rawInbounds []map[string]any, rules []routeRule, defaultO
 				Network:            streamMeta.network,
 				Security:           streamMeta.security,
 				TLSServerName:      defaultString(streamMeta.tlsServerName, streamMeta.realityServer),
+				ALPN:               streamMeta.alpn,
 				WSPath:             streamMeta.wsPath,
 				WSHost:             streamMeta.wsHost,
 				GRPCService:        streamMeta.grpcService,
@@ -159,9 +174,13 @@ func normalizeInbounds(rawInbounds []map[string]any, rules []routeRule, defaultO
 				AllTime:            int64Value(raw["allTime"]),
 				AuthKeys:           authKeysForInbound(stringValue(raw["protocol"]), raw["settings"]),
 			},
-			clientStats: parseClientStats(raw["clientStats"]),
-			clients:     parseInboundClients(raw["settings"]),
-			importHost:  chooseSingleNodeImportHost(stringValue(raw["listen"]), summary, baseURL),
+			clientStats:         parseClientStats(raw["clientStats"]),
+			clients:             parseInboundClients(raw["settings"]),
+			importHost:          chooseSingleNodeImportHost(stringValue(raw["listen"]), summary, baseURL),
+			vlessEncryption:     protocolMeta.vlessEncryption,
+			shadowsocksMethod:   protocolMeta.shadowsocksMethod,
+			shadowsocksPassword: protocolMeta.shadowsocksPassword,
+			hysteriaVersion:     protocolMeta.hysteriaVersion,
 		}
 		record.view.ClientCount = len(record.clients)
 		record.view.OnlineCount = countOnlineClients(record.clientStats, reportedAt)
@@ -544,13 +563,8 @@ func parseClientStats(raw any) map[string]clientStat {
 }
 
 func parseInboundClients(raw any) []clientConfig {
-	settingsText, ok := raw.(string)
-	if !ok || settingsText == "" {
-		return nil
-	}
-
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(settingsText), &payload); err != nil {
+	payload := decodeStringObject(raw)
+	if len(payload) == 0 {
 		return nil
 	}
 
@@ -567,6 +581,7 @@ func parseInboundClients(raw any) []clientConfig {
 			enable:       boolValue(item["enable"]),
 			authUUID:     stringValue(item["id"]),
 			authPassword: stringValue(item["password"]),
+			auth:         defaultString(stringValue(item["auth"]), stringValue(item["password"])),
 			alterID:      intValue(item["alterId"]),
 			security:     stringValue(item["security"]),
 			flow:         stringValue(item["flow"]),
@@ -581,6 +596,19 @@ func parseInboundClients(raw any) []clientConfig {
 	return result
 }
 
+func parseInboundProtocolSettings(raw any) inboundProtocolMeta {
+	settings := decodeStringObject(raw)
+	if len(settings) == 0 {
+		return inboundProtocolMeta{}
+	}
+	return inboundProtocolMeta{
+		vlessEncryption:     stringValue(settings["encryption"]),
+		shadowsocksMethod:   stringValue(settings["method"]),
+		shadowsocksPassword: stringValue(settings["password"]),
+		hysteriaVersion:     intValue(settings["version"]),
+	}
+}
+
 func parseInboundStreamSettings(raw any) inboundStreamMeta {
 	settings := decodeStringObject(raw)
 	meta := inboundStreamMeta{
@@ -591,6 +619,7 @@ func parseInboundStreamSettings(raw any) inboundStreamMeta {
 		tlsOption := objectMap(tlsSettings["settings"])
 		meta.tlsServerName = defaultString(stringValue(tlsSettings["serverName"]), stringValue(tlsOption["serverName"]))
 		meta.tlsFingerprint = defaultString(stringValue(tlsSettings["fingerprint"]), stringValue(tlsOption["fingerprint"]))
+		meta.alpn = strings.Join(stringList(tlsSettings["alpn"]), ",")
 	}
 	if wsSettings := objectMap(settings["wsSettings"]); len(wsSettings) > 0 {
 		meta.wsPath = stringValue(wsSettings["path"])
@@ -636,6 +665,12 @@ func buildSingleNodeImportURL(inbound inboundRecord, cfg clientConfig) string {
 		return buildVLESSImportURL(inbound, cfg)
 	case "vmess":
 		return buildVMessImportURL(inbound, cfg)
+	case "trojan":
+		return buildTrojanImportURL(inbound, cfg)
+	case "shadowsocks":
+		return buildShadowsocksImportURL(inbound, cfg)
+	case "hysteria", "hysteria2":
+		return buildHysteriaImportURL(inbound, cfg)
 	case "http":
 		return buildUserPassURL("http", inbound, cfg)
 	case "socks", "socks5":
@@ -651,7 +686,7 @@ func buildVLESSImportURL(inbound inboundRecord, cfg clientConfig) string {
 	}
 	query := url.Values{}
 	query.Set("type", defaultString(inbound.view.Network, "tcp"))
-	query.Set("encryption", "none")
+	query.Set("encryption", defaultString(inbound.vlessEncryption, "none"))
 	if inbound.view.Security == "tls" || inbound.view.Security == "reality" {
 		query.Set("security", inbound.view.Security)
 	} else {
@@ -668,16 +703,19 @@ func buildVMessImportURL(inbound inboundRecord, cfg clientConfig) string {
 	if cfg.authUUID == "" {
 		return ""
 	}
-	payload := map[string]string{
+	payload := map[string]any{
 		"v":    "2",
 		"ps":   shareRemark(inbound, cfg),
 		"add":  inbound.importHost,
-		"port": strconv.Itoa(inbound.view.Port),
+		"port": inbound.view.Port,
 		"id":   cfg.authUUID,
-		"aid":  strconv.Itoa(cfg.alterID),
 		"scy":  defaultString(cfg.security, "auto"),
 		"net":  defaultString(inbound.view.Network, "tcp"),
+		"tls":  "none",
 		"type": "none",
+	}
+	if cfg.alterID > 0 {
+		payload["aid"] = strconv.Itoa(cfg.alterID)
 	}
 	if inbound.view.WSHost != "" {
 		payload["host"] = inbound.view.WSHost
@@ -694,6 +732,9 @@ func buildVMessImportURL(inbound inboundRecord, cfg clientConfig) string {
 	if inbound.view.TLSServerName != "" {
 		payload["sni"] = inbound.view.TLSServerName
 	}
+	if inbound.view.ALPN != "" {
+		payload["alpn"] = inbound.view.ALPN
+	}
 	if inbound.view.RealityFingerprint != "" {
 		payload["fp"] = inbound.view.RealityFingerprint
 	}
@@ -702,6 +743,66 @@ func buildVMessImportURL(inbound inboundRecord, cfg clientConfig) string {
 		return ""
 	}
 	return "vmess://" + base64.StdEncoding.EncodeToString(body)
+}
+
+func buildTrojanImportURL(inbound inboundRecord, cfg clientConfig) string {
+	if cfg.authPassword == "" {
+		return ""
+	}
+	query := url.Values{}
+	query.Set("type", defaultString(inbound.view.Network, "tcp"))
+	if inbound.view.Security == "tls" || inbound.view.Security == "reality" {
+		query.Set("security", inbound.view.Security)
+	} else {
+		query.Set("security", "none")
+	}
+	if cfg.flow != "" && inbound.view.Security == "reality" && inbound.view.Network == "tcp" {
+		query.Set("flow", cfg.flow)
+	}
+	addSingleNodeStreamQuery(query, inbound.view)
+	return buildUserInfoURL("trojan", url.User(cfg.authPassword), inbound, cfg, query)
+}
+
+func buildShadowsocksImportURL(inbound inboundRecord, cfg clientConfig) string {
+	if inbound.shadowsocksMethod == "" || cfg.authPassword == "" {
+		return ""
+	}
+	encPart := inbound.shadowsocksMethod + ":" + cfg.authPassword
+	if strings.HasPrefix(inbound.shadowsocksMethod, "2022-") && inbound.shadowsocksPassword != "" {
+		encPart = inbound.shadowsocksMethod + ":" + inbound.shadowsocksPassword + ":" + cfg.authPassword
+	}
+	query := url.Values{}
+	query.Set("type", defaultString(inbound.view.Network, "tcp"))
+	if inbound.view.Security == "tls" {
+		query.Set("security", "tls")
+	}
+	addSingleNodeStreamQuery(query, inbound.view)
+	return buildUserInfoURL("ss", url.User(base64.StdEncoding.EncodeToString([]byte(encPart))), inbound, cfg, query)
+}
+
+func buildHysteriaImportURL(inbound inboundRecord, cfg clientConfig) string {
+	if cfg.auth == "" {
+		return ""
+	}
+	query := url.Values{}
+	query.Set("security", "tls")
+	addSingleNodeStreamQuery(query, inbound.view)
+	scheme := "hysteria2"
+	if inbound.hysteriaVersion == 1 || strings.EqualFold(inbound.view.Protocol, "hysteria") {
+		scheme = "hysteria"
+	}
+	return buildUserInfoURL(scheme, url.User(cfg.auth), inbound, cfg, query)
+}
+
+func buildUserInfoURL(scheme string, user *url.Userinfo, inbound inboundRecord, cfg clientConfig, query url.Values) string {
+	uri := url.URL{
+		Scheme:   scheme,
+		User:     user,
+		Host:     hostPortForShare(inbound.importHost, inbound.view.Port),
+		RawQuery: query.Encode(),
+		Fragment: shareRemark(inbound, cfg),
+	}
+	return uri.String()
 }
 
 func buildUserPassURL(scheme string, inbound inboundRecord, cfg clientConfig) string {
@@ -723,6 +824,9 @@ func buildUserPassURL(scheme string, inbound inboundRecord, cfg clientConfig) st
 func addSingleNodeStreamQuery(query url.Values, node model.XUINodeView) {
 	if node.TLSServerName != "" {
 		query.Set("sni", node.TLSServerName)
+	}
+	if node.ALPN != "" {
+		query.Set("alpn", node.ALPN)
 	}
 	if node.Security == "reality" {
 		if node.RealityFingerprint != "" {
@@ -753,7 +857,7 @@ func addSingleNodeStreamQuery(query url.Values, node model.XUINodeView) {
 }
 
 func shareRemark(inbound inboundRecord, cfg clientConfig) string {
-	return strings.TrimSpace(strings.Join(nonEmptyStrings(inbound.view.Remark, cfg.email), " - "))
+	return strings.TrimSpace(strings.Join(nonEmptyStrings(inbound.view.Remark, cfg.email), "-"))
 }
 
 func hostPortForShare(host string, port int) string {

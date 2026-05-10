@@ -127,6 +127,69 @@ export interface AdminAuthResponse {
   system?: SystemInfo
 }
 
+export interface CustomerUser {
+  id: number
+  username: string
+  display_name?: string
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface CustomerAuthResponse {
+  user: CustomerUser
+}
+
+export interface CustomerAssignment {
+  id: number
+  customer_id: number
+  agent_id: string
+  inbound_id: number
+  inbound_tag?: string
+  client_email?: string
+  public_client_name?: string
+  remark?: string
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface CustomerAdminView extends CustomerUser {
+  assignments: CustomerAssignment[]
+}
+
+export interface CustomerLinkStep {
+  role: string
+  label: string
+  country_code?: string
+  country_name?: string
+  exit_ip?: string
+}
+
+export interface CustomerLinkView {
+  assignment_id: number
+  entry_client_name: string
+  inbound_tag?: string
+  client_email?: string
+  client_remark?: string
+  import_url?: string
+  remark?: string
+  summary: string
+  exit_country_code?: string
+  exit_country_name?: string
+  exit_ip?: string
+  resolved: boolean
+  unresolved_reason?: string
+  steps: CustomerLinkStep[]
+  updated_at: string
+}
+
+export interface CustomerOverviewResponse {
+  user: CustomerUser
+  generated_at: string
+  links: CustomerLinkView[]
+}
+
 export interface SystemInfo {
   role: string
   version: string
