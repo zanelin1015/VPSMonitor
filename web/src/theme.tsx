@@ -65,13 +65,13 @@ export function AppThemeProvider(props: { children: ReactNode }) {
         theme={{
           algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm,
           token: {
-            colorPrimary: '#16a34a',
-            colorInfo: '#0284c7',
-            colorSuccess: '#16a34a',
+            colorPrimary: '#2563eb',
+            colorInfo: '#2563eb',
+            colorSuccess: '#2563eb',
             colorWarning: '#f59e0b',
             colorError: '#ef4444',
-            colorBgLayout: isDark ? '#07120f' : '#fafafa',
-            colorBgContainer: isDark ? '#101b17' : '#ffffff',
+            colorBgLayout: isDark ? '#07111f' : '#fafafa',
+            colorBgContainer: isDark ? '#101827' : '#ffffff',
             colorText: isDark ? '#f5f5f5' : '#171717',
             colorTextSecondary: isDark ? '#a9bbb4' : '#6b7280',
             colorBorder: isDark ? 'rgba(255,255,255,0.14)' : '#e5e5e5',

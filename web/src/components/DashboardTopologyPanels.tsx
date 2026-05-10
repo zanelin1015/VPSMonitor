@@ -29,7 +29,7 @@ export function renderGlobalOverviewPanel(props: {
 
       <Card className="config-section-card" bordered={false}>
         <Space wrap>
-          <Tag color={!selectedTag ? 'green' : 'default'} className="tag-filter-chip" onClick={() => onSelectTag('')}>
+          <Tag color={!selectedTag ? 'blue' : 'default'} className="tag-filter-chip" onClick={() => onSelectTag('')}>
             全部
           </Tag>
           {dashboardView.tags.map((tag) => (
@@ -120,8 +120,6 @@ export function renderCNFlowPanel(props: {
     return (
       <div className="cn-flow-source">
         <div className="cn-source-orb">CN</div>
-        <Text>中国大陆出发</Text>
-        <small>统一从 CN 访问源进入</small>
       </div>
     )
   }
@@ -296,7 +294,7 @@ export function renderCNFlowPanel(props: {
           <Title level={3}>{headerTitle}</Title>
         </div>
         <div className="cn-flow-header-actions">
-          <Space wrap>
+          <Space wrap className="cn-flow-header-buttons">
             <Button disabled={!canOpenXUI} onClick={onOpenXUI}>
               打开 x-ui 面板
             </Button>
@@ -304,12 +302,11 @@ export function renderCNFlowPanel(props: {
               刷新当前节点
             </Button>
           </Space>
-          <Space wrap>
-            <Tag color="red">起点 CN</Tag>
-            <Tag color="green">Client {dashboardView.totals.client_count}</Tag>
+          <Space wrap className="cn-flow-header-meta">
             <Tag color="cyan">链路 {dashboardView.totals.link_count}</Tag>
             <Tag color="gold">出口 {uniqueCountries(rows).length}</Tag>
-            {selectedTag ? <Tag>{selectedTag}</Tag> : <Tag>全部分组</Tag>}
+            <Tag color="blue">客户端 {dashboardView.totals.client_count}</Tag>
+            <Tag>节点总数 {dashboardView.totals.node_count}</Tag>
           </Space>
         </div>
       </div>
@@ -558,4 +555,3 @@ function translateChainReason(reason: string): string {
   }
   return reason
 }
-

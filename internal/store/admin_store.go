@@ -31,8 +31,8 @@ func (s *SQLiteStore) EnsureAdminAccount(username, password string) error {
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	_, err = s.db.Exec(`
-		INSERT INTO admin_accounts (id, username, password_hash, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO admin_accounts (id, username, password_hash, avatar_url, created_at, updated_at)
+		VALUES (?, ?, ?, '', ?, ?)
 	`, adminAccountID, username, hash, now, now)
 	if err != nil {
 		return fmt.Errorf("create admin account: %w", err)
@@ -44,13 +44,14 @@ func (s *SQLiteStore) AuthenticateAdmin(username, password string) (model.AdminU
 	var (
 		storedUsername string
 		passwordHash   string
+		avatarURL      string
 		updatedAtText  string
 	)
 	err := s.db.QueryRow(`
-		SELECT username, password_hash, updated_at
+		SELECT username, password_hash, avatar_url, updated_at
 		FROM admin_accounts
 		WHERE id = ?
-	`, adminAccountID).Scan(&storedUsername, &passwordHash, &updatedAtText)
+	`, adminAccountID).Scan(&storedUsername, &passwordHash, &avatarURL, &updatedAtText)
 	if err == sql.ErrNoRows {
 		return model.AdminUser{}, false, nil
 	}
@@ -69,6 +70,7 @@ func (s *SQLiteStore) AuthenticateAdmin(username, password string) (model.AdminU
 	}
 	return model.AdminUser{
 		Username:  storedUsername,
+		AvatarURL: avatarURL,
 		UpdatedAt: parseTime(updatedAtText),
 	}, true, nil
 }
@@ -110,11 +112,12 @@ func (s *SQLiteStore) ValidateAdminSession(token string) (model.AdminUser, model
 		createdAtText   string
 		expiresAtText   string
 		accountUsername string
+		avatarURL       string
 		updatedAtText   string
 	)
 	tokenHash := sessionTokenHash(token)
 	err := s.db.QueryRow(`
-		SELECT s.username, s.created_at, s.expires_at, a.username, a.updated_at
+		SELECT s.username, s.created_at, s.expires_at, a.username, a.avatar_url, a.updated_at
 		FROM admin_sessions s
 		JOIN admin_accounts a ON a.id = ?
 		WHERE s.token_hash = ?
@@ -123,6 +126,7 @@ func (s *SQLiteStore) ValidateAdminSession(token string) (model.AdminUser, model
 		&createdAtText,
 		&expiresAtText,
 		&accountUsername,
+		&avatarURL,
 		&updatedAtText,
 	)
 	if err == sql.ErrNoRows {
@@ -145,6 +149,7 @@ func (s *SQLiteStore) ValidateAdminSession(token string) (model.AdminUser, model
 	_, _ = s.db.Exec(`UPDATE admin_sessions SET last_seen_at = ? WHERE token_hash = ?`, time.Now().UTC().Format(time.RFC3339Nano), tokenHash)
 	return model.AdminUser{
 		Username:  accountUsername,
+		AvatarURL: avatarURL,
 		UpdatedAt: parseTime(updatedAtText),
 	}, session, true, nil
 }
@@ -164,12 +169,13 @@ func (s *SQLiteStore) UpdateAdminAccount(req model.AdminAccountUpdateRequest, ke
 	var (
 		currentUsername string
 		currentHash     string
+		currentAvatar   string
 	)
 	err := s.db.QueryRow(`
-		SELECT username, password_hash
+		SELECT username, password_hash, avatar_url
 		FROM admin_accounts
 		WHERE id = ?
-	`, adminAccountID).Scan(&currentUsername, &currentHash)
+	`, adminAccountID).Scan(&currentUsername, &currentHash, &currentAvatar)
 	if err == sql.ErrNoRows {
 		return model.AdminUser{}, fmt.Errorf("admin account not initialized")
 	}
@@ -199,7 +205,14 @@ func (s *SQLiteStore) UpdateAdminAccount(req model.AdminAccountUpdateRequest, ke
 			return model.AdminUser{}, err
 		}
 	}
-	if newUsername == currentUsername && newHash == currentHash {
+	newAvatar := currentAvatar
+	if req.AvatarURL != nil {
+		newAvatar, err = normalizeAdminAvatarURL(*req.AvatarURL)
+		if err != nil {
+			return model.AdminUser{}, err
+		}
+	}
+	if newUsername == currentUsername && newHash == currentHash && newAvatar == currentAvatar {
 		return model.AdminUser{}, fmt.Errorf("no account changes provided")
 	}
 
@@ -216,9 +229,9 @@ func (s *SQLiteStore) UpdateAdminAccount(req model.AdminAccountUpdateRequest, ke
 
 	_, err = tx.Exec(`
 		UPDATE admin_accounts
-		SET username = ?, password_hash = ?, updated_at = ?
+		SET username = ?, password_hash = ?, avatar_url = ?, updated_at = ?
 		WHERE id = ?
-	`, newUsername, newHash, now.Format(time.RFC3339Nano), adminAccountID)
+	`, newUsername, newHash, newAvatar, now.Format(time.RFC3339Nano), adminAccountID)
 	if err != nil {
 		return model.AdminUser{}, fmt.Errorf("update admin account: %w", err)
 	}
@@ -239,5 +252,20 @@ func (s *SQLiteStore) UpdateAdminAccount(req model.AdminAccountUpdateRequest, ke
 		return model.AdminUser{}, fmt.Errorf("commit admin account update: %w", err)
 	}
 
-	return model.AdminUser{Username: newUsername, UpdatedAt: now}, nil
+	return model.AdminUser{Username: newUsername, AvatarURL: newAvatar, UpdatedAt: now}, nil
+}
+
+func normalizeAdminAvatarURL(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	if len(value) > 1024*1024 {
+		return "", fmt.Errorf("avatar image is too large")
+	}
+	lower := strings.ToLower(value)
+	if strings.HasPrefix(lower, "data:image/") || strings.HasPrefix(lower, "https://") || strings.HasPrefix(lower, "http://") {
+		return value, nil
+	}
+	return "", fmt.Errorf("avatar must be an image data url or http(s) url")
 }

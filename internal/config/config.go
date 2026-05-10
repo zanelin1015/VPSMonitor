@@ -19,6 +19,7 @@ type ServerConfig struct {
 	AdminUsername          string            `json:"admin_username"`
 	AdminPassword          string            `json:"admin_password"`
 	AdminToken             string            `json:"admin_token"`
+	DemoDataSourceURL      string            `json:"demo_data_source_url"`
 	SnapshotRetentionDays  int               `json:"snapshot_retention_days"`
 	SnapshotRetentionCount int               `json:"snapshot_retention_count"`
 	Agents                 []ServerAgentAuth `json:"agents"`

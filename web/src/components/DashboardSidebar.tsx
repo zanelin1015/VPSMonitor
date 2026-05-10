@@ -1,5 +1,5 @@
 import { Alert, Button, Card, Empty, List, Select, Space, Spin, Tag, Typography } from 'antd'
-import { BarsOutlined, CloudServerOutlined, ReloadOutlined } from '@ant-design/icons'
+import { ApartmentOutlined, BarsOutlined, CloudServerOutlined, ReloadOutlined } from '@ant-design/icons'
 
 import type { DashboardAgentView, DashboardTagView, GlobalDashboardView } from '../types'
 import type { AgentViewMode } from '../lib/appHelpers'
@@ -45,6 +45,7 @@ export function OverviewSummaryCard(props: {
   selectedTag: string
   currentAgentLabel: string
   currentIPv4: string
+  compact?: boolean
   onCostCurrencyChange: (currency: CurrencyCode) => void
 }) {
   const {
@@ -62,11 +63,12 @@ export function OverviewSummaryCard(props: {
     selectedTag,
     currentAgentLabel,
     currentIPv4,
+    compact,
     onCostCurrencyChange,
   } = props
 
   return (
-    <Card className="surface-card summary-card" bordered={false}>
+    <Card className={`surface-card summary-card${compact ? ' compact-summary-card' : ''}`} bordered={false}>
       {dashboardView ? (
         <>
           <div className="overview-stat-grid">
@@ -87,7 +89,7 @@ export function OverviewSummaryCard(props: {
               <div className="overview-stat-foot">x-ui 异常 {xuiErrorAgentCount} · 出站 {dashboardView.totals.outbound_count} · 规则 {dashboardView.totals.routing_rule_count}</div>
             </section>
             <section className="overview-stat-card overview-network-card">
-              <div className="overview-stat-title">网络</div>
+              <div className="overview-stat-title">本周期流量</div>
               <div className="overview-network-total">
                 <span className="network-up">↑{formatBytes(scopedNetwork.sent)}</span>
                 <span className="network-down">↓{formatBytes(scopedNetwork.recv)}</span>
@@ -140,12 +142,15 @@ export function AgentRail(props: {
   selectedAgentId: string
   tagFilterOptions: DashboardTagView[]
   viewMode: AgentViewMode
+  panelExpanded: boolean
+  topologyVisible: boolean
   onToggleViewMode: () => void
+  onToggleTopology: () => void
   onRefresh: () => void
   onSelectTag: (tag: string) => void
   onSelectAgent: (agentID: string, active: boolean) => void
 }) {
-  const { agents, loading, error, selectedTag, selectedAgentId, tagFilterOptions, viewMode, onToggleViewMode, onRefresh, onSelectTag, onSelectAgent } = props
+  const { agents, loading, error, selectedTag, selectedAgentId, tagFilterOptions, viewMode, panelExpanded, topologyVisible, onToggleViewMode, onToggleTopology, onRefresh, onSelectTag, onSelectAgent } = props
 
   return (
     <aside className="agent-rail">
@@ -162,6 +167,15 @@ export function AgentRail(props: {
           <Space size={8} wrap className="agent-rail-toolbar">
             <Button
               size="small"
+              type={topologyVisible ? 'default' : 'primary'}
+              icon={<ApartmentOutlined />}
+              className="topology-toggle-button"
+              onClick={onToggleTopology}
+            >
+              {topologyVisible ? '收起' : '打开拓扑图'}
+            </Button>
+            <Button
+              size="small"
               shape="circle"
               icon={<BarsOutlined />}
               className={`agent-view-mode-button${viewMode === 'list' ? ' active' : ''}`}
@@ -170,13 +184,22 @@ export function AgentRail(props: {
               title={viewMode === 'list' ? '列表模式已开启，点击切回卡片' : '开启列表模式'}
               onClick={onToggleViewMode}
             />
-            <Button size="small" icon={<ReloadOutlined />} onClick={onRefresh} loading={loading}>刷新 VPS 列表</Button>
+            <Button
+              size="small"
+              shape={panelExpanded ? 'circle' : undefined}
+              icon={<ReloadOutlined />}
+              title="刷新 VPS 列表"
+              onClick={onRefresh}
+              loading={loading}
+            >
+              {panelExpanded ? null : '刷新 VPS 列表'}
+            </Button>
           </Space>
         }
       >
         {error ? <Alert type="error" showIcon message="加载失败" description={error} className="compact-alert" /> : null}
         <Space wrap style={{ marginBottom: 12 }}>
-          <Tag color={!selectedTag ? 'green' : 'default'} className="tag-filter-chip" onClick={() => onSelectTag('')}>全部</Tag>
+          <Tag color={!selectedTag ? 'blue' : 'default'} className="tag-filter-chip" onClick={() => onSelectTag('')}>全部</Tag>
           {tagFilterOptions.map((tag) => (
             <Tag key={tag.tag} className="tag-filter-chip" style={tagChipStyle(tag.tag, selectedTag === tag.tag)} onClick={() => onSelectTag(tag.tag)}>
               {tag.tag} · {tag.agent_count}
@@ -196,6 +219,7 @@ export function AgentRail(props: {
                   index={index}
                   active={item.agent_id === selectedAgentId}
                   viewMode={viewMode}
+                  compact={panelExpanded}
                   onSelect={onSelectAgent}
                 />
               )}
@@ -214,9 +238,10 @@ function AgentRailItem(props: {
   index: number
   active: boolean
   viewMode: AgentViewMode
+  compact?: boolean
   onSelect: (agentID: string, active: boolean) => void
 }) {
-  const { item, index, active, viewMode, onSelect } = props
+  const { item, index, active, viewMode, compact = false, onSelect } = props
   const renewalStatus = calculateRenewalStatus(item.renewal)
   const trafficStatus = calculateTrafficStatus(item)
   const trafficTotalLabel = trafficStatus.isPeriod ? '周期总流量' : '总流量'
@@ -235,6 +260,7 @@ function AgentRailItem(props: {
     : item.reported_at
       ? `上报 ${formatDateTime(item.reported_at)}`
       : '尚未上报'
+  const footerText = compact ? activityText : `${item.has_config ? '已托管配置' : '待配置'} · ${activityText}`
 
   return (
     <List.Item className={`agent-list-item agent-list-item-${viewMode}`}>
@@ -255,7 +281,7 @@ function AgentRailItem(props: {
                 {locationText ? <span>{locationText}</span> : null}
               </div>
               <AgentRailTags item={item} tags={tags} />
-              <div className="agent-meta agent-footer-line">{item.has_config ? '已托管配置' : '待配置'} · {activityText}</div>
+              <div className="agent-meta agent-footer-line">{footerText}</div>
             </div>
             <AgentRailRuntime item={item} />
             <div className="agent-list-metrics">
@@ -287,7 +313,7 @@ function AgentRailItem(props: {
             <div className="agent-traffic-grid">
               <AgentFlowProgress renewalStatus={renewalStatus} trafficLabel={trafficTotalLabel} trafficValue={trafficSummaryValue} trafficStatus={trafficStatus} />
             </div>
-            <div className="agent-meta agent-footer-line">{item.has_config ? '已托管配置' : '待配置'} · {activityText}</div>
+            <div className="agent-meta agent-footer-line">{footerText}</div>
           </>
         )}
       </button>

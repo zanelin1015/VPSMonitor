@@ -1,6 +1,7 @@
 package server
 
 import (
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -17,6 +18,7 @@ type App struct {
 	store              *store.SQLiteStore
 	realtime           *realtimeHub
 	alerts             *alertService
+	demoDataSource     http.Handler
 	exchangeRatesMu    sync.Mutex
 	exchangeRatesCache model.ExchangeRatesResponse
 }
@@ -52,11 +54,20 @@ func New(cfg config.ServerConfig) (*App, error) {
 	if err := fs.EnsureAdminAccount(cfg.AdminUsername, adminPassword); err != nil {
 		return nil, err
 	}
+	var demoDataSource http.Handler
+	if cfg.DemoDataSourceURL != "" {
+		demoDataSource, err = newDemoDataSource(cfg.DemoDataSourceURL)
+		if err != nil {
+			return nil, err
+		}
+		log.Printf("demo data source enabled: %s", cfg.DemoDataSourceURL)
+	}
 	app := &App{
-		config:   cfg,
-		store:    fs,
-		realtime: newRealtimeHub(),
-		alerts:   newAlertService(fs),
+		config:         cfg,
+		store:          fs,
+		realtime:       newRealtimeHub(),
+		alerts:         newAlertService(fs),
+		demoDataSource: demoDataSource,
 	}
 	app.alerts.Start()
 	return app, nil
@@ -65,6 +76,11 @@ func New(cfg config.ServerConfig) (*App, error) {
 func (a *App) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", a.handleHealth)
+	if a.demoDataSource != nil {
+		mux.Handle("/api/", a.demoDataSource)
+		mux.Handle("/", webui.NewHandler())
+		return mux
+	}
 	mux.HandleFunc("/api/v1/admin/", a.handleAdmin)
 	mux.HandleFunc("/api/v1/frontend-settings", a.handlePublicFrontendSettings)
 	mux.HandleFunc("/api/v1/image-proxy", a.handleImageProxy)

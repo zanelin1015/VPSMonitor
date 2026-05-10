@@ -4,6 +4,7 @@ import "time"
 
 type AdminUser struct {
 	Username  string    `json:"username"`
+	AvatarURL string    `json:"avatar_url,omitempty"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
@@ -33,9 +34,10 @@ type SystemInfo struct {
 }
 
 type AdminAccountUpdateRequest struct {
-	CurrentPassword string `json:"current_password"`
-	NewUsername     string `json:"new_username"`
-	NewPassword     string `json:"new_password"`
+	CurrentPassword string  `json:"current_password"`
+	NewUsername     string  `json:"new_username"`
+	NewPassword     string  `json:"new_password"`
+	AvatarURL       *string `json:"avatar_url,omitempty"`
 }
 
 type ClientInstallInfo struct {

@@ -118,6 +118,7 @@ export interface AgentEntryMapping {
 
 export interface AdminUser {
   username: string
+  avatar_url?: string
   updated_at: string
 }
 

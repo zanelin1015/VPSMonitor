@@ -138,6 +138,7 @@ package_component() {
       tar -czf "${package_name}.tar.gz" "$package_name"
     )
   fi
+  rm -rf "$output_dir"
 }
 
 cd "$ROOT_DIR"

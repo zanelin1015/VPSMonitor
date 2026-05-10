@@ -29,7 +29,7 @@ export function TelegramBotPanel(props: {
         type="info"
         showIcon
         message="告警发送方式"
-        description="目前会对 Client 离线、X-UI 采集异常、Xray 异常、续费周期临近到期、周期流量超过 75%/90% 发送 Telegram 告警；同一告警默认 6 小时内不会重复刷屏。"
+        description="目前会对 Client 离线、X-UI 采集异常、Xray 异常、X-UI Client 到期时间、续费周期临近到期、周期流量超过 75%/90% 发送 Telegram 告警；同一告警默认 6 小时内不会重复刷屏。"
       />
       <Card className="config-section-card" bordered={false}>
         <Title level={4}>{editingID ? '编辑机器人' : '新增机器人'}</Title>
@@ -105,4 +105,3 @@ export function TelegramBotPanel(props: {
     </Space>
   )
 }
-

@@ -23,6 +23,7 @@ func (s *SQLiteStore) init() error {
 			id INTEGER PRIMARY KEY CHECK (id = 1),
 			username TEXT NOT NULL,
 			password_hash TEXT NOT NULL,
+			avatar_url TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		);
@@ -176,6 +177,9 @@ func (s *SQLiteStore) init() error {
 		return err
 	}
 	if err := s.ensureColumn("agents", "entry_config_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("admin_accounts", "avatar_url", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	return nil

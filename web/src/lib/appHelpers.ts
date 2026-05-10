@@ -1492,13 +1492,13 @@ function agentStatusLevel(state?: string): 'ok' | 'warn' | 'bad' | 'neutral' {
 }
 
 function agentDisplayStatus(agent: AgentListItem): { label: string; level: 'ok' | 'warn' | 'bad' | 'neutral' } {
-  if (isAgentRunning(agent)) {
-    return { label: 'client 在线', level: 'ok' }
-  }
-  if (agent.last_seen_at || agent.reported_at || agent.realtime_at) {
+  if (!isAgentRunning(agent)) {
     return { label: 'client 离线', level: 'bad' }
   }
-  return { label: '等待上报', level: 'neutral' }
+  if (agent.summary.last_collection_err || xrayIssueLabel(agent)) {
+    return { label: 'client 警告', level: 'warn' }
+  }
+  return { label: 'running', level: 'ok' }
 }
 
 function xrayIssueLabel(agent: AgentListItem): string {

@@ -22,7 +22,6 @@ import {
   EditOutlined,
   ReloadOutlined,
   SettingOutlined,
-  UserOutlined,
 } from '@ant-design/icons'
 
 import type {
@@ -90,7 +89,7 @@ import {
   ClientInstallModal,
   FrontendSettingsModal,
   ImportURLModal,
-  PersonalCenterModal,
+  PersonalCenterDropdown,
   SystemUpdateModal,
   TelegramBotSettingsModal,
   XUIActionModal,
@@ -182,13 +181,13 @@ export default function App() {
   const [loginLoading, setLoginLoading] = useState(false)
   const [loginForm, setLoginForm] = useState({ username: '', password: '' })
   const [accountModalOpen, setAccountModalOpen] = useState(false)
-  const [personalCenterOpen, setPersonalCenterOpen] = useState(false)
   const [accountSaving, setAccountSaving] = useState(false)
   const [accountForm, setAccountForm] = useState({
     current_password: '',
     new_username: '',
     new_password: '',
     confirm_password: '',
+    avatar_url: '',
   })
   const [agents, setAgents] = useState<DashboardAgentView[]>([])
   const [agentsLoading, setAgentsLoading] = useState(false)
@@ -260,6 +259,7 @@ export default function App() {
 
   const selectedAgent = agents.find((item) => item.agent_id === selectedAgentId)
   const selectedSummary = overview?.summary || selectedAgent?.summary || {}
+  const centerPanelOpen = topologyVisible || Boolean(selectedAgent)
   const topologyScopeLabel = selectedAgentId ? selectedAgent?.agent_name || selectedAgentId : selectedTag ? `${selectedTag} 标签` : '全部 Client'
   const heroTitle = '南风VPS监控'
   useEffect(() => {
@@ -427,7 +427,7 @@ export default function App() {
       const data = await fetchJSON<AdminAuthResponse>('/api/v1/admin/session')
       setAdminUser(data.user)
       setSystemInfo(data.system || null)
-      setAccountForm((current) => ({ ...current, new_username: data.user.username }))
+      setAccountForm((current) => ({ ...current, new_username: data.user.username, avatar_url: data.user.avatar_url || '' }))
     } catch {
       setAdminUser(null)
       setSystemInfo(null)
@@ -446,7 +446,7 @@ export default function App() {
       })
       setAdminUser(data.user)
       setSystemInfo(data.system || null)
-      setAccountForm((current) => ({ ...current, new_username: data.user.username }))
+      setAccountForm((current) => ({ ...current, new_username: data.user.username, avatar_url: data.user.avatar_url || '' }))
       setLoginForm({ username: data.user.username, password: '' })
       message.success('登录成功')
     } catch (error) {
@@ -489,6 +489,7 @@ export default function App() {
           current_password: accountForm.current_password,
           new_username: accountForm.new_username,
           new_password: accountForm.new_password,
+          avatar_url: accountForm.avatar_url,
         }),
       })
       setAdminUser(data.user)
@@ -498,6 +499,7 @@ export default function App() {
         new_username: data.user.username,
         new_password: '',
         confirm_password: '',
+        avatar_url: data.user.avatar_url || '',
       })
       setAccountModalOpen(false)
       message.success('管理员账号已更新')
@@ -791,7 +793,6 @@ export default function App() {
   }
 
   async function openClientInstallModal() {
-    setPersonalCenterOpen(false)
     setClientInstallModalOpen(true)
     setClientInstallLoading(true)
     try {
@@ -834,7 +835,6 @@ export default function App() {
   }
 
   async function openFrontendSettingsModal() {
-    setPersonalCenterOpen(false)
     setFrontendSettingsModalOpen(true)
     setFrontendSettingsLoading(true)
     try {
@@ -1622,7 +1622,7 @@ export default function App() {
       <VisualEffects />
       <div className="page-background page-background-left" />
       <div className="page-background page-background-right" />
-      <div className="app-shell">
+      <div className={`app-shell${centerPanelOpen ? ' topology-open-shell' : ''}`}>
         <header className="hero-panel">
           <div>
             <div className="eyebrow">南风 VPS 监控中心</div>
@@ -1632,14 +1632,25 @@ export default function App() {
             </Paragraph>
           </div>
           <div className="hero-actions hero-actions-column">
-            <Button
-              className="personal-center-button"
-              icon={<UserOutlined />}
-              onClick={() => setPersonalCenterOpen(true)}
-            >
-              个人中心
-              <span>{adminUser.username}</span>
-            </Button>
+            <PersonalCenterDropdown
+              adminUser={adminUser}
+              systemInfo={systemInfo}
+              onOpenAccount={() => {
+                setAccountForm({
+                  current_password: '',
+                  new_username: adminUser.username,
+                  new_password: '',
+                  confirm_password: '',
+                  avatar_url: adminUser.avatar_url || '',
+                })
+                setAccountModalOpen(true)
+              }}
+              onOpenClientInstall={() => void openClientInstallModal()}
+              onOpenTelegram={() => setTelegramBotModalOpen(true)}
+              onOpenFrontendSettings={() => void openFrontendSettingsModal()}
+              onOpenUpdates={() => setUpdateModalOpen(true)}
+              onLogout={() => void logout()}
+            />
             <div className="theme-mode-row">
               <Text type="secondary">主题</Text>
               <Select
@@ -1655,37 +1666,6 @@ export default function App() {
             </div>
           </div>
         </header>
-
-        <PersonalCenterModal
-          open={personalCenterOpen}
-          adminUser={adminUser}
-          systemInfo={systemInfo}
-          onClose={() => setPersonalCenterOpen(false)}
-          onOpenAccount={() => {
-            setAccountForm({
-              current_password: '',
-              new_username: adminUser.username,
-              new_password: '',
-              confirm_password: '',
-            })
-            setPersonalCenterOpen(false)
-            setAccountModalOpen(true)
-          }}
-          onOpenClientInstall={() => void openClientInstallModal()}
-          onOpenTelegram={() => {
-            setPersonalCenterOpen(false)
-            setTelegramBotModalOpen(true)
-          }}
-          onOpenFrontendSettings={() => void openFrontendSettingsModal()}
-          onOpenUpdates={() => {
-            setPersonalCenterOpen(false)
-            setUpdateModalOpen(true)
-          }}
-          onLogout={() => {
-            setPersonalCenterOpen(false)
-            void logout()
-          }}
-        />
 
         <SystemUpdateModal
           open={updateModalOpen}
@@ -1775,7 +1755,7 @@ export default function App() {
           onCopy={(client) => void copyImportURL(client)}
         />
 
-        <div className="workspace-grid">
+        <div className={`workspace-grid${centerPanelOpen ? ' workspace-grid-topology' : ''}${topologyVisible ? ' workspace-grid-topology-open' : ''}${selectedAgent && !topologyVisible ? ' workspace-grid-agent-open' : ''}`}>
           <OverviewSummaryCard
             dashboardView={dashboardView}
             scopedAgentCount={scopedAgentCount}
@@ -1791,6 +1771,7 @@ export default function App() {
             selectedTag={selectedTag}
             currentAgentLabel={selectedAgent?.agent_name || selectedAgent?.agent_id || ''}
             currentIPv4={selectedSummary.public_ipv4 || ''}
+            compact={centerPanelOpen}
             onCostCurrencyChange={setCostCurrency}
           />
 
@@ -1802,44 +1783,31 @@ export default function App() {
             selectedAgentId={selectedAgentId}
             tagFilterOptions={tagFilterOptions}
             viewMode={agentViewMode}
+            panelExpanded={centerPanelOpen}
+            topologyVisible={topologyVisible}
             onToggleViewMode={toggleAgentViewMode}
+            onToggleTopology={() => {
+              if (topologyVisible) {
+                setTopologyVisible(false)
+              } else {
+                openTopologyPanel()
+              }
+            }}
             onRefresh={() => void loadAgents()}
             onSelectTag={(tag) => {
               setSelectedTag(tag)
               setSelectedAgentId('')
             }}
             onSelectAgent={(agentID, active) => {
-              if (active) {
+              if (active && !topologyVisible) {
                 setReloadToken((current) => current + 1)
                 return
               }
-              startTransition(() => {
-                setSelectedAgentId(agentID)
-              })
+              openAgentDetailPanel(agentID)
             }}
           />
 
           <main className="main-stage">
-            {dashboardView ? (
-              <Card className="surface-card topology-entry-card" bordered={false}>
-                <div className="topology-entry">
-                  <div>
-                    <div className="eyebrow">Topology Map</div>
-                    <Title level={4}>链路拓扑图</Title>
-                    <Text type="secondary">
-                      大型拓扑图已默认隐藏；当前范围 {topologyScopeLabel}，共 {filteredChains.length} 条客户端链路。
-                    </Text>
-                  </div>
-                  <Space wrap>
-                    {topologyVisible ? <Button onClick={() => setTopologyVisible(false)}>收起拓扑图</Button> : null}
-                    <Button type="primary" onClick={openTopologyPanel}>
-                      {topologyVisible ? '跳到拓扑图' : '打开拓扑图'}
-                    </Button>
-                  </Space>
-                </div>
-              </Card>
-            ) : null}
-
             {dashboardView && topologyVisible ? (
               <div id="topology-panel">
                 {renderCNFlowPanel({
@@ -1848,7 +1816,7 @@ export default function App() {
                     selectedAgentId,
                     agents: dashboardView.agents,
                     chains: filteredChains,
-                    onSelectAgent: (agentID) => setSelectedAgentId(agentID),
+                    onSelectAgent: openAgentDetailPanel,
                     onJumpNode: jumpToNode,
                     canOpenXUI: Boolean(managedConfig?.xui?.base_url),
                     onOpenXUI: () => {
@@ -1867,7 +1835,7 @@ export default function App() {
               </div>
             ) : null}
 
-            {overviewError && selectedAgentId ? (
+            {overviewError && selectedAgentId && !topologyVisible ? (
               <Alert
                 className="surface-card alert-card"
                 type="warning"
@@ -1877,8 +1845,8 @@ export default function App() {
               />
             ) : null}
 
-            {selectedAgent ? (
-              <Card className="surface-card tabs-card" bordered={false}>
+            {selectedAgent && !topologyVisible ? (
+              <Card id="agent-detail-panel" className="surface-card tabs-card" bordered={false}>
                 <div className="selected-agent-toolbar">
                   <div>
                     <Text type="secondary">当前 Client</Text>
@@ -2242,6 +2210,17 @@ export default function App() {
     }, 80)
   }
 
+  function openAgentDetailPanel(agentID: string, tabKey = 'overview') {
+    setTopologyVisible(false)
+    setActiveTabKey(tabKey)
+    startTransition(() => {
+      setSelectedAgentId(agentID)
+    })
+    window.setTimeout(() => {
+      document.getElementById('agent-detail-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 80)
+  }
+
   function jumpToOutbound(tag?: string) {
     if (!tag) {
       return
@@ -2270,6 +2249,7 @@ export default function App() {
     }
     const anchor = nodeElementId(agentID, nodeLabel)
     setSelectedNodeAnchor(anchor)
+    setTopologyVisible(false)
     setSelectedAgentId(agentID)
     setActiveTabKey('nodes')
 

@@ -467,12 +467,13 @@ func TestSQLiteStoreAdminAuthLifecycle(t *testing.T) {
 		CurrentPassword: "first-password",
 		NewUsername:     "owner",
 		NewPassword:     "second-password",
+		AvatarURL:       stringPtr("data:image/png;base64,avatar"),
 	}, token)
 	if err != nil {
 		t.Fatalf("UpdateAdminAccount: %v", err)
 	}
-	if updated.Username != "owner" {
-		t.Fatalf("unexpected updated username: %s", updated.Username)
+	if updated.Username != "owner" || updated.AvatarURL == "" {
+		t.Fatalf("unexpected updated user: %#v", updated)
 	}
 
 	if _, ok, err := store.AuthenticateAdmin("admin", "first-password"); err != nil {
@@ -487,9 +488,13 @@ func TestSQLiteStoreAdminAuthLifecycle(t *testing.T) {
 	}
 	if sessionUser, _, ok, err := store.ValidateAdminSession(token); err != nil {
 		t.Fatalf("ValidateAdminSession after update: %v", err)
-	} else if !ok || sessionUser.Username != "owner" {
-		t.Fatalf("expected updated session user, got ok=%v username=%q", ok, sessionUser.Username)
+	} else if !ok || sessionUser.Username != "owner" || sessionUser.AvatarURL == "" {
+		t.Fatalf("expected updated session user, got ok=%v user=%#v", ok, sessionUser)
 	}
+}
+
+func stringPtr(value string) *string {
+	return &value
 }
 
 func TestSQLiteStoreClientInstallSettings(t *testing.T) {

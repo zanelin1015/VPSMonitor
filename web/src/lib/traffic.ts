@@ -85,8 +85,9 @@ function periodTrafficUsed(current: number, baseline: number): number {
 export function summarizeAgentNetwork(agents: AgentListItem[]): AgentNetworkSummary {
   return agents.reduce<AgentNetworkSummary>(
     (summary, agent) => {
-      summary.sent += Number(agent.summary.net_traffic_sent || 0)
-      summary.recv += Number(agent.summary.net_traffic_recv || 0)
+      const trafficStatus = calculateTrafficStatus(agent)
+      summary.sent += trafficStatus.upload.used
+      summary.recv += trafficStatus.download.used
       summary.up += Number(agent.summary.net_io_up || 0)
       summary.down += Number(agent.summary.net_io_down || 0)
       return summary

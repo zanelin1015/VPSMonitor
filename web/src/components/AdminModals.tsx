@@ -1,12 +1,14 @@
-import { Alert, Button, Col, Empty, Input, InputNumber, Modal, QRCode, Row, Select, Space, Spin, Switch, Tabs, Tag, Typography } from 'antd'
+import { useState, type ChangeEvent } from 'react'
+import { Alert, Avatar, Button, Col, Divider, Dropdown, Empty, Input, InputNumber, Modal, QRCode, Row, Select, Space, Spin, Switch, Tabs, Tag, Typography } from 'antd'
+import type { MenuProps } from 'antd'
 import {
   BellOutlined,
   CloudDownloadOutlined,
   CopyOutlined,
   EditOutlined,
   LogoutOutlined,
-  SafetyCertificateOutlined,
   SettingOutlined,
+  UploadOutlined,
 } from '@ant-design/icons'
 
 import type { AdminUser, AgentListItem, SystemInfo, TelegramBot, UpdateLatestInfo, XUIClientView, XUIOverview } from '../types'
@@ -23,20 +25,19 @@ import { ClientInstallCommandBox } from './ClientInstallCommandBox'
 import { TelegramBotPanel } from './TelegramBotPanel'
 import { renderOutboundActionForm, renderRoutingActionForm } from './XUIActionForms'
 
-const { Text, Title } = Typography
+const { Text } = Typography
 
 export interface AccountFormState {
   current_password: string
   new_username: string
   new_password: string
   confirm_password: string
+  avatar_url: string
 }
 
-export function PersonalCenterModal(props: {
-  open: boolean
+export function PersonalCenterDropdown(props: {
   adminUser: AdminUser
   systemInfo?: SystemInfo | null
-  onClose: () => void
   onOpenAccount: () => void
   onOpenClientInstall: () => void
   onOpenTelegram: () => void
@@ -44,35 +45,80 @@ export function PersonalCenterModal(props: {
   onOpenUpdates: () => void
   onLogout: () => void
 }) {
-  const { open, adminUser, systemInfo, onClose, onOpenAccount, onOpenClientInstall, onOpenTelegram, onOpenFrontendSettings, onOpenUpdates, onLogout } = props
-
-  return (
-    <Modal title="个人中心" open={open} onCancel={onClose} footer={null} width={520}>
-      <div className="personal-center-panel">
-        <div className="personal-center-profile">
-          <div className="personal-center-avatar">
-            <SafetyCertificateOutlined />
-          </div>
+  const { adminUser, systemInfo, onOpenAccount, onOpenClientInstall, onOpenTelegram, onOpenFrontendSettings, onOpenUpdates, onLogout } = props
+  const items: MenuProps['items'] = [
+    {
+      key: 'profile',
+      disabled: true,
+      label: (
+        <div className="personal-center-menu-profile">
+          <AdminAvatar user={adminUser} size={52} className="personal-center-menu-avatar" />
           <div>
             <Text type="secondary">当前管理员</Text>
-            <Title level={3}>{adminUser.username}</Title>
+            <div className="personal-center-menu-name">{adminUser.username}</div>
             <Space wrap size={6}>
               <Tag color="success">已登录</Tag>
               {systemInfo?.version ? <Tag color="blue">Server v{systemInfo.version}</Tag> : null}
             </Space>
           </div>
         </div>
-        <div className="personal-center-actions">
-          <Button icon={<EditOutlined />} onClick={onOpenAccount}>修改账号密码</Button>
-          <Button icon={<CloudDownloadOutlined />} onClick={onOpenClientInstall}>Client 安装命令</Button>
-          <Button icon={<BellOutlined />} onClick={onOpenTelegram}>TG 告警机器人</Button>
-          <Button icon={<SettingOutlined />} onClick={onOpenFrontendSettings}>前端样式自定义</Button>
-          <Button icon={<SettingOutlined />} onClick={onOpenUpdates}>在线更新</Button>
-          <Button danger icon={<LogoutOutlined />} onClick={onLogout}>退出登录</Button>
-        </div>
-      </div>
-    </Modal>
+      ),
+    },
+    { type: 'divider' },
+    { key: 'account', icon: <EditOutlined />, label: '账号与头像' },
+    { key: 'client-install', icon: <CloudDownloadOutlined />, label: 'Client 安装命令' },
+    { key: 'telegram', icon: <BellOutlined />, label: 'TG 告警机器人' },
+    { key: 'frontend', icon: <SettingOutlined />, label: '前端样式自定义' },
+    { key: 'updates', icon: <SettingOutlined />, label: '在线更新' },
+    { type: 'divider' },
+    { key: 'logout', danger: true, icon: <LogoutOutlined />, label: '退出登录' },
+  ]
+  const onMenuClick: MenuProps['onClick'] = ({ key }) => {
+    switch (key) {
+      case 'account':
+        onOpenAccount()
+        break
+      case 'client-install':
+        onOpenClientInstall()
+        break
+      case 'telegram':
+        onOpenTelegram()
+        break
+      case 'frontend':
+        onOpenFrontendSettings()
+        break
+      case 'updates':
+        onOpenUpdates()
+        break
+      case 'logout':
+        onLogout()
+        break
+    }
+  }
+
+  return (
+    <Dropdown menu={{ items, onClick: onMenuClick }} trigger={['click']} placement="bottomRight" overlayClassName="personal-center-dropdown">
+      <Button className="personal-center-button" aria-label="个人中心" title="个人中心" onClick={(event) => event.preventDefault()}>
+        <AdminAvatar user={adminUser} size={36} className="personal-center-button-avatar" />
+      </Button>
+    </Dropdown>
   )
+}
+
+function AdminAvatar({ user, size, className = '' }: { user: AdminUser; size: number; className?: string }) {
+  const avatarClassName = `personal-center-avatar ${className}`.trim()
+  if (user.avatar_url) {
+    return <Avatar size={size} src={user.avatar_url} className={avatarClassName} />
+  }
+  return <Avatar size={size} className={`${avatarClassName} personal-center-avatar-fallback`}>{avatarInitial(user.username)}</Avatar>
+}
+
+function avatarInitial(name: string) {
+  const [first = ''] = Array.from(name.trim())
+  if (!first) {
+    return 'A'
+  }
+  return /^[a-z]$/i.test(first) ? first.toUpperCase() : first
 }
 
 export function ClientInstallModal(props: {
@@ -221,11 +267,57 @@ export function AccountSettingsModal(props: {
   onFormChange: (form: AccountFormState) => void
 }) {
   const { open, saving, form, onClose, onSave, onFormChange } = props
+  const [avatarError, setAvatarError] = useState('')
   const update = (patch: Partial<AccountFormState>) => onFormChange({ ...form, ...patch })
+  const handleAvatarFile = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) {
+      return
+    }
+    if (!file.type.startsWith('image/')) {
+      setAvatarError('请选择图片文件')
+      return
+    }
+    if (file.size > 768 * 1024) {
+      setAvatarError('头像图片请控制在 768KB 以内')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : ''
+      if (!result) {
+        setAvatarError('读取头像失败，请重试')
+        return
+      }
+      setAvatarError('')
+      update({ avatar_url: result })
+    }
+    reader.onerror = () => setAvatarError('读取头像失败，请重试')
+    reader.readAsDataURL(file)
+  }
 
   return (
     <Modal title="修改管理员账号" open={open} onCancel={onClose} onOk={onSave} confirmLoading={saving} okText="保存" cancelText="取消">
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <div className="account-avatar-editor">
+          <Avatar size={72} src={form.avatar_url || undefined} className="account-avatar-preview">
+            {avatarInitial(form.new_username)}
+          </Avatar>
+          <div className="account-avatar-editor-actions">
+            <Text strong>个人头像</Text>
+            <Space wrap>
+              <label className="avatar-upload-button">
+                <input type="file" accept="image/*" onChange={handleAvatarFile} />
+                <UploadOutlined />
+                <span>更换头像</span>
+              </label>
+              {form.avatar_url ? <Button size="small" onClick={() => update({ avatar_url: '' })}>移除头像</Button> : null}
+            </Space>
+            <Text type={avatarError ? 'danger' : 'secondary'}>{avatarError || '支持 JPG / PNG / WebP，保存后会同步到个人中心。'}</Text>
+          </div>
+        </div>
+        <Divider style={{ margin: '4px 0' }} />
         <div>
           <Text type="secondary">当前密码</Text>
           <Input.Password value={form.current_password} onChange={(event) => update({ current_password: event.target.value })} />
@@ -283,7 +375,7 @@ export function FrontendSettingsModal(props: {
               value={form.custom_code}
               onChange={(event) => onFormChange({ custom_code: event.target.value })}
               autoSize={{ minRows: 12, maxRows: 22 }}
-              placeholder={`<style>\n:root { --green: #22c55e; }\n</style>\n<script>\nwindow.CustomBackgroundImage = 'https://example.com/bg.jpg'\n</script>`}
+              placeholder={`<style>\n:root { --green: #2563eb; }\n</style>\n<script>\nwindow.CustomBackgroundImage = 'https://example.com/bg.jpg'\n</script>`}
             />
           </div>
         </Space>
@@ -487,11 +579,11 @@ export function SystemUpdateModal(props: {
           <div className="update-status-grid">
             <div className="update-status-card">
               <Text type="secondary">Server</Text>
-              <Tag color={serverUpdateAvailable ? 'green' : 'default'}>{serverUpdateAvailable ? `可更新到 v${latestServerVersion}` : '已是最新'}</Tag>
+              <Tag color={serverUpdateAvailable ? 'blue' : 'default'}>{serverUpdateAvailable ? `可更新到 v${latestServerVersion}` : '已是最新'}</Tag>
             </div>
             <div className="update-status-card">
               <Text type="secondary">Client 可更新</Text>
-              <Tag color={clientUpdateCount ? 'green' : 'default'}>{clientUpdateCount ? `${clientUpdateCount} 台到 v${latestClientVersion}` : '0 台'}</Tag>
+              <Tag color={clientUpdateCount ? 'blue' : 'default'}>{clientUpdateCount ? `${clientUpdateCount} 台到 v${latestClientVersion}` : '0 台'}</Tag>
             </div>
             <div className="update-status-card">
               <Text type="secondary">已识别系统</Text>
