@@ -25,8 +25,7 @@ import { clampMetricPercent, formatMem, formatPercent } from './traffic'
 
 export const DASHBOARD_AUTO_REFRESH_MS = 20_000
 export const XUI_ACTION_KINDS = [
-  { value: 'add_outbound', label: '从内部导入出站' },
-  { value: 'add_routing_rule', label: '新增转发 / 路由规则' },
+  { value: 'upsert_routing_rule', label: '新增 / 修改转发规则' },
 ]
 
 const AGENT_VIEW_MODE_STORAGE_PREFIX = 'bridge-core.agent-view-mode.'
@@ -105,6 +104,8 @@ export interface XUIOutboundActionForm {
 }
 
 export interface XUIRoutingActionForm {
+  rule_index: number | null
+  target_mode: 'existing_outbound' | 'registered_client'
   outbound_tag: string
   balancer_tag: string
   inbound_tags: string[]
@@ -309,6 +310,8 @@ function defaultOutboundActionForm(): XUIOutboundActionForm {
 
 function defaultRoutingActionForm(): XUIRoutingActionForm {
   return {
+    rule_index: null,
+    target_mode: 'existing_outbound',
     outbound_tag: '',
     balancer_tag: '',
     inbound_tags: [],
@@ -435,12 +438,33 @@ function buildXUIActionPayload(
   },
 ): Record<string, unknown> {
   switch (kind) {
+    case 'upsert_routing_rule':
+      return buildUpsertRoutingActionPayload(forms.routing, forms.outbound)
     case 'add_routing_rule':
       return buildRoutingActionPayload(forms.routing)
     case 'add_outbound':
     default:
       return buildOutboundActionPayload(forms.outbound)
   }
+}
+
+function buildUpsertRoutingActionPayload(form: XUIRoutingActionForm, outboundForm: XUIOutboundActionForm): Record<string, unknown> {
+  const payload = buildRoutingActionPayload(form)
+  if (form.rule_index && form.rule_index > 0) {
+    payload.rule_index = form.rule_index
+  }
+  if (form.target_mode === 'registered_client') {
+    const outboundPayload = buildOutboundActionPayload(outboundForm)
+    payload.outbound = outboundPayload.outbound
+    const outboundTag = String((outboundPayload.outbound as Record<string, unknown>)?.tag || '')
+    if (!outboundTag) {
+      throw new Error('未能生成内部 Client 出站标签')
+    }
+    const rule = payload.rule as Record<string, unknown>
+    rule.outboundTag = outboundTag
+    delete rule.balancerTag
+  }
+  return payload
 }
 
 function buildInboundActionPayload(form: XUIInboundActionForm): Record<string, unknown> {
@@ -655,8 +679,8 @@ function buildOutboundStreamSettings(form: XUIOutboundActionForm): Record<string
 }
 
 function buildRoutingActionPayload(form: XUIRoutingActionForm): Record<string, unknown> {
-  if (!form.outbound_tag && !form.balancer_tag) {
-    throw new Error('路由规则需要选择出站或 balancer')
+  if (form.target_mode === 'existing_outbound' && !form.outbound_tag && !form.balancer_tag) {
+    throw new Error('路由规则需要选择已存在的出站')
   }
   const rule: Record<string, unknown> = {
     type: 'field',
@@ -706,7 +730,16 @@ function splitTextList(rawText: string): string[] {
 }
 
 function actionKindLabel(kind: string): string {
-  return XUI_ACTION_KINDS.find((item) => item.value === kind)?.label || kind
+  switch (kind) {
+    case 'upsert_routing_rule':
+      return '新增 / 修改转发规则'
+    case 'add_outbound':
+      return '从内部导入出站'
+    case 'add_routing_rule':
+      return '新增转发 / 路由规则'
+    default:
+      return kind
+  }
 }
 
 function actionStatusLabel(status: string): string {
@@ -1681,6 +1714,7 @@ export {
   buildInboundActionPayload,
   buildInboundClientPayload,
   buildOutboundActionPayload,
+  buildUpsertRoutingActionPayload,
   buildVNextUser,
   buildOutboundStreamSettings,
   buildRoutingActionPayload,

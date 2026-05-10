@@ -460,7 +460,7 @@ func hasXUIConfig(cfg config.XUIConfig) bool {
 
 func isValidXUIActionKind(kind string) bool {
 	switch kind {
-	case model.XUIActionAddOutbound, model.XUIActionAddRoutingRule, model.XUIActionUpdateClientExpiry, model.XUIActionUpdateClient:
+	case model.XUIActionAddOutbound, model.XUIActionAddRoutingRule, model.XUIActionUpsertRoutingRule, model.XUIActionUpdateClientExpiry, model.XUIActionUpdateClient:
 		return true
 	default:
 		return false

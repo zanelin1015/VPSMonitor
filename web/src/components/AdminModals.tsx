@@ -492,13 +492,22 @@ export function XUIActionModal(props: {
               onChange: onOutboundFormChange,
             })
           : null}
-        {actionKind === 'add_routing_rule'
+        {actionKind === 'add_routing_rule' || actionKind === 'upsert_routing_rule'
           ? renderRoutingActionForm({
               form: routingForm,
+              outboundForm,
+              agents,
+              targetAgentID,
+              currentOverview,
+              sourceOverview,
+              sourceLoading,
               inbounds: currentOverview?.nodes || [],
               clients: currentOverview?.clients || [],
               outbounds: currentOverview?.outbounds || [],
+              balancers: currentOverview?.balancers || [],
+              rules: currentOverview?.routing_rules || [],
               onChange: onRoutingFormChange,
+              onOutboundChange: onOutboundFormChange,
             })
           : null}
       </Space>

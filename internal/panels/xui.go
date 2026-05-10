@@ -200,6 +200,8 @@ func (c *XUIClient) executeActionAuthenticated(ctx context.Context, action model
 		return c.addOutbound(ctx, action.Payload)
 	case model.XUIActionAddRoutingRule:
 		return c.addRoutingRule(ctx, action.Payload)
+	case model.XUIActionUpsertRoutingRule:
+		return c.upsertRoutingRule(ctx, action.Payload)
 	case model.XUIActionUpdateClientExpiry:
 		return c.updateClientExpiry(ctx, action.Payload)
 	default:
@@ -295,6 +297,90 @@ func (c *XUIClient) addRoutingRule(ctx context.Context, payload map[string]any) 
 	return map[string]any{
 		"rule_index": len(rules),
 		"restarted":  true,
+	}, nil
+}
+
+func (c *XUIClient) upsertRoutingRule(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	rule, err := payloadObject(payload, "rule")
+	if err != nil {
+		return nil, err
+	}
+	if stringFromMap(rule, "type") == "" {
+		rule["type"] = "field"
+	}
+	if stringFromMap(rule, "outboundTag") == "" && stringFromMap(rule, "balancerTag") == "" {
+		return nil, fmt.Errorf("rule.outboundTag or rule.balancerTag is required")
+	}
+
+	configJSON, err := c.getXrayTemplate(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	outboundAdded := false
+	if rawOutbound, ok := payload["outbound"]; ok && rawOutbound != nil {
+		outbound, ok := rawOutbound.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("outbound must be an object")
+		}
+		tag := stringFromMap(outbound, "tag")
+		if tag == "" {
+			return nil, fmt.Errorf("outbound.tag is required")
+		}
+		outbounds := objectSlice(configJSON["outbounds"])
+		found := false
+		for _, existing := range outbounds {
+			if stringFromMap(existing, "tag") == tag {
+				found = true
+				break
+			}
+		}
+		if !found {
+			configJSON["outbounds"] = append(outbounds, outbound)
+			outboundAdded = true
+		}
+	}
+	if outboundTag := stringFromMap(rule, "outboundTag"); outboundTag != "" {
+		found := false
+		for _, existing := range objectSlice(configJSON["outbounds"]) {
+			if stringFromMap(existing, "tag") == outboundTag {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("outbound tag not found: %s", outboundTag)
+		}
+	}
+
+	routing := objectMap(configJSON["routing"])
+	rules := objectSlice(routing["rules"])
+	ruleIndex := intValue(payload["rule_index"])
+	updated := false
+	if ruleIndex > 0 {
+		if ruleIndex > len(rules) {
+			return nil, fmt.Errorf("routing rule index out of range: %d", ruleIndex)
+		}
+		rules[ruleIndex-1] = rule
+		updated = true
+	} else {
+		rules = append(rules, rule)
+		ruleIndex = len(rules)
+	}
+	routing["rules"] = rules
+	configJSON["routing"] = routing
+
+	if err := c.updateXrayTemplate(ctx, configJSON); err != nil {
+		return nil, err
+	}
+	if err := c.restartXrayService(ctx); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"rule_index":     ruleIndex,
+		"updated":        updated,
+		"outbound_added": outboundAdded,
+		"restarted":      true,
 	}, nil
 }
 

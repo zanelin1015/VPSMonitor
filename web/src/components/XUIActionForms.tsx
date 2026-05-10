@@ -1,7 +1,7 @@
 import { Alert, Button, Card, Col, Input, InputNumber, Row, Select, Space, Switch, Tag, Typography } from 'antd'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 
-import type { AgentListItem, XUIClientView, XUILocalCertificate, XUINodeView, XUIOverview } from '../types'
+import type { AgentListItem, XUIBalancerView, XUIClientView, XUILocalCertificate, XUINodeView, XUIOverview, XUIRoutingRuleView } from '../types'
 import type { TLSCertificateSelectionForm, XUIInboundActionForm, XUIInboundClientForm, XUIOutboundActionForm, XUIRoutingActionForm } from '../lib/appHelpers'
 import { defaultInboundClientForm } from '../lib/appHelpers'
 
@@ -399,33 +399,145 @@ function normalizeOutboundTag(value: string): string {
 
 export function renderRoutingActionForm(props: {
   form: XUIRoutingActionForm
+  outboundForm: XUIOutboundActionForm
+  agents: AgentListItem[]
+  targetAgentID: string
+  currentOverview: XUIOverview | null
+  sourceOverview: XUIOverview | null
+  sourceLoading: boolean
   inbounds: XUINodeView[]
   clients: XUIClientView[]
   outbounds: { tag?: string }[]
+  balancers: XUIBalancerView[]
+  rules: XUIRoutingRuleView[]
   onChange: (form: XUIRoutingActionForm) => void
+  onOutboundChange: (form: XUIOutboundActionForm) => void
 }) {
-  const { form, inbounds, clients, outbounds, onChange } = props
+  const {
+    form,
+    outboundForm,
+    agents,
+    targetAgentID,
+    currentOverview,
+    sourceOverview,
+    sourceLoading,
+    inbounds,
+    clients,
+    outbounds,
+    balancers,
+    rules,
+    onChange,
+    onOutboundChange,
+  } = props
   const update = (patch: Partial<XUIRoutingActionForm>) => onChange({ ...form, ...patch })
+  const updateOutbound = (next: XUIOutboundActionForm) => {
+    onOutboundChange(next)
+    onChange({ ...form, outbound_tag: next.tag, balancer_tag: '' })
+  }
+  const applyRule = (ruleIndex: number | null) => {
+    if (!ruleIndex) {
+      update({ rule_index: null })
+      return
+    }
+    const rule = rules.find((item) => item.index === ruleIndex)
+    if (!rule) {
+      update({ rule_index: ruleIndex })
+      return
+    }
+    onChange({
+      ...form,
+      rule_index: rule.index,
+      target_mode: 'existing_outbound',
+      outbound_tag: rule.outbound_tag || '',
+      balancer_tag: rule.balancer_tag || '',
+      inbound_tags: rule.inbound_tags || [],
+      users: rule.users || [],
+      domains: (rule.domain || []).join('\n'),
+      ips: (rule.ip || []).join('\n'),
+      ports: (rule.port || []).join(', '),
+      source_ips: (rule.source_ip || []).join('\n'),
+      source_ports: (rule.source_port || []).join(', '),
+      networks: rule.network || [],
+      protocols: rule.protocol || [],
+    })
+  }
 
   return (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
       <Card className="config-section-card" bordered={false}>
-        <Title level={4}>目标出口</Title>
+        <Title level={4}>转发规则</Title>
         <Row gutter={[16, 16]}>
           <Col xs={24} md={12}>
-            <Text type="secondary">Outbound Tag</Text>
+            <Text type="secondary">操作</Text>
             <Select
-              allowClear
               style={{ width: '100%' }}
-              value={form.outbound_tag || undefined}
-              options={outbounds.filter((item) => item.tag).map((item) => ({ value: item.tag as string, label: item.tag as string }))}
-              onChange={(value) => update({ outbound_tag: value || '' })}
+              value={form.rule_index || 0}
+              options={[
+                { value: 0, label: '新增转发规则' },
+                ...rules.map((rule) => ({
+                  value: rule.index,
+                  label: `修改 #${rule.index} · ${rule.summary || rule.outbound_tag || rule.balancer_tag || '未命名规则'}`,
+                })),
+              ]}
+              onChange={(value) => applyRule(Number(value) || null)}
             />
           </Col>
           <Col xs={24} md={12}>
-            <Text type="secondary">Balancer Tag</Text>
-            <Input value={form.balancer_tag} onChange={(event) => update({ balancer_tag: event.target.value })} />
+            <Text type="secondary">目标类型</Text>
+            <Select
+              style={{ width: '100%' }}
+              value={form.target_mode}
+              options={[
+                { value: 'existing_outbound', label: '已存在出站规则' },
+                { value: 'registered_client', label: '已注册 Client 节点' },
+              ]}
+              onChange={(value: XUIRoutingActionForm['target_mode']) =>
+                update({
+                  target_mode: value,
+                  outbound_tag: value === 'registered_client' ? outboundForm.tag : form.outbound_tag,
+                  balancer_tag: '',
+                })}
+            />
           </Col>
+          {form.target_mode === 'existing_outbound' ? (
+            <Col xs={24} md={balancers.length ? 12 : 24}>
+              <Text type="secondary">Outbound Tag</Text>
+              <Select
+                allowClear
+                showSearch
+                style={{ width: '100%' }}
+                value={form.outbound_tag || undefined}
+                options={outbounds.filter((item) => item.tag).map((item) => ({ value: item.tag as string, label: item.tag as string }))}
+                onChange={(value) => update({ outbound_tag: value || '', balancer_tag: '' })}
+              />
+            </Col>
+          ) : null}
+          {form.target_mode === 'existing_outbound' && balancers.length ? (
+            <Col xs={24} md={12}>
+              <Text type="secondary">Balancer Tag</Text>
+              <Select
+                allowClear
+                showSearch
+                style={{ width: '100%' }}
+                value={form.balancer_tag || undefined}
+                options={balancers.filter((item) => item.tag).map((item) => ({ value: item.tag as string, label: item.tag as string }))}
+                onChange={(value) => update({ balancer_tag: value || '', outbound_tag: value ? '' : form.outbound_tag })}
+              />
+            </Col>
+          ) : null}
+          {form.target_mode === 'registered_client' ? (
+            <Col xs={24}>
+              {renderOutboundActionForm({
+                form: outboundForm,
+                agents,
+                targetAgentID,
+                currentOverview,
+                sourceOverview,
+                sourceLoading,
+                onChange: updateOutbound,
+              })}
+            </Col>
+          ) : null}
           <Col xs={24}>
             <div className="switch-row">
               <span>提交后重启 Xray</span>

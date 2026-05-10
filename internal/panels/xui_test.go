@@ -503,6 +503,177 @@ func TestXUIExecuteAddRoutingRuleForcesRestart(t *testing.T) {
 	}
 }
 
+func TestXUIExecuteUpsertRoutingRuleAddsOutboundAndRuleOnce(t *testing.T) {
+	client, err := NewXUIClient(config.XUIConfig{
+		Enabled:  true,
+		BaseURL:  "https://xui.local",
+		Username: "admin",
+		Password: "pass",
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewXUIClient: %v", err)
+	}
+
+	restartCount := 0
+	updateCount := 0
+	var updatedConfig map[string]any
+	client.client = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/login":
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
+			case "/panel/api/xray/":
+				wrapper, err := json.Marshal(map[string]any{
+					"xraySetting": map[string]any{
+						"outbounds": []map[string]any{{"tag": "direct", "protocol": "freedom"}},
+						"routing":   map[string]any{"rules": []map[string]any{}},
+					},
+				})
+				if err != nil {
+					t.Fatalf("marshal wrapper: %v", err)
+				}
+				return jsonResponse(t, req, map[string]any{"success": true, "obj": string(wrapper)}), nil
+			case "/panel/api/xray/update":
+				updateCount++
+				if err := req.ParseForm(); err != nil {
+					t.Fatalf("ParseForm: %v", err)
+				}
+				if err := json.Unmarshal([]byte(req.Form.Get("xraySetting")), &updatedConfig); err != nil {
+					t.Fatalf("decode updated xraySetting: %v", err)
+				}
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "updated"}), nil
+			case "/panel/api/server/restartXrayService":
+				restartCount++
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "restarted"}), nil
+			default:
+				t.Fatalf("unexpected path: %s", req.URL.Path)
+				return nil, nil
+			}
+		}),
+	}
+
+	result, err := client.ExecuteAction(context.Background(), model.XUIAction{
+		Kind: model.XUIActionUpsertRoutingRule,
+		Payload: map[string]any{
+			"outbound": map[string]any{
+				"tag":      "relay-my",
+				"protocol": "vless",
+				"settings": map[string]any{},
+			},
+			"rule": map[string]any{
+				"type":        "field",
+				"inboundTag":  []string{"in-a"},
+				"outboundTag": "relay-my",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteAction: %v", err)
+	}
+	if result["rule_index"] != 1 || result["outbound_added"] != true || result["restarted"] != true {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+	if updateCount != 1 || restartCount != 1 {
+		t.Fatalf("expected one template update and one restart, got update=%d restart=%d", updateCount, restartCount)
+	}
+	outbounds, ok := updatedConfig["outbounds"].([]any)
+	if !ok || len(outbounds) != 2 {
+		t.Fatalf("expected appended outbound: %#v", updatedConfig["outbounds"])
+	}
+	routing := updatedConfig["routing"].(map[string]any)
+	rules := routing["rules"].([]any)
+	if len(rules) != 1 {
+		t.Fatalf("expected appended rule: %#v", rules)
+	}
+}
+
+func TestXUIExecuteUpsertRoutingRuleUpdatesExistingRule(t *testing.T) {
+	client, err := NewXUIClient(config.XUIConfig{
+		Enabled:  true,
+		BaseURL:  "https://xui.local",
+		Username: "admin",
+		Password: "pass",
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewXUIClient: %v", err)
+	}
+
+	var updatedConfig map[string]any
+	client.client = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/login":
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
+			case "/panel/api/xray/":
+				wrapper, err := json.Marshal(map[string]any{
+					"xraySetting": map[string]any{
+						"outbounds": []map[string]any{{"tag": "direct", "protocol": "freedom"}, {"tag": "relay-us", "protocol": "freedom"}},
+						"routing": map[string]any{"rules": []map[string]any{
+							{"type": "field", "inboundTag": []string{"in-a"}, "outboundTag": "direct"},
+							{"type": "field", "inboundTag": []string{"in-b"}, "outboundTag": "direct"},
+						}},
+					},
+				})
+				if err != nil {
+					t.Fatalf("marshal wrapper: %v", err)
+				}
+				return jsonResponse(t, req, map[string]any{"success": true, "obj": string(wrapper)}), nil
+			case "/panel/api/xray/update":
+				if err := req.ParseForm(); err != nil {
+					t.Fatalf("ParseForm: %v", err)
+				}
+				if err := json.Unmarshal([]byte(req.Form.Get("xraySetting")), &updatedConfig); err != nil {
+					t.Fatalf("decode updated xraySetting: %v", err)
+				}
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "updated"}), nil
+			case "/panel/api/server/restartXrayService":
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "restarted"}), nil
+			default:
+				t.Fatalf("unexpected path: %s", req.URL.Path)
+				return nil, nil
+			}
+		}),
+	}
+
+	result, err := client.ExecuteAction(context.Background(), model.XUIAction{
+		Kind: model.XUIActionUpsertRoutingRule,
+		Payload: map[string]any{
+			"rule_index": 2,
+			"outbound": map[string]any{
+				"tag":      "relay-us",
+				"protocol": "freedom",
+			},
+			"rule": map[string]any{
+				"type":        "field",
+				"inboundTag":  []string{"in-b"},
+				"outboundTag": "relay-us",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteAction: %v", err)
+	}
+	if result["updated"] != true || result["outbound_added"] != false {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+	outbounds := updatedConfig["outbounds"].([]any)
+	if len(outbounds) != 2 {
+		t.Fatalf("expected existing outbound to be reused, got %#v", outbounds)
+	}
+	routing := updatedConfig["routing"].(map[string]any)
+	rules := routing["rules"].([]any)
+	got := rules[1].(map[string]any)
+	if got["outboundTag"] != "relay-us" {
+		t.Fatalf("expected rule #2 to point relay-us, got %#v", got)
+	}
+	first := rules[0].(map[string]any)
+	if first["outboundTag"] != "direct" {
+		t.Fatalf("expected rule #1 unchanged, got %#v", first)
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {

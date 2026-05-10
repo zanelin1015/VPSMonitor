@@ -251,7 +251,7 @@ export default function App() {
   const [agentLogsError, setAgentLogsError] = useState('')
   const [xuiActionModalOpen, setXUIActionModalOpen] = useState(false)
   const [xuiActionSaving, setXUIActionSaving] = useState(false)
-  const [xuiActionKind, setXUIActionKind] = useState('add_outbound')
+  const [xuiActionKind, setXUIActionKind] = useState('upsert_routing_rule')
   const [outboundActionForm, setOutboundActionForm] = useState<XUIOutboundActionForm>(() => defaultOutboundActionForm())
   const [routingActionForm, setRoutingActionForm] = useState<XUIRoutingActionForm>(() => defaultRoutingActionForm())
   const [outboundSourceOverview, setOutboundSourceOverview] = useState<XUIOverview | null>(null)
@@ -1808,6 +1808,8 @@ export default function App() {
             onToggleTopology={() => {
               if (topologyVisible) {
                 setTopologyVisible(false)
+                setSelectedAgentId('')
+                setActiveTabKey('overview')
               } else {
                 openTopologyPanel()
               }
@@ -1835,7 +1837,13 @@ export default function App() {
                     selectedAgentId,
                     agents: dashboardView.agents,
                     chains: filteredChains,
-                    onSelectAgent: openAgentDetailPanel,
+                    onSelectAgent: (agentID) => {
+                      if (!agentID) {
+                        setSelectedAgentId('')
+                        return
+                      }
+                      openAgentDetailPanel(agentID)
+                    },
                     onJumpNode: jumpToNode,
                     canOpenXUI: Boolean(managedConfig?.xui?.base_url),
                     onOpenXUI: () => {
@@ -1872,6 +1880,9 @@ export default function App() {
                     <Title level={4}>{selectedAgent.agent_name || selectedAgent.agent_id}</Title>
                   </div>
                   <Space wrap>
+                    <Button onClick={returnHome}>
+                      返回首页
+                    </Button>
                     {selectedAgent.summary.last_collection_err ? (
                       <Tag
                         color="orange"
@@ -1940,8 +1951,9 @@ export default function App() {
                             type="primary"
                             disabled={!selectedAgentId}
                             onClick={() => {
-                              setXUIActionKind('add_outbound')
+                              setXUIActionKind('upsert_routing_rule')
                               setOutboundActionForm(defaultOutboundActionForm())
+                              setRoutingActionForm(defaultRoutingActionForm())
                               setXUIActionModalOpen(true)
                             }}
                           >
@@ -2227,6 +2239,15 @@ export default function App() {
     window.setTimeout(() => {
       document.getElementById('topology-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }, 80)
+  }
+
+  function returnHome() {
+    setTopologyVisible(false)
+    setSelectedAgentId('')
+    setActiveTabKey('overview')
+    setSelectedOutboundTag('')
+    setSelectedRuleIndex(null)
+    setSelectedNodeAnchor('')
   }
 
   function openAgentDetailPanel(agentID: string, tabKey = 'overview') {
