@@ -1273,6 +1273,7 @@ function createEmptyManagedConfig(agentID: string, agentName?: string): ManagedA
     xui: {
       enabled: false,
       base_url: '',
+      db_path: '',
       username: '',
       password: '',
       two_factor_code: '',

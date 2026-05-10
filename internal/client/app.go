@@ -222,6 +222,7 @@ func (a *App) xuiClientFor(cfg config.XUIConfig) (*panels.XUIClient, error) {
 func xuiClientCacheKey(cfg config.XUIConfig) string {
 	return strings.Join([]string{
 		cfg.BaseURL,
+		cfg.DBPath,
 		cfg.Username,
 		cfg.Password,
 		cfg.TwoFactorCode,

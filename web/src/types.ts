@@ -86,6 +86,7 @@ export interface XUIClientBillingConfig {
 export interface XUIConfig {
   enabled: boolean
   base_url?: string
+  db_path?: string
   username?: string
   password?: string
   two_factor_code?: string

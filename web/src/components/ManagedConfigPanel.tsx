@@ -313,7 +313,11 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
           </Col>
           <Col xs={24} md={12}>
             <Text type="secondary">Base URL</Text>
-            <Input value={managedConfig.xui.base_url || ''} placeholder="https://127.0.0.1:2053" onChange={(event) => onXUIChange({ base_url: event.target.value })} />
+            <Input value={managedConfig.xui.base_url || ''} placeholder="用于打开面板/执行操作，例如 https://127.0.0.1:2053/secret/" onChange={(event) => onXUIChange({ base_url: event.target.value })} />
+          </Col>
+          <Col xs={24} md={12}>
+            <Text type="secondary">本地 x-ui 数据库路径</Text>
+            <Input value={managedConfig.xui.db_path || ''} placeholder="默认自动读取 /etc/x-ui/x-ui.db" onChange={(event) => onXUIChange({ db_path: event.target.value })} />
           </Col>
           <Col xs={24} md={12}>
             <Text type="secondary">用户名</Text>
@@ -438,4 +442,3 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
     </Space>
   )
 }
-

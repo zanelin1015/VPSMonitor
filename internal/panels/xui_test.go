@@ -3,9 +3,11 @@ package panels
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"net/http"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -135,6 +137,62 @@ func TestXUICollectReusesSessionCookie(t *testing.T) {
 	}
 }
 
+func TestXUICollectNormalizesPanelBaseURLBeforeLogin(t *testing.T) {
+	client, err := NewXUIClient(config.XUIConfig{
+		Enabled:  true,
+		BaseURL:  "https://xui.local/secret/panel/inbounds",
+		Username: "admin",
+		Password: "pass",
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewXUIClient: %v", err)
+	}
+
+	loginCount := 0
+	client.client = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/secret/login":
+				loginCount++
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
+			case "/secret/panel/api/server/status":
+				return jsonResponse(t, req, map[string]any{
+					"success": true,
+					"obj": map[string]any{
+						"cpu":  1,
+						"mem":  map[string]any{"current": 1, "total": 2},
+						"xray": map[string]any{"state": "running"},
+					},
+				}), nil
+			case "/secret/panel/api/inbounds/list":
+				return jsonResponse(t, req, map[string]any{"success": true, "obj": []map[string]any{}}), nil
+			case "/secret/panel/api/server/getConfigJson":
+				return jsonResponse(t, req, map[string]any{
+					"success": true,
+					"obj":     map[string]any{"outbounds": []map[string]any{}, "routing": map[string]any{"rules": []map[string]any{}}},
+				}), nil
+			case "/secret/panel/xray/getOutboundsTraffic":
+				return jsonResponse(t, req, map[string]any{"success": true, "obj": []map[string]any{}}), nil
+			default:
+				t.Fatalf("unexpected path: %s", req.URL.Path)
+				return nil, nil
+			}
+		}),
+	}
+
+	snapshot := client.Collect(context.Background())
+	if snapshot.Error != "" {
+		t.Fatalf("Collect returned error: %s", snapshot.Error)
+	}
+	if loginCount != 1 {
+		t.Fatalf("expected one login, got %d", loginCount)
+	}
+	if snapshot.BaseURL != "https://xui.local/secret" {
+		t.Fatalf("unexpected normalized base URL: %s", snapshot.BaseURL)
+	}
+}
+
 func TestXUICollectReloginsAfterAuthFailure(t *testing.T) {
 	client, err := NewXUIClient(config.XUIConfig{
 		Enabled:  true,
@@ -172,6 +230,90 @@ func TestXUICollectReloginsAfterAuthFailure(t *testing.T) {
 	}
 	if loginCount != 2 {
 		t.Fatalf("expected login then relogin, got %d", loginCount)
+	}
+}
+
+func TestXUICollectReloginsAfterAPI404(t *testing.T) {
+	client, err := NewXUIClient(config.XUIConfig{
+		Enabled:  true,
+		BaseURL:  "https://xui.local",
+		Username: "admin",
+		Password: "pass",
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewXUIClient: %v", err)
+	}
+
+	loginCount := 0
+	statusCount := 0
+	client.client = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: xuiCollectTransport(t, &loginCount, func(req *http.Request) *http.Response {
+			if req.URL.Path == "/panel/api/server/status" {
+				statusCount++
+				if statusCount == 1 {
+					return &http.Response{
+						StatusCode: http.StatusNotFound,
+						Header:     make(http.Header),
+						Body:       io.NopCloser(bytes.NewReader([]byte("404 page not found"))),
+						Request:    req,
+					}
+				}
+			}
+			return nil
+		}),
+	}
+
+	snapshot := client.Collect(context.Background())
+	if snapshot.Error != "" {
+		t.Fatalf("Collect returned error: %s", snapshot.Error)
+	}
+	if loginCount != 2 {
+		t.Fatalf("expected login then relogin after API 404, got %d", loginCount)
+	}
+}
+
+func TestXUICollectUsesLocalDBWithoutLogin(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "x-ui.db")
+	createLocalXUITestDB(t, dbPath)
+
+	client, err := NewXUIClient(config.XUIConfig{
+		Enabled: true,
+		BaseURL: "https://xui.local/secret/",
+		DBPath:  dbPath,
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewXUIClient: %v", err)
+	}
+	client.client = &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			t.Fatalf("local DB collection should not perform HTTP request: %s", req.URL.Path)
+			return nil, nil
+		}),
+	}
+
+	snapshot := client.Collect(context.Background())
+	if snapshot.Error != "" {
+		t.Fatalf("Collect returned error: %s", snapshot.Error)
+	}
+	if got := len(snapshot.Inbounds); got != 1 {
+		t.Fatalf("expected 1 inbound, got %d", got)
+	}
+	if got := len(snapshot.Outbounds); got != 1 {
+		t.Fatalf("expected 1 outbound, got %d", got)
+	}
+	if got := len(snapshot.RoutingRules); got != 1 {
+		t.Fatalf("expected 1 route rule, got %d", got)
+	}
+	if got := len(snapshot.OutboundTraffic); got != 1 {
+		t.Fatalf("expected 1 outbound traffic row, got %d", got)
+	}
+	if snapshot.Inbounds[0]["remark"] != "local-hk" {
+		t.Fatalf("unexpected inbound: %#v", snapshot.Inbounds[0])
+	}
+	stats, ok := snapshot.Inbounds[0]["clientStats"].([]map[string]any)
+	if !ok || len(stats) != 1 || stats[0]["email"] != "alice" {
+		t.Fatalf("unexpected client stats: %#v", snapshot.Inbounds[0]["clientStats"])
 	}
 }
 
@@ -253,6 +395,48 @@ func TestXUIExecuteAddOutbound(t *testing.T) {
 	got, ok := outbounds[1].(map[string]any)
 	if !ok || got["tag"] != "relay-hk" {
 		t.Fatalf("expected appended relay-hk outbound, got %#v", outbounds[1])
+	}
+}
+
+func createLocalXUITestDB(t *testing.T, dbPath string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+	stmts := []string{
+		`CREATE TABLE inbounds (
+			id INTEGER PRIMARY KEY, user_id INTEGER, up INTEGER, down INTEGER, total INTEGER, all_time INTEGER,
+			remark TEXT, enable BOOLEAN, expiry_time INTEGER, traffic_reset TEXT, last_traffic_reset_time INTEGER,
+			listen TEXT, port INTEGER, protocol TEXT, settings TEXT, stream_settings TEXT, tag TEXT, sniffing TEXT
+		)`,
+		`CREATE TABLE client_traffics (
+			id INTEGER PRIMARY KEY, inbound_id INTEGER, enable BOOLEAN, email TEXT, up INTEGER, down INTEGER,
+			all_time INTEGER, expiry_time INTEGER, total INTEGER, reset INTEGER, last_online INTEGER
+		)`,
+		`CREATE TABLE outbound_traffics (id INTEGER PRIMARY KEY, tag TEXT, up INTEGER, down INTEGER, total INTEGER)`,
+		`CREATE TABLE settings (id INTEGER PRIMARY KEY, key TEXT, value TEXT)`,
+		`INSERT INTO inbounds
+			(id, user_id, up, down, total, all_time, remark, enable, expiry_time, traffic_reset, last_traffic_reset_time,
+			 listen, port, protocol, settings, stream_settings, tag, sniffing)
+			VALUES
+			(1, 1, 10, 20, 0, 30, 'local-hk', 1, 0, 'never', 0, '', 443, 'vless',
+			 '{"clients":[{"id":"uuid-1","email":"alice","enable":true}]}',
+			 '{"network":"tcp","security":"none"}', 'inbound-443', '{}')`,
+		`INSERT INTO client_traffics
+			(id, inbound_id, enable, email, up, down, all_time, expiry_time, total, reset, last_online)
+			VALUES (1, 1, 1, 'alice', 1, 2, 3, 0, 0, 0, 123456)`,
+		`INSERT INTO outbound_traffics (id, tag, up, down, total) VALUES (1, 'direct', 5, 6, 11)`,
+	}
+	configJSON := `{"outbounds":[{"tag":"direct","protocol":"freedom"}],"routing":{"rules":[{"outboundTag":"direct"}]}}`
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec schema/data: %v\n%s", err, stmt)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO settings (id, key, value) VALUES (1, 'xrayTemplateConfig', ?)`, configJSON); err != nil {
+		t.Fatalf("insert xray template: %v", err)
 	}
 }
 

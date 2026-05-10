@@ -45,6 +45,7 @@ type ClientConfig struct {
 type XUIConfig struct {
 	Enabled       bool   `json:"enabled"`
 	BaseURL       string `json:"base_url"`
+	DBPath        string `json:"db_path"`
 	Username      string `json:"username"`
 	Password      string `json:"password"`
 	TwoFactorCode string `json:"two_factor_code"`
