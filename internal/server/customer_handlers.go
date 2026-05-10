@@ -43,6 +43,12 @@ func (a *App) handleCustomer(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.handleCustomerOverview(w, r)
+	case "style":
+		if r.Method != http.MethodPut {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		a.handleCustomerStyleUpdate(w, r)
 	default:
 		if strings.HasPrefix(path, "assignments/") {
 			a.handleCustomerAssignmentRoute(w, r, strings.Split(path, "/"))
@@ -95,6 +101,24 @@ func (a *App) handleCustomerOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (a *App) handleCustomerStyleUpdate(w http.ResponseWriter, r *http.Request) {
+	user, _, ok := a.requireCustomer(w, r)
+	if !ok {
+		return
+	}
+	var req model.CustomerStyleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode style request: %v", err))
+		return
+	}
+	updated, err := a.store.UpdateCustomerStyle(user.ID, req.StyleCode)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.CustomerLoginResponse{User: updated})
 }
 
 func (a *App) handleCustomerAssignmentRoute(w http.ResponseWriter, r *http.Request, parts []string) {

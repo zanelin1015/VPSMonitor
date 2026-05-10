@@ -79,7 +79,6 @@ func (a *App) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", a.handleHealth)
 	if a.demoDataSource != nil {
-		mux.HandleFunc("/api/v1/customer/", a.handleCustomer)
 		mux.Handle("/api/", a.demoDataSource)
 		mux.Handle("/", webui.NewHandler())
 		return mux

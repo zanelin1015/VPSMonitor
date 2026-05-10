@@ -6,6 +6,7 @@ type CustomerUser struct {
 	ID          int64     `json:"id"`
 	Username    string    `json:"username"`
 	DisplayName string    `json:"display_name,omitempty"`
+	StyleCode   string    `json:"style_code,omitempty"`
 	Enabled     bool      `json:"enabled"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
@@ -63,6 +64,10 @@ type CustomerAdminView struct {
 
 type CustomerRemarkRequest struct {
 	Remark string `json:"remark"`
+}
+
+type CustomerStyleRequest struct {
+	StyleCode string `json:"style_code"`
 }
 
 type CustomerLinkStep struct {

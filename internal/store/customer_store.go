@@ -12,7 +12,7 @@ import (
 
 func (s *SQLiteStore) ListCustomers() ([]model.CustomerAdminView, error) {
 	rows, err := s.db.Query(`
-		SELECT id, username, display_name, enabled, created_at, updated_at
+		SELECT id, username, display_name, style_code, enabled, created_at, updated_at
 		FROM customer_accounts
 		ORDER BY created_at DESC, id DESC
 	`)
@@ -47,7 +47,7 @@ func (s *SQLiteStore) GetCustomer(id int64) (model.CustomerAdminView, bool, erro
 		return model.CustomerAdminView{}, false, nil
 	}
 	row := s.db.QueryRow(`
-		SELECT id, username, display_name, enabled, created_at, updated_at
+		SELECT id, username, display_name, style_code, enabled, created_at, updated_at
 		FROM customer_accounts
 		WHERE id = ?
 	`, id)
@@ -79,8 +79,8 @@ func (s *SQLiteStore) CreateCustomer(req model.CustomerAccountRequest) (model.Cu
 	}
 	now := time.Now().UTC()
 	result, err := s.db.Exec(`
-		INSERT INTO customer_accounts (username, password_hash, display_name, enabled, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO customer_accounts (username, password_hash, display_name, style_code, enabled, created_at, updated_at)
+		VALUES (?, ?, ?, '', ?, ?, ?)
 	`, username, hash, displayName, boolInt(enabled), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
 	if err != nil {
 		return model.CustomerAdminView{}, fmt.Errorf("create customer: %w", err)
@@ -187,10 +187,10 @@ func (s *SQLiteStore) AuthenticateCustomer(username, password string) (model.Cus
 	var enabled int
 	var createdAtText, updatedAtText string
 	err := s.db.QueryRow(`
-		SELECT id, username, password_hash, display_name, enabled, created_at, updated_at
+		SELECT id, username, password_hash, display_name, style_code, enabled, created_at, updated_at
 		FROM customer_accounts
 		WHERE username = ?
-	`, username).Scan(&user.ID, &user.Username, &passwordHash, &user.DisplayName, &enabled, &createdAtText, &updatedAtText)
+	`, username).Scan(&user.ID, &user.Username, &passwordHash, &user.DisplayName, &user.StyleCode, &enabled, &createdAtText, &updatedAtText)
 	if err == sql.ErrNoRows {
 		return model.CustomerUser{}, false, nil
 	}
@@ -248,12 +248,12 @@ func (s *SQLiteStore) ValidateCustomerSession(token string) (model.CustomerUser,
 	)
 	tokenHash := sessionTokenHash(token)
 	err := s.db.QueryRow(`
-		SELECT c.id, c.username, c.display_name, c.enabled, c.created_at, c.updated_at,
+		SELECT c.id, c.username, c.display_name, c.style_code, c.enabled, c.created_at, c.updated_at,
 		       s.created_at, s.expires_at
 		FROM customer_sessions s
 		JOIN customer_accounts c ON c.id = s.customer_id
 		WHERE s.token_hash = ?
-	`, tokenHash).Scan(&user.ID, &user.Username, &user.DisplayName, &enabled, &createdAtText, &updatedAtText, &sCreatedAtText, &sExpiresAtText)
+	`, tokenHash).Scan(&user.ID, &user.Username, &user.DisplayName, &user.StyleCode, &enabled, &createdAtText, &updatedAtText, &sCreatedAtText, &sExpiresAtText)
 	if err == sql.ErrNoRows {
 		return model.CustomerUser{}, model.CustomerSession{}, false, nil
 	}
@@ -448,6 +448,33 @@ func (s *SQLiteStore) UpdateCustomerAssignmentRemark(customerID, assignmentID in
 	return assignment, nil
 }
 
+func (s *SQLiteStore) UpdateCustomerStyle(customerID int64, styleCode string) (model.CustomerUser, error) {
+	styleCode = strings.TrimSpace(styleCode)
+	if len(styleCode) > 64*1024 {
+		return model.CustomerUser{}, fmt.Errorf("style code is too long")
+	}
+	now := time.Now().UTC()
+	result, err := s.db.Exec(`
+		UPDATE customer_accounts
+		SET style_code = ?, updated_at = ?
+		WHERE id = ? AND enabled = 1
+	`, styleCode, now.Format(time.RFC3339Nano), customerID)
+	if err != nil {
+		return model.CustomerUser{}, fmt.Errorf("update customer style: %w", err)
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		return model.CustomerUser{}, fmt.Errorf("customer not found")
+	}
+	customer, found, err := s.GetCustomer(customerID)
+	if err != nil {
+		return model.CustomerUser{}, err
+	}
+	if !found {
+		return model.CustomerUser{}, fmt.Errorf("customer not found")
+	}
+	return customer.CustomerUser, nil
+}
+
 func normalizeCustomerAccountRequest(req model.CustomerAccountRequest, creating bool) (string, string, bool, error) {
 	username := strings.TrimSpace(req.Username)
 	if username == "" {
@@ -511,7 +538,7 @@ func scanCustomerUser(scanner rowScanner) (model.CustomerUser, error) {
 		createdAtText string
 		updatedAtText string
 	)
-	if err := scanner.Scan(&user.ID, &user.Username, &user.DisplayName, &enabled, &createdAtText, &updatedAtText); err != nil {
+	if err := scanner.Scan(&user.ID, &user.Username, &user.DisplayName, &user.StyleCode, &enabled, &createdAtText, &updatedAtText); err != nil {
 		return model.CustomerUser{}, err
 	}
 	user.Enabled = enabled != 0

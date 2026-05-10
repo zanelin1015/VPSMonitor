@@ -131,6 +131,7 @@ export interface CustomerUser {
   id: number
   username: string
   display_name?: string
+  style_code?: string
   enabled: boolean
   created_at: string
   updated_at: string

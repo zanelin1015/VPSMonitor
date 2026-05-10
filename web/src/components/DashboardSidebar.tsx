@@ -251,7 +251,7 @@ function AgentRailItem(props: {
   const displayStatus = agentDisplayStatus(item)
   const statusLevel = displayStatus.level
   const displaySortOrder = item.sort_order || index + 1
-  const addressText = item.summary.public_ipv4 || item.summary.observed_ip || item.summary.hostname || item.agent_id
+  const addressText = item.summary.observed_ip || item.summary.public_ipv4 || item.summary.hostname || item.agent_id
   const countryCode = agentCountryCode(item)
   const locationText = formatAgentLocation(item, countryCode)
   const tags = (item.tags || []).length ? item.tags || [] : ['未分组']

@@ -536,7 +536,7 @@ function buildExitReason(agent?: DashboardAgentView, outbound?: ClientChainStep,
   if (unresolvedReason?.includes('did not match')) {
     return outbound?.target ? `未匹配到下一跳，按 ${outbound.target} 作为出口` : '未匹配到下一跳，按当前 VPS 出口'
   }
-  return outbound?.target || agent?.summary.public_ipv4 || '出口由最后一跳决定'
+  return outbound?.target || agent?.summary.observed_ip || agent?.summary.public_ipv4 || '出口由最后一跳决定'
 }
 
 function uniqueCountries(rows: CNFlowRow[]): string[] {

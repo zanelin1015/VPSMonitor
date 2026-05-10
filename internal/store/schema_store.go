@@ -43,6 +43,7 @@ func (s *SQLiteStore) init() error {
 			username TEXT NOT NULL COLLATE NOCASE UNIQUE,
 			password_hash TEXT NOT NULL,
 			display_name TEXT NOT NULL DEFAULT '',
+			style_code TEXT NOT NULL DEFAULT '',
 			enabled INTEGER NOT NULL DEFAULT 1,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
@@ -222,6 +223,9 @@ func (s *SQLiteStore) init() error {
 		return err
 	}
 	if err := s.ensureColumn("admin_accounts", "avatar_url", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("customer_accounts", "style_code", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	return nil

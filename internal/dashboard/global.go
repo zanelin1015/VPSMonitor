@@ -166,7 +166,7 @@ func lookupAgentGeo(summary model.VPSSummary, resolver *topologyResolver) *model
 	if resolver == nil {
 		return nil
 	}
-	for _, address := range []string{summary.PublicIPv4, summary.PublicIPv6, summary.ObservedIP} {
+	for _, address := range []string{summary.ObservedIP, summary.PublicIPv4, summary.PublicIPv6} {
 		if address == "" {
 			continue
 		}
@@ -186,7 +186,7 @@ func lookupOverviewGeo(overview *model.XUIOverview, resolver *topologyResolver) 
 	if overview == nil || resolver == nil {
 		return nil
 	}
-	candidates := []string{overview.BaseURL, overview.Summary.PublicIPv4, overview.Summary.PublicIPv6, overview.Summary.ObservedIP}
+	candidates := []string{overview.Summary.ObservedIP, overview.Summary.PublicIPv4, overview.Summary.PublicIPv6, overview.BaseURL}
 	for _, value := range candidates {
 		if value == "" {
 			continue
@@ -234,7 +234,7 @@ func terminalAgentExitGeo(agentView model.DashboardAgentView, overview *model.XU
 			summary.Hostname = overview.Summary.Hostname
 		}
 	}
-	for _, address := range []string{summary.PublicIPv4, summary.PublicIPv6, summary.ObservedIP} {
+	for _, address := range []string{summary.ObservedIP, summary.PublicIPv4, summary.PublicIPv6} {
 		if address == "" {
 			continue
 		}

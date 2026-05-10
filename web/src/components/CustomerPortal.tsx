@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, App as AntdApp, Button, Card, Empty, Input, Space, Spin, Statistic, Tag, Typography } from 'antd'
-import { CopyOutlined, LogoutOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons'
+import { Alert, App as AntdApp, Button, Card, Empty, Input, Modal, QRCode, Space, Spin, Statistic, Tag, Typography } from 'antd'
+import { BgColorsOutlined, CopyOutlined, LogoutOutlined, QrcodeOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons'
 
-import type { CustomerAuthResponse, CustomerLinkView, CustomerOverviewResponse, CustomerUser } from '../types'
+import type { CustomerAuthResponse, CustomerLinkStep, CustomerLinkView, CustomerOverviewResponse, CustomerUser } from '../types'
 import { fetchJSON, formatDateTime } from '../lib/appHelpers'
 import { LoginScreen } from './LoginScreen'
 import { VisualEffects } from './VisualEffects'
@@ -15,6 +15,10 @@ export function CustomerPortal() {
   const [loginLoading, setLoginLoading] = useState(false)
   const [overviewLoading, setOverviewLoading] = useState(false)
   const [savingRemarkID, setSavingRemarkID] = useState<number | null>(null)
+  const [styleModalOpen, setStyleModalOpen] = useState(false)
+  const [styleSaving, setStyleSaving] = useState(false)
+  const [styleDraft, setStyleDraft] = useState('')
+  const [qrLink, setQrLink] = useState<CustomerLinkView | null>(null)
   const [user, setUser] = useState<CustomerUser | null>(null)
   const [overview, setOverview] = useState<CustomerOverviewResponse | null>(null)
   const [loginForm, setLoginForm] = useState({ username: '', password: '' })
@@ -23,6 +27,12 @@ export function CustomerPortal() {
   useEffect(() => {
     void loadSession()
   }, [])
+
+  useEffect(() => {
+    applyCustomerStyle(user?.style_code || '')
+    setStyleDraft(user?.style_code || '')
+    return () => applyCustomerStyle('')
+  }, [user?.style_code])
 
   const exitCountryCount = useMemo(() => {
     const values = new Set<string>()
@@ -115,14 +125,32 @@ export function CustomerPortal() {
     }
   }
 
+  async function saveCustomerStyle() {
+    setStyleSaving(true)
+    try {
+      const data = await fetchJSON<CustomerAuthResponse>('/api/v1/customer/style', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ style_code: styleDraft }),
+      })
+      setUser(data.user)
+      setStyleModalOpen(false)
+      message.success(styleDraft.trim() ? '页面样式已保存' : '已恢复默认页面样式')
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '保存页面样式失败')
+    } finally {
+      setStyleSaving(false)
+    }
+  }
+
   async function copyImportURL(link: CustomerLinkView) {
     if (!link.import_url) {
-      message.warning('当前链路没有可复制的客户端信息')
+      message.warning('当前链路没有可复制的客户端链接')
       return
     }
     try {
       await navigator.clipboard.writeText(link.import_url)
-      message.success('客户端信息已复制')
+      message.success('客户端链接已复制')
     } catch {
       message.error('复制失败，请手动复制')
     }
@@ -166,10 +194,14 @@ export function CustomerPortal() {
             <div className="eyebrow">客户链路中心</div>
             <Title level={1}>{user.display_name || user.username}</Title>
             <Paragraph className="hero-copy">
-              这里只展示已分配给你的链路、出口国家和出口 IP。内部转发 IP 与管理配置不会在客户侧暴露。
+              这里只展示已分配给你的拓扑图、出口国家和出口 IP。内部转发 IP 与管理配置不会在客户侧暴露。
             </Paragraph>
           </div>
           <Space wrap>
+            <Button icon={<BgColorsOutlined />} onClick={() => {
+              setStyleDraft(user.style_code || '')
+              setStyleModalOpen(true)
+            }}>页面样式</Button>
             <Button icon={<ReloadOutlined />} loading={overviewLoading} onClick={() => void loadOverview()}>刷新</Button>
             <Button icon={<LogoutOutlined />} onClick={() => void logout()}>退出</Button>
           </Space>
@@ -211,21 +243,31 @@ export function CustomerPortal() {
 
                 {link.unresolved_reason ? <Alert type="warning" showIcon message="链路解析提示" description={link.unresolved_reason} /> : null}
 
-                <div className="customer-chain-line">
-                  {link.steps.map((step, index) => (
-                    <span key={`${step.role}-${step.label}-${index}`} className={`customer-chain-step customer-chain-step-${step.role}`}>
-                      {step.label}
-                    </span>
-                  ))}
-                </div>
+                <CustomerTopologyMap steps={link.steps} />
 
-                <div className="customer-link-grid">
+                <div className="customer-link-grid customer-link-grid-with-qr">
                   <div>
-                    <Text type="secondary">客户客户端信息</Text>
-                    <Input.TextArea value={link.import_url || '当前链路暂无可复制的客户端信息'} readOnly autoSize={{ minRows: 2, maxRows: 4 }} />
-                    <Button style={{ marginTop: 8 }} type="primary" icon={<CopyOutlined />} disabled={!link.import_url} onClick={() => void copyImportURL(link)}>
-                      复制客户端信息
-                    </Button>
+                    <Text type="secondary">客户客户端链接</Text>
+                    <Input.TextArea value={link.import_url || '当前链路暂无可复制的客户端链接'} readOnly autoSize={{ minRows: 2, maxRows: 4 }} />
+                    <Space wrap style={{ marginTop: 8 }}>
+                      <Button type="primary" icon={<CopyOutlined />} disabled={!link.import_url} onClick={() => void copyImportURL(link)}>
+                        复制链接
+                      </Button>
+                      <Button icon={<QrcodeOutlined />} disabled={!link.import_url} onClick={() => setQrLink(link)}>
+                        查看二维码
+                      </Button>
+                    </Space>
+                  </div>
+                  <div className="customer-qr-inline">
+                    <Text type="secondary">二维码</Text>
+                    {link.import_url ? (
+                      <button type="button" className="customer-qr-button" onClick={() => setQrLink(link)}>
+                        <QRCode value={link.import_url} bordered={false} size={116} />
+                        <span>点击放大</span>
+                      </button>
+                    ) : (
+                      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无二维码" />
+                    )}
                   </div>
                   <div>
                     <Text type="secondary">我的备注</Text>
@@ -246,6 +288,119 @@ export function CustomerPortal() {
           </Space>
         </Spin>
       </div>
+
+      <Modal
+        title="我的页面样式"
+        open={styleModalOpen}
+        onCancel={() => setStyleModalOpen(false)}
+        width={820}
+        footer={[
+          <Button key="reset" onClick={() => setStyleDraft('')}>恢复默认</Button>,
+          <Button key="cancel" onClick={() => setStyleModalOpen(false)}>取消</Button>,
+          <Button key="save" type="primary" loading={styleSaving} onClick={() => void saveCustomerStyle()}>保存样式</Button>,
+        ]}
+      >
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Alert
+            type="info"
+            showIcon
+            message="只影响你自己的客户页面"
+            description="可以填写 CSS，或完整的 <style> / <script> 片段；留空则使用系统默认页面样式。"
+          />
+          <Input.TextArea
+            value={styleDraft}
+            onChange={(event) => setStyleDraft(event.target.value)}
+            autoSize={{ minRows: 12, maxRows: 22 }}
+            placeholder={`<style>\n.customer-page-shell { --customer-card-radius: 28px; }\n.customer-hero { background: rgba(255,255,255,.88); }\n</style>`}
+          />
+        </Space>
+      </Modal>
+
+      <Modal
+        title={qrLink ? `${qrLink.entry_client_name} 二维码` : '客户端二维码'}
+        open={Boolean(qrLink)}
+        onCancel={() => setQrLink(null)}
+        footer={[
+          <Button key="close" onClick={() => setQrLink(null)}>关闭</Button>,
+          <Button key="copy" type="primary" disabled={!qrLink?.import_url} onClick={() => qrLink && void copyImportURL(qrLink)}>复制链接</Button>,
+        ]}
+      >
+        {qrLink?.import_url ? (
+          <Space direction="vertical" size="middle" style={{ width: '100%', alignItems: 'center' }}>
+            <QRCode value={qrLink.import_url} size={260} bordered={false} />
+            <Input.TextArea value={qrLink.import_url} readOnly autoSize={{ minRows: 3, maxRows: 6 }} />
+          </Space>
+        ) : <Empty description="暂无二维码" />}
+      </Modal>
     </div>
   )
+}
+
+function CustomerTopologyMap({ steps }: { steps: CustomerLinkStep[] }) {
+  const visibleSteps = steps.length ? steps : [{ role: 'entry', label: '入口' }]
+  return (
+    <div className="customer-topology-canvas" aria-label="客户链路拓扑图">
+      <div className="customer-topology-track">
+        {visibleSteps.map((step, index) => (
+          <div key={`${step.role}-${step.label}-${index}`} className="customer-topology-segment">
+            <div className={`customer-topology-node customer-topology-node-${step.role}`}>
+              <span className="customer-topology-node-icon">{topologyNodeIcon(step.role)}</span>
+              <span className="customer-topology-node-label">{step.label}</span>
+              {step.role === 'exit' && step.exit_ip ? <span className="customer-topology-node-meta">{step.exit_ip}</span> : null}
+            </div>
+            {index < visibleSteps.length - 1 ? (
+              <div className="customer-topology-edge">
+                <span />
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function topologyNodeIcon(role: string) {
+  switch (role) {
+    case 'entry':
+      return '入口'
+    case 'relay':
+      return '转发'
+    case 'exit':
+      return '出口'
+    default:
+      return '节点'
+  }
+}
+
+function applyCustomerStyle(styleCode: string) {
+  document.querySelectorAll('[data-vpsmonitor-customer-style="true"]').forEach((node) => node.remove())
+  const code = styleCode.trim()
+  if (!code) {
+    return
+  }
+  const template = document.createElement('template')
+  template.innerHTML = code.includes('<') ? code : `<style>${code}</style>`
+  Array.from(template.content.childNodes).forEach((node) => appendCustomerStyleNode(node))
+}
+
+function appendCustomerStyleNode(node: Node) {
+  if (node.nodeType === Node.TEXT_NODE && !node.textContent?.trim()) {
+    return
+  }
+  if (node.nodeName.toLowerCase() === 'script') {
+    const source = node as HTMLScriptElement
+    const script = document.createElement('script')
+    Array.from(source.attributes).forEach((attr) => script.setAttribute(attr.name, attr.value))
+    script.text = source.text
+    script.dataset.vpsmonitorCustomerStyle = 'true'
+    script.async = false
+    document.body.appendChild(script)
+    return
+  }
+  const element = node.cloneNode(true) as HTMLElement
+  if (element instanceof HTMLElement) {
+    element.dataset.vpsmonitorCustomerStyle = 'true'
+  }
+  document.body.appendChild(element)
 }
