@@ -407,6 +407,7 @@ export interface XUILocalCertificate {
 export interface XUIOverview {
   agent_id: string
   agent_name?: string
+  base_url?: string
   reported_at: string
   collected_at: string
   summary: VPSSummary
