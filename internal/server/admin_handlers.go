@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -147,9 +148,9 @@ func (a *App) startServerUpdate(req model.UpdateRequest) (*model.UpdateLatestInf
 	if err != nil {
 		return nil, err
 	}
-	version := firstNonEmptyString(req.Version, latest.LatestTag, latest.LatestVersion)
+	version := firstNonEmptyString(req.Version, latest.LatestServerTag, latest.LatestServerVersion, latest.LatestTag, latest.LatestVersion)
 	if !isVersionNewer(version, latest.CurrentServerVersion) {
-		return latest, fmt.Errorf("server is already up to date: current %s, latest %s", latest.CurrentServerVersion, latest.LatestVersion)
+		return latest, fmt.Errorf("server is already up to date: current %s, latest %s", latest.CurrentServerVersion, firstNonEmptyString(latest.LatestServerVersion, latest.LatestVersion))
 	}
 	scriptURL := firstNonEmptyString(req.ScriptURL, "https://raw.githubusercontent.com/"+repo+"/main/install.sh")
 	serviceName := firstNonEmptyString(req.ServiceName, "vpsmonitor-server")
@@ -177,7 +178,7 @@ func (a *App) createClientUpdateActions(req model.UpdateRequest) (model.UpdateRe
 	if err != nil {
 		return model.UpdateResponse{}, err
 	}
-	version := firstNonEmptyString(req.Version, latest.LatestTag, latest.LatestVersion)
+	version := firstNonEmptyString(req.Version, latest.LatestClientTag, latest.LatestClientVersion, latest.LatestTag, latest.LatestVersion)
 	scriptURL := firstNonEmptyString(req.ScriptURL, "https://raw.githubusercontent.com/"+repo+"/main/install.sh")
 	psScriptURL := firstNonEmptyString(req.PSScriptURL, "https://raw.githubusercontent.com/"+repo+"/main/install.ps1")
 	serviceName := firstNonEmptyString(req.ServiceName, "")
@@ -190,7 +191,7 @@ func (a *App) createClientUpdateActions(req model.UpdateRequest) (model.UpdateRe
 				continue
 			}
 		}
-		status := buildUpdateAgentStatus(agent, latest.LatestVersion, packagePrefix, latest.Assets)
+		status := buildUpdateAgentStatus(agent, latest.LatestClientVersion, packagePrefix, latest.ClientAssets)
 		statuses = append(statuses, status)
 		if !status.UpdateAvailable {
 			skipped++
@@ -256,40 +257,51 @@ func (a *App) fetchUpdateLatestInfo(repo string, packagePrefix string) (*model.U
 	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
 		return nil, fmt.Errorf("decode releases: %w", err)
 	}
-	var latestTag string
-	var latestVersion string
-	var assets []string
+	var latest releaseUpdateInfo
+	var serverLatest releaseUpdateInfo
+	var clientLatest releaseUpdateInfo
+	serverPackageName, serverPackageOK := updateServerPackageName(packagePrefix, runtime.GOOS, runtime.GOARCH)
 	for _, release := range releases {
 		tag := firstNonEmptyString(release.TagName, release.Name)
 		version := normalizeVersion(tag)
 		if _, ok := parseSemver(version); !ok {
 			continue
 		}
-		if latestVersion != "" && !isVersionNewer(version, latestVersion) {
-			continue
-		}
-		latestTag = tag
-		latestVersion = version
-		assets = assets[:0]
+		assets := make([]string, 0, len(release.Assets))
 		for _, asset := range release.Assets {
 			if strings.TrimSpace(asset.Name) != "" {
 				assets = append(assets, asset.Name)
 			}
 		}
+		candidate := releaseUpdateInfo{Tag: tag, Version: version, Assets: assets}
+		if latest.Version == "" || isVersionNewer(version, latest.Version) {
+			latest = candidate
+		}
+		if serverPackageOK && stringInSlice(serverPackageName, assets) && (serverLatest.Version == "" || isVersionNewer(version, serverLatest.Version)) {
+			serverLatest = candidate
+		}
+		if hasClientUpdateAsset(packagePrefix, assets) && (clientLatest.Version == "" || isVersionNewer(version, clientLatest.Version)) {
+			clientLatest = candidate
+		}
 	}
-	if latestVersion == "" && len(releases) > 0 {
+	if latest.Version == "" && len(releases) > 0 {
 		release := releases[0]
-		latestTag = firstNonEmptyString(release.TagName, release.Name)
-		latestVersion = normalizeVersion(latestTag)
-		assets = assets[:0]
+		assets := make([]string, 0, len(release.Assets))
 		for _, asset := range release.Assets {
 			if strings.TrimSpace(asset.Name) != "" {
 				assets = append(assets, asset.Name)
 			}
 		}
+		latest = releaseUpdateInfo{Tag: firstNonEmptyString(release.TagName, release.Name), Version: normalizeVersion(firstNonEmptyString(release.TagName, release.Name)), Assets: assets}
 	}
-	if latestVersion == "" {
+	if latest.Version == "" {
 		return nil, fmt.Errorf("latest release has no version tag")
+	}
+	if serverLatest.Version == "" {
+		serverLatest = latest
+	}
+	if clientLatest.Version == "" {
+		clientLatest = latest
 	}
 
 	agents, err := a.store.ListAgents()
@@ -300,14 +312,20 @@ func (a *App) fetchUpdateLatestInfo(repo string, packagePrefix string) (*model.U
 		Repo:                  repo,
 		PackagePrefix:         packagePrefix,
 		CurrentServerVersion:  serverSystemInfo().Version,
-		LatestVersion:         latestVersion,
-		LatestTag:             latestTag,
-		ServerUpdateAvailable: isVersionNewer(latestVersion, serverSystemInfo().Version),
-		Assets:                assets,
+		LatestVersion:         latest.Version,
+		LatestTag:             latest.Tag,
+		LatestServerVersion:   serverLatest.Version,
+		LatestServerTag:       serverLatest.Tag,
+		LatestClientVersion:   clientLatest.Version,
+		LatestClientTag:       clientLatest.Tag,
+		ServerUpdateAvailable: isVersionNewer(serverLatest.Version, serverSystemInfo().Version),
+		Assets:                latest.Assets,
+		ServerAssets:          serverLatest.Assets,
+		ClientAssets:          clientLatest.Assets,
 		FetchedAt:             time.Now().UTC(),
 	}
 	for _, agent := range agents {
-		status := buildUpdateAgentStatus(agent, latestVersion, packagePrefix, assets)
+		status := buildUpdateAgentStatus(agent, clientLatest.Version, packagePrefix, clientLatest.Assets)
 		info.AgentStatus = append(info.AgentStatus, status)
 		switch {
 		case status.OS == "" || status.Arch == "":
@@ -322,6 +340,12 @@ func (a *App) fetchUpdateLatestInfo(repo string, packagePrefix string) (*model.U
 		}
 	}
 	return info, nil
+}
+
+type releaseUpdateInfo struct {
+	Tag     string
+	Version string
+	Assets  []string
 }
 
 func buildUpdateAgentStatus(agent model.AgentRecord, latestVersion string, packagePrefix string, assets []string) model.UpdateAgentStatus {
@@ -358,6 +382,17 @@ func buildUpdateAgentStatus(agent model.AgentRecord, latestVersion string, packa
 	return status
 }
 
+func updateServerPackageName(packagePrefix string, osName string, arch string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(osName)) {
+	case "linux":
+		return fmt.Sprintf("%s-server-linux-%s.tar.gz", packagePrefix, strings.ToLower(strings.TrimSpace(arch))), true
+	case "windows":
+		return fmt.Sprintf("%s-server-windows-%s.zip", packagePrefix, strings.ToLower(strings.TrimSpace(arch))), true
+	default:
+		return "", false
+	}
+}
+
 func updateClientPackageName(packagePrefix string, osName string, arch string) (string, bool) {
 	switch osName {
 	case "linux":
@@ -367,6 +402,16 @@ func updateClientPackageName(packagePrefix string, osName string, arch string) (
 	default:
 		return "", false
 	}
+}
+
+func hasClientUpdateAsset(packagePrefix string, assets []string) bool {
+	prefix := packagePrefix + "-client-"
+	for _, asset := range assets {
+		if strings.HasPrefix(asset, prefix) && (strings.HasSuffix(asset, ".tar.gz") || strings.HasSuffix(asset, ".zip")) {
+			return true
+		}
+	}
+	return false
 }
 
 func stringInSlice(value string, items []string) bool {
@@ -393,8 +438,12 @@ func isVersionNewer(candidate string, current string) bool {
 }
 
 func parseSemver(value string) ([3]int, bool) {
+	return parseSemverParts(normalizeVersion(value))
+}
+
+func parseSemverParts(value string) ([3]int, bool) {
 	var result [3]int
-	parts := strings.Split(normalizeVersion(value), ".")
+	parts := strings.Split(value, ".")
 	if len(parts) != 3 {
 		return result, false
 	}
@@ -411,11 +460,43 @@ func parseSemver(value string) ([3]int, bool) {
 func normalizeVersion(value string) string {
 	value = strings.TrimSpace(value)
 	value = strings.TrimPrefix(value, "refs/tags/")
+	if version := extractSemver(value); version != "" {
+		return version
+	}
 	value = strings.TrimPrefix(value, "v")
 	if index := strings.IndexAny(value, "+-"); index >= 0 {
 		value = value[:index]
 	}
 	return value
+}
+
+func extractSemver(value string) string {
+	for start := 0; start < len(value); start++ {
+		if value[start] < '0' || value[start] > '9' {
+			continue
+		}
+		end := start
+		dots := 0
+		for end < len(value) {
+			ch := value[end]
+			if ch == '.' {
+				dots++
+				end++
+				continue
+			}
+			if ch < '0' || ch > '9' {
+				break
+			}
+			end++
+		}
+		candidate := value[start:end]
+		if dots == 2 {
+			if _, ok := parseSemverParts(candidate); ok {
+				return candidate
+			}
+		}
+	}
+	return ""
 }
 
 type timeoutContext struct {

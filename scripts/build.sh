@@ -5,6 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="${ROOT_DIR}/dist"
 CACHE_DIR="${ROOT_DIR}/.cache/go-build"
 VERSION_FILE="${ROOT_DIR}/VERSION"
+SERVER_VERSION_FILE="${ROOT_DIR}/VERSION.server"
+CLIENT_VERSION_FILE="${ROOT_DIR}/VERSION.client"
 VERSION_PKG="bridge-core/internal/version"
 
 
@@ -17,36 +19,48 @@ semver_patch_bump() {
   printf "%s.%s.%s" "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "$((BASH_REMATCH[3] + 1))"
 }
 
-resolve_build_version() {
+resolve_component_version() {
+  local role="$1"
+  local version_file="$2"
+  local env_name="$3"
   local requested="${VPSMONITOR_BUILD_VERSION:-}"
+  local role_requested="${!env_name:-}"
+
+  if [[ -n "$role_requested" ]]; then
+    requested="$role_requested"
+  fi
+
   if [[ -n "$requested" ]]; then
     if [[ ! "$requested" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-      echo "VPSMONITOR_BUILD_VERSION must use MAJOR.MINOR.PATCH, got: $requested" >&2
+      echo "$env_name must use MAJOR.MINOR.PATCH, got: $requested" >&2
       return 1
     fi
-    printf "%s\n" "$requested" >"$VERSION_FILE"
+    printf "%s\n" "$requested" >"$version_file"
     echo "$requested"
     return 0
   fi
 
-  if [[ ! -f "$VERSION_FILE" ]]; then
-    echo "0.1.0" >"$VERSION_FILE"
-    echo "0.1.0"
-    return 0
+  if [[ ! -f "$version_file" ]]; then
+    if [[ -f "$VERSION_FILE" ]]; then
+      tr -d '[:space:]' <"$VERSION_FILE" >"$version_file"
+    else
+      echo "0.1.0" >"$version_file"
+    fi
   fi
 
   local current
-  current="$(tr -d '[:space:]' <"$VERSION_FILE")"
+  current="$(tr -d '[:space:]' <"$version_file")"
   local next
   next="$(semver_patch_bump "$current")"
-  printf "%s\n" "$next" >"$VERSION_FILE"
+  printf "%s\n" "$next" >"$version_file"
   echo "$next"
 }
 
-BUILD_VERSION="$(resolve_build_version)"
+SERVER_BUILD_VERSION="$(resolve_component_version server "$SERVER_VERSION_FILE" VPSMONITOR_SERVER_BUILD_VERSION)"
+CLIENT_BUILD_VERSION="$(resolve_component_version client "$CLIENT_VERSION_FILE" VPSMONITOR_CLIENT_BUILD_VERSION)"
+printf "%s\n" "$SERVER_BUILD_VERSION" >"$VERSION_FILE"
 BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 GIT_COMMIT="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || true)"
-GO_LDFLAGS="-s -w -X ${VERSION_PKG}.Version=${BUILD_VERSION} -X ${VERSION_PKG}.BuildTime=${BUILD_TIME} -X ${VERSION_PKG}.GitCommit=${GIT_COMMIT}"
 
 export GOCACHE="${GOCACHE:-$CACHE_DIR}"
 export CGO_ENABLED=0
@@ -71,6 +85,13 @@ package_component() {
   local goarch="$4"
   local package_role="${app_name#bridge-}"
   local package_prefix="${PACKAGE_PREFIX:-VPSMonitor}"
+  local build_version="$SERVER_BUILD_VERSION"
+  local version_src="$SERVER_VERSION_FILE"
+  if [[ "$package_role" == "client" ]]; then
+    build_version="$CLIENT_BUILD_VERSION"
+    version_src="$CLIENT_VERSION_FILE"
+  fi
+  local go_ldflags="-s -w -X ${VERSION_PKG}.Version=${build_version} -X ${VERSION_PKG}.BuildTime=${BUILD_TIME} -X ${VERSION_PKG}.GitCommit=${GIT_COMMIT}"
 
   local ext=""
   if [[ "$goos" == "windows" ]]; then
@@ -89,11 +110,11 @@ package_component() {
   rm -f "${DIST_DIR}/${app_name}-${goos}-${goarch}.tar.gz" "${DIST_DIR}/${app_name}-${goos}-${goarch}.zip"
   mkdir -p "${output_dir}/config"
 
-  GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags="$GO_LDFLAGS" -o "$binary_path" "$entrypoint"
+  GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags="$go_ldflags" -o "$binary_path" "$entrypoint"
 
   cp "$config_src" "$config_dst"
   cp "${ROOT_DIR}/README.md" "${output_dir}/README.md"
-  cp "$VERSION_FILE" "${output_dir}/VERSION"
+  cp "$version_src" "${output_dir}/VERSION"
 
   if [[ "$goos" == "windows" ]]; then
     cp "${ROOT_DIR}/scripts/templates/run-${app_name}.bat" "${output_dir}/run.bat"
@@ -143,5 +164,6 @@ for target in "${TARGETS[@]}"; do
   package_component "bridge-client" "./cmd/bridge-client" "$GOOS" "$GOARCH"
 done
 
-echo "version $BUILD_VERSION"
+echo "server version $SERVER_BUILD_VERSION"
+echo "client version $CLIENT_BUILD_VERSION"
 echo "build artifacts written to $DIST_DIR"

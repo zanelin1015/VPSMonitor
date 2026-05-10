@@ -932,7 +932,7 @@ export default function App() {
       await fetchJSON<UpdateResponse>('/api/v1/admin/updates/server', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ version: updateLatestInfo.latest_tag || updateLatestInfo.latest_version }),
+        body: JSON.stringify({ version: updateLatestInfo.latest_server_tag || updateLatestInfo.latest_server_version || updateLatestInfo.latest_tag || updateLatestInfo.latest_version }),
       })
       message.success('Server 更新已启动，服务会自动重启')
       await loadUpdateLatestInfo()
@@ -956,7 +956,7 @@ export default function App() {
       const result = await fetchJSON<UpdateResponse>('/api/v1/admin/updates/clients', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ version: updateLatestInfo.latest_tag || updateLatestInfo.latest_version }),
+        body: JSON.stringify({ version: updateLatestInfo.latest_client_tag || updateLatestInfo.latest_client_version || updateLatestInfo.latest_tag || updateLatestInfo.latest_version }),
       })
       message.success(`已下发 Client 更新任务：${result.count || 0} 台，跳过 ${result.skipped || 0} 台`)
       await loadUpdateLatestInfo()

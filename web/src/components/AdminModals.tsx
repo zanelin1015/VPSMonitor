@@ -461,6 +461,8 @@ export function SystemUpdateModal(props: {
   const { open, loading, latestLoading, latestInfo, latestError, systemInfo, onClose, onRefreshLatest, onUpdateServer, onUpdateClients } = props
   const serverUpdateAvailable = Boolean(latestInfo?.server_update_available)
   const clientUpdateCount = Number(latestInfo?.client_update_available_count || 0)
+  const latestServerVersion = latestInfo?.latest_server_version || latestInfo?.latest_version || '-'
+  const latestClientVersion = latestInfo?.latest_client_version || latestInfo?.latest_version || '-'
 
   return (
     <Modal title="在线更新" open={open} onCancel={onClose} footer={null} width={760}>
@@ -477,7 +479,7 @@ export function SystemUpdateModal(props: {
           <Alert
             type={serverUpdateAvailable || clientUpdateCount > 0 ? 'success' : 'info'}
             showIcon
-            message={`最新 Release：v${latestInfo.latest_version}`}
+            message={`最新版本：Server v${latestServerVersion} · Client v${latestClientVersion}`}
             description={`当前 Server：v${latestInfo.current_server_version || systemInfo?.version || '-'}${systemInfo?.git_commit ? ` · 构建提交：${systemInfo.git_commit}` : ''}`}
           />
         ) : null}
@@ -485,11 +487,11 @@ export function SystemUpdateModal(props: {
           <div className="update-status-grid">
             <div className="update-status-card">
               <Text type="secondary">Server</Text>
-              <Tag color={serverUpdateAvailable ? 'green' : 'default'}>{serverUpdateAvailable ? '可更新' : '已是最新'}</Tag>
+              <Tag color={serverUpdateAvailable ? 'green' : 'default'}>{serverUpdateAvailable ? `可更新到 v${latestServerVersion}` : '已是最新'}</Tag>
             </div>
             <div className="update-status-card">
               <Text type="secondary">Client 可更新</Text>
-              <Tag color={clientUpdateCount ? 'green' : 'default'}>{clientUpdateCount} 台</Tag>
+              <Tag color={clientUpdateCount ? 'green' : 'default'}>{clientUpdateCount ? `${clientUpdateCount} 台到 v${latestClientVersion}` : '0 台'}</Tag>
             </div>
             <div className="update-status-card">
               <Text type="secondary">已识别系统</Text>

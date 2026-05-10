@@ -97,12 +97,18 @@ type UpdateLatestInfo struct {
 	CurrentServerVersion       string              `json:"current_server_version"`
 	LatestVersion              string              `json:"latest_version"`
 	LatestTag                  string              `json:"latest_tag"`
+	LatestServerVersion        string              `json:"latest_server_version,omitempty"`
+	LatestServerTag            string              `json:"latest_server_tag,omitempty"`
+	LatestClientVersion        string              `json:"latest_client_version,omitempty"`
+	LatestClientTag            string              `json:"latest_client_tag,omitempty"`
 	ServerUpdateAvailable      bool                `json:"server_update_available"`
 	ClientUpdateAvailableCount int                 `json:"client_update_available_count"`
 	SupportedClientCount       int                 `json:"supported_client_count"`
 	UnknownClientCount         int                 `json:"unknown_client_count"`
 	UnsupportedClientCount     int                 `json:"unsupported_client_count"`
 	Assets                     []string            `json:"assets,omitempty"`
+	ServerAssets               []string            `json:"server_assets,omitempty"`
+	ClientAssets               []string            `json:"client_assets,omitempty"`
 	AgentStatus                []UpdateAgentStatus `json:"agent_status,omitempty"`
 	FetchedAt                  time.Time           `json:"fetched_at"`
 }

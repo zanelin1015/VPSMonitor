@@ -309,7 +309,6 @@ function AgentRailHeader(props: {
       <div className="agent-title-line">
         <span className={`agent-state-dot agent-state-${statusLevel}`} />
         <span className="agent-order-chip">#{displaySortOrder}</span>
-        <SystemIcon item={item} compact title={formatClientPlatform(item)} />
         <span className="agent-flag" title={locationText || countryCode || '未知地区'}>{countryFlag(countryCode)}</span>
         <span className="agent-name">{item.agent_name || item.agent_id}</span>
       </div>
@@ -357,8 +356,24 @@ function SystemIcon(props: { item: DashboardAgentView; compact?: boolean; title?
       title={title}
       aria-label={flavor.label}
     >
-      {compact ? flavor.compactMark : flavor.mark}
+      {flavor.key === 'debian' ? <DebianSwirlIcon /> : compact ? flavor.compactMark : flavor.mark}
     </span>
+  )
+}
+
+function DebianSwirlIcon() {
+  return (
+    <svg className="agent-system-svg" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+      <path
+        d="M33.8 10.4c-9.6-.8-20.4 5.4-22.6 16-2.4 11.3 6.2 19.2 15.1 21.4 7.8 1.9 17.5-.6 21.9-8.5 3.8-6.9 1.2-15.4-5.2-18.5-5.4-2.6-12.8-.9-15.3 4.6-2.1 4.7.3 9.2 4.2 10.6 3.1 1.1 7-.2 8.2-3.3.9-2.3-.1-4.6-1.9-5.7 3.9.7 6.7 4.4 5.7 8.9-1.3 6.1-8.7 9.3-15.7 7.4-7.9-2.1-14.2-8.8-12.1-17.1 1.9-7.5 10.3-12.5 18.2-11.7 5.6.6 10 3.5 12.1 7.2-1.4-6.2-6.3-10.8-12.6-11.3Z"
+        fill="currentColor"
+      />
+      <path
+        d="M28.1 51.4c-5.7-.6-10.3-3-13.8-6.4 2.9 5.6 9.1 9.6 16.4 10.2 10.6.9 20.1-5.6 21.8-15.3-3.6 8-13 12.6-24.4 11.5Z"
+        fill="currentColor"
+        opacity="0.8"
+      />
+    </svg>
   )
 }
 

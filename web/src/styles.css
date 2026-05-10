@@ -799,9 +799,16 @@ body {
 }
 
 .agent-system-debian {
-  border-color: color-mix(in srgb, #e11d48 35%, var(--border));
-  background: color-mix(in srgb, #ffe4ec 82%, var(--card));
-  color: #be123c;
+  border-color: color-mix(in srgb, #d40055 86%, transparent);
+  background: linear-gradient(145deg, #d40055 0%, #c0004d 58%, #a90045 100%);
+  color: #ffffff;
+  box-shadow: 0 10px 22px rgba(212, 0, 85, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.26);
+}
+
+.agent-system-svg {
+  width: 76%;
+  height: 76%;
+  display: block;
 }
 
 .agent-system-ubuntu {

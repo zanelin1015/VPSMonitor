@@ -153,12 +153,18 @@ export interface UpdateLatestInfo {
   current_server_version: string
   latest_version: string
   latest_tag: string
+  latest_server_version?: string
+  latest_server_tag?: string
+  latest_client_version?: string
+  latest_client_tag?: string
   server_update_available: boolean
   client_update_available_count: number
   supported_client_count: number
   unknown_client_count: number
   unsupported_client_count: number
   assets?: string[]
+  server_assets?: string[]
+  client_assets?: string[]
   agent_status?: UpdateAgentStatus[]
   fetched_at: string
 }
