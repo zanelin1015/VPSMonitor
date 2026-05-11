@@ -501,6 +501,15 @@ button.cn-flow-node:hover {
   gap: 10px;
 }
 
+.cn-flow-hop-column-cn .cn-flow-hop-group {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.cn-flow-hop-column-cn .cn-flow-hop-body {
+  width: auto;
+}
+
 .compact-hop {
   justify-content: center;
 }

@@ -189,7 +189,7 @@ func (c *XUIClient) collectAuthenticated(ctx context.Context, snapshot *model.XU
 	}
 	snapshot.Inbounds = inbounds
 
-	configJSON, err := c.getJSONObject(ctx, "/panel/api/server/getConfigJson")
+	configJSON, err := c.collectXrayConfig(ctx)
 	if err != nil {
 		return err
 	}
@@ -203,6 +203,62 @@ func (c *XUIClient) collectAuthenticated(ctx context.Context, snapshot *model.XU
 	}
 	snapshot.OutboundTraffic = outboundTraffic
 	return nil
+}
+
+func (c *XUIClient) collectXrayConfig(ctx context.Context) (map[string]any, error) {
+	configJSON, err := c.getJSONObject(ctx, "/panel/api/server/getConfigJson")
+	if err == nil && !xrayConfigNeedsFallback(configJSON) {
+		return configJSON, nil
+	}
+
+	mutableConfig, fallbackErr := c.getMutableXrayConfig(ctx)
+	if fallbackErr == nil {
+		if err != nil {
+			return mutableConfig.config, nil
+		}
+		return mergeRicherXrayConfig(configJSON, mutableConfig.config), nil
+	}
+	if err != nil {
+		if fallbackErr != nil {
+			return nil, fmt.Errorf("%w (xray template fallback failed: %v)", err, fallbackErr)
+		}
+		return nil, err
+	}
+	return configJSON, nil
+}
+
+func xrayConfigNeedsFallback(configJSON map[string]any) bool {
+	outboundCount, ruleCount := xrayConfigCounts(configJSON)
+	return outboundCount == 0 || ruleCount == 0
+}
+
+func xrayConfigCounts(configJSON map[string]any) (int, int) {
+	return len(extractObjectList(configJSON["outbounds"])), len(extractRoutingRules(configJSON["routing"]))
+}
+
+func mergeRicherXrayConfig(primary map[string]any, fallback map[string]any) map[string]any {
+	if primary == nil {
+		return fallback
+	}
+	if fallback == nil {
+		return primary
+	}
+	primaryOutbounds, primaryRules := xrayConfigCounts(primary)
+	fallbackOutbounds, fallbackRules := xrayConfigCounts(fallback)
+	if fallbackOutbounds <= primaryOutbounds && fallbackRules <= primaryRules {
+		return primary
+	}
+	merged := make(map[string]any, len(primary))
+	for key, value := range primary {
+		merged[key] = value
+	}
+	if fallbackOutbounds > primaryOutbounds {
+		merged["outbounds"] = fallback["outbounds"]
+	}
+	if fallbackRules > primaryRules {
+		merged["routing"] = fallback["routing"]
+	}
+	return merged
 }
 
 func (c *XUIClient) ExecuteAction(ctx context.Context, action model.XUIAction) (map[string]any, error) {

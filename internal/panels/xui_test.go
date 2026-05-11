@@ -109,6 +109,170 @@ func TestXUICollect(t *testing.T) {
 	}
 }
 
+func TestXUICollectFallsBackToXrayTemplateWhenServerConfigIsEmpty(t *testing.T) {
+	client, err := NewXUIClient(config.XUIConfig{
+		Enabled:  true,
+		BaseURL:  "https://xui.local",
+		Username: "admin",
+		Password: "pass",
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewXUIClient: %v", err)
+	}
+
+	configBody, err := json.Marshal(map[string]any{
+		"outbounds": []map[string]any{
+			{"tag": "direct", "protocol": "freedom"},
+			{"tag": "blocked", "protocol": "blackhole"},
+		},
+		"routing": map[string]any{
+			"rules": []map[string]any{
+				{"outboundTag": "direct"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal config body: %v", err)
+	}
+	wrapperBody, err := json.Marshal(map[string]any{"xraySetting": string(configBody)})
+	if err != nil {
+		t.Fatalf("marshal wrapper body: %v", err)
+	}
+
+	client.client = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/login":
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
+			case "/panel/api/server/status":
+				return jsonResponse(t, req, map[string]any{
+					"success": true,
+					"obj": map[string]any{
+						"cpu":  1,
+						"mem":  map[string]any{"current": 1, "total": 2},
+						"xray": map[string]any{"state": "running"},
+					},
+				}), nil
+			case "/panel/api/inbounds/list":
+				return jsonResponse(t, req, map[string]any{"success": true, "obj": []map[string]any{{"id": 1, "remark": "ph"}}}), nil
+			case "/panel/api/server/getConfigJson":
+				return jsonResponse(t, req, map[string]any{
+					"success": true,
+					"obj":     map[string]any{},
+				}), nil
+			case "/panel/api/xray/":
+				return jsonResponse(t, req, map[string]any{
+					"success": true,
+					"obj":     string(wrapperBody),
+				}), nil
+			case "/panel/xray/getOutboundsTraffic":
+				return jsonResponse(t, req, map[string]any{"success": true, "obj": []map[string]any{}}), nil
+			default:
+				t.Fatalf("unexpected path: %s", req.URL.Path)
+				return nil, nil
+			}
+		}),
+	}
+
+	snapshot := client.Collect(context.Background())
+	if snapshot.Error != "" {
+		t.Fatalf("Collect returned error: %s", snapshot.Error)
+	}
+	if got := len(snapshot.Outbounds); got != 2 {
+		t.Fatalf("expected fallback to collect 2 outbounds, got %d", got)
+	}
+	if got := len(snapshot.RoutingRules); got != 1 {
+		t.Fatalf("expected fallback to collect 1 rule, got %d", got)
+	}
+}
+
+func TestXUICollectMergesXrayTemplateWhenServerConfigMissesRoutingRules(t *testing.T) {
+	client, err := NewXUIClient(config.XUIConfig{
+		Enabled:  true,
+		BaseURL:  "https://xui.local",
+		Username: "admin",
+		Password: "pass",
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewXUIClient: %v", err)
+	}
+
+	configBody, err := json.Marshal(map[string]any{
+		"outbounds": []map[string]any{
+			{"tag": "direct", "protocol": "freedom"},
+			{"tag": "blocked", "protocol": "blackhole"},
+		},
+		"routing": map[string]any{
+			"rules": []map[string]any{
+				{"inboundTag": []string{"api"}, "outboundTag": "api"},
+				{"ip": []string{"geoip:private"}, "outboundTag": "blocked"},
+				{"protocol": []string{"bittorrent"}, "outboundTag": "blocked"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal config body: %v", err)
+	}
+	wrapperBody, err := json.Marshal(map[string]any{"xraySetting": string(configBody)})
+	if err != nil {
+		t.Fatalf("marshal wrapper body: %v", err)
+	}
+
+	client.client = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/login":
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
+			case "/panel/api/server/status":
+				return jsonResponse(t, req, map[string]any{
+					"success": true,
+					"obj": map[string]any{
+						"cpu":  1,
+						"mem":  map[string]any{"current": 1, "total": 2},
+						"xray": map[string]any{"state": "running"},
+					},
+				}), nil
+			case "/panel/api/inbounds/list":
+				return jsonResponse(t, req, map[string]any{"success": true, "obj": []map[string]any{{"id": 1, "remark": "ph"}}}), nil
+			case "/panel/api/server/getConfigJson":
+				return jsonResponse(t, req, map[string]any{
+					"success": true,
+					"obj": map[string]any{
+						"outbounds": []map[string]any{
+							{"tag": "direct", "protocol": "freedom"},
+							{"tag": "blocked", "protocol": "blackhole"},
+						},
+						"routing": map[string]any{"rules": []map[string]any{}},
+					},
+				}), nil
+			case "/panel/api/xray/":
+				return jsonResponse(t, req, map[string]any{
+					"success": true,
+					"obj":     string(wrapperBody),
+				}), nil
+			case "/panel/xray/getOutboundsTraffic":
+				return jsonResponse(t, req, map[string]any{"success": true, "obj": []map[string]any{}}), nil
+			default:
+				t.Fatalf("unexpected path: %s", req.URL.Path)
+				return nil, nil
+			}
+		}),
+	}
+
+	snapshot := client.Collect(context.Background())
+	if snapshot.Error != "" {
+		t.Fatalf("Collect returned error: %s", snapshot.Error)
+	}
+	if got := len(snapshot.Outbounds); got != 2 {
+		t.Fatalf("expected primary config to keep 2 outbounds, got %d", got)
+	}
+	if got := len(snapshot.RoutingRules); got != 3 {
+		t.Fatalf("expected fallback to merge 3 routing rules, got %d", got)
+	}
+}
+
 func TestXUICollectReusesSessionCookie(t *testing.T) {
 	client, err := NewXUIClient(config.XUIConfig{
 		Enabled:  true,
@@ -171,6 +335,11 @@ func TestXUICollectNormalizesPanelBaseURLBeforeLogin(t *testing.T) {
 				return jsonResponse(t, req, map[string]any{
 					"success": true,
 					"obj":     map[string]any{"outbounds": []map[string]any{}, "routing": map[string]any{"rules": []map[string]any{}}},
+				}), nil
+			case "/secret/panel/api/xray/":
+				return jsonResponse(t, req, map[string]any{
+					"success": true,
+					"obj":     `{"xraySetting":"{\"outbounds\":[],\"routing\":{\"rules\":[]}}"}`,
 				}), nil
 			case "/secret/panel/xray/getOutboundsTraffic":
 				return jsonResponse(t, req, map[string]any{"success": true, "obj": []map[string]any{}}), nil
@@ -877,6 +1046,11 @@ func xuiCollectTransport(t *testing.T, loginCount *int, override func(*http.Requ
 					"outbounds": []map[string]any{},
 					"routing":   map[string]any{"rules": []map[string]any{}},
 				},
+			}), nil
+		case "/panel/api/xray/":
+			return jsonResponse(t, req, map[string]any{
+				"success": true,
+				"obj":     `{"xraySetting":"{\"outbounds\":[],\"routing\":{\"rules\":[]}}"}`,
 			}), nil
 		case "/panel/xray/getOutboundsTraffic":
 			return jsonResponse(t, req, map[string]any{"success": true, "obj": []map[string]any{}}), nil

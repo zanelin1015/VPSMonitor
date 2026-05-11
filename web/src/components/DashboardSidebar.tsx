@@ -154,7 +154,7 @@ export function AgentRail(props: {
   const { agents, loading, error, selectedTag, selectedAgentId, tagFilterOptions, viewMode, panelExpanded, topologyVisible, onToggleViewMode, onToggleTopology, onRefresh, onSelectTag, onSelectAgent } = props
   const effectiveViewMode: AgentViewMode = panelExpanded ? 'list' : viewMode
   const [agentPage, setAgentPage] = useState(1)
-  const [agentPageSize, setAgentPageSize] = useState(5)
+  const [agentPageSize, setAgentPageSize] = useState(10)
 
   useEffect(() => {
     setAgentPage(1)
@@ -300,6 +300,35 @@ function AgentRailItem(props: {
       ? `上报 ${formatDateTime(item.reported_at)}`
       : '尚未上报'
   const footerText = compact ? activityText : `${item.has_config ? '已托管配置' : '待配置'} · ${activityText}`
+  const compactTags = tags.slice(0, 3)
+  const compactExtraTagCount = Math.max(0, tags.length - compactTags.length)
+
+  if (compact) {
+    return (
+      <List.Item className="agent-list-item agent-list-item-compact">
+        <button className={`agent-button agent-button-compact${active ? ' active' : ''}`} onClick={() => onSelect(item.agent_id, active)}>
+          <AgentRailHeader
+            item={item}
+            countryCode={countryCode}
+            locationText={locationText}
+            statusLevel={statusLevel}
+            statusLabel={displayStatus.label}
+            displaySortOrder={displaySortOrder}
+            showStatus={showStatusText}
+          />
+          <div className="agent-meta agent-compact-location">
+            <span>{addressText}</span>
+            {locationText ? <span title={locationText}>{locationText}</span> : null}
+          </div>
+          <div className="agent-compact-tags">
+            <AgentRailTags item={item} tags={compactTags} />
+            {compactExtraTagCount ? <span className="agent-tag-chip">+{compactExtraTagCount}</span> : null}
+          </div>
+          <div className="agent-meta agent-footer-line agent-compact-footer">{footerText}</div>
+        </button>
+      </List.Item>
+    )
+  }
 
   return (
     <List.Item className={`agent-list-item agent-list-item-${viewMode}`}>

@@ -134,7 +134,7 @@ export function renderCNFlowPanel(props: {
 
   const renderEntryNode = (row: CNFlowRow) => (
     <button className="cn-flow-node entry-node" onClick={() => onSelectAgent(row.rootAgentID)}>
-      <span className="node-kicker">Client 内节点 / 入站</span>
+      <span className="node-kicker">Client VPS / 入站</span>
       <strong>{row.rootAgentName || row.rootAgentID}</strong>
       <small>{row.entryLabel}</small>
     </button>
@@ -198,7 +198,7 @@ export function renderCNFlowPanel(props: {
               {showCurrentNode ? (
                 <>
                   <button className="cn-flow-node entry-node" onClick={() => onSelectAgent(hop.currentAgentID || row.rootAgentID)}>
-                    <span className="node-kicker">本跳 VPS 入站</span>
+                    <span className="node-kicker">Client VPS / 入站</span>
                     <strong>{hop.currentAgentName || hop.currentAgentID || row.rootAgentName || row.rootAgentID}</strong>
                     <small>{hop.currentInboundLabel || row.entryLabel}</small>
                   </button>
@@ -230,9 +230,23 @@ export function renderCNFlowPanel(props: {
 
   const renderFlowTail = (row: CNFlowRow) => (
     <>
-      {renderClientNode(row)}
-      <div className="cn-flow-arrow">→</div>
-      <div className="cn-flow-hop-column">{renderHopSegments(row, flowMode === 'cn')}</div>
+      {flowMode === 'cn' ? (
+        <>
+          {renderEntryNode(row)}
+          <div className="cn-flow-arrow">→</div>
+          <div className="cn-flow-hop-column cn-flow-hop-column-cn">
+            {renderClientNode(row)}
+            <div className="cn-flow-arrow">→</div>
+            {renderHopSegments(row, false)}
+          </div>
+        </>
+      ) : (
+        <>
+          {renderClientNode(row)}
+          <div className="cn-flow-arrow">→</div>
+          <div className="cn-flow-hop-column">{renderHopSegments(row, false)}</div>
+        </>
+      )}
       <div className="cn-flow-arrow final-arrow">→</div>
       <div className={`cn-flow-node country-node country-${row.exitCountryCode.toLowerCase()}`}>
         <span className="node-kicker">最终出站国家</span>

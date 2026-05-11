@@ -382,11 +382,10 @@ export default function App() {
   }, [adminUser, outboundActionForm.source_agent_id, overview])
 
   useEffect(() => {
-    const visibleAgents = agents.filter((item) => hasSelectedTag(item.tags, selectedTag))
-    if (!visibleAgents.length || (selectedAgentId && !visibleAgents.some((item) => item.agent_id === selectedAgentId))) {
+    if (!agents.length || (selectedAgentId && !agents.some((item) => item.agent_id === selectedAgentId))) {
       setSelectedAgentId('')
     }
-  }, [agents, selectedTag, selectedAgentId])
+  }, [agents, selectedAgentId])
 
   function toggleAgentViewMode() {
     setAgentViewMode((current) => {
@@ -503,8 +502,7 @@ export default function App() {
       setAgents(sortedAgents)
       setTagOptions((current) => mergeTagOptions(current, sortedAgents.flatMap((agent) => agent.tags || [])))
       setAgentsError('')
-      const filtered = sortedAgents.filter((item) => hasSelectedTag(item.tags, selectedTag))
-      if (!filtered.length || (selectedAgentId && !filtered.some((item) => item.agent_id === selectedAgentId))) {
+      if (!sortedAgents.length || (selectedAgentId && !sortedAgents.some((item) => item.agent_id === selectedAgentId))) {
         setSelectedAgentId('')
       }
     } catch (error) {
@@ -1432,10 +1430,7 @@ export default function App() {
               }
             }}
             onRefresh={() => void loadAgents()}
-            onSelectTag={(tag) => {
-              setSelectedTag(tag)
-              setSelectedAgentId('')
-            }}
+            onSelectTag={selectDashboardTag}
             onSelectAgent={(agentID, active) => {
               if (topologyVisible) {
                 selectTopologyAgent(agentID)
@@ -1552,10 +1547,7 @@ export default function App() {
                 onReturnHome={returnHome}
                 onSaveClientBilling={(record) => void saveClientBilling(record)}
                 onSaveManagedConfigSection={(section) => void saveManagedConfigSection(section)}
-                onSelectTag={(tag) => {
-                  setSelectedTag(tag)
-                  setSelectedAgentId('')
-                }}
+                onSelectTag={selectDashboardTag}
                 onTagsChange={(values) => {
                   setTagOptions((current) => mergeTagOptions(current, values))
                   updateManagedConfig((current) => ({ ...current, tags: values }))
@@ -1599,6 +1591,16 @@ export default function App() {
     window.setTimeout(() => {
       document.getElementById('topology-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }, 80)
+  }
+
+  function selectDashboardTag(tag: string) {
+    setSelectedTag(tag)
+    if (topologyVisible) {
+      setSelectedAgentId('')
+      setSelectedNodeAnchor('')
+      setSelectedOutboundTag('')
+      setSelectedRuleIndex(null)
+    }
   }
 
   function selectTopologyAgent(agentID: string) {
