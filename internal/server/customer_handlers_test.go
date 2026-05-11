@@ -1,0 +1,98 @@
+package server
+
+import (
+	"testing"
+
+	"bridge-core/internal/model"
+)
+
+func TestCustomerExitInfoPrefersMatchedAgentObservedGeo(t *testing.T) {
+	chain := model.ClientChainView{
+		RootAgentID: "entry",
+		Steps: []model.ClientChainStep{
+			{
+				StepType: "outbound",
+				AgentID:  "entry",
+				TargetIP: "142.91.98.131",
+				TargetGeo: &model.IPGeoView{
+					IP:          "142.91.98.131",
+					CountryCode: "SG",
+					CountryName: "Singapore",
+				},
+			},
+			{
+				StepType: "match",
+				AgentID:  "nat",
+			},
+		},
+	}
+	agentMap := map[string]model.DashboardAgentView{
+		"nat": {
+			AgentID: "nat",
+			Geo: &model.IPGeoView{
+				IP:          "24.248.245.100",
+				CountryCode: "US",
+				CountryName: "United States",
+			},
+		},
+	}
+
+	ip, countryCode, countryName := customerExitInfo(chain, agentMap)
+	if ip != "24.248.245.100" || countryCode != "US" || countryName != "United States" {
+		t.Fatalf("expected matched NAT geo, got ip=%q countryCode=%q countryName=%q", ip, countryCode, countryName)
+	}
+}
+
+func TestCustomerExitInfoFallsBackToOutboundTargetGeo(t *testing.T) {
+	chain := model.ClientChainView{
+		RootAgentID: "entry",
+		Steps: []model.ClientChainStep{
+			{
+				StepType: "outbound",
+				AgentID:  "entry",
+				TargetIP: "142.91.98.131",
+				TargetGeo: &model.IPGeoView{
+					IP:          "142.91.98.131",
+					CountryCode: "SG",
+					CountryName: "Singapore",
+				},
+			},
+		},
+	}
+
+	ip, countryCode, countryName := customerExitInfo(chain, nil)
+	if ip != "142.91.98.131" || countryCode != "SG" || countryName != "Singapore" {
+		t.Fatalf("expected outbound target geo, got ip=%q countryCode=%q countryName=%q", ip, countryCode, countryName)
+	}
+}
+
+func TestBuildCustomerLinkViewUsesCustomerDisplayNames(t *testing.T) {
+	assignment := model.CustomerAssignment{
+		ID:               7,
+		AgentID:          "entry",
+		InboundID:        1001,
+		InboundTag:       "vless-in",
+		ClientEmail:      "alice@example.com",
+		PublicClientName: "Internal Entry - alice@example.com",
+	}
+	chainMap := map[string]model.ClientChainView{
+		customerAssignmentKey("entry", 1001, "alice@example.com"): {
+			RootAgentID: "entry",
+			Steps: []model.ClientChainStep{
+				{StepType: "match", AgentID: "relay", AgentName: "Internal Relay"},
+			},
+		},
+	}
+	agentMap := map[string]model.DashboardAgentView{
+		"entry": {AgentID: "entry", AgentName: "Internal Entry", CustomerDisplayName: "Customer Entry"},
+		"relay": {AgentID: "relay", AgentName: "Internal Relay", CustomerDisplayName: "Customer Relay"},
+	}
+
+	link := buildCustomerLinkView(assignment, chainMap, nil, agentMap)
+	if link.EntryClientName != "Customer Entry" {
+		t.Fatalf("expected customer entry name, got %q", link.EntryClientName)
+	}
+	if len(link.Steps) < 2 || link.Steps[0].Label != "Customer Entry" || link.Steps[1].Label != "Customer Relay" {
+		t.Fatalf("expected customer-only step labels, got %#v", link.Steps)
+	}
+}

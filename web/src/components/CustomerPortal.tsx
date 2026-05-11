@@ -5,7 +5,7 @@ import { BgColorsOutlined, CopyOutlined, LogoutOutlined, QrcodeOutlined, ReloadO
 import type { CustomerAuthResponse, CustomerLinkStep, CustomerLinkView, CustomerOverviewResponse, CustomerUser } from '../types'
 import { fetchJSON, formatDateTime } from '../lib/appHelpers'
 import { LoginScreen } from './LoginScreen'
-import { VisualEffects } from './VisualEffects'
+import { clearCustomFrontendCode } from './VisualEffects'
 
 const { Paragraph, Text, Title } = Typography
 
@@ -23,6 +23,11 @@ export function CustomerPortal() {
   const [overview, setOverview] = useState<CustomerOverviewResponse | null>(null)
   const [loginForm, setLoginForm] = useState({ username: '', password: '' })
   const [remarkDrafts, setRemarkDrafts] = useState<Record<number, string>>({})
+
+  useEffect(() => {
+    clearCustomFrontendCode()
+    return () => clearCustomFrontendCode()
+  }, [])
 
   useEffect(() => {
     void loadSession()
@@ -158,34 +163,27 @@ export function CustomerPortal() {
 
   if (sessionLoading) {
     return (
-      <>
-        <VisualEffects />
-        <div className="login-shell">
-          <Spin size="large" />
-        </div>
-      </>
+      <div className="login-shell">
+        <Spin size="large" />
+      </div>
     )
   }
 
   if (!user) {
     return (
-      <>
-        <VisualEffects />
-        <LoginScreen
-          title="南风客户中心"
-          subtitle="客户登录"
-          loginForm={loginForm}
-          loginLoading={loginLoading}
-          onChange={setLoginForm}
-          onLogin={login}
-        />
-      </>
+      <LoginScreen
+        title="南风客户中心"
+        subtitle="客户登录"
+        loginForm={loginForm}
+        loginLoading={loginLoading}
+        onChange={setLoginForm}
+        onLogin={login}
+      />
     )
   }
 
   return (
     <div className="page-shell customer-page-shell">
-      <VisualEffects />
       <div className="page-background page-background-left" />
       <div className="page-background page-background-right" />
       <div className="customer-shell">
@@ -240,8 +238,6 @@ export function CustomerPortal() {
                     {!link.resolved ? <Tag color="orange">待解析</Tag> : null}
                   </Space>
                 </div>
-
-                {link.unresolved_reason ? <Alert type="warning" showIcon message="链路解析提示" description={link.unresolved_reason} /> : null}
 
                 <CustomerTopologyMap steps={link.steps} />
 

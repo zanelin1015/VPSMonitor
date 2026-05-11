@@ -97,6 +97,7 @@ export interface AgentDetailPanelProps {
   onJumpOutbound: (tag?: string) => void
   onJumpRule: (index?: number) => void
   onManagedConfigAgentNameChange: (value: string) => void
+  onManagedConfigCustomerDisplayNameChange: (value: string) => void
   onManagedConfigSortOrderChange: (value: number) => void
   onNewTagNameChange: (value: string) => void
   onOpenImportURL: (client: XUIClientView) => void
@@ -160,6 +161,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onJumpOutbound,
     onJumpRule,
     onManagedConfigAgentNameChange,
+    onManagedConfigCustomerDisplayNameChange,
     onManagedConfigSortOrderChange,
     onNewTagNameChange,
     onOpenImportURL,
@@ -641,6 +643,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
                 configError,
                 onSave: onSaveManagedConfigSection,
                 onAgentNameChange: onManagedConfigAgentNameChange,
+                onCustomerDisplayNameChange: onManagedConfigCustomerDisplayNameChange,
                 onSortOrderChange: onManagedConfigSortOrderChange,
                 tagOptions,
                 newTagName,

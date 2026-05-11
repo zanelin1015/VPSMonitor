@@ -528,16 +528,21 @@ function nodeLabel(node: XUINodeView): string {
 }
 
 function defaultPublicClientName(client: XUIClientView, agentID: string, agents: DashboardAgentView[]): string {
-  const agent = agentName(agentID, agents)
+  const agent = customerAgentName(agentID, agents)
   return [agent, client.email || client.inbound_remark || client.inbound_tag].filter(Boolean).join(' - ')
 }
 
 function defaultPublicNodeName(node: XUINodeView, agentID: string, agents: DashboardAgentView[]): string {
-  const agent = agentName(agentID, agents)
+  const agent = customerAgentName(agentID, agents)
   return [agent, node.remark || node.tag || `Inbound #${node.id}`].filter(Boolean).join(' - ')
 }
 
 function agentName(agentID: string, agents: DashboardAgentView[]): string {
   const agent = agents.find((item) => item.agent_id === agentID)
   return agent?.agent_name || agentID
+}
+
+function customerAgentName(agentID: string, agents: DashboardAgentView[]): string {
+  const agent = agents.find((item) => item.agent_id === agentID)
+  return agent?.customer_display_name || agent?.agent_name || agentID
 }

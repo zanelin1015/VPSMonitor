@@ -63,6 +63,7 @@ func (s *SQLiteStore) init() error {
 		CREATE TABLE IF NOT EXISTS agents (
 			agent_id TEXT PRIMARY KEY,
 			agent_name TEXT NOT NULL DEFAULT '',
+			customer_display_name TEXT NOT NULL DEFAULT '',
 			sort_order INTEGER NOT NULL DEFAULT 0,
 			agent_tags_json TEXT NOT NULL DEFAULT '[]',
 			agent_token TEXT NOT NULL DEFAULT '',
@@ -208,6 +209,9 @@ func (s *SQLiteStore) init() error {
 		}
 	}
 	if err := s.ensureColumn("agents", "agent_tags_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("agents", "customer_display_name", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	if err := s.ensureColumn("agents", "sort_order", "INTEGER NOT NULL DEFAULT 0"); err != nil {

@@ -27,15 +27,22 @@ export function VisualEffects() {
       })
     return () => {
       cancelled = true
+      clearCustomFrontendCode()
     }
   }, [])
 
   return null
 }
 
-export function applyCustomFrontendCode(customCode: string) {
+export function clearCustomFrontendCode() {
   document.querySelectorAll('[data-vpsmonitor-custom-code="true"]').forEach((node) => node.remove())
   delete window.CustomBackgroundImage
+  document.documentElement.style.setProperty('--custom-bg-image', 'none')
+  applyShellBackground('none')
+}
+
+export function applyCustomFrontendCode(customCode: string) {
+  clearCustomFrontendCode()
   const template = document.createElement('template')
   template.innerHTML = customCode
   Array.from(template.content.childNodes).forEach((node) => appendCustomNode(node))

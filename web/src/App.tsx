@@ -140,6 +140,10 @@ interface LoadOptions {
   silent?: boolean
 }
 
+function hasCustomerDisplayNameField(value: unknown): boolean {
+  return Boolean(value && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'customer_display_name'))
+}
+
 export default function App() {
   const { message } = AntdApp.useApp()
   const { mode: themeMode, effectiveMode, setMode: setThemeMode } = useAppTheme()
@@ -173,6 +177,7 @@ export default function App() {
   const [managedConfig, setManagedConfig] = useState<ManagedAgentConfig | null>(null)
   const [savedManagedConfig, setSavedManagedConfig] = useState<ManagedAgentConfig | null>(null)
   const managedConfigDirtyRef = useRef(false)
+  const customerDisplayNameCacheRef = useRef<Record<string, string>>({})
   const [tagOptions, setTagOptions] = useState<string[]>([])
   const [newTagName, setNewTagName] = useState('')
   const [tagSaving, setTagSaving] = useState(false)
@@ -493,7 +498,7 @@ export default function App() {
     }
     try {
       const data = await fetchJSON<GlobalDashboardView>('/api/v1/dashboard')
-      const sortedAgents = sortAgentsByOrder(data.agents || [])
+      const sortedAgents = sortAgentsByOrder((data.agents || []).map(applyCachedCustomerDisplayName))
       setDashboardView({ ...data, agents: sortedAgents })
       setAgents(sortedAgents)
       setTagOptions((current) => mergeTagOptions(current, sortedAgents.flatMap((agent) => agent.tags || [])))
@@ -515,6 +520,35 @@ export default function App() {
         setAgentsLoading(false)
       }
     }
+  }
+
+  function rememberCustomerDisplayName(agentID: string, name: string) {
+    if (!agentID) {
+      return
+    }
+    customerDisplayNameCacheRef.current = {
+      ...customerDisplayNameCacheRef.current,
+      [agentID]: name,
+    }
+  }
+
+  function cachedCustomerDisplayName(agentID: string): string | undefined {
+    if (!Object.prototype.hasOwnProperty.call(customerDisplayNameCacheRef.current, agentID)) {
+      return undefined
+    }
+    return customerDisplayNameCacheRef.current[agentID]
+  }
+
+  function applyCachedCustomerDisplayName(agent: DashboardAgentView): DashboardAgentView {
+    if (hasCustomerDisplayNameField(agent)) {
+      rememberCustomerDisplayName(agent.agent_id, agent.customer_display_name || '')
+      return agent
+    }
+    const cachedName = cachedCustomerDisplayName(agent.agent_id)
+    if (cachedName === undefined) {
+      return agent
+    }
+    return { ...agent, customer_display_name: cachedName }
   }
 
   async function loadExchangeRates() {
@@ -608,7 +642,12 @@ export default function App() {
     }
     try {
       const data = await fetchJSON<ManagedAgentConfig>(`/api/v1/agents/${agentID}/config`)
-      const normalized = normalizeManagedConfig(data, agentID, selectedAgent?.agent_name)
+      const cachedName = cachedCustomerDisplayName(agentID)
+      const dataWithCustomerName = !hasCustomerDisplayNameField(data) && cachedName !== undefined
+        ? { ...data, customer_display_name: cachedName }
+        : data
+      const normalized = normalizeManagedConfig(dataWithCustomerName, agentID, selectedAgent?.agent_name)
+      rememberCustomerDisplayName(agentID, normalized.customer_display_name || '')
       setSavedManagedConfig(normalized)
       if (silent && managedConfigDirtyRef.current) {
         setConfigError('')
@@ -1072,7 +1111,12 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-      const normalized = normalizeManagedConfig(saved, selectedAgentId, saved.agent_name || selectedAgent?.agent_name)
+      const savedMissingCustomerDisplayName = section === 'client' && !hasCustomerDisplayNameField(saved)
+      const savedWithSubmittedCustomerName = savedMissingCustomerDisplayName
+        ? { ...saved, customer_display_name: payload.customer_display_name || '' }
+        : saved
+      const normalized = normalizeManagedConfig(savedWithSubmittedCustomerName, selectedAgentId, saved.agent_name || selectedAgent?.agent_name)
+      rememberCustomerDisplayName(selectedAgentId, normalized.customer_display_name || '')
       setSavedManagedConfig(normalized)
       const nextDraft = mergeSavedSectionIntoDraft(managedConfig, normalized, section)
       managedConfigDirtyRef.current = configSignature(nextDraft) !== configSignature(normalized)
@@ -1083,7 +1127,11 @@ export default function App() {
       if (section === 'entry') {
         setEntryAddressInputText(formatAddressInput(normalized.entry?.addresses))
       }
-      message.success(`${configSectionLabel(section)}已保存，client 下一次轮询会自动生效`)
+      if (savedMissingCustomerDisplayName && payload.customer_display_name) {
+        message.warning('Customer 展示名称已保留在当前页面；客户侧显示需要后端服务更新到新版后生效')
+      } else {
+        message.success(`${configSectionLabel(section)}已保存，client 下一次轮询会自动生效`)
+      }
       await loadAgents()
       await loadConfigAudits(selectedAgentId, { silent: true })
     } catch (error) {
@@ -1120,7 +1168,12 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-      const normalized = normalizeManagedConfig(saved, selectedAgentId, saved.agent_name || selectedAgent?.agent_name)
+      const cachedName = cachedCustomerDisplayName(selectedAgentId)
+      const savedWithCustomerName = !hasCustomerDisplayNameField(saved) && cachedName !== undefined
+        ? { ...saved, customer_display_name: cachedName }
+        : saved
+      const normalized = normalizeManagedConfig(savedWithCustomerName, selectedAgentId, saved.agent_name || selectedAgent?.agent_name)
+      rememberCustomerDisplayName(selectedAgentId, normalized.customer_display_name || '')
       setSavedManagedConfig(normalized)
       managedConfigDirtyRef.current = false
       setManagedConfig(normalized)
@@ -1384,6 +1437,10 @@ export default function App() {
               setSelectedAgentId('')
             }}
             onSelectAgent={(agentID, active) => {
+              if (topologyVisible) {
+                selectTopologyAgent(agentID)
+                return
+              }
               if (active && !topologyVisible) {
                 setReloadToken((current) => current + 1)
                 return
@@ -1402,11 +1459,7 @@ export default function App() {
                     agents: dashboardView.agents,
                     chains: filteredChains,
                     onSelectAgent: (agentID) => {
-                      if (!agentID) {
-                        setSelectedAgentId('')
-                        return
-                      }
-                      openAgentDetailPanel(agentID)
+                      selectTopologyAgent(agentID)
                     },
                     onJumpNode: jumpToNode,
                     canOpenXUI: Boolean(managedConfig?.xui?.base_url),
@@ -1480,6 +1533,7 @@ export default function App() {
                 onJumpOutbound={jumpToOutbound}
                 onJumpRule={jumpToRule}
                 onManagedConfigAgentNameChange={(value) => updateManagedConfig((current) => ({ ...current, agent_name: value }))}
+                onManagedConfigCustomerDisplayNameChange={(value) => updateManagedConfig((current) => ({ ...current, customer_display_name: value }))}
                 onManagedConfigSortOrderChange={(value) => updateManagedConfig((current) => ({ ...current, sort_order: value }))}
                 onNewTagNameChange={setNewTagName}
                 onOpenImportURL={setImportURLClient}
@@ -1542,6 +1596,19 @@ export default function App() {
 
   function openTopologyPanel() {
     setTopologyVisible(true)
+    window.setTimeout(() => {
+      document.getElementById('topology-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 80)
+  }
+
+  function selectTopologyAgent(agentID: string) {
+    setTopologyVisible(true)
+    setSelectedNodeAnchor('')
+    setSelectedOutboundTag('')
+    setSelectedRuleIndex(null)
+    startTransition(() => {
+      setSelectedAgentId(agentID)
+    })
     window.setTimeout(() => {
       document.getElementById('topology-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }, 80)

@@ -104,11 +104,12 @@ type rowsScanner interface {
 	Close() error
 }
 
-func (s *SQLiteStore) parseManagedConfig(agentID, agentName string, sortOrder int, tagsJSON, xuiJSON, nezhaJSON, renewalJSON, entryJSON string) (model.ManagedAgentConfig, error) {
+func (s *SQLiteStore) parseManagedConfig(agentID, agentName, customerDisplayName string, sortOrder int, tagsJSON, xuiJSON, nezhaJSON, renewalJSON, entryJSON string) (model.ManagedAgentConfig, error) {
 	cfg := model.ManagedAgentConfig{
-		AgentID:   agentID,
-		AgentName: agentName,
-		SortOrder: sortOrder,
+		AgentID:             agentID,
+		AgentName:           agentName,
+		CustomerDisplayName: strings.TrimSpace(customerDisplayName),
+		SortOrder:           sortOrder,
 	}
 	if tagsJSON != "" {
 		_ = json.Unmarshal([]byte(tagsJSON), &cfg.Tags)

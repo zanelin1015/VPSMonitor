@@ -17,6 +17,7 @@ export interface ConfigPanelProps {
   configError: string
   onSave: (section: ConfigSectionKey) => void
   onAgentNameChange: (value: string) => void
+  onCustomerDisplayNameChange: (value: string) => void
   onSortOrderChange: (value: number) => void
   tagOptions: string[]
   newTagName: string
@@ -43,6 +44,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
     configError,
     onSave,
     onAgentNameChange,
+    onCustomerDisplayNameChange,
     onSortOrderChange,
     tagOptions,
     newTagName,
@@ -141,15 +143,23 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
           {sectionSaveButton('client', '保存 Client 信息')}
         </div>
         <Row gutter={[16, 16]}>
-          <Col xs={24} md={8}>
+          <Col xs={24} md={6}>
             <Text type="secondary">Agent ID</Text>
             <Input value={managedConfig.agent_id || selectedAgent.agent_id} disabled />
           </Col>
-          <Col xs={24} md={8}>
+          <Col xs={24} md={6}>
             <Text type="secondary">展示名称</Text>
             <Input value={managedConfig.agent_name || ''} onChange={(event) => onAgentNameChange(event.target.value)} />
           </Col>
-          <Col xs={24} md={8}>
+          <Col xs={24} md={6}>
+            <Text type="secondary">Customer 展示名称</Text>
+            <Input
+              value={managedConfig.customer_display_name || ''}
+              placeholder="客户页面只显示这个名称"
+              onChange={(event) => onCustomerDisplayNameChange(event.target.value)}
+            />
+          </Col>
+          <Col xs={24} md={6}>
             <Text type="secondary">排序序号</Text>
             <InputNumber
               style={{ width: '100%' }}

@@ -503,6 +503,159 @@ func TestXUIExecuteAddRoutingRuleForcesRestart(t *testing.T) {
 	}
 }
 
+func TestXUIExecuteRoutingRuleChecksCookieAndReloginsBeforeUpdate(t *testing.T) {
+	client, err := NewXUIClient(config.XUIConfig{
+		Enabled:  true,
+		BaseURL:  "https://xui.local",
+		Username: "admin",
+		Password: "pass",
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewXUIClient: %v", err)
+	}
+	client.authenticated = true
+
+	loginCount := 0
+	statusCount := 0
+	templateCount := 0
+	updateCount := 0
+	restartCount := 0
+	client.client = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/panel/api/server/status":
+				statusCount++
+				return &http.Response{
+					StatusCode: http.StatusNotFound,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(bytes.NewReader([]byte("404 page not found"))),
+					Request:    req,
+				}, nil
+			case "/login":
+				loginCount++
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
+			case "/panel/api/xray/":
+				templateCount++
+				wrapper, err := json.Marshal(map[string]any{
+					"xraySetting": map[string]any{
+						"outbounds": []map[string]any{{"tag": "direct", "protocol": "freedom"}},
+						"routing":   map[string]any{"rules": []map[string]any{}},
+					},
+				})
+				if err != nil {
+					t.Fatalf("marshal wrapper: %v", err)
+				}
+				return jsonResponse(t, req, map[string]any{"success": true, "obj": string(wrapper)}), nil
+			case "/panel/api/xray/update":
+				updateCount++
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "updated"}), nil
+			case "/panel/api/server/restartXrayService":
+				restartCount++
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "restarted"}), nil
+			default:
+				t.Fatalf("unexpected path: %s", req.URL.Path)
+				return nil, nil
+			}
+		}),
+	}
+
+	result, err := client.ExecuteAction(context.Background(), model.XUIAction{
+		Kind: model.XUIActionUpsertRoutingRule,
+		Payload: map[string]any{
+			"rule": map[string]any{
+				"type":        "field",
+				"inboundTag":  []string{"in-a"},
+				"outboundTag": "direct",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteAction: %v", err)
+	}
+	if result["rule_index"] != 1 || result["restarted"] != true {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+	if statusCount != 1 || loginCount != 1 || templateCount != 1 || updateCount != 1 || restartCount != 1 {
+		t.Fatalf("expected status/login/template/update/restart once, got status=%d login=%d template=%d update=%d restart=%d", statusCount, loginCount, templateCount, updateCount, restartCount)
+	}
+}
+
+func TestXUIExecuteFallsBackToLocalDBWhenTemplateAPI404(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "x-ui.db")
+	createLocalXUITestDB(t, dbPath)
+
+	client, err := NewXUIClient(config.XUIConfig{
+		Enabled:  true,
+		BaseURL:  "https://xui.local",
+		DBPath:   dbPath,
+		Username: "admin",
+		Password: "pass",
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewXUIClient: %v", err)
+	}
+
+	restarted := false
+	client.client = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/login":
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
+			case "/panel/api/xray/":
+				return &http.Response{
+					StatusCode: http.StatusNotFound,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(bytes.NewReader([]byte("404 page not found"))),
+					Request:    req,
+				}, nil
+			case "/panel/api/server/restartXrayService":
+				restarted = true
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "restarted"}), nil
+			default:
+				t.Fatalf("unexpected path: %s", req.URL.Path)
+				return nil, nil
+			}
+		}),
+	}
+
+	result, err := client.ExecuteAction(context.Background(), model.XUIAction{
+		Kind: model.XUIActionAddRoutingRule,
+		Payload: map[string]any{
+			"rule": map[string]any{
+				"type":        "field",
+				"inboundTag":  []string{"inbound-443"},
+				"outboundTag": "direct",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteAction: %v", err)
+	}
+	if result["rule_index"] != 2 || result["restarted"] != true {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+	if !restarted {
+		t.Fatalf("expected xray restart after local db update")
+	}
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+	configJSON, err := readLocalXrayConfig(context.Background(), db)
+	if err != nil {
+		t.Fatalf("read local xray template: %v", err)
+	}
+	routing := configJSON["routing"].(map[string]any)
+	rules := routing["rules"].([]any)
+	if len(rules) != 2 {
+		t.Fatalf("expected appended local db rule, got %#v", rules)
+	}
+}
+
 func TestXUIExecuteUpsertRoutingRuleAddsOutboundAndRuleOnce(t *testing.T) {
 	client, err := NewXUIClient(config.XUIConfig{
 		Enabled:  true,

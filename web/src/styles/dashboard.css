@@ -8,18 +8,18 @@
 .overview-stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 
 .overview-stat-card {
   position: relative;
   display: grid;
-  grid-template-rows: auto 34px auto;
-  min-height: 96px;
+  grid-template-rows: auto 28px auto;
+  min-height: 78px;
   align-content: start;
-  gap: 8px;
+  gap: 5px;
   overflow: hidden;
-  padding: 16px 18px;
+  padding: 12px 16px;
   border: 1px solid var(--border);
   border-radius: 18px;
   background: var(--card);
@@ -34,7 +34,7 @@
   position: relative;
   z-index: 1;
   color: var(--text);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 800;
   letter-spacing: 0.02em;
 }
@@ -43,11 +43,11 @@
   position: relative;
   z-index: 1;
   display: inline-flex;
-  height: 34px;
+  height: 28px;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   color: var(--text);
-  font-size: 22px;
+  font-size: 18px;
   line-height: 1;
 }
 
@@ -70,13 +70,13 @@
   position: relative;
   z-index: 1;
   color: var(--green);
-  font-size: 24px;
+  font-size: 21px;
   font-weight: 900;
   line-height: 1;
 }
 
 .overview-stat-value strong {
-  font-size: 24px;
+  font-size: 21px;
   font-weight: 900;
 }
 
@@ -102,12 +102,12 @@
   position: relative;
   z-index: 1;
   color: var(--muted-strong);
-  font-size: 11.5px;
-  line-height: 1.35;
+  font-size: 11px;
+  line-height: 1.25;
 }
 
 .overview-network-card {
-  gap: 8px;
+  gap: 5px;
 }
 
 .overview-network-total,
@@ -122,11 +122,11 @@
 }
 
 .overview-network-total {
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .overview-network-speed {
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .network-up {
@@ -140,14 +140,14 @@
 .overview-summary-strip {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 10px;
-  margin-top: 14px;
+  gap: 6px 8px;
+  margin-top: 10px;
   color: var(--muted-strong);
   font-size: 12px;
 }
 
 .overview-summary-strip span {
-  padding: 5px 9px;
+  padding: 4px 8px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--card);
@@ -365,4 +365,3 @@
   padding: 12px;
   background: transparent;
 }
-

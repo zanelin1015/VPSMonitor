@@ -121,9 +121,10 @@ func TestSQLiteStoreRegisterAndUpdateConfig(t *testing.T) {
 	}
 
 	updated, err := store.UpdateAgentConfig("jp-01", model.ManagedAgentConfig{
-		AgentID:   "jp-01",
-		AgentName: "Japan Relay 01",
-		Tags:      []string{"relay", "asia", "relay"},
+		AgentID:             "jp-01",
+		AgentName:           "Japan Relay 01",
+		CustomerDisplayName: "Customer JP Entry",
+		Tags:                []string{"relay", "asia", "relay"},
 		XUI: config.XUIConfig{
 			Enabled:       true,
 			BaseURL:       "https://127.0.0.1:8443",
@@ -138,6 +139,9 @@ func TestSQLiteStoreRegisterAndUpdateConfig(t *testing.T) {
 	if updated.AgentName != "Japan Relay 01" {
 		t.Fatalf("unexpected updated agent name: %s", updated.AgentName)
 	}
+	if updated.CustomerDisplayName != "Customer JP Entry" {
+		t.Fatalf("unexpected customer display name: %s", updated.CustomerDisplayName)
+	}
 
 	reloadedCfg, found, err := store.GetAgentConfig("jp-01")
 	if err != nil {
@@ -148,6 +152,9 @@ func TestSQLiteStoreRegisterAndUpdateConfig(t *testing.T) {
 	}
 	if reloadedCfg.XUI.BaseURL != "https://127.0.0.1:8443" {
 		t.Fatalf("unexpected updated x-ui base url: %s", reloadedCfg.XUI.BaseURL)
+	}
+	if reloadedCfg.CustomerDisplayName != "Customer JP Entry" {
+		t.Fatalf("expected reloaded customer display name, got %q", reloadedCfg.CustomerDisplayName)
 	}
 	if got := len(reloadedCfg.Tags); got != 2 {
 		t.Fatalf("expected normalized tags length 2, got %#v", reloadedCfg.Tags)

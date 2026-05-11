@@ -343,12 +343,34 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 		if !ok {
 			return
 		}
+		var raw map[string]json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode config: %v", err))
+			return
+		}
+		body, err := json.Marshal(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode config: %v", err))
+			return
+		}
 		var cfg model.ManagedAgentConfig
-		if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		if err := json.Unmarshal(body, &cfg); err != nil {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode config: %v", err))
 			return
 		}
 		cfg.AgentID = agentID
+		if _, ok := raw["customer_display_name"]; !ok {
+			existing, found, err := a.store.GetAgentConfig(agentID)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			if !found {
+				writeError(w, http.StatusNotFound, "agent not found")
+				return
+			}
+			cfg.CustomerDisplayName = existing.CustomerDisplayName
+		}
 		record, err := a.store.UpdateAgentConfigWithActor(agentID, cfg, user.Username)
 		if err != nil {
 			if err.Error() == "agent not found" {

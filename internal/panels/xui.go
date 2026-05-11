@@ -49,6 +49,32 @@ type xuiEnvelope struct {
 	Obj     json.RawMessage `json:"obj"`
 }
 
+type mutableXrayConfig struct {
+	config map[string]any
+	source string
+	dbPath string
+}
+
+type xuiHTTPError struct {
+	StatusCode  int
+	Body        string
+	AuthExpired bool
+}
+
+func (e xuiHTTPError) Error() string {
+	if e.AuthExpired {
+		return fmt.Sprintf("%v: http %d: %s", errXUIAuthExpired, e.StatusCode, strings.TrimSpace(e.Body))
+	}
+	return fmt.Sprintf("http %d: %s", e.StatusCode, e.Body)
+}
+
+func (e xuiHTTPError) Unwrap() error {
+	if e.AuthExpired {
+		return errXUIAuthExpired
+	}
+	return nil
+}
+
 type localStatusSampler struct {
 	lastCPU     localCPUCounters
 	hasCPU      bool
@@ -180,7 +206,7 @@ func (c *XUIClient) collectAuthenticated(ctx context.Context, snapshot *model.XU
 }
 
 func (c *XUIClient) ExecuteAction(ctx context.Context, action model.XUIAction) (map[string]any, error) {
-	if err := c.ensureLogin(ctx); err != nil {
+	if err := c.ensureActionSession(ctx); err != nil {
 		return nil, err
 	}
 	result, err := c.executeActionAuthenticated(ctx, action)
@@ -242,10 +268,11 @@ func (c *XUIClient) addOutbound(ctx context.Context, payload map[string]any) (ma
 		return nil, fmt.Errorf("outbound.tag is required")
 	}
 
-	configJSON, err := c.getXrayTemplate(ctx)
+	mutableConfig, err := c.getMutableXrayConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
+	configJSON := mutableConfig.config
 	outbounds := objectSlice(configJSON["outbounds"])
 	for _, existing := range outbounds {
 		if stringFromMap(existing, "tag") == tag {
@@ -254,7 +281,7 @@ func (c *XUIClient) addOutbound(ctx context.Context, payload map[string]any) (ma
 	}
 	configJSON["outbounds"] = append(outbounds, outbound)
 
-	if err := c.updateXrayTemplate(ctx, configJSON); err != nil {
+	if err := c.updateMutableXrayConfig(ctx, mutableConfig); err != nil {
 		return nil, err
 	}
 	if err := c.restartXrayService(ctx); err != nil {
@@ -278,17 +305,18 @@ func (c *XUIClient) addRoutingRule(ctx context.Context, payload map[string]any) 
 		return nil, fmt.Errorf("rule.outboundTag or rule.balancerTag is required")
 	}
 
-	configJSON, err := c.getXrayTemplate(ctx)
+	mutableConfig, err := c.getMutableXrayConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
+	configJSON := mutableConfig.config
 	routing := objectMap(configJSON["routing"])
 	rules := objectSlice(routing["rules"])
 	rules = append(rules, rule)
 	routing["rules"] = rules
 	configJSON["routing"] = routing
 
-	if err := c.updateXrayTemplate(ctx, configJSON); err != nil {
+	if err := c.updateMutableXrayConfig(ctx, mutableConfig); err != nil {
 		return nil, err
 	}
 	if err := c.restartXrayService(ctx); err != nil {
@@ -312,10 +340,11 @@ func (c *XUIClient) upsertRoutingRule(ctx context.Context, payload map[string]an
 		return nil, fmt.Errorf("rule.outboundTag or rule.balancerTag is required")
 	}
 
-	configJSON, err := c.getXrayTemplate(ctx)
+	mutableConfig, err := c.getMutableXrayConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
+	configJSON := mutableConfig.config
 
 	outboundAdded := false
 	if rawOutbound, ok := payload["outbound"]; ok && rawOutbound != nil {
@@ -370,7 +399,7 @@ func (c *XUIClient) upsertRoutingRule(ctx context.Context, payload map[string]an
 	routing["rules"] = rules
 	configJSON["routing"] = routing
 
-	if err := c.updateXrayTemplate(ctx, configJSON); err != nil {
+	if err := c.updateMutableXrayConfig(ctx, mutableConfig); err != nil {
 		return nil, err
 	}
 	if err := c.restartXrayService(ctx); err != nil {
@@ -674,6 +703,28 @@ func readLocalXrayConfig(ctx context.Context, db *sql.DB) (map[string]any, error
 		return nil, err
 	}
 	return configJSON, nil
+}
+
+func writeLocalXrayConfig(ctx context.Context, db *sql.DB, configJSON map[string]any) error {
+	body, err := json.Marshal(configJSON)
+	if err != nil {
+		return fmt.Errorf("marshal local xray template: %w", err)
+	}
+	result, err := db.ExecContext(ctx, `UPDATE settings SET value = ? WHERE key = 'xrayTemplateConfig'`, string(body))
+	if err != nil {
+		return fmt.Errorf("update local xray template: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read local xray template update count: %w", err)
+	}
+	if affected > 0 {
+		return nil
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES ('xrayTemplateConfig', ?)`, string(body)); err != nil {
+		return fmt.Errorf("insert local xray template: %w", err)
+	}
+	return nil
 }
 
 func decodeLocalXrayTemplate(raw string) (map[string]any, error) {
@@ -982,6 +1033,25 @@ func (c *XUIClient) ensureLogin(ctx context.Context) error {
 	return c.login(ctx)
 }
 
+func (c *XUIClient) ensureActionSession(ctx context.Context) error {
+	if !c.authenticated {
+		return c.login(ctx)
+	}
+	if err := c.validateSession(ctx); err != nil {
+		if !isXUIAuthError(err) {
+			return err
+		}
+		c.invalidateSession()
+		return c.login(ctx)
+	}
+	return nil
+}
+
+func (c *XUIClient) validateSession(ctx context.Context) error {
+	_, err := c.getStatus(ctx)
+	return err
+}
+
 func (c *XUIClient) invalidateSession() {
 	c.authenticated = false
 	c.resetCookieJar()
@@ -993,6 +1063,55 @@ func (c *XUIClient) resetCookieJar() {
 		return
 	}
 	c.client.Jar = jar
+}
+
+func (c *XUIClient) getMutableXrayConfig(ctx context.Context) (mutableXrayConfig, error) {
+	configJSON, err := c.getXrayTemplate(ctx)
+	if err == nil {
+		return mutableXrayConfig{config: configJSON, source: "api"}, nil
+	}
+	if !isXUIHTTPStatus(err, http.StatusNotFound) {
+		return mutableXrayConfig{}, err
+	}
+	localConfig, dbPath, localErr := c.readLocalMutableXrayConfig(ctx)
+	if localErr != nil {
+		return mutableXrayConfig{}, fmt.Errorf("%w (local db fallback failed: %v)", err, localErr)
+	}
+	return mutableXrayConfig{config: localConfig, source: "local_db", dbPath: dbPath}, nil
+}
+
+func (c *XUIClient) readLocalMutableXrayConfig(ctx context.Context) (map[string]any, string, error) {
+	dbPath, _, err := c.resolveLocalDBPath()
+	if err != nil {
+		return nil, "", err
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return nil, "", fmt.Errorf("open x-ui db: %w", err)
+	}
+	defer db.Close()
+
+	configJSON, err := readLocalXrayConfig(ctx, db)
+	if err != nil {
+		return nil, "", fmt.Errorf("read local xray template: %w", err)
+	}
+	return configJSON, dbPath, nil
+}
+
+func (c *XUIClient) updateMutableXrayConfig(ctx context.Context, mutableConfig mutableXrayConfig) error {
+	switch mutableConfig.source {
+	case "api":
+		return c.updateXrayTemplate(ctx, mutableConfig.config)
+	case "local_db":
+		db, err := sql.Open("sqlite", mutableConfig.dbPath)
+		if err != nil {
+			return fmt.Errorf("open x-ui db: %w", err)
+		}
+		defer db.Close()
+		return writeLocalXrayConfig(ctx, db, mutableConfig.config)
+	default:
+		return fmt.Errorf("unknown xray config source: %s", mutableConfig.source)
+	}
 }
 
 func (c *XUIClient) getXrayTemplate(ctx context.Context) (map[string]any, error) {
@@ -1184,10 +1303,10 @@ func (c *XUIClient) doJSON(req *http.Request, target any) error {
 	}
 	if resp.StatusCode >= 400 {
 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden ||
-			(resp.StatusCode == http.StatusNotFound && isXUIAPIRequest(req)) {
-			return fmt.Errorf("%w: http %d: %s", errXUIAuthExpired, resp.StatusCode, strings.TrimSpace(string(body)))
+			(resp.StatusCode == http.StatusNotFound && isXUISessionProbeRequest(req)) {
+			return xuiHTTPError{StatusCode: resp.StatusCode, Body: string(body), AuthExpired: true}
 		}
-		return fmt.Errorf("http %d: %s", resp.StatusCode, string(body))
+		return xuiHTTPError{StatusCode: resp.StatusCode, Body: string(body)}
 	}
 	dec := json.NewDecoder(bytes.NewReader(body))
 	if err := dec.Decode(target); err != nil {
@@ -1196,11 +1315,11 @@ func (c *XUIClient) doJSON(req *http.Request, target any) error {
 	return nil
 }
 
-func isXUIAPIRequest(req *http.Request) bool {
+func isXUISessionProbeRequest(req *http.Request) bool {
 	if req == nil || req.URL == nil {
 		return false
 	}
-	return strings.Contains(req.URL.Path, "/panel/api/")
+	return strings.HasSuffix(req.URL.Path, "/panel/api/server/status")
 }
 
 func isXUIAuthError(err error) bool {
@@ -1217,6 +1336,11 @@ func isXUIAuthError(err error) bool {
 		strings.Contains(text, "not logged") ||
 		strings.Contains(text, "session") ||
 		strings.Contains(text, "登录")
+}
+
+func isXUIHTTPStatus(err error, statusCode int) bool {
+	var httpErr xuiHTTPError
+	return errors.As(err, &httpErr) && httpErr.StatusCode == statusCode
 }
 
 func extractObjectList(raw any) []map[string]any {

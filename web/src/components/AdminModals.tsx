@@ -358,7 +358,7 @@ export function FrontendSettingsModal(props: {
 
   return (
     <Modal
-      title="前端样式自定义"
+      title="管理员后台样式自定义"
       open={open}
       onCancel={onClose}
       width={920}
@@ -370,10 +370,10 @@ export function FrontendSettingsModal(props: {
       <Spin spinning={loading}>
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
           <Alert
-            type="warning"
+            type="info"
             showIcon
-            message="支持自定义 CSS / HTML / script"
-            description="这里的代码会在所有访问者浏览器中执行，请只填写你信任的样式和脚本。背景图可以用 window.CustomBackgroundImage = '图片地址'。"
+            message="只影响管理员后台"
+            description="客户账号不会继承这里的样式；每个客户账号请在客户页“页面样式”里单独保存。背景图可以用 window.CustomBackgroundImage = '图片地址'。"
           />
           <div>
             <Text strong>自定义代码（样式和脚本）</Text>

@@ -213,7 +213,7 @@ func buildCustomerLinkView(
 	clientMap map[string]customerClientRef,
 	agentMap map[string]model.DashboardAgentView,
 ) model.CustomerLinkView {
-	entryName := firstNonEmptyString(assignment.PublicClientName, assignment.ClientEmail, assignment.InboundTag, assignment.AgentID)
+	entryName := firstNonEmptyString(customerAgentDisplayName(assignment.AgentID, agentMap), assignment.PublicClientName, assignment.ClientEmail, assignment.InboundTag, assignment.AgentID)
 	link := model.CustomerLinkView{
 		AssignmentID:    assignment.ID,
 		EntryClientName: entryName,
@@ -243,7 +243,7 @@ func buildCustomerLinkView(
 	if link.InboundTag == "" {
 		link.InboundTag = chain.RootInboundTag
 	}
-	relays := customerRelayNames(chain, assignment.AgentID)
+	relays := customerRelayNames(chain, assignment.AgentID, agentMap)
 	for _, relay := range relays {
 		link.Steps = append(link.Steps, model.CustomerLinkStep{Role: "relay", Label: relay})
 	}
@@ -267,7 +267,7 @@ func buildCustomerLinkView(
 	return link
 }
 
-func customerRelayNames(chain model.ClientChainView, rootAgentID string) []string {
+func customerRelayNames(chain model.ClientChainView, rootAgentID string, agentMap map[string]model.DashboardAgentView) []string {
 	seen := make(map[string]struct{})
 	result := make([]string, 0)
 	for _, step := range chain.Steps {
@@ -277,7 +277,7 @@ func customerRelayNames(chain model.ClientChainView, rootAgentID string) []strin
 		if step.StepType != "match" && step.StepType != "inbound" {
 			continue
 		}
-		label := firstNonEmptyString(step.AgentName, step.Label)
+		label := firstNonEmptyString(customerAgentDisplayName(step.AgentID, agentMap), step.AgentName, step.Label)
 		if label == "" {
 			continue
 		}
@@ -289,6 +289,16 @@ func customerRelayNames(chain model.ClientChainView, rootAgentID string) []strin
 		result = append(result, label)
 	}
 	return result
+}
+
+func customerAgentDisplayName(agentID string, agentMap map[string]model.DashboardAgentView) string {
+	if agentID == "" {
+		return ""
+	}
+	if agent, ok := agentMap[agentID]; ok {
+		return strings.TrimSpace(agent.CustomerDisplayName)
+	}
+	return ""
 }
 
 func findCustomerChain(assignment model.CustomerAssignment, chainMap map[string]model.ClientChainView) (model.ClientChainView, bool) {
@@ -314,6 +324,11 @@ func findCustomerChain(assignment model.CustomerAssignment, chainMap map[string]
 func customerExitInfo(chain model.ClientChainView, agentMap map[string]model.DashboardAgentView) (string, string, string) {
 	for i := len(chain.Steps) - 1; i >= 0; i-- {
 		step := chain.Steps[i]
+		if step.AgentID != "" && step.AgentID != chain.RootAgentID && (step.StepType == "match" || step.StepType == "inbound" || step.StepType == "client") {
+			if agent, ok := agentMap[step.AgentID]; ok && agent.Geo != nil {
+				return customerGeoParts(agent.Geo.IP, agent.Geo)
+			}
+		}
 		if step.TargetIP != "" || step.TargetGeo != nil {
 			return customerGeoParts(step.TargetIP, step.TargetGeo)
 		}

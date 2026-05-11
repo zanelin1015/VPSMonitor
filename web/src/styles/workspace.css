@@ -697,12 +697,17 @@ textarea,
     width: 100%;
     margin-left: 0;
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(150px, 0.42fr) minmax(0, 0.58fr);
   }
 
-  .workspace-grid-topology .agent-rail,
+  .workspace-grid-topology .agent-rail {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
   .workspace-grid-topology .main-stage {
     grid-column: 1;
-    grid-row: auto;
+    grid-row: 3;
   }
 
   .agent-button-list {
@@ -839,4 +844,3 @@ textarea,
 .client-expiry-cell {
   min-width: 320px;
 }
-

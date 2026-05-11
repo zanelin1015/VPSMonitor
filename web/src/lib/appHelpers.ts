@@ -787,6 +787,9 @@ function summarizeConfigAudit(item: ConfigAuditLog): string {
   if (before.agent_name !== after.agent_name) {
     changes.push('名称')
   }
+  if (before.customer_display_name !== after.customer_display_name) {
+    changes.push('Customer 展示名称')
+  }
   if (JSON.stringify(before.tags || []) !== JSON.stringify(after.tags || [])) {
     changes.push('标签')
   }
@@ -908,6 +911,7 @@ function buildSectionSavePayload(base: ManagedAgentConfig, draft: ManagedAgentCo
     ...base,
     agent_id: agentID,
     agent_name: base.agent_name || draft.agent_name || agentID,
+    customer_display_name: base.customer_display_name || '',
     sort_order: base.sort_order || draft.sort_order || 0,
     tags: [...(base.tags || [])],
     renewal: { ...(base.renewal || {}) },
@@ -920,6 +924,7 @@ function buildSectionSavePayload(base: ManagedAgentConfig, draft: ManagedAgentCo
   switch (section) {
     case 'client':
       payload.agent_name = draft.agent_name || agentID
+      payload.customer_display_name = draft.customer_display_name || ''
       payload.sort_order = Number(draft.sort_order || base.sort_order || 0)
       payload.tags = [...(draft.tags || [])]
       break
@@ -947,6 +952,7 @@ function mergeSavedSectionIntoDraft(draft: ManagedAgentConfig, saved: ManagedAge
   switch (section) {
     case 'client':
       next.agent_name = saved.agent_name
+      next.customer_display_name = saved.customer_display_name || ''
       next.sort_order = saved.sort_order
       next.tags = [...(saved.tags || [])]
       break
@@ -1280,6 +1286,7 @@ function createEmptyManagedConfig(agentID: string, agentName?: string): ManagedA
   return {
     agent_id: agentID,
     agent_name: agentName || agentID,
+    customer_display_name: '',
     sort_order: 0,
     tags: [],
     renewal: {
@@ -1320,6 +1327,7 @@ function normalizeManagedConfig(config: ManagedAgentConfig, agentID: string, age
   return {
     agent_id: config.agent_id || base.agent_id,
     agent_name: config.agent_name || agentName || base.agent_name,
+    customer_display_name: config.customer_display_name || '',
     sort_order: Number(config.sort_order || base.sort_order || 0),
     tags: parseTagInput((config.tags || []).join(',')),
     renewal: normalizeRenewalConfig(config.renewal || base.renewal),

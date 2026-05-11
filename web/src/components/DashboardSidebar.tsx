@@ -1,4 +1,5 @@
-import { Alert, Button, Card, Empty, List, Select, Space, Spin, Tag, Typography } from 'antd'
+import { useEffect, useState } from 'react'
+import { Alert, Button, Card, Empty, List, Select, Space, Tag, Typography } from 'antd'
 import { ApartmentOutlined, BarsOutlined, CloudServerOutlined, ReloadOutlined } from '@ant-design/icons'
 
 import type { DashboardAgentView, DashboardTagView, GlobalDashboardView } from '../types'
@@ -151,6 +152,18 @@ export function AgentRail(props: {
   onSelectAgent: (agentID: string, active: boolean) => void
 }) {
   const { agents, loading, error, selectedTag, selectedAgentId, tagFilterOptions, viewMode, panelExpanded, topologyVisible, onToggleViewMode, onToggleTopology, onRefresh, onSelectTag, onSelectAgent } = props
+  const effectiveViewMode: AgentViewMode = panelExpanded ? 'list' : viewMode
+  const [agentPage, setAgentPage] = useState(1)
+  const [agentPageSize, setAgentPageSize] = useState(5)
+
+  useEffect(() => {
+    setAgentPage(1)
+  }, [selectedTag, effectiveViewMode])
+
+  useEffect(() => {
+    const maxPage = Math.max(1, Math.ceil(agents.length / agentPageSize))
+    setAgentPage((current) => Math.min(current, maxPage))
+  }, [agents.length, agentPageSize])
 
   return (
     <aside className="agent-rail">
@@ -174,16 +187,18 @@ export function AgentRail(props: {
             >
               {topologyVisible ? '收起' : '打开拓扑图'}
             </Button>
-            <Button
-              size="small"
-              shape="circle"
-              icon={<BarsOutlined />}
-              className={`agent-view-mode-button${viewMode === 'list' ? ' active' : ''}`}
-              aria-label={viewMode === 'list' ? '关闭列表模式' : '开启列表模式'}
-              aria-pressed={viewMode === 'list'}
-              title={viewMode === 'list' ? '列表模式已开启，点击切回卡片' : '开启列表模式'}
-              onClick={onToggleViewMode}
-            />
+            {!panelExpanded ? (
+              <Button
+                size="small"
+                shape="circle"
+                icon={<BarsOutlined />}
+                className={`agent-view-mode-button${effectiveViewMode === 'list' ? ' active' : ''}`}
+                aria-label={effectiveViewMode === 'list' ? '关闭列表模式' : '开启列表模式'}
+                aria-pressed={effectiveViewMode === 'list'}
+                title={effectiveViewMode === 'list' ? '列表模式已开启，点击切回卡片' : '开启列表模式'}
+                onClick={onToggleViewMode}
+              />
+            ) : null}
             <Button
               size="small"
               shape={panelExpanded ? 'circle' : undefined}
@@ -198,36 +213,59 @@ export function AgentRail(props: {
         }
       >
         {error ? <Alert type="error" showIcon message="加载失败" description={error} className="compact-alert" /> : null}
-        <Space wrap style={{ marginBottom: 12 }}>
-          <Tag color={!selectedTag ? 'blue' : 'default'} className="tag-filter-chip" onClick={() => onSelectTag('')}>全部</Tag>
-          {tagFilterOptions.map((tag) => (
-            <Tag key={tag.tag} className="tag-filter-chip" style={tagChipStyle(tag.tag, selectedTag === tag.tag)} onClick={() => onSelectTag(tag.tag)}>
-              {tag.tag} · {tag.agent_count}
-            </Tag>
-          ))}
-        </Space>
-        <Spin spinning={loading}>
-          {agents.length ? (
-            <List
-              className={`agent-list agent-list-${viewMode}`}
-              dataSource={agents}
-              pagination={{ pageSize: 10, hideOnSinglePage: true, showSizeChanger: false }}
-              renderItem={(item, index) => (
-                <AgentRailItem
-                  key={item.agent_id}
-                  item={item}
-                  index={index}
-                  active={item.agent_id === selectedAgentId}
-                  viewMode={viewMode}
-                  compact={panelExpanded}
-                  onSelect={onSelectAgent}
-                />
-              )}
-            />
-          ) : (
-            <Empty description={selectedTag ? '该标签下暂无 client' : '暂无已注册 client'} />
-          )}
-        </Spin>
+        <div className="agent-filter-strip">
+          <Space wrap>
+            <Tag color={!selectedTag ? 'blue' : 'default'} className="tag-filter-chip" onClick={() => onSelectTag('')}>全部</Tag>
+            {tagFilterOptions.map((tag) => (
+              <Tag key={tag.tag} className="tag-filter-chip" style={tagChipStyle(tag.tag, selectedTag === tag.tag)} onClick={() => onSelectTag(tag.tag)}>
+                {tag.tag} · {tag.agent_count}
+              </Tag>
+            ))}
+          </Space>
+        </div>
+        <div className="agent-list-wrap">
+          <List
+            className={`agent-list agent-list-${effectiveViewMode}`}
+            dataSource={agents}
+            loading={loading}
+            locale={{ emptyText: <Empty description={selectedTag ? '该标签下暂无 client' : '暂无已注册 client'} /> }}
+            pagination={{
+              current: agentPage,
+              pageSize: agentPageSize,
+              hideOnSinglePage: false,
+              showSizeChanger: {
+                labelRender: ({ value }) => `${value}/页`,
+                optionRender: (option) => `${option.value}/页`,
+              },
+              pageSizeOptions: [5, 10, 20],
+              locale: { items_per_page: '/页' },
+              onChange: (page, nextPageSize) => {
+                if (nextPageSize !== agentPageSize) {
+                  setAgentPageSize(nextPageSize)
+                  setAgentPage(1)
+                  return
+                }
+                setAgentPage(page)
+              },
+              onShowSizeChange: (_, nextPageSize) => {
+                setAgentPageSize(nextPageSize)
+                setAgentPage(1)
+              },
+              showTotal: (total, range) => `第 ${range[0]}-${range[1]} 台 / 共 ${total} 台`,
+            }}
+            renderItem={(item, index) => (
+              <AgentRailItem
+                key={item.agent_id}
+                item={item}
+                index={index}
+                active={item.agent_id === selectedAgentId}
+                viewMode={effectiveViewMode}
+                compact={panelExpanded}
+                onSelect={onSelectAgent}
+              />
+            )}
+          />
+        </div>
       </Card>
     </aside>
   )
@@ -250,6 +288,7 @@ function AgentRailItem(props: {
   const memPercent = calculateMemoryPercent(item.summary)
   const displayStatus = agentDisplayStatus(item)
   const statusLevel = displayStatus.level
+  const showStatusText = statusLevel !== 'ok'
   const displaySortOrder = item.sort_order || index + 1
   const addressText = item.summary.observed_ip || item.summary.public_ipv4 || item.summary.hostname || item.agent_id
   const countryCode = agentCountryCode(item)
@@ -267,7 +306,7 @@ function AgentRailItem(props: {
       <button className={`agent-button agent-button-${viewMode}${active ? ' active' : ''}`} onClick={() => onSelect(item.agent_id, active)}>
         {viewMode === 'list' ? (
           <>
-            <div className="agent-list-main">
+            <div className="agent-list-identity">
               <AgentRailHeader
                 item={item}
                 countryCode={countryCode}
@@ -275,19 +314,24 @@ function AgentRailItem(props: {
                 statusLevel={statusLevel}
                 statusLabel={displayStatus.label}
                 displaySortOrder={displaySortOrder}
+                showStatus={false}
               />
               <div className="agent-meta agent-location agent-list-location">
                 <span>{addressText}</span>
                 {locationText ? <span>{locationText}</span> : null}
               </div>
-              <AgentRailTags item={item} tags={tags} />
-              <div className="agent-meta agent-footer-line">{footerText}</div>
+              <div className="agent-meta agent-footer-line agent-list-footer">{footerText}</div>
             </div>
-            <AgentRailRuntime item={item} />
+            <div className="agent-list-runtime">
+              {showStatusText ? <span className={`agent-status-pill agent-status-${statusLevel}`}>{displayStatus.label}</span> : null}
+              <AgentRailRuntime item={item} />
+              <AgentSpeedTags item={item} />
+              <div className="agent-list-top-tags">
+                <AgentRailTags item={item} tags={tags} />
+              </div>
+            </div>
             <div className="agent-list-metrics">
-              <AgentMeters item={item} cpuPercent={cpuPercent} memPercent={memPercent} />
-            </div>
-            <div className="agent-list-flow">
+              <AgentMeters item={item} cpuPercent={cpuPercent} memPercent={memPercent} showNetwork={false} />
               <AgentFlowProgress renewalStatus={renewalStatus} trafficLabel={trafficTotalLabel} trafficValue={trafficSummaryValue} trafficStatus={trafficStatus} />
             </div>
           </>
@@ -300,6 +344,7 @@ function AgentRailItem(props: {
               statusLevel={statusLevel}
               statusLabel={displayStatus.label}
               displaySortOrder={displaySortOrder}
+              showStatus={showStatusText}
             />
             <div className="agent-meta agent-location">
               <span>{addressText}</span>
@@ -328,8 +373,9 @@ function AgentRailHeader(props: {
   statusLevel: string
   statusLabel: string
   displaySortOrder: number
+  showStatus?: boolean
 }) {
-  const { item, countryCode, locationText, statusLevel, statusLabel, displaySortOrder } = props
+  const { item, countryCode, locationText, statusLevel, statusLabel, displaySortOrder, showStatus = true } = props
   return (
     <div className="agent-card-head">
       <div className="agent-title-line">
@@ -338,7 +384,7 @@ function AgentRailHeader(props: {
         <span className="agent-flag" title={locationText || countryCode || '未知地区'}>{countryFlag(countryCode)}</span>
         <span className="agent-name">{item.agent_name || item.agent_id}</span>
       </div>
-      <span className={`agent-status-pill agent-status-${statusLevel}`}>{statusLabel}</span>
+      {showStatus ? <span className={`agent-status-pill agent-status-${statusLevel}`}>{statusLabel}</span> : null}
     </div>
   )
 }
@@ -369,6 +415,16 @@ function AgentRailRuntime(props: { item: DashboardAgentView }) {
         {clientVersion ? <span className="agent-runtime-subtle">{clientVersion}</span> : null}
       </div>
       {item.renewal?.bandwidth_mbps ? <div className="agent-runtime-pill agent-runtime-pill-bandwidth">带宽 {formatBandwidth(item.renewal.bandwidth_mbps)}</div> : null}
+    </div>
+  )
+}
+
+function AgentSpeedTags(props: { item: DashboardAgentView }) {
+  const { item } = props
+  return (
+    <div className="agent-speed-tags">
+      <span className="agent-speed-chip">上行 {formatSpeed(item.summary.net_io_up)}</span>
+      <span className="agent-speed-chip">下行 {formatSpeed(item.summary.net_io_down)}</span>
     </div>
   )
 }
@@ -440,14 +496,14 @@ function formatClientPlatform(item: DashboardAgentView) {
   return [displayClientSystem(item), item.client_os, item.client_arch].filter(Boolean).join(' / ')
 }
 
-function AgentMeters(props: { item: DashboardAgentView; cpuPercent: number; memPercent: number }) {
-  const { item, cpuPercent, memPercent } = props
+function AgentMeters(props: { item: DashboardAgentView; cpuPercent: number; memPercent: number; showNetwork?: boolean }) {
+  const { item, cpuPercent, memPercent, showNetwork = true } = props
   return (
     <>
       <MiniProgress label="CPU" value={formatPercent(cpuPercent)} percent={cpuPercent} level={metricLevel(cpuPercent)} />
       <MiniProgress label="内存" value={formatMem(item.summary.mem_used, item.summary.mem_total)} percent={memPercent} level={metricLevel(memPercent)} />
-      <MiniProgress label="上行" value={formatSpeed(item.summary.net_io_up)} level="neutral" />
-      <MiniProgress label="下行" value={formatSpeed(item.summary.net_io_down)} level="neutral" />
+      {showNetwork ? <MiniProgress label="上行" value={formatSpeed(item.summary.net_io_up)} level="neutral" /> : null}
+      {showNetwork ? <MiniProgress label="下行" value={formatSpeed(item.summary.net_io_down)} level="neutral" /> : null}
     </>
   )
 }

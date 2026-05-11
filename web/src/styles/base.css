@@ -83,6 +83,7 @@ body,
 #root {
   height: 100%;
   min-height: 100%;
+  min-height: 100dvh;
   margin: 0;
 }
 
@@ -103,16 +104,21 @@ body {
 
 .page-shell {
   height: 100vh;
-  min-height: 100vh;
-  overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
   background:
     var(--custom-bg-overlay),
     var(--custom-bg-image) center / cover fixed no-repeat,
     var(--page-overlay-strong);
   scrollbar-color: rgba(37, 99, 235, 0.38) #eef2f7;
   scrollbar-width: thin;
+}
+
+.customer-page-shell {
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .page-shell::-webkit-scrollbar {
@@ -161,18 +167,25 @@ body {
 .app-shell {
   position: relative;
   z-index: 1;
-  width: min(1120px, calc(100% - 32px));
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  width: min(1480px, calc(100% - 32px));
   margin: 0 auto;
-  padding: 24px 0 42px;
+  padding: max(16px, calc(env(safe-area-inset-top) + 10px)) 0 20px;
 }
 
 .topology-open-shell {
-  padding-top: 6px;
-  padding-bottom: 0;
+  width: calc(100vw - 24px);
+  margin: 0 auto;
+  padding-top: max(22px, calc(env(safe-area-inset-top) + 14px));
+  padding-bottom: 16px;
 }
 
 .topology-open-shell .hero-panel {
-  padding-bottom: 6px;
+  padding-bottom: 12px;
 }
 
 .topology-open-shell .hero-panel h1.ant-typography {
@@ -194,11 +207,12 @@ body {
 
 .hero-panel {
   display: flex;
+  flex: 0 0 auto;
   justify-content: space-between;
-  gap: 20px;
+  gap: 16px;
   align-items: center;
-  padding: 2px 0 10px;
-  margin-bottom: 0;
+  padding: 0 0 4px;
+  margin-bottom: -4px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -210,12 +224,12 @@ body {
 }
 
 .hero-panel h1.ant-typography {
-  font-size: 18px;
+  font-size: 17px;
   line-height: 1.2;
 }
 
 .eyebrow {
-  margin-bottom: 2px;
+  margin-bottom: 0;
   color: var(--green);
   font-size: 11px;
   font-weight: 700;
@@ -451,30 +465,55 @@ body {
 
 .workspace-grid {
   display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
   grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.workspace-grid:not(.workspace-grid-topology) .agent-rail {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workspace-grid:not(.workspace-grid-topology) .main-stage {
+  display: none;
+}
+
+.workspace-grid:not(.workspace-grid-topology) .sidebar-card {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .workspace-grid-topology {
-  --topology-panel-height: clamp(590px, calc(100dvh - 185px), 840px);
-  width: min(1680px, calc(100vw - 24px));
-  margin-left: calc(50% - 50vw + 12px);
+  --topology-panel-height: 100%;
+  width: 100%;
+  margin-left: 0;
   grid-template-columns: minmax(260px, 330px) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 16px;
   align-items: stretch;
 }
 
 .workspace-grid-topology .summary-card {
   grid-column: 1 / -1;
-  width: min(1120px, calc(100vw - 32px));
-  justify-self: center;
+  width: 100%;
+  justify-self: stretch;
 }
 
 .workspace-grid-topology .agent-rail {
   grid-column: 1;
   grid-row: 2;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .workspace-grid-topology .sidebar-card {
@@ -535,7 +574,9 @@ body {
 .workspace-grid-topology .main-stage {
   grid-column: 2;
   grid-row: 2;
+  height: 100%;
   min-height: 0;
+  overflow: hidden;
 }
 
 .workspace-grid-topology #topology-panel,
@@ -638,13 +679,19 @@ body {
   align-items: stretch;
 }
 
-.workspace-grid-topology .agent-list-main,
+.workspace-grid-topology .agent-list-identity,
+.workspace-grid-topology .agent-list-tags-line,
 .workspace-grid-topology .agent-button-list .agent-runtime-row {
   grid-column: 1;
   grid-row: auto;
 }
 
+.workspace-grid-topology .agent-list-tags-line {
+  display: block;
+}
+
 .workspace-grid-topology .agent-button-list .agent-runtime-row,
+.workspace-grid-topology .agent-list-runtime,
 .workspace-grid-topology .agent-list-metrics,
 .workspace-grid-topology .agent-list-flow,
 .workspace-grid-topology .agent-meter-grid,
@@ -659,4 +706,3 @@ body {
 .workspace-grid-topology .agent-runtime-row .agent-runtime-pill:not(.agent-runtime-pill-bandwidth) {
   display: none;
 }
-
