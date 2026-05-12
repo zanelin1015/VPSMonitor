@@ -49,12 +49,15 @@ type CustomerAssignment struct {
 }
 
 type CustomerAssignmentRequest struct {
-	AgentID          string `json:"agent_id"`
-	InboundID        int    `json:"inbound_id"`
-	InboundTag       string `json:"inbound_tag,omitempty"`
-	ClientEmail      string `json:"client_email,omitempty"`
-	PublicClientName string `json:"public_client_name,omitempty"`
-	Enabled          *bool  `json:"enabled,omitempty"`
+	AgentID          string   `json:"agent_id"`
+	InboundID        int      `json:"inbound_id"`
+	InboundTag       string   `json:"inbound_tag,omitempty"`
+	ClientEmail      string   `json:"client_email,omitempty"`
+	PublicClientName string   `json:"public_client_name,omitempty"`
+	RevenueAmount    *float64 `json:"revenue_amount,omitempty"`
+	RevenueCurrency  string   `json:"revenue_currency,omitempty"`
+	RevenueCycle     string   `json:"revenue_cycle,omitempty"`
+	Enabled          *bool    `json:"enabled,omitempty"`
 }
 
 type CustomerAdminView struct {

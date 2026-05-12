@@ -1,4 +1,4 @@
-import type { AgentListItem, VPSRenewalConfig } from '../types'
+import type { AgentListItem, ClientChainView, VPSRenewalConfig, XUIClientBillingConfig } from '../types'
 
 export const COMMON_COST_CURRENCIES = ['USD', 'USDT', 'CNY', 'CAD', 'EUR', 'HKD', 'JPY', 'GBP', 'AUD', 'SGD']
 export const DEFAULT_COST_CURRENCY = 'USD'
@@ -29,6 +29,42 @@ export interface MonthlyFinanceSummary {
   revenueCount: number
   missingCostCount: number
   missingRevenueCount: number
+}
+
+export interface MonthlyFinancePaymentInfo {
+  date: string
+  status: 'paid' | 'today' | 'pending'
+}
+
+export interface MonthlyFinanceCostDetail {
+  key: string
+  agentID: string
+  agentName: string
+  tags: string[]
+  amount: number
+  currency: CurrencyCode
+  cycle: VPSRenewalConfig['cost_cycle']
+  monthlyAmount: number | null
+  payment: MonthlyFinancePaymentInfo | null
+}
+
+export interface MonthlyFinanceRevenueDetail {
+  key: string
+  agentID: string
+  agentName: string
+  inboundID: number
+  inboundTag: string
+  nodeLabel: string
+  nodeDetail: string
+  clientEmail: string
+  clientLabel: string
+  clientRemark: string
+  amount: number
+  currency: CurrencyCode
+  cycle: VPSRenewalConfig['cost_cycle']
+  monthlyAmount: number | null
+  payment: MonthlyFinancePaymentInfo
+  source: 'client' | 'billing'
 }
 
 type BillingConfig = Pick<VPSRenewalConfig, 'cost_amount' | 'cost_currency' | 'cost_cycle'>
@@ -92,12 +128,269 @@ export function summarizeMonthlyFinance(agents: AgentListItem[], targetCurrency:
   )
 }
 
+export function buildMonthlyFinanceCostDetails(agents: AgentListItem[], targetCurrency: CurrencyCode, exchangeRates: ExchangeRatesState): MonthlyFinanceCostDetail[] {
+  return agents.map((agent) => {
+    const billing = normalizeBillingConfig(agent.renewal)
+    return {
+      key: agent.agent_id,
+      agentID: agent.agent_id,
+      agentName: agent.agent_name || agent.summary?.hostname || agent.agent_id,
+      tags: agent.tags || [],
+      amount: billing.cost_amount,
+      currency: billing.cost_currency,
+      cycle: billing.cost_cycle,
+      monthlyAmount: monthlyConvertedAmount(billing.cost_amount, billing.cost_currency, billing.cost_cycle, targetCurrency, exchangeRates),
+      payment: costPaymentInfo(agent.renewal?.start_date, billing.cost_cycle),
+    }
+  })
+}
+
+export function buildMonthlyFinanceRevenueDetails(
+  agents: AgentListItem[],
+  clientChains: ClientChainView[],
+  targetCurrency: CurrencyCode,
+  exchangeRates: ExchangeRatesState,
+): MonthlyFinanceRevenueDetail[] {
+  const agentByID = new Map(agents.map((agent) => [agent.agent_id, agent]))
+  const billingByClient = new Map<string, RevenueBillingRef>()
+  const billingByEmail = new Map<string, RevenueBillingRef>()
+
+  for (const agent of agents) {
+    for (const billing of agent.renewal?.client_billings || []) {
+      const normalized = normalizeRevenueBilling(billing)
+      const ref: RevenueBillingRef = { agent, billing: normalized }
+      billingByClient.set(revenueClientKey(agent.agent_id, normalized.inbound_tag, normalized.email), ref)
+      if (normalized.email && !billingByEmail.has(revenueEmailKey(agent.agent_id, normalized.email))) {
+        billingByEmail.set(revenueEmailKey(agent.agent_id, normalized.email), ref)
+      }
+    }
+  }
+
+  const usedBillingKeys = new Set<string>()
+  const rows: MonthlyFinanceRevenueDetail[] = []
+  for (const chain of clientChains) {
+    const agent = agentByID.get(chain.root_agent_id)
+    if (!agent) {
+      continue
+    }
+    const ref = billingByClient.get(revenueClientKey(chain.root_agent_id, chain.root_inbound_tag || '', chain.root_client_email || ''))
+      || billingByEmail.get(revenueEmailKey(chain.root_agent_id, chain.root_client_email || ''))
+    if (ref) {
+      usedBillingKeys.add(revenueClientKey(ref.agent.agent_id, ref.billing.inbound_tag, ref.billing.email))
+    }
+    const inboundStep = rootInboundStep(chain)
+    rows.push(buildRevenueDetailRow({
+      agent,
+      billing: ref?.billing,
+      key: `client:${chain.key}`,
+      inboundTag: chain.root_inbound_tag || ref?.billing.inbound_tag || '',
+      inboundID: ref?.billing.inbound_id || 0,
+      nodeLabel: inboundStep?.label || '',
+      nodeDetail: inboundStep?.detail || '',
+      clientEmail: chain.root_client_email || ref?.billing.email || '',
+      clientRemark: chain.root_client_remark || '',
+      source: 'client',
+      targetCurrency,
+      exchangeRates,
+    }))
+  }
+
+  for (const agent of agents) {
+    for (const billing of agent.renewal?.client_billings || []) {
+      const normalized = normalizeRevenueBilling(billing)
+      const key = revenueClientKey(agent.agent_id, normalized.inbound_tag, normalized.email)
+      if (usedBillingKeys.has(key)) {
+        continue
+      }
+      rows.push(buildRevenueDetailRow({
+        agent,
+        billing: normalized,
+        key: `billing:${agent.agent_id}:${normalized.inbound_tag}:${normalized.email}`,
+        inboundTag: normalized.inbound_tag,
+        inboundID: normalized.inbound_id,
+        nodeLabel: '',
+        nodeDetail: '',
+        clientEmail: normalized.email,
+        clientRemark: '',
+        source: 'billing',
+        targetCurrency,
+        exchangeRates,
+      }))
+    }
+  }
+
+  return rows.filter((row) => row.amount > 0).sort((left, right) => {
+    if (left.agentName !== right.agentName) {
+      return left.agentName.localeCompare(right.agentName)
+    }
+    if (left.inboundTag !== right.inboundTag) {
+      return left.inboundTag.localeCompare(right.inboundTag)
+    }
+    return left.clientLabel.localeCompare(right.clientLabel)
+  })
+}
+
 function monthlyConvertedAmount(amount: number, currency: CurrencyCode, cycle: VPSRenewalConfig['cost_cycle'], targetCurrency: CurrencyCode, exchangeRates: ExchangeRatesState): number | null {
   if (amount <= 0) {
     return null
   }
   const monthlyAmount = amount / billingCycleMonths(cycle || 'month')
   return convertCurrency(monthlyAmount, normalizeCurrencyCode(currency), targetCurrency, exchangeRates)
+}
+
+type RevenueBillingRef = {
+  agent: AgentListItem
+  billing: Required<Pick<XUIClientBillingConfig, 'inbound_id' | 'inbound_tag' | 'email' | 'revenue_amount' | 'revenue_currency' | 'revenue_cycle'>>
+}
+
+function normalizeRevenueBilling(billing: XUIClientBillingConfig): RevenueBillingRef['billing'] {
+  return {
+    inbound_id: Number(billing.inbound_id || 0),
+    inbound_tag: billing.inbound_tag || '',
+    email: billing.email || '',
+    revenue_amount: Math.max(0, Number(billing.revenue_amount || 0)),
+    revenue_currency: billing.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
+    revenue_cycle: billing.revenue_cycle === 'quarter' || billing.revenue_cycle === 'year' ? billing.revenue_cycle : 'month',
+  }
+}
+
+function buildRevenueDetailRow(options: {
+  agent: AgentListItem
+  billing?: RevenueBillingRef['billing']
+  key: string
+  inboundTag: string
+  inboundID?: number
+  nodeLabel?: string
+  nodeDetail?: string
+  clientEmail: string
+  clientRemark: string
+  source: MonthlyFinanceRevenueDetail['source']
+  targetCurrency: CurrencyCode
+  exchangeRates: ExchangeRatesState
+}): MonthlyFinanceRevenueDetail {
+  const amount = Math.max(0, Number(options.billing?.revenue_amount || 0))
+  const currency = normalizeCurrencyCode(options.billing?.revenue_currency || 'CNY')
+  const cycle = options.billing?.revenue_cycle === 'quarter' || options.billing?.revenue_cycle === 'year' ? options.billing.revenue_cycle : 'month'
+  const clientEmail = options.clientEmail || options.billing?.email || ''
+  const clientRemark = options.clientRemark || ''
+  return {
+    key: options.key,
+    agentID: options.agent.agent_id,
+    agentName: options.agent.agent_name || options.agent.summary?.hostname || options.agent.agent_id,
+    inboundID: options.inboundID || options.billing?.inbound_id || 0,
+    inboundTag: options.inboundTag || options.billing?.inbound_tag || '',
+    nodeLabel: options.nodeLabel || options.inboundTag || options.billing?.inbound_tag || '',
+    nodeDetail: options.nodeDetail || '',
+    clientEmail,
+    clientLabel: clientEmail || clientRemark || 'anonymous-client',
+    clientRemark,
+    amount,
+    currency,
+    cycle,
+    monthlyAmount: monthlyConvertedAmount(amount, currency, cycle, options.targetCurrency, options.exchangeRates),
+    payment: revenuePaymentInfo(cycle),
+    source: options.source,
+  }
+}
+
+function rootInboundStep(chain: ClientChainView) {
+  return (chain.steps || []).find((step) => step.step_type === 'inbound' && step.agent_id === chain.root_agent_id)
+    || (chain.steps || []).find((step) => step.step_type === 'inbound')
+}
+
+function revenueClientKey(agentID: string, inboundTag: string, email: string): string {
+  return `${agentID}\u0000${inboundTag.trim().toLowerCase()}\u0000${email.trim().toLowerCase()}`
+}
+
+function revenueEmailKey(agentID: string, email: string): string {
+  return `${agentID}\u0000${email.trim().toLowerCase()}`
+}
+
+function costPaymentInfo(startDate: string | undefined, cycle: VPSRenewalConfig['cost_cycle']): MonthlyFinancePaymentInfo | null {
+  const start = parseDateOnly(startDate)
+  if (!start) {
+    return null
+  }
+  const today = todayDateOnly()
+  const cycleMonths = billingCycleMonths(cycle || 'month')
+  const startMonth = monthSerial(start)
+  const currentMonth = monthSerial(today)
+  let due: Date
+  if (currentMonth < startMonth) {
+    due = start
+  } else {
+    const monthsSinceStart = currentMonth - startMonth
+    const dueMonth = cycleMonths === 1
+      ? currentMonth
+      : startMonth + Math.floor(monthsSinceStart / cycleMonths) * cycleMonths
+    due = makeDateFromMonthSerial(dueMonth, start.getDate())
+  }
+  return paymentInfo(due, today)
+}
+
+function revenuePaymentInfo(cycle: VPSRenewalConfig['cost_cycle']): MonthlyFinancePaymentInfo {
+  const today = todayDateOnly()
+  let month = today.getMonth()
+  if (cycle === 'quarter') {
+    month = Math.floor(month / 3) * 3
+  } else if (cycle === 'year') {
+    month = 0
+  }
+  return paymentInfo(new Date(today.getFullYear(), month, 1), today)
+}
+
+function paymentInfo(due: Date, today: Date): MonthlyFinancePaymentInfo {
+  const comparison = compareDateOnly(today, due)
+  return {
+    date: formatDateOnly(due),
+    status: comparison > 0 ? 'paid' : comparison === 0 ? 'today' : 'pending',
+  }
+}
+
+function parseDateOnly(value?: string): Date | null {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) {
+    return null
+  }
+  const year = Number(match[1])
+  const month = Number(match[2]) - 1
+  const day = Number(match[3])
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return null
+  }
+  return makeDate(year, month, day)
+}
+
+function todayDateOnly(): Date {
+  const now = new Date()
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate())
+}
+
+function monthSerial(date: Date): number {
+  return date.getFullYear() * 12 + date.getMonth()
+}
+
+function makeDateFromMonthSerial(serial: number, day: number): Date {
+  return makeDate(Math.floor(serial / 12), serial % 12, day)
+}
+
+function makeDate(year: number, month: number, day: number): Date {
+  return new Date(year, month, Math.min(day, daysInMonth(year, month)))
+}
+
+function daysInMonth(year: number, month: number): number {
+  return new Date(year, month + 1, 0).getDate()
+}
+
+function compareDateOnly(left: Date, right: Date): number {
+  return Number(left) - Number(right)
+}
+
+function formatDateOnly(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 function normalizeCostConfig(config?: VPSRenewalConfig): Pick<VPSRenewalConfig, 'cost_amount' | 'cost_currency' | 'cost_cycle'> {

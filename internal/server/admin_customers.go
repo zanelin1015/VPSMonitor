@@ -11,7 +11,8 @@ import (
 )
 
 func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts []string) {
-	if _, _, ok := a.requireAdmin(w, r); !ok {
+	user, _, ok := a.requireAdmin(w, r)
+	if !ok {
 		return
 	}
 	if len(parts) == 0 || parts[0] == "" {
@@ -104,6 +105,10 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
 			}
+			if err := a.syncCustomerAssignmentRevenue(req, user.Username); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
 			writeJSON(w, http.StatusOK, assignment)
 		default:
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -132,6 +137,10 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 			writeError(w, status, err.Error())
 			return
 		}
+		if err := a.syncCustomerAssignmentRevenue(req, user.Username); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		writeJSON(w, http.StatusOK, assignment)
 	case http.MethodDelete:
 		if err := a.store.DeleteCustomerAssignment(customerID, assignmentID); err != nil {
@@ -146,4 +155,67 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func (a *App) syncCustomerAssignmentRevenue(req model.CustomerAssignmentRequest, actor string) error {
+	if req.RevenueAmount == nil {
+		return nil
+	}
+	if req.AgentID == "" || req.InboundID <= 0 {
+		return nil
+	}
+	cfg, found, err := a.store.GetAgentConfig(req.AgentID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("agent not found")
+	}
+	amount := *req.RevenueAmount
+	if amount < 0 {
+		amount = 0
+	}
+	currency := strings.ToUpper(strings.TrimSpace(req.RevenueCurrency))
+	if currency != "USDT" {
+		currency = "CNY"
+	}
+	cycle := strings.ToLower(strings.TrimSpace(req.RevenueCycle))
+	switch cycle {
+	case "quarter", "year":
+	default:
+		cycle = "month"
+	}
+	billing := model.XUIClientBillingConfig{
+		InboundID:       req.InboundID,
+		InboundTag:      strings.TrimSpace(req.InboundTag),
+		Email:           strings.TrimSpace(req.ClientEmail),
+		RevenueAmount:   amount,
+		RevenueCurrency: currency,
+		RevenueCycle:    cycle,
+		ExpireCycle:     "month",
+	}
+	key := customerBillingKey(billing.InboundID, billing.InboundTag, billing.Email)
+	replaced := false
+	for index, existing := range cfg.Renewal.ClientBillings {
+		if customerBillingKey(existing.InboundID, existing.InboundTag, existing.Email) != key {
+			continue
+		}
+		billing.ExpireTime = existing.ExpireTime
+		if existing.ExpireCycle != "" {
+			billing.ExpireCycle = existing.ExpireCycle
+		}
+		billing.ExpireAutoRenew = existing.ExpireAutoRenew
+		cfg.Renewal.ClientBillings[index] = billing
+		replaced = true
+		break
+	}
+	if !replaced {
+		cfg.Renewal.ClientBillings = append(cfg.Renewal.ClientBillings, billing)
+	}
+	_, err = a.store.UpdateAgentConfigWithActor(req.AgentID, cfg, actor)
+	return err
+}
+
+func customerBillingKey(inboundID int, inboundTag, email string) string {
+	return fmt.Sprintf("%d\x00%s\x00%s", inboundID, strings.ToLower(strings.TrimSpace(inboundTag)), strings.ToLower(strings.TrimSpace(email)))
 }

@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react'
 
 import type {
+  CustomerAssignment,
   DashboardAgentView,
   SystemInfo,
   TelegramBot,
@@ -86,6 +87,8 @@ export interface ConsoleModalsProps {
   onCloseTelegramBot: () => void
   onCloseUpdateModal: () => void
   onCloseXUIActionModal: () => void
+  onConfigChanged?: () => void | Promise<void>
+  onOpenCustomerAssignment?: (assignment: CustomerAssignment) => void
   onCopyClientInstallCommand: (command: string) => void
   onCopyImportURL: (client: XUIClientView) => void
   onDeleteTelegramBot: (id: number) => void
@@ -159,6 +162,8 @@ export function ConsoleModals(props: ConsoleModalsProps) {
     onCloseTelegramBot,
     onCloseUpdateModal,
     onCloseXUIActionModal,
+    onConfigChanged,
+    onOpenCustomerAssignment,
     onCopyClientInstallCommand,
     onCopyImportURL,
     onDeleteTelegramBot,
@@ -246,7 +251,13 @@ export function ConsoleModals(props: ConsoleModalsProps) {
         onTest={onTestTelegramBot}
       />
 
-      <CustomerManagementModal open={customerModalOpen} agents={agents} onClose={onCloseCustomerModal} />
+      <CustomerManagementModal
+        open={customerModalOpen}
+        agents={agents}
+        onClose={onCloseCustomerModal}
+        onConfigChanged={onConfigChanged}
+        onOpenAssignment={onOpenCustomerAssignment}
+      />
 
       <XUIActionModal
         open={xuiActionModalOpen}

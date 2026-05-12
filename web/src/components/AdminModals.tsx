@@ -367,6 +367,35 @@ export function FrontendSettingsModal(props: {
         <Button key="save" type="primary" loading={saving} onClick={onSave}>保存并应用</Button>,
       ]}
     >
+      <FrontendSettingsPanel
+        loading={loading}
+        saving={saving}
+        form={form}
+        onSave={onSave}
+        onFormChange={onFormChange}
+      />
+    </Modal>
+  )
+}
+
+export function FrontendSettingsPanel(props: {
+  loading: boolean
+  saving: boolean
+  form: FrontendSettingsForm
+  onSave: () => void
+  onFormChange: (form: FrontendSettingsForm) => void
+}) {
+  const { loading, saving, form, onSave, onFormChange } = props
+
+  return (
+    <div className="frontend-settings-page">
+      <div className="admin-content-title">
+        <div>
+          <Typography.Title level={3}>系统设置</Typography.Title>
+          <Text type="secondary">配置管理员后台自定义样式；客户账号样式仍在客户看板里单独配置。</Text>
+        </div>
+        <Button type="primary" loading={saving} onClick={onSave}>保存并应用</Button>
+      </div>
       <Spin spinning={loading}>
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
           <Alert
@@ -380,13 +409,13 @@ export function FrontendSettingsModal(props: {
             <Input.TextArea
               value={form.custom_code}
               onChange={(event) => onFormChange({ custom_code: event.target.value })}
-              autoSize={{ minRows: 12, maxRows: 22 }}
+              autoSize={{ minRows: 16, maxRows: 28 }}
               placeholder={`<style>\n:root { --green: #2563eb; }\n</style>\n<script>\nwindow.CustomBackgroundImage = 'https://example.com/bg.jpg'\n</script>`}
             />
           </div>
         </Space>
       </Spin>
-    </Modal>
+    </div>
   )
 }
 

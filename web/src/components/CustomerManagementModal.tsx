@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, App as AntdApp, Button, Card, Col, Empty, Input, Modal, Popconfirm, Row, Select, Space, Spin, Switch, Table, Tag, Typography } from 'antd'
+import { Alert, App as AntdApp, Button, Card, Col, Empty, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Spin, Switch, Table, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons'
+import { DeleteOutlined, EditOutlined, ExportOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons'
 
-import type { CustomerAdminView, CustomerAssignment, DashboardAgentView, XUIClientView, XUINodeView, XUIOverview } from '../types'
+import type { CustomerAdminView, CustomerAssignment, DashboardAgentView, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
 import { fetchJSON } from '../lib/appHelpers'
+import { REVENUE_CURRENCIES } from '../lib/currency'
 
 const { Text, Title } = Typography
 
@@ -22,6 +23,9 @@ interface AssignmentFormState {
   inbound_tag: string
   client_email: string
   public_client_name: string
+  revenue_amount: number
+  revenue_currency: 'CNY' | 'USDT'
+  revenue_cycle: 'month' | 'quarter' | 'year'
   enabled: boolean
 }
 
@@ -39,15 +43,22 @@ const emptyAssignmentForm: AssignmentFormState = {
   inbound_tag: '',
   client_email: '',
   public_client_name: '',
+  revenue_amount: 0,
+  revenue_currency: 'CNY',
+  revenue_cycle: 'month',
   enabled: true,
 }
 
 export function CustomerManagementModal(props: {
-  open: boolean
+  open?: boolean
   agents: DashboardAgentView[]
-  onClose: () => void
+  onClose?: () => void
+  onConfigChanged?: () => void | Promise<void>
+  onOpenAssignment?: (assignment: CustomerAssignment) => void
+  embedded?: boolean
 }) {
-  const { open, agents, onClose } = props
+  const { open = false, agents, onClose = () => undefined, onConfigChanged, onOpenAssignment, embedded = false } = props
+  const active = embedded || open
   const { message } = AntdApp.useApp()
   const [customers, setCustomers] = useState<CustomerAdminView[]>([])
   const [loading, setLoading] = useState(false)
@@ -82,10 +93,10 @@ export function CustomerManagementModal(props: {
   }, [overview])
 
   useEffect(() => {
-    if (open) {
+    if (active) {
       void loadCustomers()
     }
-  }, [open])
+  }, [active])
 
   useEffect(() => {
     if (!selectedCustomer) {
@@ -156,6 +167,17 @@ export function CustomerManagementModal(props: {
       render: (value?: string) => value || '-',
     },
     {
+      title: '节点费用',
+      key: 'revenue',
+      width: 150,
+      render: (_, record) => {
+        const billing = assignmentBilling(record, agents)
+        return billing && Number(billing.revenue_amount || 0) > 0
+          ? `${billing.revenue_currency || 'CNY'} ${Number(billing.revenue_amount || 0).toFixed(2)} / ${revenueCycleLabel(billing.revenue_cycle)}`
+          : <Tag>未设置</Tag>
+      },
+    },
+    {
       title: '状态',
       dataIndex: 'enabled',
       width: 90,
@@ -163,9 +185,14 @@ export function CustomerManagementModal(props: {
     },
     {
       title: '操作',
-      width: 150,
+      width: 220,
       render: (_, record) => (
         <Space size={6}>
+          {onOpenAssignment ? (
+            <Button size="small" icon={<ExportOutlined />} onClick={() => onOpenAssignment(record)}>
+              跳转
+            </Button>
+          ) : null}
           <Button size="small" icon={<EditOutlined />} onClick={() => editAssignment(record)}>编辑</Button>
           <Popconfirm title="删除这条分配？" okText="删除" cancelText="取消" onConfirm={() => void deleteAssignment(record.id)}>
             <Button size="small" danger icon={<DeleteOutlined />} />
@@ -270,6 +297,9 @@ export function CustomerManagementModal(props: {
         inbound_tag: assignmentForm.inbound_tag,
         client_email: assignmentForm.client_email,
         public_client_name: assignmentForm.public_client_name,
+        revenue_amount: assignmentForm.revenue_amount,
+        revenue_currency: assignmentForm.revenue_currency,
+        revenue_cycle: assignmentForm.revenue_cycle,
         enabled: assignmentForm.enabled,
       }
       if (editingAssignmentID) {
@@ -289,6 +319,7 @@ export function CustomerManagementModal(props: {
       }
       setEditingAssignmentID(null)
       setAssignmentForm(emptyAssignmentForm)
+      await onConfigChanged?.()
       await loadCustomers()
     } catch (error) {
       message.error(error instanceof Error ? error.message : '保存分配失败')
@@ -315,6 +346,7 @@ export function CustomerManagementModal(props: {
 
   function editAssignment(record: CustomerAssignment) {
     const key = record.client_email ? `client:${record.inbound_id}::${record.client_email}` : `node:${record.inbound_id}::`
+    const billing = assignmentBilling(record, agents)
     setEditingAssignmentID(record.id)
     setAssignmentForm({
       agent_id: record.agent_id,
@@ -323,6 +355,9 @@ export function CustomerManagementModal(props: {
       inbound_tag: record.inbound_tag || '',
       client_email: record.client_email || '',
       public_client_name: record.public_client_name || '',
+      revenue_amount: Number(billing?.revenue_amount || 0),
+      revenue_currency: billing?.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
+      revenue_cycle: billing?.revenue_cycle === 'quarter' || billing?.revenue_cycle === 'year' ? billing.revenue_cycle : 'month',
       enabled: record.enabled,
     })
   }
@@ -342,6 +377,7 @@ export function CustomerManagementModal(props: {
         inbound_tag: client.inbound_tag || '',
         client_email: client.email || '',
         public_client_name: current.public_client_name || defaultPublicClientName(client, assignmentForm.agent_id, agents),
+        ...billingFormPatch(clientBilling(assignmentForm.agent_id, client.inbound_id, client.inbound_tag || '', client.email || '', agents)),
       }))
       return
     }
@@ -354,15 +390,15 @@ export function CustomerManagementModal(props: {
         inbound_tag: node.tag || '',
         client_email: '',
         public_client_name: current.public_client_name || defaultPublicNodeName(node, assignmentForm.agent_id, agents),
+        ...billingFormPatch(clientBilling(assignmentForm.agent_id, node.id, node.tag || '', '', agents)),
       }))
     }
   }
 
-  return (
-    <Modal title="人员管理 / 客户链路分配" open={open} onCancel={onClose} footer={null} width={1160} destroyOnClose>
+  const content = (
       <Spin spinning={loading}>
         <Row gutter={[16, 16]}>
-          <Col xs={24} md={8}>
+          <Col xs={24} md={4}>
             <Card className="customer-admin-card" bordered={false}>
               <div className="customer-admin-card-head">
                 <Title level={5}>客户列表</Title>
@@ -396,7 +432,7 @@ export function CustomerManagementModal(props: {
             </Card>
           </Col>
 
-          <Col xs={24} md={16}>
+          <Col xs={24} md={20}>
             <Space direction="vertical" size="middle" style={{ width: '100%' }}>
               <Card className="customer-admin-card" bordered={false}>
                 <div className="customer-admin-card-head">
@@ -477,6 +513,38 @@ export function CustomerManagementModal(props: {
                     <Text type="secondary">客户可见名称</Text>
                     <Input value={assignmentForm.public_client_name} onChange={(event) => setAssignmentForm((current) => ({ ...current, public_client_name: event.target.value }))} />
                   </Col>
+                  <Col xs={24} md={4}>
+                    <Text type="secondary">节点费用</Text>
+                    <InputNumber
+                      style={{ width: '100%' }}
+                      min={0}
+                      precision={2}
+                      value={assignmentForm.revenue_amount}
+                      onChange={(value) => setAssignmentForm((current) => ({ ...current, revenue_amount: Number(value || 0) }))}
+                    />
+                  </Col>
+                  <Col xs={12} md={2}>
+                    <Text type="secondary">币种</Text>
+                    <Select
+                      style={{ width: '100%' }}
+                      value={assignmentForm.revenue_currency}
+                      options={REVENUE_CURRENCIES.map((currency) => ({ value: currency, label: currency }))}
+                      onChange={(value) => setAssignmentForm((current) => ({ ...current, revenue_currency: value as 'CNY' | 'USDT' }))}
+                    />
+                  </Col>
+                  <Col xs={12} md={2}>
+                    <Text type="secondary">周期</Text>
+                    <Select
+                      style={{ width: '100%' }}
+                      value={assignmentForm.revenue_cycle}
+                      options={[
+                        { value: 'month', label: '月' },
+                        { value: 'quarter', label: '季' },
+                        { value: 'year', label: '年' },
+                      ]}
+                      onChange={(value) => setAssignmentForm((current) => ({ ...current, revenue_cycle: value as 'month' | 'quarter' | 'year' }))}
+                    />
+                  </Col>
                   <Col xs={24} md={8}>
                     <Text type="secondary">分配状态</Text>
                     <div className="customer-admin-switch-row">
@@ -505,6 +573,26 @@ export function CustomerManagementModal(props: {
           </Col>
         </Row>
       </Spin>
+  )
+
+  if (embedded) {
+    return (
+      <div className="customer-admin-page">
+        <div className="admin-content-title">
+          <div>
+            <Title level={3}>客户管理</Title>
+            <Text type="secondary">管理客户账号、客户可见名称，以及分配给客户的 Client / 节点链路。</Text>
+          </div>
+          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadCustomers()}>刷新</Button>
+        </div>
+        {content}
+      </div>
+    )
+  }
+
+  return (
+    <Modal title="人员管理 / 客户链路分配" open={open} onCancel={onClose} footer={null} width={1160} destroyOnClose>
+      {content}
     </Modal>
   )
 }
@@ -545,4 +633,48 @@ function agentName(agentID: string, agents: DashboardAgentView[]): string {
 function customerAgentName(agentID: string, agents: DashboardAgentView[]): string {
   const agent = agents.find((item) => item.agent_id === agentID)
   return agent?.customer_display_name || agent?.agent_name || agentID
+}
+
+function assignmentBilling(record: CustomerAssignment, agents: DashboardAgentView[]): XUIClientBillingConfig | undefined {
+  return clientBilling(record.agent_id, record.inbound_id, record.inbound_tag || '', record.client_email || '', agents)
+}
+
+function clientBilling(agentID: string, inboundID: number, inboundTag: string, email: string, agents: DashboardAgentView[]): XUIClientBillingConfig | undefined {
+  const agent = agents.find((item) => item.agent_id === agentID)
+  const exactKey = billingKey(inboundID, inboundTag, email)
+  const emailKey = email ? billingEmailKey(inboundID, email) : ''
+  return (agent?.renewal?.client_billings || []).find((billing) => {
+    if (billingKey(Number(billing.inbound_id || 0), billing.inbound_tag || '', billing.email || '') === exactKey) {
+      return true
+    }
+    return Boolean(emailKey && billingEmailKey(Number(billing.inbound_id || 0), billing.email || '') === emailKey)
+  })
+}
+
+function billingFormPatch(billing?: XUIClientBillingConfig): Pick<AssignmentFormState, 'revenue_amount' | 'revenue_currency' | 'revenue_cycle'> {
+  return {
+    revenue_amount: Number(billing?.revenue_amount || 0),
+    revenue_currency: billing?.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
+    revenue_cycle: billing?.revenue_cycle === 'quarter' || billing?.revenue_cycle === 'year' ? billing.revenue_cycle : 'month',
+  }
+}
+
+function billingKey(inboundID: number, inboundTag: string, email: string): string {
+  return `${Number(inboundID || 0)}\u0000${String(inboundTag || '').trim().toLowerCase()}\u0000${String(email || '').trim().toLowerCase()}`
+}
+
+function billingEmailKey(inboundID: number, email: string): string {
+  return `${Number(inboundID || 0)}\u0000${String(email || '').trim().toLowerCase()}`
+}
+
+function revenueCycleLabel(cycle?: string): string {
+  switch (cycle) {
+    case 'quarter':
+      return '季'
+    case 'year':
+      return '年'
+    case 'month':
+    default:
+      return '月'
+  }
 }

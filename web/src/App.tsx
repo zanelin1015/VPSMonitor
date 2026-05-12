@@ -12,8 +12,13 @@ import {
   Typography,
 } from 'antd'
 import {
-  EditOutlined,
+  ApartmentOutlined,
+  CloudServerOutlined,
+  DashboardOutlined,
+  DeploymentUnitOutlined,
   ReloadOutlined,
+  SettingOutlined,
+  TeamOutlined,
 } from '@ant-design/icons'
 
 import type {
@@ -23,6 +28,7 @@ import type {
   AgentLogsResponse,
   AgentRealtimeMetrics,
   ConfigAuditLog,
+  CustomerAssignment,
   DashboardAgentView,
   DashboardRealtimeMessage,
   ExchangeRatesResponse,
@@ -68,12 +74,14 @@ import type {
   XUIRoutingActionForm,
 } from './lib/appHelpers'
 import {
+  FrontendSettingsPanel,
   PersonalCenterDropdown,
 } from './components/AdminModals'
+import { CustomerManagementModal } from './components/CustomerManagementModal'
 import { renderCNFlowPanel } from './components/DashboardTopologyPanels'
 import { AgentDetailPanel } from './components/AgentDetailPanel'
 import { ConsoleModals } from './components/ConsoleModals'
-import { AgentRail, OverviewSummaryCard } from './components/DashboardSidebar'
+import { AgentRail, AdminWorkbenchDashboard, OverviewSummaryCard } from './components/DashboardSidebar'
 import { CustomerPortal } from './components/CustomerPortal'
 import { LoginScreen } from './components/LoginScreen'
 import { VisualEffects, applyCustomFrontendCode } from './components/VisualEffects'
@@ -140,6 +148,8 @@ interface LoadOptions {
   silent?: boolean
 }
 
+type AdminPageKey = 'dashboard' | 'assets' | 'customers' | 'settings'
+
 function hasCustomerDisplayNameField(value: unknown): boolean {
   return Boolean(value && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'customer_display_name'))
 }
@@ -169,6 +179,7 @@ export default function App() {
   const [exchangeRates, setExchangeRates] = useState<ExchangeRatesState>(() => defaultExchangeRatesState())
   const [currencyOptions, setCurrencyOptions] = useState<CurrencyCode[]>(() => [...COMMON_COST_CURRENCIES])
   const [selectedTag, setSelectedTag] = useState('')
+  const [activeAdminPage, setActiveAdminPage] = useState<AdminPageKey>('dashboard')
   const [agentViewMode, setAgentViewMode] = useState<AgentViewMode>('card')
   const [selectedAgentId, setSelectedAgentId] = useState('')
   const [overview, setOverview] = useState<XUIOverview | null>(null)
@@ -841,8 +852,10 @@ export default function App() {
     }
   }
 
-  async function openFrontendSettingsModal() {
-    setFrontendSettingsModalOpen(true)
+  async function openFrontendSettingsModal(showModal = true) {
+    if (showModal) {
+      setFrontendSettingsModalOpen(true)
+    }
     setFrontendSettingsLoading(true)
     try {
       const data = await fetchJSON<FrontendSettings>('/api/v1/admin/frontend-settings')
@@ -1266,21 +1279,22 @@ export default function App() {
   const clientInstallCommand = buildClientInstallCommand(clientInstallForm)
   const clientWindowsPowerShellCommand = buildWindowsPowerShellInstallCommand(clientInstallForm)
   const clientWindowsCMDCommand = buildWindowsCMDInstallCommand(clientInstallForm)
+  const showWorkbenchDashboard = activeAdminPage === 'dashboard' && !topologyVisible
   return (
-    <div className="page-shell">
+    <div className="page-shell admin-page-shell">
       <VisualEffects />
       <div className="page-background page-background-left" />
       <div className="page-background page-background-right" />
-      <div className={`app-shell${centerPanelOpen ? ' topology-open-shell' : ''}`}>
-        <header className="hero-panel">
-          <div>
-            <div className="eyebrow">南风 VPS 监控中心</div>
-            <Title level={1}>{heroTitle}</Title>
-            <Paragraph className="hero-copy">
-              这里统一管理 client 注册、x-ui 托管配置，以及跨 client 的出站与转发编排。节点新增仍在各自 x-ui 面板内完成，中心只负责汇总和联动。
-            </Paragraph>
-          </div>
-          <div className="hero-actions hero-actions-column">
+      <div className={`app-shell admin-oa-shell${centerPanelOpen ? ' topology-open-shell' : ''}`}>
+        <header className="admin-mobile-header">
+          <div className="admin-mobile-brand-row">
+            <div className="admin-mobile-brand">
+              <span className="admin-oa-brand-mark">南</span>
+              <div>
+                <strong>南风VPS监控</strong>
+                <small>在线 {onlineAgentCount}/{scopedAgentCount} · v{systemInfo?.version || '-'}</small>
+              </div>
+            </div>
             <PersonalCenterDropdown
               adminUser={adminUser}
               systemInfo={systemInfo}
@@ -1296,8 +1310,161 @@ export default function App() {
               }}
               onOpenClientInstall={() => void openClientInstallModal()}
               onOpenTelegram={() => setTelegramBotModalOpen(true)}
-              onOpenCustomers={() => setCustomerModalOpen(true)}
-              onOpenFrontendSettings={() => void openFrontendSettingsModal()}
+              onOpenCustomers={() => setActiveAdminPage('customers')}
+              onOpenFrontendSettings={() => {
+                setActiveAdminPage('settings')
+                void openFrontendSettingsModal(false)
+              }}
+              onOpenUpdates={() => setUpdateModalOpen(true)}
+              onLogout={() => void logout()}
+            />
+          </div>
+          <nav className="admin-mobile-nav" aria-label="移动端管理导航">
+            <button type="button" className={activeAdminPage === 'dashboard' && !topologyVisible ? 'active' : ''} onClick={() => {
+              setActiveAdminPage('dashboard')
+              returnHome()
+            }}>
+              <DashboardOutlined />
+              <span>工作台</span>
+            </button>
+            <button type="button" className={activeAdminPage === 'assets' ? 'active' : ''} onClick={() => {
+              setActiveAdminPage('assets')
+              setTopologyVisible(false)
+              setSelectedAgentId('')
+              setActiveTabKey('overview')
+              setSelectedOutboundTag('')
+              setSelectedRuleIndex(null)
+              setSelectedNodeAnchor('')
+            }}>
+              <CloudServerOutlined />
+              <span>资产</span>
+            </button>
+            <button type="button" className={activeAdminPage === 'dashboard' && topologyVisible ? 'active' : ''} onClick={() => {
+              setActiveAdminPage('dashboard')
+              openTopologyPanel()
+            }}>
+              <ApartmentOutlined />
+              <span>拓扑</span>
+            </button>
+            <button type="button" className={activeAdminPage === 'customers' ? 'active' : ''} onClick={() => setActiveAdminPage('customers')}>
+              <TeamOutlined />
+              <span>客户</span>
+            </button>
+            <button type="button" className={activeAdminPage === 'settings' ? 'active' : ''} onClick={() => {
+              setActiveAdminPage('settings')
+              void openFrontendSettingsModal(false)
+            }}>
+              <SettingOutlined />
+              <span>设置</span>
+            </button>
+          </nav>
+          <div className="admin-mobile-actions">
+            <Button size="small" icon={<ReloadOutlined />} loading={agentsLoading} onClick={() => void loadAgents()}>刷新</Button>
+            <Button size="small" icon={<DeploymentUnitOutlined />} onClick={() => void openClientInstallModal()}>安装 Client</Button>
+            <Select
+              size="small"
+              value={themeMode}
+              options={[
+                { value: 'system', label: '跟随系统' },
+                { value: 'light', label: '明亮' },
+                { value: 'dark', label: '暗黑' },
+              ]}
+              onChange={(value) => setThemeMode(value as ThemeMode)}
+            />
+          </div>
+        </header>
+        <aside className="admin-oa-sider">
+          <div className="admin-oa-brand">
+            <span className="admin-oa-brand-mark">南</span>
+            <div>
+              <strong>南风VPS监控</strong>
+              <small>管理后台</small>
+            </div>
+          </div>
+          <nav className="admin-oa-nav" aria-label="管理端导航">
+            <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'dashboard' && !topologyVisible ? ' active' : ''}`} onClick={() => {
+              setActiveAdminPage('dashboard')
+              returnHome()
+            }}>
+              <DashboardOutlined />
+              <span>工作台</span>
+              <small>总览与财务</small>
+            </button>
+            <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'assets' ? ' active' : ''}`} onClick={() => {
+              setActiveAdminPage('assets')
+              setTopologyVisible(false)
+              setSelectedAgentId('')
+              setActiveTabKey('overview')
+              setSelectedOutboundTag('')
+              setSelectedRuleIndex(null)
+              setSelectedNodeAnchor('')
+            }}>
+              <CloudServerOutlined />
+              <span>Client 资产</span>
+              <small>节点列表</small>
+            </button>
+            <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'dashboard' && topologyVisible ? ' active' : ''}`} onClick={() => {
+              setActiveAdminPage('dashboard')
+              openTopologyPanel()
+            }}>
+              <ApartmentOutlined />
+              <span>拓扑图</span>
+              <small>链路联动</small>
+            </button>
+            <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'customers' ? ' active' : ''}`} onClick={() => setActiveAdminPage('customers')}>
+              <TeamOutlined />
+              <span>客户管理</span>
+              <small>账号与授权</small>
+            </button>
+            <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'settings' ? ' active' : ''}`} onClick={() => {
+              setActiveAdminPage('settings')
+              void openFrontendSettingsModal(false)
+            }}>
+              <SettingOutlined />
+              <span>系统设置</span>
+              <small>样式与更新</small>
+            </button>
+          </nav>
+          <div className="admin-oa-sider-foot">
+            <span>在线 Client</span>
+            <strong>{onlineAgentCount}/{scopedAgentCount}</strong>
+            <small>Server v{systemInfo?.version || '-'}</small>
+          </div>
+        </aside>
+
+        <section className="admin-oa-main">
+        <header className="hero-panel admin-oa-topbar">
+          <div className="admin-oa-titlebar">
+            <div className="eyebrow">管理后台 / 工作台</div>
+            <Title level={1}>{heroTitle}</Title>
+            <Paragraph className="hero-copy">
+              统一管理 Client、x-ui 托管配置、客户账号、财务月览与跨 Client 拓扑联动。
+            </Paragraph>
+          </div>
+          <div className="hero-actions hero-actions-column">
+            <Button icon={<ReloadOutlined />} loading={agentsLoading} onClick={() => void loadAgents()}>刷新</Button>
+            <Button icon={<DeploymentUnitOutlined />} onClick={() => void openClientInstallModal()}>安装 Client</Button>
+            <Button icon={<TeamOutlined />} onClick={() => setActiveAdminPage('customers')}>客户</Button>
+            <PersonalCenterDropdown
+              adminUser={adminUser}
+              systemInfo={systemInfo}
+              onOpenAccount={() => {
+                setAccountForm({
+                  current_password: '',
+                  new_username: adminUser.username,
+                  new_password: '',
+                  confirm_password: '',
+                  avatar_url: adminUser.avatar_url || '',
+                })
+                setAccountModalOpen(true)
+              }}
+              onOpenClientInstall={() => void openClientInstallModal()}
+              onOpenTelegram={() => setTelegramBotModalOpen(true)}
+              onOpenCustomers={() => setActiveAdminPage('customers')}
+              onOpenFrontendSettings={() => {
+                setActiveAdminPage('settings')
+                void openFrontendSettingsModal(false)
+              }}
               onOpenUpdates={() => setUpdateModalOpen(true)}
               onLogout={() => void logout()}
             />
@@ -1368,6 +1535,8 @@ export default function App() {
           onCloseTelegramBot={() => setTelegramBotModalOpen(false)}
           onCloseUpdateModal={() => setUpdateModalOpen(false)}
           onCloseXUIActionModal={() => setXUIActionModalOpen(false)}
+          onConfigChanged={() => loadAgents()}
+          onOpenCustomerAssignment={openCustomerAssignment}
           onCopyClientInstallCommand={(command) => void copyClientInstallCommand(command)}
           onCopyImportURL={(client) => void copyImportURL(client)}
           onDeleteTelegramBot={(id) => void deleteTelegramBot(id)}
@@ -1389,6 +1558,34 @@ export default function App() {
           onXUIActionKindChange={setXUIActionKind}
         />
 
+        {activeAdminPage === 'customers' ? (
+          <main className="admin-content-page">
+            <CustomerManagementModal embedded agents={agents} onConfigChanged={() => loadAgents()} onOpenAssignment={openCustomerAssignment} />
+          </main>
+        ) : activeAdminPage === 'settings' ? (
+          <main className="admin-content-page">
+            <FrontendSettingsPanel
+              loading={frontendSettingsLoading}
+              saving={frontendSettingsSaving}
+              form={frontendSettingsForm}
+              onSave={() => void saveFrontendSettings()}
+              onFormChange={setFrontendSettingsForm}
+            />
+          </main>
+        ) : showWorkbenchDashboard ? (
+          <main className="admin-content-page admin-workbench-page">
+            <AdminWorkbenchDashboard
+              agents={filteredAgents}
+              dashboardView={dashboardView}
+              selectedTag={selectedTag}
+              scopedNetwork={scopedNetwork}
+              monthlyFinance={monthlyFinance}
+              costCurrency={costCurrency}
+              onSelectAgent={(agentID) => openAgentDetailPanel(agentID)}
+              onOpenTopology={openTopologyPanel}
+            />
+          </main>
+        ) : (
         <div className={`workspace-grid${centerPanelOpen ? ' workspace-grid-topology' : ''}${topologyVisible ? ' workspace-grid-topology-open' : ''}${selectedAgent && !topologyVisible ? ' workspace-grid-agent-open' : ''}`}>
           <OverviewSummaryCard
             dashboardView={dashboardView}
@@ -1401,6 +1598,8 @@ export default function App() {
             costCurrency={costCurrency}
             currencyOptions={currencyOptions}
             monthlyFinance={monthlyFinance}
+            financeAgents={filteredAgents}
+            financeChains={filteredChains}
             exchangeRates={exchangeRates}
             selectedTag={selectedTag}
             currentAgentLabel={selectedAgent?.agent_name || selectedAgent?.agent_id || ''}
@@ -1558,6 +1757,8 @@ export default function App() {
             ) : null}
           </main>
         </div>
+        )}
+        </section>
       </div>
     </div>
   )
@@ -1587,6 +1788,7 @@ export default function App() {
   }
 
   function openTopologyPanel() {
+    setActiveAdminPage('dashboard')
     setTopologyVisible(true)
     window.setTimeout(() => {
       document.getElementById('topology-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -1617,6 +1819,7 @@ export default function App() {
   }
 
   function returnHome() {
+    setActiveAdminPage('dashboard')
     setTopologyVisible(false)
     setSelectedAgentId('')
     setActiveTabKey('overview')
@@ -1626,6 +1829,7 @@ export default function App() {
   }
 
   function openAgentDetailPanel(agentID: string, tabKey = 'overview') {
+    setActiveAdminPage('assets')
     setTopologyVisible(false)
     setActiveTabKey(tabKey)
     startTransition(() => {
@@ -1634,6 +1838,47 @@ export default function App() {
     window.setTimeout(() => {
       document.getElementById('agent-detail-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }, 80)
+  }
+
+  function openCustomerAssignment(assignment: CustomerAssignment) {
+    if (!assignment.agent_id) {
+      return
+    }
+    setCustomerModalOpen(false)
+    setActiveAdminPage('assets')
+    setTopologyVisible(false)
+    setSelectedOutboundTag('')
+    setSelectedRuleIndex(null)
+
+    if (assignment.client_email) {
+      setSelectedNodeAnchor('')
+      setClientSearch(assignment.client_email)
+      setActiveTabKey('clients')
+    } else {
+      const nodeLabel = assignment.inbound_tag || String(assignment.inbound_id)
+      setClientSearch('')
+      setSelectedNodeAnchor(nodeElementId(assignment.agent_id, nodeLabel))
+      setActiveTabKey('nodes')
+    }
+
+    startTransition(() => {
+      setSelectedAgentId(assignment.agent_id)
+    })
+
+    let attempts = 0
+    const scrollToTarget = () => {
+      attempts += 1
+      const anchor = assignment.client_email ? 'agent-detail-panel' : nodeElementId(assignment.agent_id, assignment.inbound_tag || String(assignment.inbound_id))
+      const element = document.getElementById(anchor) || document.getElementById('agent-detail-panel')
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: assignment.client_email ? 'start' : 'center' })
+        return
+      }
+      if (attempts < 20) {
+        window.setTimeout(scrollToTarget, 120)
+      }
+    }
+    window.setTimeout(scrollToTarget, 80)
   }
 
   function jumpToOutbound(tag?: string) {
@@ -1664,6 +1909,20 @@ export default function App() {
     }
     const anchor = nodeElementId(agentID, nodeLabel)
     setSelectedNodeAnchor(anchor)
+    if (topologyVisible) {
+      setActiveAdminPage('dashboard')
+      setTopologyVisible(true)
+      setSelectedOutboundTag('')
+      setSelectedRuleIndex(null)
+      startTransition(() => {
+        setSelectedAgentId(agentID)
+      })
+      window.setTimeout(() => {
+        document.getElementById('topology-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 80)
+      return
+    }
+    setActiveAdminPage('assets')
     setTopologyVisible(false)
     setSelectedAgentId(agentID)
     setActiveTabKey('nodes')

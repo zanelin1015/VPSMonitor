@@ -486,11 +486,14 @@
 }
 
 .agent-compact-location {
-  display: grid;
+  display: flex;
   min-width: 0;
-  gap: 2px;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
   font-size: 11.5px;
   line-height: 1.35;
+  white-space: nowrap;
 }
 
 .agent-compact-location span {
@@ -498,6 +501,15 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.agent-compact-location span:first-child {
+  flex: 0 1 auto;
+  max-width: 44%;
+}
+
+.agent-compact-location span:last-child {
+  flex: 1 1 auto;
 }
 
 .agent-compact-tags {
@@ -605,6 +617,55 @@
   border-color: color-mix(in srgb, var(--blue) 35%, var(--border));
   background: color-mix(in srgb, var(--surface-strong) 88%, transparent);
   color: var(--blue);
+}
+
+@media (max-width: 760px) {
+  .agent-rail,
+  .sidebar-card,
+  .sidebar-card .ant-card-body,
+  .agent-list-wrap,
+  .agent-list.ant-list,
+  .agent-list .ant-spin-nested-loading {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .agent-list .ant-spin-nested-loading {
+    padding: 0;
+  }
+
+  .agent-list-card .ant-list-items,
+  .agent-list-list .ant-list-items,
+  .workspace-grid-topology .agent-list-card .ant-list-items,
+  .workspace-grid-topology .agent-list-list .ant-list-items {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-list-list .ant-spin-container {
+    min-width: 0;
+  }
+
+  .agent-button-list {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .agent-list-runtime,
+  .agent-list-metrics,
+  .agent-list-flow {
+    display: none;
+  }
+
+  .agent-filter-strip {
+    margin-bottom: 10px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .agent-list .ant-pagination {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
 }
 
 .agent-view-mode-button.ant-btn.active {
@@ -731,11 +792,28 @@
 
 .agent-location {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
   gap: 4px 10px;
   min-height: 18px;
-  word-break: break-word;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.agent-location span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-location span:first-child {
+  flex: 0 1 auto;
+  max-width: 34%;
+}
+
+.agent-location span:last-child {
+  flex: 1 1 auto;
 }
 
 .agent-tag-row {

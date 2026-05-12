@@ -825,6 +825,121 @@ textarea,
   }
 }
 
+@media (max-width: 760px) {
+  .workspace-grid,
+  .workspace-grid-topology,
+  .workspace-grid-agent-open {
+    display: grid;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    gap: 10px;
+    overflow: visible;
+  }
+
+  .workspace-grid:not(.workspace-grid-topology) .sidebar-card,
+  .workspace-grid-topology .sidebar-card,
+  .workspace-grid-agent-open .tabs-card,
+  .workspace-grid-topology .cn-flow-card {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .workspace-grid-topology .summary-card,
+  .workspace-grid-topology .agent-rail,
+  .workspace-grid-topology .main-stage {
+    grid-column: 1;
+    grid-row: auto;
+    height: auto;
+    overflow: visible;
+  }
+
+  .workspace-grid-topology .sidebar-card .ant-card-body,
+  .workspace-grid-agent-open .tabs-card > .ant-card-body,
+  .workspace-grid-agent-open .tabs-card .ant-tabs-content-holder {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .workspace-grid-topology .cn-flow-card > .ant-card-body {
+    overflow: visible;
+  }
+
+  .workspace-grid-topology .cn-flow-map,
+  .cn-flow-map {
+    max-height: 72vh;
+    min-height: 360px;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .cn-flow-header {
+    gap: 10px;
+  }
+
+  .cn-flow-header .ant-typography {
+    font-size: 24px;
+    line-height: 1.1;
+  }
+
+  .cn-flow-header-actions,
+  .cn-flow-header-buttons,
+  .cn-flow-header-meta {
+    width: 100%;
+  }
+
+  .cn-flow-header-buttons .ant-btn {
+    flex: 1 1 150px;
+  }
+
+  .cn-flow-toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .cn-flow-agent-filter {
+    flex: 0 0 auto;
+  }
+
+  .cn-flow-lanes {
+    min-width: 960px;
+  }
+
+  .cn-flow-lane {
+    min-width: 900px;
+  }
+
+  .overview-stat-grid,
+  .compact-summary-card .overview-stat-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .entry-mapping-list,
+  .ant-table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .entry-mapping-row {
+    min-width: 720px;
+  }
+
+  .selected-agent-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .selected-agent-toolbar .ant-space {
+    width: 100%;
+  }
+}
+
 .agent-tag-warn {
   color: #9a3412;
   background: rgba(251, 146, 60, 0.2);
