@@ -24,7 +24,7 @@ export function LoginScreen({ loginForm, loginLoading, title = '南风VPS监控'
           </div>
           <div>
             <Title level={2}>{title}</Title>
-            <Text type="secondary">{subtitle}</Text>
+            {subtitle ? <Text type="secondary">{subtitle}</Text> : null}
           </div>
         </div>
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>

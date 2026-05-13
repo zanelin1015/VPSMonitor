@@ -35,6 +35,7 @@ type App struct {
 	xuiClientKey   string
 	observedIP     string
 	observedIPAt   time.Time
+	runOnceMu      sync.Mutex
 }
 
 func New(cfg config.ClientConfig) (*App, error) {
@@ -53,6 +54,9 @@ func New(cfg config.ClientConfig) (*App, error) {
 }
 
 func (a *App) RunOnce(ctx context.Context) error {
+	a.runOnceMu.Lock()
+	defer a.runOnceMu.Unlock()
+
 	effectiveConfig, err := a.loadEffectiveConfig(ctx)
 	if err != nil {
 		return err

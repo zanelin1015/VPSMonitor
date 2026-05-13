@@ -559,7 +559,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
             ) : null}
             <Button onClick={onOpenLogs}>查看日志</Button>
             <Button disabled={!canOpenXUI} onClick={onOpenXUI}>打开 x-ui 面板</Button>
-            <Button icon={<ReloadOutlined />} loading={currentAgentLoading} onClick={onRefreshCurrentAgent}>刷新当前 Client</Button>
+            <Button icon={<ReloadOutlined />} loading={currentAgentLoading} onClick={onRefreshCurrentAgent}>立即获取 Client 信息</Button>
           </Space>
         </div>
         <Tabs

@@ -26,6 +26,7 @@ import type {
   AdminUser,
   AgentListItem,
   AgentLogsResponse,
+  AgentRefreshResponse,
   AgentRealtimeMetrics,
   ConfigAuditLog,
   CustomerAssignment,
@@ -230,6 +231,7 @@ export default function App() {
   const [agentLogs, setAgentLogs] = useState<AgentLogsResponse | null>(null)
   const [agentLogsLoading, setAgentLogsLoading] = useState(false)
   const [agentLogsError, setAgentLogsError] = useState('')
+  const [agentRefreshLoading, setAgentRefreshLoading] = useState(false)
   const [xuiActionModalOpen, setXUIActionModalOpen] = useState(false)
   const [xuiActionSaving, setXUIActionSaving] = useState(false)
   const [xuiActionKind, setXUIActionKind] = useState('upsert_routing_rule')
@@ -735,6 +737,33 @@ export default function App() {
       if (!silent) {
         setAgentLogsLoading(false)
       }
+    }
+  }
+
+  async function requestAgentSnapshot(agentID = selectedAgentId) {
+    if (!agentID) {
+      return
+    }
+    setAgentRefreshLoading(true)
+    try {
+      const data = await fetchJSON<AgentRefreshResponse>(`/api/v1/agents/${agentID}/refresh`, {
+        method: 'POST',
+      })
+      message.success(data.message || '已通知 Client 立即采集')
+      window.setTimeout(() => {
+        void loadAgents({ silent: true })
+        void loadOverview(agentID, { silent: true })
+        void loadManagedConfig(agentID, { silent: true })
+        void loadXUIActions(agentID, { silent: true })
+        void loadAgentLogs(agentID, { silent: true })
+      }, 2500)
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      message.error(error instanceof Error ? error.message : '通知 Client 采集失败')
+    } finally {
+      setAgentRefreshLoading(false)
     }
   }
 
@@ -1663,10 +1692,10 @@ export default function App() {
                       }
                     },
                     canRefreshCurrentNode: Boolean(selectedAgentId),
-                    currentNodeLoading: overviewLoading || configLoading,
+                    currentNodeLoading: overviewLoading || configLoading || agentRefreshLoading,
                     onRefreshCurrentNode: () => {
                       if (selectedAgentId) {
-                        setReloadToken((current) => current + 1)
+                        void requestAgentSnapshot(selectedAgentId)
                       }
                     },
                   })}
@@ -1687,7 +1716,7 @@ export default function App() {
                 configLoading={configLoading}
                 configSavingSection={configSavingSection}
                 currencyOptions={currencyOptions}
-                currentAgentLoading={overviewLoading || configLoading}
+                currentAgentLoading={overviewLoading || configLoading || agentRefreshLoading}
                 dashboardView={dashboardView}
                 entryAddressInputText={entryAddressInputText}
                 filteredAgents={filteredAgents}
@@ -1740,7 +1769,7 @@ export default function App() {
                     window.open(managedConfig.xui.base_url, '_blank', 'noopener,noreferrer')
                   }
                 }}
-                onRefreshCurrentAgent={() => setReloadToken((current) => current + 1)}
+                onRefreshCurrentAgent={() => void requestAgentSnapshot(selectedAgentId)}
                 onRefreshXUIActions={() => void loadXUIActions()}
                 onRenewalChange={(patch) => updateManagedConfig((current) => ({ ...current, renewal: { ...current.renewal, ...patch } }))}
                 onReturnHome={returnHome}

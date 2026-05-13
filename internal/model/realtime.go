@@ -18,3 +18,15 @@ type DashboardRealtimeMessage struct {
 	Metrics []AgentRealtimeMetrics `json:"metrics,omitempty"`
 	Metric  *AgentRealtimeMetrics  `json:"metric,omitempty"`
 }
+
+const AgentControlCollectNow = "collect_now"
+
+type AgentControlMessage struct {
+	Type string `json:"type"`
+}
+
+type AgentRefreshResponse struct {
+	Status  string `json:"status"`
+	Mode    string `json:"mode"`
+	Message string `json:"message,omitempty"`
+}

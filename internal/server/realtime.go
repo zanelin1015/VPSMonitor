@@ -20,15 +20,29 @@ const (
 )
 
 type realtimeHub struct {
-	mu          sync.RWMutex
-	metrics     map[string]model.AgentRealtimeMetrics
-	subscribers map[chan model.AgentRealtimeMetrics]struct{}
+	mu            sync.RWMutex
+	metrics       map[string]model.AgentRealtimeMetrics
+	subscribers   map[chan model.AgentRealtimeMetrics]struct{}
+	agentControls map[string]*agentControlSession
+}
+
+type agentControlSession struct {
+	ch        chan model.AgentControlMessage
+	done      chan struct{}
+	closeOnce sync.Once
+}
+
+func (s *agentControlSession) close() {
+	s.closeOnce.Do(func() {
+		close(s.done)
+	})
 }
 
 func newRealtimeHub() *realtimeHub {
 	return &realtimeHub{
-		metrics:     make(map[string]model.AgentRealtimeMetrics),
-		subscribers: make(map[chan model.AgentRealtimeMetrics]struct{}),
+		metrics:       make(map[string]model.AgentRealtimeMetrics),
+		subscribers:   make(map[chan model.AgentRealtimeMetrics]struct{}),
+		agentControls: make(map[string]*agentControlSession),
 	}
 }
 
@@ -119,6 +133,51 @@ func (h *realtimeHub) applyToAgentItems(items []model.AgentListItem) {
 				items[i].AgentName = metric.AgentName
 			}
 		}
+	}
+}
+
+func (h *realtimeHub) registerAgentControl(agentID string) *agentControlSession {
+	session := &agentControlSession{
+		ch:   make(chan model.AgentControlMessage, 8),
+		done: make(chan struct{}),
+	}
+	h.mu.Lock()
+	if previous := h.agentControls[agentID]; previous != nil {
+		previous.close()
+	}
+	h.agentControls[agentID] = session
+	h.mu.Unlock()
+	return session
+}
+
+func (h *realtimeHub) unregisterAgentControl(agentID string, session *agentControlSession) {
+	h.mu.Lock()
+	if current := h.agentControls[agentID]; current == session {
+		delete(h.agentControls, agentID)
+	}
+	h.mu.Unlock()
+	session.close()
+}
+
+func (h *realtimeHub) sendAgentControl(agentID string, message model.AgentControlMessage) bool {
+	h.mu.RLock()
+	session := h.agentControls[agentID]
+	h.mu.RUnlock()
+	if session == nil {
+		return false
+	}
+	select {
+	case <-session.done:
+		return false
+	default:
+	}
+	select {
+	case session.ch <- message:
+		return true
+	case <-session.done:
+		return false
+	default:
+		return false
 	}
 }
 
@@ -239,6 +298,28 @@ func (a *App) handleAgentMetricsWS(w http.ResponseWriter, r *http.Request, agent
 	defer conn.Close()
 	conn.SetReadLimit(32 * 1024)
 	observedIP := requestObservedIP(r)
+	controlSession := a.realtime.registerAgentControl(agentID)
+	defer a.realtime.unregisterAgentControl(agentID, controlSession)
+
+	go func() {
+		for {
+			select {
+			case message := <-controlSession.ch:
+				if err := conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+					_ = conn.Close()
+					return
+				}
+				if err := conn.WriteJSON(message); err != nil {
+					_ = conn.Close()
+					return
+				}
+			case <-controlSession.done:
+				return
+			case <-r.Context().Done():
+				return
+			}
+		}
+	}()
 
 	agent, found, err := a.store.GetAgent(agentID)
 	if err != nil {

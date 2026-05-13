@@ -85,11 +85,19 @@ connected:
 	defer conn.Close()
 
 	done := make(chan struct{})
+	collectNow := make(chan struct{}, 1)
 	go func() {
 		defer close(done)
 		for {
-			if _, _, err := conn.ReadMessage(); err != nil {
+			var message model.AgentControlMessage
+			if err := conn.ReadJSON(&message); err != nil {
 				return
+			}
+			if message.Type == model.AgentControlCollectNow {
+				select {
+				case collectNow <- struct{}{}:
+				default:
+				}
 			}
 		}
 	}()
@@ -118,6 +126,12 @@ connected:
 
 		select {
 		case <-ticker.C:
+		case <-collectNow:
+			if err := a.RunOnce(ctx); err != nil {
+				log.Printf("manual snapshot collection failed: %v", err)
+			} else {
+				log.Printf("manual snapshot pushed for agent %s", a.config.AgentID)
+			}
 		case <-done:
 			return fmt.Errorf("server closed realtime metrics ws")
 		case <-ctx.Done():

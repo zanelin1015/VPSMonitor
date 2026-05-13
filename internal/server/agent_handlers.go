@@ -136,6 +136,8 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.handleAgentMetricsWS(w, r, agentID)
+	case "refresh":
+		a.handleAgentRefresh(w, r, agentID)
 	case "history":
 		if r.Method != http.MethodGet {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -189,6 +191,32 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusNotFound, "route not found")
 	}
+}
+
+func (a *App) handleAgentRefresh(w http.ResponseWriter, r *http.Request, agentID string) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if _, _, ok := a.requireAdmin(w, r); !ok {
+		return
+	}
+	if _, found, err := a.store.GetAgent(agentID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	} else if !found {
+		writeError(w, http.StatusNotFound, "agent not found")
+		return
+	}
+	if !a.realtime.sendAgentControl(agentID, model.AgentControlMessage{Type: model.AgentControlCollectNow}) {
+		writeError(w, http.StatusConflict, "Client 实时连接不在线，无法立即采集；请确认 Client 已更新到新版并保持在线")
+		return
+	}
+	writeJSON(w, http.StatusOK, model.AgentRefreshResponse{
+		Status:  "sent",
+		Mode:    "websocket",
+		Message: "已通知 Client 立即采集并上报",
+	})
 }
 
 func (a *App) handleAgentLogs(w http.ResponseWriter, r *http.Request, agentID string) {

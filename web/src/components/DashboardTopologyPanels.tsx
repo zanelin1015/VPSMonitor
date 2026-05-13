@@ -313,7 +313,7 @@ export function renderCNFlowPanel(props: {
               打开 x-ui 面板
             </Button>
             <Button icon={<ReloadOutlined />} type="primary" disabled={!canRefreshCurrentNode} loading={currentNodeLoading} onClick={onRefreshCurrentNode}>
-              刷新当前节点
+              立即获取节点信息
             </Button>
           </Space>
           <Space wrap className="cn-flow-header-meta">

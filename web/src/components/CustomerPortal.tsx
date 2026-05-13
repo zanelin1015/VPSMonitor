@@ -174,8 +174,8 @@ export function CustomerPortal() {
   if (!user) {
     return (
       <LoginScreen
-        title="南风客户中心"
-        subtitle="客户登录"
+        title="AlanStone拼车"
+        subtitle=""
         loginForm={loginForm}
         loginLoading={loginLoading}
         onChange={setLoginForm}
@@ -191,7 +191,7 @@ export function CustomerPortal() {
       <div className="customer-shell customer-dashboard-shell">
         <header className="customer-mobile-header">
           <div>
-            <div className="eyebrow">南风客户中心</div>
+            <div className="eyebrow">AlanStone拼车</div>
             <Title level={2}>{user.display_name || user.username}</Title>
             <Text type="secondary">{overview?.generated_at ? formatDateTime(overview.generated_at) : '等待数据同步'}</Text>
           </div>
@@ -220,7 +220,7 @@ export function CustomerPortal() {
         </section>
         <header className="customer-hero customer-dashboard-header">
           <div>
-            <div className="eyebrow">客户看板 / 我的链路</div>
+            <div className="eyebrow">用户看板 / 我的链路</div>
             <Title level={1}>{user.display_name || user.username}</Title>
           </div>
           <Space wrap>
@@ -236,7 +236,7 @@ export function CustomerPortal() {
         <div className="customer-board-layout">
           <aside className="customer-board-side">
             <Card bordered={false} className="surface-card customer-board-profile">
-              <Text type="secondary">客户账号</Text>
+              <Text type="secondary">用户账号</Text>
               <Title level={3}>{user.display_name || user.username}</Title>
               <Tag color="blue">登录可见</Tag>
               <Text type="secondary">数据更新时间</Text>
@@ -376,7 +376,7 @@ export function CustomerPortal() {
           <Alert
             type="info"
             showIcon
-            message="只影响你自己的客户页面"
+            message="只影响你自己的用户页面"
             description="可以填写 CSS，或完整的 <style> / <script> 片段；留空则使用系统默认页面样式。"
           />
           <Input.TextArea
@@ -412,7 +412,7 @@ export function CustomerPortal() {
 function CustomerTopologyMap({ steps }: { steps: CustomerLinkStep[] }) {
   const visibleSteps = steps.length ? steps : [{ role: 'entry', label: '入口' }]
   return (
-    <div className="customer-topology-canvas" aria-label="客户链路拓扑图">
+    <div className="customer-topology-canvas" aria-label="用户链路拓扑图">
       <div className="customer-topology-track">
         {visibleSteps.map((step, index) => (
           <div key={`${step.role}-${step.label}-${index}`} className="customer-topology-segment">
@@ -451,7 +451,7 @@ function topologyNodeIcon(role: string) {
 
 function customerLinkDisplayName(link: CustomerLinkView, draft?: string): string {
   const draftName = (draft || '').trim()
-  return draftName || link.remark || link.entry_client_name || link.client_email || '客户链路'
+  return draftName || link.remark || link.entry_client_name || link.client_email || '用户链路'
 }
 
 function customerLinkImportURL(link: CustomerLinkView, draft?: string): string {

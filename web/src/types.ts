@@ -483,6 +483,12 @@ export interface DashboardRealtimeMessage {
   metric?: AgentRealtimeMetrics
 }
 
+export interface AgentRefreshResponse {
+  status: string
+  mode: 'websocket'
+  message?: string
+}
+
 export interface TopologyInboundRef {
   agent_id: string
   agent_name?: string

@@ -598,6 +598,7 @@ func (c *XUIClient) collectLocal(ctx context.Context, snapshot *model.XUISnapsho
 	if err != nil {
 		return fmt.Errorf("read x-ui local xray config: %w", err)
 	}
+	configJSON = c.enrichLocalXrayConfig(ctx, configJSON)
 	outboundTraffic, err := readLocalOutboundTraffic(ctx, db)
 	if err != nil {
 		return fmt.Errorf("read x-ui local outbound traffic: %w", err)
@@ -610,6 +611,26 @@ func (c *XUIClient) collectLocal(ctx context.Context, snapshot *model.XUISnapsho
 	snapshot.RoutingRules = extractRoutingRules(configJSON["routing"])
 	snapshot.OutboundTraffic = outboundTraffic
 	return nil
+}
+
+func (c *XUIClient) enrichLocalXrayConfig(ctx context.Context, localConfig map[string]any) map[string]any {
+	if !xrayConfigNeedsFallback(localConfig) || c.baseURL == "" || c.config.Username == "" || c.config.Password == "" {
+		return localConfig
+	}
+	if err := c.ensureLogin(ctx); err != nil {
+		return localConfig
+	}
+	remoteConfig, err := c.collectXrayConfig(ctx)
+	if isXUIAuthError(err) {
+		c.invalidateSession()
+		if loginErr := c.login(ctx); loginErr == nil {
+			remoteConfig, err = c.collectXrayConfig(ctx)
+		}
+	}
+	if err != nil {
+		return localConfig
+	}
+	return mergeRicherXrayConfig(localConfig, remoteConfig)
 }
 
 func (c *XUIClient) resolveLocalDBPath() (string, bool, error) {

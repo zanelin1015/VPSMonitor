@@ -486,6 +486,89 @@ func TestXUICollectUsesLocalDBWithoutLogin(t *testing.T) {
 	}
 }
 
+func TestXUICollectLocalDBEnrichesMissingXrayTemplateFromAPI(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "x-ui.db")
+	createLocalXUITestDB(t, dbPath)
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE settings SET value = '{"outbounds":[],"routing":{"rules":[]}}' WHERE key = 'xrayTemplateConfig'`); err != nil {
+		t.Fatalf("clear local xray template: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite: %v", err)
+	}
+
+	configBody, err := json.Marshal(map[string]any{
+		"outbounds": []map[string]any{
+			{"tag": "direct", "protocol": "freedom"},
+			{"tag": "blocked", "protocol": "blackhole"},
+		},
+		"routing": map[string]any{
+			"rules": []map[string]any{
+				{"outboundTag": "direct"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal config body: %v", err)
+	}
+	wrapperBody, err := json.Marshal(map[string]any{"xraySetting": string(configBody)})
+	if err != nil {
+		t.Fatalf("marshal wrapper body: %v", err)
+	}
+
+	loginCount := 0
+	client, err := NewXUIClient(config.XUIConfig{
+		Enabled:  true,
+		BaseURL:  "https://xui.local/secret/",
+		Username: "admin",
+		Password: "pass",
+		DBPath:   dbPath,
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewXUIClient: %v", err)
+	}
+	client.client = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/secret/login":
+				loginCount++
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
+			case "/secret/panel/api/server/getConfigJson":
+				return jsonResponse(t, req, map[string]any{
+					"success": true,
+					"obj":     map[string]any{"outbounds": []map[string]any{}, "routing": map[string]any{"rules": []map[string]any{}}},
+				}), nil
+			case "/secret/panel/api/xray/":
+				return jsonResponse(t, req, map[string]any{
+					"success": true,
+					"obj":     string(wrapperBody),
+				}), nil
+			default:
+				t.Fatalf("unexpected path: %s", req.URL.Path)
+				return nil, nil
+			}
+		}),
+	}
+
+	snapshot := client.Collect(context.Background())
+	if snapshot.Error != "" {
+		t.Fatalf("Collect returned error: %s", snapshot.Error)
+	}
+	if loginCount != 1 {
+		t.Fatalf("expected one login, got %d", loginCount)
+	}
+	if got := len(snapshot.Outbounds); got != 2 {
+		t.Fatalf("expected enriched 2 outbounds, got %d", got)
+	}
+	if got := len(snapshot.RoutingRules); got != 1 {
+		t.Fatalf("expected enriched 1 routing rule, got %d", got)
+	}
+}
+
 func TestXUIExecuteAddOutbound(t *testing.T) {
 	client, err := NewXUIClient(config.XUIConfig{
 		Enabled:  true,
