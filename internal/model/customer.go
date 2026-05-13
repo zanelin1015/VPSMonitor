@@ -73,6 +73,11 @@ type CustomerStyleRequest struct {
 	StyleCode string `json:"style_code"`
 }
 
+type CustomerPasswordUpdateRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
 type CustomerLinkStep struct {
 	Role        string `json:"role"`
 	Label       string `json:"label"`

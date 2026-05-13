@@ -166,6 +166,88 @@ func (s *SQLiteStore) UpdateCustomer(id int64, req model.CustomerAccountRequest)
 	return customer, nil
 }
 
+func (s *SQLiteStore) UpdateCustomerPassword(customerID int64, req model.CustomerPasswordUpdateRequest, keepSessionToken string) (model.CustomerUser, error) {
+	if customerID <= 0 {
+		return model.CustomerUser{}, fmt.Errorf("invalid customer id")
+	}
+	if req.CurrentPassword == "" {
+		return model.CustomerUser{}, fmt.Errorf("current password is required")
+	}
+	if len(req.NewPassword) < adminPasswordMinLength {
+		return model.CustomerUser{}, fmt.Errorf("new password must be at least %d characters", adminPasswordMinLength)
+	}
+
+	var (
+		user                         model.CustomerUser
+		currentHash                  string
+		enabled                      int
+		createdAtText, updatedAtText string
+	)
+	err := s.db.QueryRow(`
+		SELECT id, username, password_hash, display_name, style_code, enabled, created_at, updated_at
+		FROM customer_accounts
+		WHERE id = ?
+	`, customerID).Scan(&user.ID, &user.Username, &currentHash, &user.DisplayName, &user.StyleCode, &enabled, &createdAtText, &updatedAtText)
+	if err == sql.ErrNoRows {
+		return model.CustomerUser{}, fmt.Errorf("customer not found")
+	}
+	if err != nil {
+		return model.CustomerUser{}, fmt.Errorf("load customer: %w", err)
+	}
+	if enabled == 0 {
+		return model.CustomerUser{}, fmt.Errorf("customer is disabled")
+	}
+	ok, err := verifyPassword(req.CurrentPassword, currentHash)
+	if err != nil {
+		return model.CustomerUser{}, err
+	}
+	if !ok {
+		return model.CustomerUser{}, fmt.Errorf("current password is invalid")
+	}
+
+	newHash, err := hashPassword(req.NewPassword)
+	if err != nil {
+		return model.CustomerUser{}, err
+	}
+	now := time.Now().UTC()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return model.CustomerUser{}, fmt.Errorf("begin customer password update: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	_, err = tx.Exec(`
+		UPDATE customer_accounts
+		SET password_hash = ?, updated_at = ?
+		WHERE id = ?
+	`, newHash, now.Format(time.RFC3339Nano), customerID)
+	if err != nil {
+		return model.CustomerUser{}, fmt.Errorf("update customer password: %w", err)
+	}
+
+	if keepSessionToken != "" {
+		keepSessionHash := sessionTokenHash(keepSessionToken)
+		_, err = tx.Exec(`DELETE FROM customer_sessions WHERE customer_id = ? AND token_hash <> ?`, customerID, keepSessionHash)
+	} else {
+		_, err = tx.Exec(`DELETE FROM customer_sessions WHERE customer_id = ?`, customerID)
+	}
+	if err != nil {
+		return model.CustomerUser{}, fmt.Errorf("clear stale customer sessions: %w", err)
+	}
+	if err = tx.Commit(); err != nil {
+		return model.CustomerUser{}, fmt.Errorf("commit customer password update: %w", err)
+	}
+
+	user.Enabled = true
+	user.CreatedAt = parseTime(createdAtText)
+	user.UpdatedAt = now
+	return user, nil
+}
+
 func (s *SQLiteStore) DeleteCustomer(id int64) error {
 	result, err := s.db.Exec(`DELETE FROM customer_accounts WHERE id = ?`, id)
 	if err != nil {

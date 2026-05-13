@@ -49,6 +49,12 @@ func (a *App) handleCustomer(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.handleCustomerStyleUpdate(w, r)
+	case "account":
+		if r.Method != http.MethodPut {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		a.handleCustomerAccountUpdate(w, r)
 	default:
 		if strings.HasPrefix(path, "assignments/") {
 			a.handleCustomerAssignmentRoute(w, r, strings.Split(path, "/"))
@@ -116,6 +122,28 @@ func (a *App) handleCustomerStyleUpdate(w http.ResponseWriter, r *http.Request) 
 	updated, err := a.store.UpdateCustomerStyle(user.ID, req.StyleCode)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.CustomerLoginResponse{User: updated})
+}
+
+func (a *App) handleCustomerAccountUpdate(w http.ResponseWriter, r *http.Request) {
+	user, token, ok := a.requireCustomer(w, r)
+	if !ok {
+		return
+	}
+	var req model.CustomerPasswordUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode customer account request: %v", err))
+		return
+	}
+	updated, err := a.store.UpdateCustomerPassword(user.ID, req, token)
+	if err != nil {
+		status := http.StatusBadRequest
+		if strings.Contains(err.Error(), "not found") {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, model.CustomerLoginResponse{User: updated})

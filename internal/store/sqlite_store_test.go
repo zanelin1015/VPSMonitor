@@ -586,6 +586,48 @@ func TestSQLiteStoreCustomerAccountsAssignmentsAndSessions(t *testing.T) {
 	if _, _, ok, err := store.ValidateCustomerSession(token); err != nil || !ok {
 		t.Fatalf("ValidateCustomerSession ok=%v err=%v", ok, err)
 	}
+	otherToken, _, err := store.CreateCustomerSession(customer.ID, time.Hour)
+	if err != nil {
+		t.Fatalf("CreateCustomerSession other: %v", err)
+	}
+	if _, err := store.UpdateCustomerPassword(customer.ID, model.CustomerPasswordUpdateRequest{
+		CurrentPassword: "wrong-password",
+		NewPassword:     "customer-pass-2",
+	}, token); err == nil {
+		t.Fatalf("expected wrong current password to fail")
+	}
+	if _, err := store.UpdateCustomerPassword(customer.ID, model.CustomerPasswordUpdateRequest{
+		CurrentPassword: "customer-pass",
+		NewPassword:     "short",
+	}, token); err == nil {
+		t.Fatalf("expected short new password to fail")
+	}
+	updatedUser, err := store.UpdateCustomerPassword(customer.ID, model.CustomerPasswordUpdateRequest{
+		CurrentPassword: "customer-pass",
+		NewPassword:     "customer-pass-2",
+	}, token)
+	if err != nil {
+		t.Fatalf("UpdateCustomerPassword: %v", err)
+	}
+	if updatedUser.ID != customer.ID || !updatedUser.UpdatedAt.After(customer.UpdatedAt) {
+		t.Fatalf("unexpected updated customer user: %#v", updatedUser)
+	}
+	if _, ok, err := store.AuthenticateCustomer("alice", "customer-pass"); err != nil {
+		t.Fatalf("AuthenticateCustomer old password: %v", err)
+	} else if ok {
+		t.Fatalf("expected old customer password to fail")
+	}
+	if _, ok, err := store.AuthenticateCustomer("alice", "customer-pass-2"); err != nil {
+		t.Fatalf("AuthenticateCustomer new password: %v", err)
+	} else if !ok {
+		t.Fatalf("expected new customer password to work")
+	}
+	if _, _, ok, err := store.ValidateCustomerSession(token); err != nil || !ok {
+		t.Fatalf("expected current customer session to remain valid, ok=%v err=%v", ok, err)
+	}
+	if _, _, ok, err := store.ValidateCustomerSession(otherToken); err != nil || ok {
+		t.Fatalf("expected other customer session to be invalidated, ok=%v err=%v", ok, err)
+	}
 
 	assignment, err := store.CreateCustomerAssignment(customer.ID, model.CustomerAssignmentRequest{
 		AgentID:          "hk-01",

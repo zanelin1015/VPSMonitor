@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, App as AntdApp, Button, Card, Empty, Input, Modal, QRCode, Space, Spin, Statistic, Tag, Typography } from 'antd'
-import { BgColorsOutlined, CheckOutlined, CloseOutlined, CopyOutlined, EditOutlined, LogoutOutlined, QrcodeOutlined, ReloadOutlined } from '@ant-design/icons'
+import { BgColorsOutlined, CheckOutlined, CloseOutlined, CopyOutlined, EditOutlined, LockOutlined, LogoutOutlined, QrcodeOutlined, ReloadOutlined } from '@ant-design/icons'
 
 import type { CustomerAuthResponse, CustomerLinkStep, CustomerLinkView, CustomerOverviewResponse, CustomerUser } from '../types'
 import { countryFlag, fetchJSON, formatDateTime } from '../lib/appHelpers'
@@ -18,6 +18,13 @@ export function CustomerPortal() {
   const [styleModalOpen, setStyleModalOpen] = useState(false)
   const [styleSaving, setStyleSaving] = useState(false)
   const [styleDraft, setStyleDraft] = useState('')
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false)
+  const [passwordSaving, setPasswordSaving] = useState(false)
+  const [passwordForm, setPasswordForm] = useState({
+    current_password: '',
+    new_password: '',
+    confirm_password: '',
+  })
   const [qrLink, setQrLink] = useState<CustomerLinkView | null>(null)
   const [editingRemarkID, setEditingRemarkID] = useState<number | null>(null)
   const [user, setUser] = useState<CustomerUser | null>(null)
@@ -150,6 +157,49 @@ export function CustomerPortal() {
     }
   }
 
+  function openPasswordModal() {
+    setPasswordForm({
+      current_password: '',
+      new_password: '',
+      confirm_password: '',
+    })
+    setPasswordModalOpen(true)
+  }
+
+  async function saveCustomerPassword() {
+    if (!passwordForm.current_password || !passwordForm.new_password) {
+      message.warning('请填写当前密码和新密码')
+      return
+    }
+    if (passwordForm.new_password !== passwordForm.confirm_password) {
+      message.error('两次输入的新密码不一致')
+      return
+    }
+    setPasswordSaving(true)
+    try {
+      const data = await fetchJSON<CustomerAuthResponse>('/api/v1/customer/account', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          current_password: passwordForm.current_password,
+          new_password: passwordForm.new_password,
+        }),
+      })
+      setUser(data.user)
+      setPasswordModalOpen(false)
+      setPasswordForm({
+        current_password: '',
+        new_password: '',
+        confirm_password: '',
+      })
+      message.success('密码已修改')
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '修改密码失败')
+    } finally {
+      setPasswordSaving(false)
+    }
+  }
+
   async function copyImportURL(link: CustomerLinkView) {
     if (!link.import_url) {
       message.warning('当前链路没有可复制的客户端链接')
@@ -200,6 +250,7 @@ export function CustomerPortal() {
               setStyleDraft(user.style_code || '')
               setStyleModalOpen(true)
             }} />
+            <Button shape="circle" icon={<LockOutlined />} onClick={openPasswordModal} />
             <Button shape="circle" icon={<ReloadOutlined />} loading={overviewLoading} onClick={() => void loadOverview()} />
             <Button shape="circle" icon={<LogoutOutlined />} onClick={() => void logout()} />
           </div>
@@ -228,6 +279,7 @@ export function CustomerPortal() {
               setStyleDraft(user.style_code || '')
               setStyleModalOpen(true)
             }}>页面样式</Button>
+            <Button icon={<LockOutlined />} onClick={openPasswordModal}>修改密码</Button>
             <Button icon={<ReloadOutlined />} loading={overviewLoading} onClick={() => void loadOverview()}>刷新</Button>
             <Button icon={<LogoutOutlined />} onClick={() => void logout()}>退出</Button>
           </Space>
@@ -404,6 +456,44 @@ export function CustomerPortal() {
             <Text type="secondary">导入名称：{customerLinkDisplayName(qrLink, remarkDrafts[qrLink.assignment_id])}</Text>
           </Space>
         ) : <Empty description="暂无二维码" />}
+      </Modal>
+
+      <Modal
+        title="修改密码"
+        open={passwordModalOpen}
+        onCancel={() => setPasswordModalOpen(false)}
+        footer={[
+          <Button key="cancel" onClick={() => setPasswordModalOpen(false)}>取消</Button>,
+          <Button key="save" type="primary" loading={passwordSaving} onClick={() => void saveCustomerPassword()}>保存新密码</Button>,
+        ]}
+      >
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Alert
+            type="info"
+            showIcon
+            message="修改后会保留当前登录状态"
+            description="为了账号安全，其他浏览器或设备上的登录会失效，需要使用新密码重新登录。"
+          />
+          <Input.Password
+            value={passwordForm.current_password}
+            placeholder="当前密码"
+            autoComplete="current-password"
+            onChange={(event) => setPasswordForm((current) => ({ ...current, current_password: event.target.value }))}
+          />
+          <Input.Password
+            value={passwordForm.new_password}
+            placeholder="新密码，至少 8 位"
+            autoComplete="new-password"
+            onChange={(event) => setPasswordForm((current) => ({ ...current, new_password: event.target.value }))}
+          />
+          <Input.Password
+            value={passwordForm.confirm_password}
+            placeholder="再次输入新密码"
+            autoComplete="new-password"
+            onChange={(event) => setPasswordForm((current) => ({ ...current, confirm_password: event.target.value }))}
+            onPressEnter={() => void saveCustomerPassword()}
+          />
+        </Space>
       </Modal>
     </div>
   )
