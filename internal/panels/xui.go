@@ -323,6 +323,9 @@ func (c *XUIClient) addOutbound(ctx context.Context, payload map[string]any) (ma
 	if tag == "" {
 		return nil, fmt.Errorf("outbound.tag is required")
 	}
+	if err := validateOutboundConfig(outbound); err != nil {
+		return nil, err
+	}
 
 	mutableConfig, err := c.getMutableXrayConfig(ctx)
 	if err != nil {
@@ -403,6 +406,7 @@ func (c *XUIClient) upsertRoutingRule(ctx context.Context, payload map[string]an
 	configJSON := mutableConfig.config
 
 	outboundAdded := false
+	outboundUpdated := false
 	if rawOutbound, ok := payload["outbound"]; ok && rawOutbound != nil {
 		outbound, ok := rawOutbound.(map[string]any)
 		if !ok {
@@ -412,15 +416,22 @@ func (c *XUIClient) upsertRoutingRule(ctx context.Context, payload map[string]an
 		if tag == "" {
 			return nil, fmt.Errorf("outbound.tag is required")
 		}
+		if err := validateOutboundConfig(outbound); err != nil {
+			return nil, err
+		}
 		outbounds := objectSlice(configJSON["outbounds"])
-		found := false
-		for _, existing := range outbounds {
+		foundIndex := -1
+		for index, existing := range outbounds {
 			if stringFromMap(existing, "tag") == tag {
-				found = true
+				foundIndex = index
 				break
 			}
 		}
-		if !found {
+		if foundIndex >= 0 {
+			outbounds[foundIndex] = outbound
+			configJSON["outbounds"] = outbounds
+			outboundUpdated = true
+		} else {
 			configJSON["outbounds"] = append(outbounds, outbound)
 			outboundAdded = true
 		}
@@ -462,10 +473,11 @@ func (c *XUIClient) upsertRoutingRule(ctx context.Context, payload map[string]an
 		return nil, err
 	}
 	return map[string]any{
-		"rule_index":     ruleIndex,
-		"updated":        updated,
-		"outbound_added": outboundAdded,
-		"restarted":      true,
+		"rule_index":       ruleIndex,
+		"updated":          updated,
+		"outbound_added":   outboundAdded,
+		"outbound_updated": outboundUpdated,
+		"restarted":        true,
 	}, nil
 }
 
@@ -1591,6 +1603,48 @@ func writeJSONField(target map[string]any, key string, value map[string]any, enc
 		return
 	}
 	target[key] = string(body)
+}
+
+func validateOutboundConfig(outbound map[string]any) error {
+	protocol := strings.ToLower(strings.TrimSpace(stringFromMap(outbound, "protocol")))
+	switch protocol {
+	case "vless", "vmess":
+		settings := objectMap(outbound["settings"])
+		for _, item := range objectSlice(settings["vnext"]) {
+			if validEndpoint(item, "address", "port") {
+				return nil
+			}
+		}
+		return fmt.Errorf("%s outbound requires a valid address and port", protocol)
+	case "trojan", "socks", "socks5":
+		settings := objectMap(outbound["settings"])
+		for _, item := range objectSlice(settings["servers"]) {
+			if validEndpoint(item, "address", "port") {
+				return nil
+			}
+		}
+		return fmt.Errorf("%s outbound requires a valid address and port", protocol)
+	default:
+		return nil
+	}
+}
+
+func validEndpoint(item map[string]any, addressKey, portKey string) bool {
+	address := strings.TrimSpace(stringFromMap(item, addressKey))
+	if address == "" || isPlaceholderValue(address) {
+		return false
+	}
+	port := intValue(item[portKey])
+	return port > 0 && port <= 65535
+}
+
+func isPlaceholderValue(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "undefined", "null", "nan":
+		return true
+	default:
+		return false
+	}
 }
 
 func resolveLocalCertificate(selector map[string]any, streamSettings map[string]any, inventory []model.XUILocalCertificate) (string, string, map[string]any, error) {

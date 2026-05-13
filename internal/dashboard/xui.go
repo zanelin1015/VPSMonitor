@@ -251,7 +251,9 @@ func normalizeOutbounds(rawOutbounds []map[string]any, trafficByTag map[string]o
 		if tag == "" {
 			continue
 		}
-		if defaultOutboundTag == "" && tag != "api" {
+		if tag == "direct" {
+			defaultOutboundTag = tag
+		} else if defaultOutboundTag == "" && tag != "api" {
 			defaultOutboundTag = tag
 		}
 		traffic := trafficByTag[tag]
@@ -1051,7 +1053,7 @@ func normalizedTopologyProtocol(protocol string) string {
 
 func addressPortPairFromObject(item map[string]any, addressKey, portKey string) (string, int) {
 	address := stringValue(item[addressKey])
-	if address == "" {
+	if address == "" || isPlaceholderEndpointValue(address) {
 		return "", 0
 	}
 	port := intValue(item[portKey])
@@ -1074,6 +1076,9 @@ func firstAddressPortPair(items []map[string]any, addressKey, portKey string) (s
 		return "", 0
 	}
 	address := stringValue(items[0][addressKey])
+	if isPlaceholderEndpointValue(address) {
+		return "", 0
+	}
 	if portKey == "" || address == "" {
 		return address, 0
 	}
@@ -1082,6 +1087,15 @@ func firstAddressPortPair(items []map[string]any, addressKey, portKey string) (s
 		return address, 0
 	}
 	return address, port
+}
+
+func isPlaceholderEndpointValue(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "undefined", "null", "nan":
+		return true
+	default:
+		return false
+	}
 }
 
 func decodeStringObject(raw any) map[string]any {

@@ -578,6 +578,8 @@ function buildOutboundActionPayload(form: XUIOutboundActionForm): Record<string,
   if (form.send_through.trim()) {
     outbound.sendThrough = form.send_through.trim()
   }
+  const address = normalizeOutboundEndpointValue(form.address)
+  const port = normalizeOutboundPort(form.port)
 
   switch (protocol) {
     case 'freedom':
@@ -586,14 +588,14 @@ function buildOutboundActionPayload(form: XUIOutboundActionForm): Record<string,
       break
     case 'vless':
     case 'vmess':
-      if (!form.address.trim() || !form.port) {
-        throw new Error(`${protocol.toUpperCase()} 出站需要远端地址和端口`)
+      if (!address || !port) {
+        throw new Error(`${protocol.toUpperCase()} 出站需要有效的远端地址和端口，请重新选择源节点客户端`)
       }
       outbound.settings = {
         vnext: [
           {
-            address: form.address.trim(),
-            port: form.port,
+            address,
+            port,
             users: [
               buildVNextUser(form, protocol),
             ],
@@ -603,14 +605,14 @@ function buildOutboundActionPayload(form: XUIOutboundActionForm): Record<string,
       outbound.streamSettings = buildOutboundStreamSettings(form)
       break
     case 'trojan':
-      if (!form.address.trim() || !form.port) {
-        throw new Error('Trojan 出站需要远端地址和端口')
+      if (!address || !port) {
+        throw new Error('Trojan 出站需要有效的远端地址和端口，请重新选择源节点客户端')
       }
       outbound.settings = {
         servers: [
           {
-            address: form.address.trim(),
-            port: form.port,
+            address,
+            port,
             password: form.password.trim() || 'change-me',
           },
         ],
@@ -618,14 +620,14 @@ function buildOutboundActionPayload(form: XUIOutboundActionForm): Record<string,
       outbound.streamSettings = buildOutboundStreamSettings(form)
       break
     case 'socks':
-      if (!form.address.trim() || !form.port) {
-        throw new Error('SOCKS 出站需要远端地址和端口')
+      if (!address || !port) {
+        throw new Error('SOCKS 出站需要有效的远端地址和端口，请重新选择源节点客户端')
       }
       outbound.settings = {
         servers: [
           {
-            address: form.address.trim(),
-            port: form.port,
+            address,
+            port,
             users: form.password.trim()
               ? [{ user: form.uuid.trim() || 'user', pass: form.password.trim() }]
               : [],
@@ -641,6 +643,19 @@ function buildOutboundActionPayload(form: XUIOutboundActionForm): Record<string,
     outbound,
     restart: true,
   }
+}
+
+function normalizeOutboundEndpointValue(value: unknown): string {
+  const text = String(value ?? '').trim()
+  if (!text || /^(undefined|null|nan)$/i.test(text)) {
+    return ''
+  }
+  return text
+}
+
+function normalizeOutboundPort(value: unknown): number {
+  const port = Number(value || 0)
+  return Number.isInteger(port) && port > 0 && port <= 65535 ? port : 0
 }
 
 function buildVNextUser(form: XUIOutboundActionForm, protocol: string): Record<string, unknown> {

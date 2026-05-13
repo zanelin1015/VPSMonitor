@@ -136,6 +136,53 @@ func TestBuildXUIOverviewUsesDefaultOutbound(t *testing.T) {
 	}
 }
 
+func TestBuildXUIOverviewPrefersDirectAsDefaultOutbound(t *testing.T) {
+	snapshot := model.AgentSnapshot{
+		AgentID:    "agent-direct-default",
+		ReportedAt: time.Now().UTC(),
+		XUI: &model.XUISnapshot{
+			CollectedAt: time.Now().UTC(),
+			Inbounds: []map[string]any{
+				{
+					"id":       1,
+					"tag":      "in-vless",
+					"remark":   "HK-01",
+					"protocol": "vless",
+					"settings": `{"clients":[{"email":"user@example.com","enable":true}]}`,
+				},
+			},
+			Outbounds: []map[string]any{
+				{"tag": "blocked", "protocol": "blackhole"},
+				{"tag": "direct", "protocol": "freedom"},
+			},
+			RoutingRules: []map[string]any{
+				{"type": "field", "protocol": []string{"bittorrent"}, "outboundTag": "blocked"},
+			},
+		},
+	}
+
+	overview := BuildXUIOverview(snapshot)
+	if overview == nil {
+		t.Fatalf("expected overview")
+	}
+	if got := overview.Clients[0].Route.MatchScope; got != "default" {
+		t.Fatalf("expected default route scope, got %q", got)
+	}
+	if got := overview.Clients[0].Route.OutboundTag; got != "direct" {
+		t.Fatalf("expected unmatched client route to default direct, got %q", got)
+	}
+	directMarkedDefault := false
+	for _, outbound := range overview.Outbounds {
+		if outbound.Tag == "direct" && outbound.IsDefault {
+			directMarkedDefault = true
+			break
+		}
+	}
+	if !directMarkedDefault {
+		t.Fatalf("expected direct outbound to be marked as default: %#v", overview.Outbounds)
+	}
+}
+
 func TestBuildXUIOverviewParsesFlatVLESSOutbound(t *testing.T) {
 	now := time.Now().UTC()
 	snapshot := model.AgentSnapshot{

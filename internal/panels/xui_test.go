@@ -964,7 +964,11 @@ func TestXUIExecuteUpsertRoutingRuleAddsOutboundAndRuleOnce(t *testing.T) {
 			"outbound": map[string]any{
 				"tag":      "relay-my",
 				"protocol": "vless",
-				"settings": map[string]any{},
+				"settings": map[string]any{
+					"vnext": []map[string]any{
+						{"address": "relay.example.com", "port": 443, "users": []map[string]any{{"id": "uuid"}}},
+					},
+				},
 			},
 			"rule": map[string]any{
 				"type":        "field",
@@ -990,6 +994,21 @@ func TestXUIExecuteUpsertRoutingRuleAddsOutboundAndRuleOnce(t *testing.T) {
 	rules := routing["rules"].([]any)
 	if len(rules) != 1 {
 		t.Fatalf("expected appended rule: %#v", rules)
+	}
+}
+
+func TestXUIValidateOutboundRejectsUndefinedEndpoint(t *testing.T) {
+	err := validateOutboundConfig(map[string]any{
+		"tag":      "relay-broken",
+		"protocol": "vless",
+		"settings": map[string]any{
+			"vnext": []map[string]any{
+				{"address": "undefined", "port": "undefined"},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected undefined endpoint to be rejected")
 	}
 }
 
@@ -1060,12 +1079,16 @@ func TestXUIExecuteUpsertRoutingRuleUpdatesExistingRule(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAction: %v", err)
 	}
-	if result["updated"] != true || result["outbound_added"] != false {
+	if result["updated"] != true || result["outbound_added"] != false || result["outbound_updated"] != true {
 		t.Fatalf("unexpected result: %#v", result)
 	}
 	outbounds := updatedConfig["outbounds"].([]any)
 	if len(outbounds) != 2 {
-		t.Fatalf("expected existing outbound to be reused, got %#v", outbounds)
+		t.Fatalf("expected existing outbound to be updated in place, got %#v", outbounds)
+	}
+	updatedOutbound := outbounds[1].(map[string]any)
+	if updatedOutbound["protocol"] != "freedom" {
+		t.Fatalf("expected outbound relay-us to be replaced, got %#v", updatedOutbound)
 	}
 	routing := updatedConfig["routing"].(map[string]any)
 	rules := routing["rules"].([]any)

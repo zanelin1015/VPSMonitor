@@ -13,13 +13,14 @@ export function buildOutboundImportPatch(
 ): Partial<XUIOutboundActionForm> {
   const importEndpoint = parseImportEndpoint(sourceClient.import_url)
   const address =
-    importEndpoint.address ||
-    sourceOverview.summary.observed_ip ||
-    sourceOverview.summary.public_ipv4 ||
-    sourceOverview.summary.public_ipv6 ||
+    usableEndpointValue(importEndpoint.address) ||
+    usableEndpointValue(sourceOverview.summary.observed_ip) ||
+    usableEndpointValue(sourceOverview.summary.public_ipv4) ||
+    usableEndpointValue(sourceOverview.summary.public_ipv6) ||
     hostnameFromURL(sourceOverview.base_url) ||
     ''
   const protocol = (sourceNode.protocol || sourceClient.protocol || currentForm.protocol || 'freedom').toLowerCase()
+  const port = validPort(sourceNode.port) || validPort(importEndpoint.port) || parsePortFromText(sourceNode.tag, sourceNode.remark, sourceClient.inbound_tag, sourceClient.inbound_remark) || validPort(currentForm.port)
   const tagParts = [
     sourceOverview.agent_name || sourceOverview.agent_id,
     sourceNode.tag || sourceNode.remark || String(sourceNode.id),
@@ -30,7 +31,7 @@ export function buildOutboundImportPatch(
     tag: normalizeOutboundTag(tagParts.join('-')),
     protocol,
     address,
-    port: sourceNode.port || importEndpoint.port || currentForm.port,
+    port,
     uuid: protocol === 'socks' ? sourceClient.email || '' : sourceClient.auth_uuid || currentForm.uuid,
     password: sourceClient.auth_password || currentForm.password,
     flow: sourceClient.flow || '',
@@ -51,29 +52,57 @@ function parseImportEndpoint(importURL?: string): { address: string; port: numbe
     if (importURL.startsWith('vmess://')) {
       const payload = JSON.parse(decodeBase64URL(importURL.slice('vmess://'.length))) as Record<string, unknown>
       return {
-        address: String(payload.add || ''),
-        port: Number(payload.port || 0),
-        network: String(payload.net || ''),
-        security: String(payload.tls || ''),
-        serverName: String(payload.sni || payload.host || ''),
-        wsPath: String(payload.path || ''),
-        wsHost: String(payload.host || ''),
+        address: usableEndpointValue(payload.add),
+        port: validPort(payload.port),
+        network: usableEndpointValue(payload.net),
+        security: usableEndpointValue(payload.tls),
+        serverName: usableEndpointValue(payload.sni) || usableEndpointValue(payload.host),
+        wsPath: usableEndpointValue(payload.path),
+        wsHost: usableEndpointValue(payload.host),
       }
     }
     const parsed = new URL(importURL)
     const params = parsed.searchParams
     return {
-      address: parsed.hostname,
-      port: Number(parsed.port || 0),
-      network: params.get('type') || params.get('network') || '',
-      security: params.get('security') || params.get('tls') || '',
-      serverName: params.get('sni') || params.get('peer') || params.get('host') || '',
-      wsPath: params.get('path') || '',
-      wsHost: params.get('host') || '',
+      address: usableEndpointValue(parsed.hostname),
+      port: validPort(parsed.port),
+      network: usableEndpointValue(params.get('type')) || usableEndpointValue(params.get('network')),
+      security: usableEndpointValue(params.get('security')) || usableEndpointValue(params.get('tls')),
+      serverName: usableEndpointValue(params.get('sni')) || usableEndpointValue(params.get('peer')) || usableEndpointValue(params.get('host')),
+      wsPath: usableEndpointValue(params.get('path')),
+      wsHost: usableEndpointValue(params.get('host')),
     }
   } catch {
     return empty
   }
+}
+
+function usableEndpointValue(value: unknown): string {
+  const text = String(value ?? '').trim()
+  if (!text || /^(undefined|null|nan)$/i.test(text)) {
+    return ''
+  }
+  return text
+}
+
+function validPort(value: unknown): number {
+  const port = Number(value || 0)
+  return Number.isInteger(port) && port > 0 && port <= 65535 ? port : 0
+}
+
+function parsePortFromText(...values: Array<string | undefined>): number {
+  for (const value of values) {
+    const text = value || ''
+    const match = /(?:^|[^0-9])([1-9][0-9]{1,4})(?=$|[^0-9])/.exec(text)
+    if (!match) {
+      continue
+    }
+    const port = validPort(match[1])
+    if (port) {
+      return port
+    }
+  }
+  return 0
 }
 
 function decodeBase64URL(value: string): string {
