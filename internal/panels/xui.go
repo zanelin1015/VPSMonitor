@@ -412,6 +412,7 @@ func (c *XUIClient) upsertRoutingRule(ctx context.Context, payload map[string]an
 		if !ok {
 			return nil, fmt.Errorf("outbound must be an object")
 		}
+		normalizeOutboundForXUI(outbound)
 		tag := stringFromMap(outbound, "tag")
 		if tag == "" {
 			return nil, fmt.Errorf("outbound.tag is required")
@@ -1611,7 +1612,18 @@ func validateOutboundConfig(outbound map[string]any) error {
 		return err
 	}
 	switch protocol {
-	case "vless", "vmess":
+	case "vless":
+		settings := objectMap(outbound["settings"])
+		if validEndpoint(settings, "address", "port") {
+			return nil
+		}
+		for _, item := range objectSlice(settings["vnext"]) {
+			if validEndpoint(item, "address", "port") {
+				return nil
+			}
+		}
+		return fmt.Errorf("%s outbound requires a valid address and port", protocol)
+	case "vmess":
 		settings := objectMap(outbound["settings"])
 		for _, item := range objectSlice(settings["vnext"]) {
 			if validEndpoint(item, "address", "port") {
@@ -1629,6 +1641,45 @@ func validateOutboundConfig(outbound map[string]any) error {
 		return fmt.Errorf("%s outbound requires a valid address and port", protocol)
 	default:
 		return nil
+	}
+}
+
+func normalizeOutboundForXUI(outbound map[string]any) {
+	if strings.ToLower(strings.TrimSpace(stringFromMap(outbound, "protocol"))) != "vless" {
+		return
+	}
+	settings := objectMap(outbound["settings"])
+	if validEndpoint(settings, "address", "port") {
+		if strings.TrimSpace(stringFromMap(settings, "encryption")) == "" {
+			settings["encryption"] = "none"
+		}
+		outbound["settings"] = settings
+		return
+	}
+	for _, item := range objectSlice(settings["vnext"]) {
+		if !validEndpoint(item, "address", "port") {
+			continue
+		}
+		settings["address"] = stringFromMap(item, "address")
+		settings["port"] = intValue(item["port"])
+		if users := objectSlice(item["users"]); len(users) > 0 {
+			user := users[0]
+			if id := strings.TrimSpace(stringFromMap(user, "id")); id != "" {
+				settings["id"] = id
+			}
+			if flow := strings.TrimSpace(stringFromMap(user, "flow")); flow != "" {
+				settings["flow"] = flow
+			}
+			if encryption := strings.TrimSpace(stringFromMap(user, "encryption")); encryption != "" {
+				settings["encryption"] = encryption
+			}
+		}
+		if strings.TrimSpace(stringFromMap(settings, "encryption")) == "" {
+			settings["encryption"] = "none"
+		}
+		delete(settings, "vnext")
+		outbound["settings"] = settings
+		return
 	}
 }
 

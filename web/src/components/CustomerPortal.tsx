@@ -224,7 +224,7 @@ export function CustomerPortal() {
   if (!user) {
     return (
       <LoginScreen
-        title="AlanStone拼车"
+        title="AlanStone链路面板"
         subtitle=""
         loginForm={loginForm}
         loginLoading={loginLoading}
@@ -241,7 +241,7 @@ export function CustomerPortal() {
       <div className="customer-shell customer-dashboard-shell">
         <header className="customer-mobile-header">
           <div>
-            <div className="eyebrow">AlanStone拼车</div>
+            <div className="eyebrow">AlanStone链路面板</div>
             <Title level={2}>{user.display_name || user.username}</Title>
             <Text type="secondary">{overview?.generated_at ? formatDateTime(overview.generated_at) : '等待数据同步'}</Text>
           </div>

@@ -990,6 +990,23 @@ func TestXUIExecuteUpsertRoutingRuleAddsOutboundAndRuleOnce(t *testing.T) {
 	if !ok || len(outbounds) != 2 {
 		t.Fatalf("expected appended outbound: %#v", updatedConfig["outbounds"])
 	}
+	outbound, ok := outbounds[1].(map[string]any)
+	if !ok {
+		t.Fatalf("expected appended outbound object, got %#v", outbounds[1])
+	}
+	settings, ok := outbound["settings"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected appended outbound settings object, got %#v", outbound["settings"])
+	}
+	if settings["address"] != "relay.example.com" || intValue(settings["port"]) != 443 {
+		t.Fatalf("expected appended outbound address/port, got %#v", settings)
+	}
+	if settings["id"] != "uuid" {
+		t.Fatalf("expected appended outbound id, got %#v", settings)
+	}
+	if _, exists := settings["vnext"]; exists {
+		t.Fatalf("expected x-ui compatible vless settings without vnext, got %#v", settings)
+	}
 	routing := updatedConfig["routing"].(map[string]any)
 	rules := routing["rules"].([]any)
 	if len(rules) != 1 {
@@ -1009,6 +1026,22 @@ func TestXUIValidateOutboundRejectsUndefinedEndpoint(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatalf("expected undefined endpoint to be rejected")
+	}
+}
+
+func TestXUIValidateOutboundAcceptsFlatVLESSEndpoint(t *testing.T) {
+	err := validateOutboundConfig(map[string]any{
+		"tag":      "relay-flat",
+		"protocol": "vless",
+		"settings": map[string]any{
+			"address":    "relay.example.com",
+			"port":       443,
+			"id":         "uuid",
+			"encryption": "none",
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected flat vless endpoint to be accepted, got %v", err)
 	}
 }
 

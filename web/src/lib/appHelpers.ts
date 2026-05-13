@@ -599,6 +599,18 @@ function buildOutboundActionPayload(form: XUIOutboundActionForm): Record<string,
       outbound.settings = {}
       break
     case 'vless':
+      if (!address || !port) {
+        throw new Error(`${protocol.toUpperCase()} 出站需要有效的远端地址和端口，请重新选择源节点客户端`)
+      }
+      outbound.settings = {
+        address,
+        port,
+        id: form.uuid.trim() || '00000000-0000-0000-0000-000000000000',
+        flow: form.flow.trim(),
+        encryption: 'none',
+      }
+      outbound.streamSettings = buildOutboundStreamSettings(form)
+      break
     case 'vmess':
       if (!address || !port) {
         throw new Error(`${protocol.toUpperCase()} 出站需要有效的远端地址和端口，请重新选择源节点客户端`)
