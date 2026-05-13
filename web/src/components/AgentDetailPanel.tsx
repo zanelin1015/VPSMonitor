@@ -6,6 +6,7 @@ import type {
   AgentEntryConfig,
   AgentLogsResponse,
   ConfigAuditLog,
+  CustomerAssignmentDraft,
   DashboardAgentView,
   GlobalDashboardView,
   ManagedAgentConfig,
@@ -103,6 +104,7 @@ export interface AgentDetailPanelProps {
   onOpenImportURL: (client: XUIClientView) => void
   onOpenLogs: () => void
   onOpenXUI: () => void
+  onAuthorizeCustomer: (draft: CustomerAssignmentDraft) => void
   onRefreshCurrentAgent: () => void
   onRefreshXUIActions: () => void
   onRenewalChange: (patch: Partial<VPSRenewalConfig>) => void
@@ -167,6 +169,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onOpenImportURL,
     onOpenLogs,
     onOpenXUI,
+    onAuthorizeCustomer,
     onRefreshCurrentAgent,
     onRefreshXUIActions,
     onRenewalChange,
@@ -220,6 +223,24 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       key: 'traffic',
       width: 130,
       render: (_, record) => formatBytes(record.all_time || record.total || 0),
+    },
+    {
+      title: '客户授权',
+      key: 'customer',
+      width: 120,
+      render: (_, record) => (
+        <Button
+          size="small"
+          onClick={() => onAuthorizeCustomer({
+            agent_id: selectedAgentId,
+            inbound_id: record.id,
+            inbound_tag: record.tag || '',
+            public_client_name: [selectedAgent.customer_display_name || selectedAgent.agent_name || selectedAgent.agent_id, record.remark || record.tag || `Inbound #${record.id}`].filter(Boolean).join(' - '),
+          })}
+        >
+          授权给客户
+        </Button>
+      ),
     },
     {
       title: '路由指向',
@@ -391,6 +412,25 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
             URL / 二维码
           </Button>
         </Space>
+      ),
+    },
+    {
+      title: '客户授权',
+      key: 'customer',
+      width: 120,
+      render: (_, record) => (
+        <Button
+          size="small"
+          onClick={() => onAuthorizeCustomer({
+            agent_id: selectedAgentId,
+            inbound_id: record.inbound_id,
+            inbound_tag: record.inbound_tag || '',
+            client_email: record.email || '',
+            public_client_name: [selectedAgent.customer_display_name || selectedAgent.agent_name || selectedAgent.agent_id, record.email || record.comment || record.inbound_tag || `Inbound #${record.inbound_id}`].filter(Boolean).join(' - '),
+          })}
+        >
+          授权给客户
+        </Button>
       ),
     },
     {

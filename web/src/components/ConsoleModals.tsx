@@ -2,6 +2,7 @@ import type { Dispatch, SetStateAction } from 'react'
 
 import type {
   CustomerAssignment,
+  CustomerAssignmentDraft,
   DashboardAgentView,
   SystemInfo,
   TelegramBot,
@@ -50,6 +51,7 @@ export interface ConsoleModalsProps {
   clientInstallWindowsCMDCommand: string
   clientInstallWindowsPowerShellCommand: string
   customerModalOpen: boolean
+  customerAssignmentDraft: CustomerAssignmentDraft | null
   editingTelegramBotId: number | null
   frontendSettingsForm: FrontendSettingsForm
   frontendSettingsLoading: boolean
@@ -82,6 +84,7 @@ export interface ConsoleModalsProps {
   onCloseAccount: () => void
   onCloseClientInstall: () => void
   onCloseCustomerModal: () => void
+  onCustomerAssignmentDraftApplied: () => void
   onCloseFrontendSettings: () => void
   onCloseImportURL: () => void
   onCloseTelegramBot: () => void
@@ -125,6 +128,7 @@ export function ConsoleModals(props: ConsoleModalsProps) {
     clientInstallWindowsCMDCommand,
     clientInstallWindowsPowerShellCommand,
     customerModalOpen,
+    customerAssignmentDraft,
     editingTelegramBotId,
     frontendSettingsForm,
     frontendSettingsLoading,
@@ -157,6 +161,7 @@ export function ConsoleModals(props: ConsoleModalsProps) {
     onCloseAccount,
     onCloseClientInstall,
     onCloseCustomerModal,
+    onCustomerAssignmentDraftApplied,
     onCloseFrontendSettings,
     onCloseImportURL,
     onCloseTelegramBot,
@@ -254,6 +259,8 @@ export function ConsoleModals(props: ConsoleModalsProps) {
       <CustomerManagementModal
         open={customerModalOpen}
         agents={agents}
+        initialAssignment={customerAssignmentDraft}
+        onInitialAssignmentApplied={onCustomerAssignmentDraftApplied}
         onClose={onCloseCustomerModal}
         onConfigChanged={onConfigChanged}
         onOpenAssignment={onOpenCustomerAssignment}

@@ -195,9 +195,11 @@ func (a *App) syncCustomerAssignmentRevenue(req model.CustomerAssignmentRequest,
 		ExpireCycle:     "month",
 	}
 	key := customerBillingKey(billing.InboundID, billing.InboundTag, billing.Email)
+	emailKey := customerBillingEmailKey(billing.InboundID, billing.Email)
 	replaced := false
 	for index, existing := range cfg.Renewal.ClientBillings {
-		if customerBillingKey(existing.InboundID, existing.InboundTag, existing.Email) != key {
+		if customerBillingKey(existing.InboundID, existing.InboundTag, existing.Email) != key &&
+			(emailKey == "" || customerBillingEmailKey(existing.InboundID, existing.Email) != emailKey) {
 			continue
 		}
 		billing.ExpireTime = existing.ExpireTime
@@ -218,4 +220,12 @@ func (a *App) syncCustomerAssignmentRevenue(req model.CustomerAssignmentRequest,
 
 func customerBillingKey(inboundID int, inboundTag, email string) string {
 	return fmt.Sprintf("%d\x00%s\x00%s", inboundID, strings.ToLower(strings.TrimSpace(inboundTag)), strings.ToLower(strings.TrimSpace(email)))
+}
+
+func customerBillingEmailKey(inboundID int, email string) string {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return ""
+	}
+	return fmt.Sprintf("%d\x00%s", inboundID, email)
 }

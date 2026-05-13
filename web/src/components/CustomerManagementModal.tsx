@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, App as AntdApp, Button, Card, Col, Empty, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Spin, Switch, Table, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { DeleteOutlined, EditOutlined, ExportOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons'
 
-import type { CustomerAdminView, CustomerAssignment, DashboardAgentView, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
+import type { CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, DashboardAgentView, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
 import { fetchJSON } from '../lib/appHelpers'
 import { REVENUE_CURRENCIES } from '../lib/currency'
 
@@ -55,9 +55,20 @@ export function CustomerManagementModal(props: {
   onClose?: () => void
   onConfigChanged?: () => void | Promise<void>
   onOpenAssignment?: (assignment: CustomerAssignment) => void
+  initialAssignment?: CustomerAssignmentDraft | null
+  onInitialAssignmentApplied?: () => void
   embedded?: boolean
 }) {
-  const { open = false, agents, onClose = () => undefined, onConfigChanged, onOpenAssignment, embedded = false } = props
+  const {
+    open = false,
+    agents,
+    onClose = () => undefined,
+    onConfigChanged,
+    onOpenAssignment,
+    initialAssignment = null,
+    onInitialAssignmentApplied,
+    embedded = false,
+  } = props
   const active = embedded || open
   const { message } = AntdApp.useApp()
   const [customers, setCustomers] = useState<CustomerAdminView[]>([])
@@ -70,6 +81,7 @@ export function CustomerManagementModal(props: {
   const [assignmentForm, setAssignmentForm] = useState<AssignmentFormState>(emptyAssignmentForm)
   const [overview, setOverview] = useState<XUIOverview | null>(null)
   const [overviewLoading, setOverviewLoading] = useState(false)
+  const skipAssignmentResetRef = useRef(false)
 
   const selectedCustomer = customers.find((item) => item.id === selectedCustomerID) || null
   const agentOptions = useMemo(() => agents.map((agent) => ({
@@ -102,6 +114,10 @@ export function CustomerManagementModal(props: {
     if (!selectedCustomer) {
       setCustomerForm(emptyCustomerForm)
       setEditingAssignmentID(null)
+      if (skipAssignmentResetRef.current) {
+        skipAssignmentResetRef.current = false
+        return
+      }
       return
     }
     setCustomerForm({
@@ -110,9 +126,31 @@ export function CustomerManagementModal(props: {
       display_name: selectedCustomer.display_name || selectedCustomer.username,
       enabled: selectedCustomer.enabled,
     })
+    if (skipAssignmentResetRef.current) {
+      skipAssignmentResetRef.current = false
+      return
+    }
     setEditingAssignmentID(null)
     setAssignmentForm(emptyAssignmentForm)
   }, [selectedCustomerID])
+
+  useEffect(() => {
+    if (!active || !initialAssignment) {
+      return
+    }
+    const match = findMatchingAssignment(customers, initialAssignment)
+    const nextCustomerID = match?.customer.id || selectedCustomerID || customers[0]?.id || null
+    const nextForm = match?.assignment
+      ? assignmentFormFromAssignment(match.assignment, agents)
+      : assignmentFormFromDraft(initialAssignment, agents)
+    if (nextCustomerID !== selectedCustomerID) {
+      skipAssignmentResetRef.current = true
+      setSelectedCustomerID(nextCustomerID)
+    }
+    setEditingAssignmentID(match?.assignment.id || null)
+    setAssignmentForm(nextForm)
+    onInitialAssignmentApplied?.()
+  }, [active, agents, customers, initialAssignment, onInitialAssignmentApplied, selectedCustomerID])
 
   useEffect(() => {
     if (!assignmentForm.agent_id) {
@@ -345,21 +383,8 @@ export function CustomerManagementModal(props: {
   }
 
   function editAssignment(record: CustomerAssignment) {
-    const key = record.client_email ? `client:${record.inbound_id}::${record.client_email}` : `node:${record.inbound_id}::`
-    const billing = assignmentBilling(record, agents)
     setEditingAssignmentID(record.id)
-    setAssignmentForm({
-      agent_id: record.agent_id,
-      client_key: key,
-      inbound_id: record.inbound_id,
-      inbound_tag: record.inbound_tag || '',
-      client_email: record.client_email || '',
-      public_client_name: record.public_client_name || '',
-      revenue_amount: Number(billing?.revenue_amount || 0),
-      revenue_currency: billing?.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
-      revenue_cycle: billing?.revenue_cycle === 'quarter' || billing?.revenue_cycle === 'year' ? billing.revenue_cycle : 'month',
-      enabled: record.enabled,
-    })
+    setAssignmentForm(assignmentFormFromAssignment(record, agents))
   }
 
   function selectClient(key: string) {
@@ -577,7 +602,7 @@ export function CustomerManagementModal(props: {
 
   if (embedded) {
     return (
-      <div className="customer-admin-page">
+      <div id="customer-management-panel" className="customer-admin-page">
         <div className="admin-content-title">
           <div>
             <Title level={3}>客户管理</Title>
@@ -637,6 +662,70 @@ function customerAgentName(agentID: string, agents: DashboardAgentView[]): strin
 
 function assignmentBilling(record: CustomerAssignment, agents: DashboardAgentView[]): XUIClientBillingConfig | undefined {
   return clientBilling(record.agent_id, record.inbound_id, record.inbound_tag || '', record.client_email || '', agents)
+}
+
+function assignmentFormFromAssignment(record: CustomerAssignment, agents: DashboardAgentView[]): AssignmentFormState {
+  const billing = assignmentBilling(record, agents)
+  return {
+    agent_id: record.agent_id,
+    client_key: record.client_email ? `client:${record.inbound_id}::${record.client_email}` : `node:${record.inbound_id}::`,
+    inbound_id: record.inbound_id,
+    inbound_tag: record.inbound_tag || '',
+    client_email: record.client_email || '',
+    public_client_name: record.public_client_name || '',
+    revenue_amount: Number(billing?.revenue_amount || 0),
+    revenue_currency: billing?.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
+    revenue_cycle: billing?.revenue_cycle === 'quarter' || billing?.revenue_cycle === 'year' ? billing.revenue_cycle : 'month',
+    enabled: record.enabled,
+  }
+}
+
+function assignmentFormFromDraft(draft: CustomerAssignmentDraft, agents: DashboardAgentView[]): AssignmentFormState {
+  const inboundTag = draft.inbound_tag || ''
+  const clientEmail = draft.client_email || ''
+  const billing = clientBilling(draft.agent_id, draft.inbound_id, inboundTag, clientEmail, agents)
+  const publicClientName = draft.public_client_name || defaultPublicNameFromDraft(draft, agents)
+  return {
+    agent_id: draft.agent_id,
+    client_key: clientEmail ? `client:${draft.inbound_id}::${clientEmail}` : `node:${draft.inbound_id}::`,
+    inbound_id: draft.inbound_id,
+    inbound_tag: inboundTag,
+    client_email: clientEmail,
+    public_client_name: publicClientName,
+    revenue_amount: Number(draft.revenue_amount ?? billing?.revenue_amount ?? 0),
+    revenue_currency: draft.revenue_currency === 'USDT' ? 'USDT' : billing?.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
+    revenue_cycle: draft.revenue_cycle === 'quarter' || draft.revenue_cycle === 'year'
+      ? draft.revenue_cycle
+      : billing?.revenue_cycle === 'quarter' || billing?.revenue_cycle === 'year'
+        ? billing.revenue_cycle
+        : 'month',
+    enabled: true,
+  }
+}
+
+function defaultPublicNameFromDraft(draft: CustomerAssignmentDraft, agents: DashboardAgentView[]): string {
+  const agent = customerAgentName(draft.agent_id, agents)
+  const tail = draft.client_email || draft.inbound_tag || `Inbound #${draft.inbound_id}`
+  return [agent, tail].filter(Boolean).join(' - ')
+}
+
+function findMatchingAssignment(customers: CustomerAdminView[], draft: CustomerAssignmentDraft): { customer: CustomerAdminView, assignment: CustomerAssignment } | null {
+  const exactKey = billingKey(draft.inbound_id, draft.inbound_tag || '', draft.client_email || '')
+  const emailKey = draft.client_email ? billingEmailKey(draft.inbound_id, draft.client_email) : ''
+  for (const customer of customers) {
+    for (const assignment of customer.assignments || []) {
+      if (assignment.agent_id !== draft.agent_id) {
+        continue
+      }
+      if (billingKey(assignment.inbound_id, assignment.inbound_tag || '', assignment.client_email || '') === exactKey) {
+        return { customer, assignment }
+      }
+      if (emailKey && billingEmailKey(assignment.inbound_id, assignment.client_email || '') === emailKey) {
+        return { customer, assignment }
+      }
+    }
+  }
+  return null
 }
 
 function clientBilling(agentID: string, inboundID: number, inboundTag: string, email: string, agents: DashboardAgentView[]): XUIClientBillingConfig | undefined {

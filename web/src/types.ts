@@ -157,6 +157,17 @@ export interface CustomerAssignment {
   updated_at: string
 }
 
+export interface CustomerAssignmentDraft {
+  agent_id: string
+  inbound_id: number
+  inbound_tag?: string
+  client_email?: string
+  public_client_name?: string
+  revenue_amount?: number
+  revenue_currency?: 'CNY' | 'USDT'
+  revenue_cycle?: 'month' | 'quarter' | 'year'
+}
+
 export interface CustomerAdminView extends CustomerUser {
   assignments: CustomerAssignment[]
 }

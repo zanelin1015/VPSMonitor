@@ -30,6 +30,7 @@ import type {
   AgentRealtimeMetrics,
   ConfigAuditLog,
   CustomerAssignment,
+  CustomerAssignmentDraft,
   DashboardAgentView,
   DashboardRealtimeMessage,
   ExchangeRatesResponse,
@@ -206,6 +207,7 @@ export default function App() {
   const [editingTelegramBotId, setEditingTelegramBotId] = useState<number | null>(null)
   const [telegramBotForm, setTelegramBotForm] = useState<TelegramBotForm>(() => defaultTelegramBotForm())
   const [customerModalOpen, setCustomerModalOpen] = useState(false)
+  const [customerAssignmentDraft, setCustomerAssignmentDraft] = useState<CustomerAssignmentDraft | null>(null)
   const [clientInstallModalOpen, setClientInstallModalOpen] = useState(false)
   const [clientInstallLoading, setClientInstallLoading] = useState(false)
   const [clientInstallSaving, setClientInstallSaving] = useState(false)
@@ -1527,6 +1529,7 @@ export default function App() {
           clientInstallWindowsCMDCommand={clientWindowsCMDCommand}
           clientInstallWindowsPowerShellCommand={clientWindowsPowerShellCommand}
           customerModalOpen={customerModalOpen}
+          customerAssignmentDraft={customerAssignmentDraft}
           editingTelegramBotId={editingTelegramBotId}
           frontendSettingsForm={frontendSettingsForm}
           frontendSettingsLoading={frontendSettingsLoading}
@@ -1558,7 +1561,11 @@ export default function App() {
           onClientInstallFormChange={setClientInstallForm}
           onCloseAccount={() => setAccountModalOpen(false)}
           onCloseClientInstall={() => setClientInstallModalOpen(false)}
-          onCloseCustomerModal={() => setCustomerModalOpen(false)}
+          onCloseCustomerModal={() => {
+            setCustomerModalOpen(false)
+            setCustomerAssignmentDraft(null)
+          }}
+          onCustomerAssignmentDraftApplied={() => setCustomerAssignmentDraft(null)}
           onCloseFrontendSettings={() => setFrontendSettingsModalOpen(false)}
           onCloseImportURL={() => setImportURLClient(null)}
           onCloseTelegramBot={() => setTelegramBotModalOpen(false)}
@@ -1589,7 +1596,14 @@ export default function App() {
 
         {activeAdminPage === 'customers' ? (
           <main className="admin-content-page">
-            <CustomerManagementModal embedded agents={agents} onConfigChanged={() => loadAgents()} onOpenAssignment={openCustomerAssignment} />
+            <CustomerManagementModal
+              embedded
+              agents={agents}
+              initialAssignment={customerAssignmentDraft}
+              onInitialAssignmentApplied={() => setCustomerAssignmentDraft(null)}
+              onConfigChanged={() => loadAgents()}
+              onOpenAssignment={openCustomerAssignment}
+            />
           </main>
         ) : activeAdminPage === 'settings' ? (
           <main className="admin-content-page">
@@ -1769,6 +1783,7 @@ export default function App() {
                     window.open(managedConfig.xui.base_url, '_blank', 'noopener,noreferrer')
                   }
                 }}
+                onAuthorizeCustomer={openCustomerAuthorization}
                 onRefreshCurrentAgent={() => void requestAgentSnapshot(selectedAgentId)}
                 onRefreshXUIActions={() => void loadXUIActions()}
                 onRenewalChange={(patch) => updateManagedConfig((current) => ({ ...current, renewal: { ...current.renewal, ...patch } }))}
@@ -1908,6 +1923,18 @@ export default function App() {
       }
     }
     window.setTimeout(scrollToTarget, 80)
+  }
+
+  function openCustomerAuthorization(draft: CustomerAssignmentDraft) {
+    setCustomerModalOpen(false)
+    setTopologyVisible(false)
+    setSelectedOutboundTag('')
+    setSelectedRuleIndex(null)
+    setCustomerAssignmentDraft(draft)
+    setActiveAdminPage('customers')
+    window.setTimeout(() => {
+      document.getElementById('customer-management-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 80)
   }
 
   function jumpToOutbound(tag?: string) {
