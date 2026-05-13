@@ -95,6 +95,12 @@ export interface XUIOutboundActionForm {
   method: string
   security: string
   server_name: string
+  alpn: string
+  grpc_service: string
+  reality_public_key: string
+  reality_short_id: string
+  reality_fingerprint: string
+  reality_spider_x: string
   network: string
   ws_path: string
   ws_host: string
@@ -299,6 +305,12 @@ function defaultOutboundActionForm(): XUIOutboundActionForm {
     method: 'aes-256-gcm',
     security: 'none',
     server_name: '',
+    alpn: '',
+    grpc_service: '',
+    reality_public_key: '',
+    reality_short_id: '',
+    reality_fingerprint: '',
+    reality_spider_x: '',
     network: 'tcp',
     ws_path: '/',
     ws_host: '',
@@ -475,7 +487,7 @@ function buildInboundActionPayload(form: XUIInboundActionForm): Record<string, u
     throw new Error('入站协议不能为空')
   }
 
-  const protocol = form.protocol.toLowerCase()
+  const protocol = normalizeOutboundProtocol(form.protocol)
   const tag = form.tag.trim() || `in-${protocol}-${form.port}`
   const clients = form.clients.map((client, index) => buildInboundClientPayload(client, protocol, index))
   const settings: Record<string, unknown> = {
@@ -619,9 +631,25 @@ function buildOutboundActionPayload(form: XUIOutboundActionForm): Record<string,
       }
       outbound.streamSettings = buildOutboundStreamSettings(form)
       break
+    case 'shadowsocks':
+      if (!address || !port) {
+        throw new Error('Shadowsocks 出站需要有效的远端地址和端口，请重新选择源节点客户端')
+      }
+      outbound.settings = {
+        servers: [
+          {
+            address,
+            port,
+            method: form.method.trim() || 'aes-256-gcm',
+            password: form.password.trim() || 'change-me',
+          },
+        ],
+      }
+      break
+    case 'http':
     case 'socks':
       if (!address || !port) {
-        throw new Error('SOCKS 出站需要有效的远端地址和端口，请重新选择源节点客户端')
+        throw new Error(`${protocol.toUpperCase()} 出站需要有效的远端地址和端口，请重新选择源节点客户端`)
       }
       outbound.settings = {
         servers: [
@@ -643,6 +671,17 @@ function buildOutboundActionPayload(form: XUIOutboundActionForm): Record<string,
     outbound,
     restart: true,
   }
+}
+
+function normalizeOutboundProtocol(value: unknown): string {
+  const protocol = normalizeOutboundEndpointValue(value).toLowerCase()
+  if (protocol === 'socks5') {
+    return 'socks'
+  }
+  if (protocol === 'ss') {
+    return 'shadowsocks'
+  }
+  return protocol
 }
 
 function normalizeOutboundEndpointValue(value: unknown): string {
@@ -674,23 +713,83 @@ function buildVNextUser(form: XUIOutboundActionForm, protocol: string): Record<s
 }
 
 function buildOutboundStreamSettings(form: XUIOutboundActionForm): Record<string, unknown> {
+  const network = normalizeOutboundEndpointValue(form.network) || 'tcp'
+  const security = normalizeOutboundEndpointValue(form.security) || 'none'
   const streamSettings: Record<string, unknown> = {
-    network: form.network,
-    security: form.security,
+    network,
+    security,
   }
-  if (form.network === 'ws') {
+  const path = normalizeOutboundEndpointValue(form.ws_path)
+  const host = normalizeOutboundEndpointValue(form.ws_host)
+  const alpn = splitOutboundList(form.alpn)
+  const fingerprint = normalizeOutboundEndpointValue(form.reality_fingerprint)
+
+  if (network === 'ws') {
     streamSettings.wsSettings = {
-      path: form.ws_path || '/',
-      headers: form.ws_host ? { Host: form.ws_host } : {},
+      path: path || '/',
+      headers: host ? { Host: host } : {},
     }
   }
-  if (form.security === 'tls') {
-    streamSettings.tlsSettings = {
-      serverName: form.server_name.trim(),
+  if (network === 'grpc') {
+    const grpcSettings: Record<string, unknown> = {
+      serviceName: normalizeOutboundEndpointValue(form.grpc_service),
+    }
+    if (host) {
+      grpcSettings.authority = host
+    }
+    streamSettings.grpcSettings = grpcSettings
+  }
+  if (network === 'http' || network === 'h2') {
+    streamSettings.httpSettings = {
+      path: path || '/',
+      host: host ? [host] : [],
+    }
+  }
+  if (security === 'tls') {
+    const tlsSettings: Record<string, unknown> = {
       allowInsecure: false,
     }
+    const serverName = normalizeOutboundEndpointValue(form.server_name)
+    if (serverName) {
+      tlsSettings.serverName = serverName
+    }
+    if (alpn.length) {
+      tlsSettings.alpn = alpn
+    }
+    if (fingerprint) {
+      tlsSettings.fingerprint = fingerprint
+    }
+    streamSettings.tlsSettings = tlsSettings
+  }
+  if (security === 'reality') {
+    const serverName = normalizeOutboundEndpointValue(form.server_name)
+    const publicKey = normalizeOutboundEndpointValue(form.reality_public_key)
+    if (!serverName || !publicKey) {
+      throw new Error('Reality 出站需要 SNI/serverName 和 publicKey，请重新选择源节点客户端')
+    }
+    const realitySettings: Record<string, unknown> = {
+      serverName,
+      fingerprint: fingerprint || 'chrome',
+      publicKey,
+    }
+    const shortId = normalizeOutboundEndpointValue(form.reality_short_id)
+    const spiderX = normalizeOutboundEndpointValue(form.reality_spider_x)
+    if (shortId) {
+      realitySettings.shortId = shortId
+    }
+    if (spiderX) {
+      realitySettings.spiderX = spiderX
+    }
+    streamSettings.realitySettings = realitySettings
   }
   return streamSettings
+}
+
+function splitOutboundList(value: unknown): string[] {
+  return normalizeOutboundEndpointValue(value)
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
 }
 
 function buildRoutingActionPayload(form: XUIRoutingActionForm): Record<string, unknown> {

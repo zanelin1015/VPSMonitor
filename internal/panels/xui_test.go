@@ -1012,6 +1012,49 @@ func TestXUIValidateOutboundRejectsUndefinedEndpoint(t *testing.T) {
 	}
 }
 
+func TestXUIValidateOutboundRequiresRealitySettings(t *testing.T) {
+	err := validateOutboundConfig(map[string]any{
+		"tag":      "relay-reality",
+		"protocol": "vless",
+		"settings": map[string]any{
+			"vnext": []map[string]any{
+				{"address": "relay.example.com", "port": 443, "users": []map[string]any{{"id": "uuid"}}},
+			},
+		},
+		"streamSettings": map[string]any{
+			"network":  "tcp",
+			"security": "reality",
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected missing realitySettings to be rejected")
+	}
+
+	err = validateOutboundConfig(map[string]any{
+		"tag":      "relay-reality",
+		"protocol": "vless",
+		"settings": map[string]any{
+			"vnext": []map[string]any{
+				{"address": "relay.example.com", "port": 443, "users": []map[string]any{{"id": "uuid"}}},
+			},
+		},
+		"streamSettings": map[string]any{
+			"network":  "tcp",
+			"security": "reality",
+			"realitySettings": map[string]any{
+				"serverName":  "www.example.com",
+				"fingerprint": "chrome",
+				"publicKey":   "public-key",
+				"shortId":     "abcd",
+				"spiderX":     "/",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected valid reality outbound, got %v", err)
+	}
+}
+
 func TestXUIExecuteUpsertRoutingRuleUpdatesExistingRule(t *testing.T) {
 	client, err := NewXUIClient(config.XUIConfig{
 		Enabled:  true,

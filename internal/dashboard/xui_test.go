@@ -357,6 +357,87 @@ func TestBuildHysteriaImportURLMatchesXUIShape(t *testing.T) {
 	}
 }
 
+func TestBuildVLESSImportURLIncludesRealitySettings(t *testing.T) {
+	link := buildVLESSImportURL(inboundRecord{
+		importHost:        "attwin1g1.kynbbz.top",
+		vlessEncryption:   "none",
+		hysteriaVersion:   0,
+		shadowsocksMethod: "",
+		view: model.XUINodeView{
+			Remark:             "US",
+			Port:               20001,
+			Protocol:           "vless",
+			Network:            "tcp",
+			Security:           "reality",
+			TLSServerName:      "www.microsoft.com",
+			RealityPubKey:      "reality-public-key",
+			RealityShortID:     "abcd1234",
+			RealityFingerprint: "chrome",
+			RealitySpiderX:     "/",
+		},
+	}, clientConfig{
+		email:    "Cepheus",
+		authUUID: "ef7cac03-682f-4818-8771-7197b8229522",
+		flow:     "xtls-rprx-vision",
+	})
+	parsed := mustParseURL(t, link)
+	query := parsed.Query()
+	assertQuery(t, query, "security", "reality")
+	assertQuery(t, query, "sni", "www.microsoft.com")
+	assertQuery(t, query, "pbk", "reality-public-key")
+	assertQuery(t, query, "sid", "abcd1234")
+	assertQuery(t, query, "fp", "chrome")
+	assertQuery(t, query, "spx", "/")
+	assertQuery(t, query, "flow", "xtls-rprx-vision")
+}
+
+func TestParseInboundStreamSettingsKeepsTransportOptions(t *testing.T) {
+	meta := parseInboundStreamSettings(map[string]any{
+		"network":  "grpc",
+		"security": "tls",
+		"tlsSettings": map[string]any{
+			"serverName":  "edge.example.com",
+			"fingerprint": "chrome",
+			"alpn":        []any{"h2", "http/1.1"},
+		},
+		"grpcSettings": map[string]any{
+			"serviceName": "relay-service",
+			"authority":   "grpc.example.com",
+		},
+	})
+	if meta.grpcService != "relay-service" || meta.wsHost != "grpc.example.com" {
+		t.Fatalf("unexpected grpc metadata: %#v", meta)
+	}
+	if meta.alpn != "h2,http/1.1" || meta.tlsFingerprint != "chrome" {
+		t.Fatalf("unexpected tls metadata: %#v", meta)
+	}
+
+	meta = parseInboundStreamSettings(map[string]any{
+		"network":  "ws",
+		"security": "reality",
+		"wsSettings": map[string]any{
+			"path": "/ws",
+			"headers": map[string]any{
+				"host": "ws.example.com",
+			},
+		},
+		"realitySettings": map[string]any{
+			"serverNames": []any{"www.example.com"},
+			"settings": map[string]any{
+				"publicKey": "public-key",
+				"shortId":   "short-id",
+				"spiderX":   "/",
+			},
+		},
+	})
+	if meta.wsPath != "/ws" || meta.wsHost != "ws.example.com" {
+		t.Fatalf("unexpected ws metadata: %#v", meta)
+	}
+	if meta.realityServer != "www.example.com" || meta.realityPubKey != "public-key" || meta.realityShortID != "short-id" || meta.realitySpider != "/" {
+		t.Fatalf("unexpected reality metadata: %#v", meta)
+	}
+}
+
 func testNode(protocol string) model.XUINodeView {
 	return model.XUINodeView{
 		Remark:   "临时",

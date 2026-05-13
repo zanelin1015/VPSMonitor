@@ -621,22 +621,23 @@ func parseInboundStreamSettings(raw any) inboundStreamMeta {
 		tlsOption := objectMap(tlsSettings["settings"])
 		meta.tlsServerName = defaultString(stringValue(tlsSettings["serverName"]), stringValue(tlsOption["serverName"]))
 		meta.tlsFingerprint = defaultString(stringValue(tlsSettings["fingerprint"]), stringValue(tlsOption["fingerprint"]))
-		meta.alpn = strings.Join(stringList(tlsSettings["alpn"]), ",")
+		meta.alpn = strings.Join(defaultStringList(stringList(tlsSettings["alpn"]), stringList(tlsOption["alpn"])), ",")
 	}
 	if wsSettings := objectMap(settings["wsSettings"]); len(wsSettings) > 0 {
 		meta.wsPath = stringValue(wsSettings["path"])
 		if headers := objectMap(wsSettings["headers"]); len(headers) > 0 {
-			meta.wsHost = firstString(stringList(headers["Host"]))
+			meta.wsHost = defaultString(firstString(stringList(headers["Host"])), firstString(stringList(headers["host"])))
 		}
 	}
 	if grpcSettings := objectMap(settings["grpcSettings"]); len(grpcSettings) > 0 {
 		meta.grpcService = stringValue(grpcSettings["serviceName"])
+		meta.wsHost = defaultString(meta.wsHost, stringValue(grpcSettings["authority"]))
 	}
 	if realitySettings := objectMap(settings["realitySettings"]); len(realitySettings) > 0 {
 		realityOption := objectMap(realitySettings["settings"])
 		meta.realityServer = defaultString(firstString(stringList(realitySettings["serverNames"])), defaultString(stringValue(realitySettings["serverName"]), stringValue(realityOption["serverName"])))
 		meta.realityPubKey = defaultString(stringValue(realitySettings["publicKey"]), stringValue(realityOption["publicKey"]))
-		meta.realityShortID = firstString(stringList(realitySettings["shortIds"]))
+		meta.realityShortID = defaultString(firstString(stringList(realitySettings["shortIds"])), defaultString(stringValue(realitySettings["shortId"]), defaultString(firstString(stringList(realityOption["shortIds"])), stringValue(realityOption["shortId"]))))
 		meta.realityFP = defaultString(stringValue(realitySettings["fingerprint"]), stringValue(realityOption["fingerprint"]))
 		meta.realitySpider = defaultString(stringValue(realitySettings["spiderX"]), stringValue(realityOption["spiderX"]))
 	}
@@ -881,6 +882,13 @@ func firstString(values []string) string {
 		return ""
 	}
 	return values[0]
+}
+
+func defaultStringList(values []string, fallback []string) []string {
+	if len(values) > 0 {
+		return values
+	}
+	return fallback
 }
 
 func nonEmptyStrings(values ...string) []string {

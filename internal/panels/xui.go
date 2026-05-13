@@ -1607,6 +1607,9 @@ func writeJSONField(target map[string]any, key string, value map[string]any, enc
 
 func validateOutboundConfig(outbound map[string]any) error {
 	protocol := strings.ToLower(strings.TrimSpace(stringFromMap(outbound, "protocol")))
+	if err := validateOutboundRealitySettings(outbound); err != nil {
+		return err
+	}
 	switch protocol {
 	case "vless", "vmess":
 		settings := objectMap(outbound["settings"])
@@ -1616,7 +1619,7 @@ func validateOutboundConfig(outbound map[string]any) error {
 			}
 		}
 		return fmt.Errorf("%s outbound requires a valid address and port", protocol)
-	case "trojan", "socks", "socks5":
+	case "trojan", "shadowsocks", "http", "socks", "socks5":
 		settings := objectMap(outbound["settings"])
 		for _, item := range objectSlice(settings["servers"]) {
 			if validEndpoint(item, "address", "port") {
@@ -1627,6 +1630,21 @@ func validateOutboundConfig(outbound map[string]any) error {
 	default:
 		return nil
 	}
+}
+
+func validateOutboundRealitySettings(outbound map[string]any) error {
+	streamSettings := objectMap(outbound["streamSettings"])
+	if strings.ToLower(strings.TrimSpace(stringFromMap(streamSettings, "security"))) != "reality" {
+		return nil
+	}
+	realitySettings := objectMap(streamSettings["realitySettings"])
+	if isPlaceholderValue(stringFromMap(realitySettings, "serverName")) || strings.TrimSpace(stringFromMap(realitySettings, "serverName")) == "" {
+		return fmt.Errorf("reality outbound requires streamSettings.realitySettings.serverName")
+	}
+	if isPlaceholderValue(stringFromMap(realitySettings, "publicKey")) || strings.TrimSpace(stringFromMap(realitySettings, "publicKey")) == "" {
+		return fmt.Errorf("reality outbound requires streamSettings.realitySettings.publicKey")
+	}
+	return nil
 }
 
 func validEndpoint(item map[string]any, addressKey, portKey string) bool {

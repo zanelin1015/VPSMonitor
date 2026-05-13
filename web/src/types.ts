@@ -311,8 +311,14 @@ export interface XUINodeView {
   network?: string
   security?: string
   tls_server_name?: string
+  alpn?: string
   ws_path?: string
   ws_host?: string
+  grpc_service?: string
+  reality_public_key?: string
+  reality_short_id?: string
+  reality_fingerprint?: string
+  reality_spider_x?: string
   enabled: boolean
   expiry_time?: number
   up?: number
