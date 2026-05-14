@@ -220,15 +220,6 @@ func (s *SQLiteStore) init() error {
 			created_at TEXT NOT NULL
 		);
 		`,
-		`CREATE INDEX IF NOT EXISTS idx_snapshots_agent_reported_at ON snapshots(agent_id, reported_at DESC, id DESC);`,
-		`CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires_at ON admin_sessions(expires_at);`,
-		`CREATE INDEX IF NOT EXISTS idx_area_manager_agents_agent ON area_manager_agents(agent_id, manager_id);`,
-		`CREATE INDEX IF NOT EXISTS idx_customer_accounts_owner ON customer_accounts(owner_type, owner_id, id);`,
-		`CREATE INDEX IF NOT EXISTS idx_customer_sessions_expires_at ON customer_sessions(expires_at);`,
-		`CREATE INDEX IF NOT EXISTS idx_customer_assignments_customer ON customer_assignments(customer_id, enabled, id);`,
-		`CREATE INDEX IF NOT EXISTS idx_customer_assignments_agent ON customer_assignments(agent_id, inbound_id, client_email);`,
-		`CREATE INDEX IF NOT EXISTS idx_xui_actions_agent_status_id ON xui_actions(agent_id, status, id);`,
-		`CREATE INDEX IF NOT EXISTS idx_config_audit_agent_id ON config_audit_logs(agent_id, id DESC);`,
 	}
 	for _, stmt := range schema {
 		if _, err := s.db.Exec(stmt); err != nil {
@@ -270,6 +261,22 @@ func (s *SQLiteStore) init() error {
 	}
 	if err := s.ensureColumn("customer_accounts", "owner_id", "INTEGER NOT NULL DEFAULT 1"); err != nil {
 		return err
+	}
+	indexes := []string{
+		`CREATE INDEX IF NOT EXISTS idx_snapshots_agent_reported_at ON snapshots(agent_id, reported_at DESC, id DESC);`,
+		`CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires_at ON admin_sessions(expires_at);`,
+		`CREATE INDEX IF NOT EXISTS idx_area_manager_agents_agent ON area_manager_agents(agent_id, manager_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_customer_accounts_owner ON customer_accounts(owner_type, owner_id, id);`,
+		`CREATE INDEX IF NOT EXISTS idx_customer_sessions_expires_at ON customer_sessions(expires_at);`,
+		`CREATE INDEX IF NOT EXISTS idx_customer_assignments_customer ON customer_assignments(customer_id, enabled, id);`,
+		`CREATE INDEX IF NOT EXISTS idx_customer_assignments_agent ON customer_assignments(agent_id, inbound_id, client_email);`,
+		`CREATE INDEX IF NOT EXISTS idx_xui_actions_agent_status_id ON xui_actions(agent_id, status, id);`,
+		`CREATE INDEX IF NOT EXISTS idx_config_audit_agent_id ON config_audit_logs(agent_id, id DESC);`,
+	}
+	for _, stmt := range indexes {
+		if _, err := s.db.Exec(stmt); err != nil {
+			return fmt.Errorf("init index: %w", err)
+		}
 	}
 	return nil
 }

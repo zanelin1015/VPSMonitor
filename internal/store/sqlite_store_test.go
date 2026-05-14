@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -66,6 +67,99 @@ func TestSQLiteStoreSaveAndReload(t *testing.T) {
 	if reloadedSnapshot.Summary.MemTotal != 1024 {
 		t.Fatalf("unexpected mem total after reload: %d", reloadedSnapshot.Summary.MemTotal)
 	}
+}
+
+func TestSQLiteStoreMigratesLegacyCustomerOwnerColumnsBeforeIndexes(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "bridge.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open legacy db: %v", err)
+	}
+	_, err = db.Exec(`
+		CREATE TABLE customer_accounts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+			password_hash TEXT NOT NULL,
+			display_name TEXT NOT NULL DEFAULT '',
+			enabled INTEGER NOT NULL DEFAULT 1,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+		INSERT INTO customer_accounts (username, password_hash, display_name, enabled, created_at, updated_at)
+		VALUES ('legacy', 'hash', 'Legacy User', 1, '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z');
+		CREATE TABLE admin_sessions (
+			token_hash TEXT PRIMARY KEY,
+			username TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			expires_at TEXT NOT NULL,
+			last_seen_at TEXT NOT NULL
+		);
+	`)
+	if err != nil {
+		_ = db.Close()
+		t.Fatalf("create legacy db: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close legacy db: %v", err)
+	}
+
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore should migrate legacy db: %v", err)
+	}
+	defer store.Close()
+
+	for _, column := range []string{"style_code", "owner_type", "owner_id"} {
+		if !sqliteColumnExists(t, store.db, "customer_accounts", column) {
+			t.Fatalf("expected migrated customer_accounts.%s column", column)
+		}
+	}
+	for _, column := range []string{"role", "account_id"} {
+		if !sqliteColumnExists(t, store.db, "admin_sessions", column) {
+			t.Fatalf("expected migrated admin_sessions.%s column", column)
+		}
+	}
+	var ownerType string
+	var ownerID int64
+	if err := store.db.QueryRow(`SELECT owner_type, owner_id FROM customer_accounts WHERE username = ?`, "legacy").Scan(&ownerType, &ownerID); err != nil {
+		t.Fatalf("read migrated owner defaults: %v", err)
+	}
+	if ownerType != model.AdminRoleRoot || ownerID != adminAccountID {
+		t.Fatalf("unexpected owner defaults: %s/%d", ownerType, ownerID)
+	}
+	var indexName string
+	if err := store.db.QueryRow(`SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?`, "idx_customer_accounts_owner").Scan(&indexName); err != nil {
+		t.Fatalf("expected owner index after column migration: %v", err)
+	}
+}
+
+func sqliteColumnExists(t *testing.T, db *sql.DB, tableName string, columnName string) bool {
+	t.Helper()
+	rows, err := db.Query(`PRAGMA table_info(` + tableName + `)`)
+	if err != nil {
+		t.Fatalf("query table info for %s: %v", tableName, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			cid        int
+			name       string
+			columnType string
+			notNull    int
+			defaultVal sql.NullString
+			pk         int
+		)
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultVal, &pk); err != nil {
+			t.Fatalf("scan table info for %s: %v", tableName, err)
+		}
+		if name == columnName {
+			return true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate table info for %s: %v", tableName, err)
+	}
+	return false
 }
 
 func TestSQLiteStoreRegisterAndUpdateConfig(t *testing.T) {
