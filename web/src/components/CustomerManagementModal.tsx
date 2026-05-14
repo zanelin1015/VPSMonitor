@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, App as AntdApp, Button, Card, Col, Empty, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Spin, Switch, Table, Tag, Typography } from 'antd'
+import { Alert, App as AntdApp, Button, Card, Col, Empty, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Spin, Switch, Table, Tabs, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { DeleteOutlined, EditOutlined, ExportOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons'
 
@@ -8,6 +8,8 @@ import { fetchJSON } from '../lib/appHelpers'
 import { REVENUE_CURRENCIES } from '../lib/currency'
 
 const { Text, Title } = Typography
+
+type ManagementTabKey = 'area' | 'customers' | 'assignments'
 
 interface CustomerFormState {
   username: string
@@ -90,6 +92,7 @@ export function CustomerManagementModal(props: {
   const active = embedded || open
   const canManageAreaManagers = adminUser?.role !== 'area_manager'
   const { message } = AntdApp.useApp()
+  const [activeManagementTab, setActiveManagementTab] = useState<ManagementTabKey>(canManageAreaManagers ? 'area' : 'customers')
   const [customers, setCustomers] = useState<CustomerAdminView[]>([])
   const [areaManagers, setAreaManagers] = useState<AreaManagerAdminView[]>([])
   const [loading, setLoading] = useState(false)
@@ -136,6 +139,18 @@ export function CustomerManagementModal(props: {
       }
     }
   }, [active, canManageAreaManagers])
+
+  useEffect(() => {
+    if (!canManageAreaManagers && activeManagementTab === 'area') {
+      setActiveManagementTab('customers')
+    }
+  }, [activeManagementTab, canManageAreaManagers])
+
+  useEffect(() => {
+    if (active && initialAssignment) {
+      setActiveManagementTab('assignments')
+    }
+  }, [active, initialAssignment])
 
   useEffect(() => {
     if (!selectedCustomer) {
@@ -267,6 +282,52 @@ export function CustomerManagementModal(props: {
     },
   ]
 
+  const areaCustomerColumns: ColumnsType<CustomerAdminView> = [
+    {
+      title: '下属用户',
+      width: 180,
+      render: (_, record) => (
+        <div>
+          <Text strong>{record.username}</Text>
+          <div className="muted-line">{record.display_name || record.username}</div>
+        </div>
+      ),
+    },
+    {
+      title: '链路',
+      render: (_, record) => {
+        const assignments = record.assignments || []
+        return assignments.length ? (
+          <Space size={[4, 4]} wrap>
+            {assignments.map((assignment) => (
+              <Tag key={assignment.id}>
+                {agentName(assignment.agent_id, agents)} / {assignment.public_client_name || assignment.client_email || assignment.inbound_tag || `#${assignment.inbound_id}`}
+              </Tag>
+            ))}
+          </Space>
+        ) : <Tag>未分配</Tag>
+      },
+    },
+    {
+      title: '状态',
+      dataIndex: 'enabled',
+      width: 90,
+      render: (enabled: boolean) => <Tag color={enabled ? 'blue' : 'default'}>{enabled ? '启用' : '停用'}</Tag>,
+    },
+    {
+      title: '操作',
+      width: 120,
+      render: (_, record) => (
+        <Button size="small" onClick={() => {
+          setSelectedCustomerID(record.id)
+          setActiveManagementTab('assignments')
+        }}>
+          管理链路
+        </Button>
+      ),
+    },
+  ]
+
   const areaManagerColumns: ColumnsType<AreaManagerAdminView> = [
     {
       title: '区域账号',
@@ -277,6 +338,20 @@ export function CustomerManagementModal(props: {
           <div className="muted-line">{record.display_name || record.username}</div>
         </div>
       ),
+    },
+    {
+      title: '下属用户 / 链路',
+      width: 150,
+      render: (_, record) => {
+        const ownedCustomers = record.customers || []
+        const assignmentCount = ownedCustomers.reduce((sum, customer) => sum + (customer.assignments?.length || 0), 0)
+        return (
+          <Space size={6}>
+            <Tag color="geekblue">{ownedCustomers.length} 用户</Tag>
+            <Tag color={assignmentCount ? 'cyan' : 'default'}>{assignmentCount} 链路</Tag>
+          </Space>
+        )
+      },
     },
     {
       title: '可管理 Client',
@@ -308,6 +383,22 @@ export function CustomerManagementModal(props: {
       ),
     },
   ]
+
+  function renderAreaManagerCustomers(record: AreaManagerAdminView) {
+    const ownedCustomers = record.customers || []
+    if (!ownedCustomers.length) {
+      return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="该区域账号暂未创建下属用户" />
+    }
+    return (
+      <Table
+        size="small"
+        rowKey={(customer) => customer.id}
+        columns={areaCustomerColumns}
+        dataSource={ownedCustomers}
+        pagination={false}
+      />
+    )
+  }
 
   async function loadCustomers() {
     setLoading(true)
@@ -448,6 +539,9 @@ export function CustomerManagementModal(props: {
       }
       setCustomerForm((current) => ({ ...current, password: '' }))
       await loadCustomers()
+      if (canManageAreaManagers) {
+        await loadAreaManagers()
+      }
     } catch (error) {
       message.error(error instanceof Error ? error.message : '保存客户失败')
     } finally {
@@ -466,6 +560,9 @@ export function CustomerManagementModal(props: {
       setCustomerForm(emptyCustomerForm)
       message.success('客户已删除')
       await loadCustomers()
+      if (canManageAreaManagers) {
+        await loadAreaManagers()
+      }
     } catch (error) {
       message.error(error instanceof Error ? error.message : '删除客户失败')
     } finally {
@@ -514,6 +611,9 @@ export function CustomerManagementModal(props: {
       setAssignmentForm(emptyAssignmentForm)
       await onConfigChanged?.()
       await loadCustomers()
+      if (canManageAreaManagers) {
+        await loadAreaManagers()
+      }
     } catch (error) {
       message.error(error instanceof Error ? error.message : '保存分配失败')
     } finally {
@@ -530,6 +630,9 @@ export function CustomerManagementModal(props: {
       await fetchJSON(`/api/v1/admin/customers/${selectedCustomerID}/assignments/${id}`, { method: 'DELETE' })
       message.success('分配已删除')
       await loadCustomers()
+      if (canManageAreaManagers) {
+        await loadAreaManagers()
+      }
     } catch (error) {
       message.error(error instanceof Error ? error.message : '删除分配失败')
     } finally {
@@ -575,252 +678,314 @@ export function CustomerManagementModal(props: {
     }
   }
 
-  const content = (
-      <Spin spinning={loading || areaManagersLoading}>
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          {canManageAreaManagers ? (
-            <Card className="customer-admin-card" bordered={false}>
-              <div className="customer-admin-card-head">
-                <Title level={5}>区域管理账号</Title>
-                <Space>
-                  <Button size="small" icon={<ReloadOutlined />} onClick={() => void loadAreaManagers()}>刷新区域账号</Button>
-                  <Button size="small" onClick={() => {
-                    setEditingAreaManagerID(null)
-                    setAreaManagerForm(emptyAreaManagerForm)
-                  }}>清空表单</Button>
-                </Space>
-              </div>
-              <Alert
-                style={{ marginBottom: 12 }}
-                type="info"
-                showIcon
-                message="区域账号权限"
-                description="区域账号只能查看被分配的 Client，能下发 x-ui 转发规则，并且只能管理自己创建的普通客户；Admin 可见全部客户与区域账号。"
-              />
-              <Row gutter={[12, 12]}>
-                <Col xs={24} md={5}>
-                  <Text type="secondary">登录用户名</Text>
-                  <Input value={areaManagerForm.username} onChange={(event) => setAreaManagerForm((current) => ({ ...current, username: event.target.value }))} />
-                </Col>
-                <Col xs={24} md={5}>
-                  <Text type="secondary">显示名</Text>
-                  <Input value={areaManagerForm.display_name} onChange={(event) => setAreaManagerForm((current) => ({ ...current, display_name: event.target.value }))} />
-                </Col>
-                <Col xs={24} md={5}>
-                  <Text type="secondary">密码{editingAreaManagerID ? '（留空不改）' : ''}</Text>
-                  <Input.Password value={areaManagerForm.password} onChange={(event) => setAreaManagerForm((current) => ({ ...current, password: event.target.value }))} />
-                </Col>
-                <Col xs={24} md={6}>
-                  <Text type="secondary">允许管理的 Client</Text>
-                  <Select
-                    mode="multiple"
-                    style={{ width: '100%' }}
-                    showSearch
-                    placeholder="选择 Client"
-                    value={areaManagerForm.agent_ids}
-                    options={agentOptions}
-                    optionFilterProp="label"
-                    onChange={(values) => setAreaManagerForm((current) => ({ ...current, agent_ids: values }))}
-                  />
-                </Col>
-                <Col xs={24} md={3}>
-                  <Text type="secondary">状态</Text>
-                  <div className="customer-admin-switch-row">
-                    <Switch checked={areaManagerForm.enabled} onChange={(checked) => setAreaManagerForm((current) => ({ ...current, enabled: checked }))} />
-                    <Text>{areaManagerForm.enabled ? '启用' : '停用'}</Text>
-                  </div>
-                </Col>
-              </Row>
-              <Button style={{ marginTop: 14 }} type="primary" icon={<SaveOutlined />} loading={savingAreaManager} onClick={() => void saveAreaManager()}>
-                {editingAreaManagerID ? '保存区域账号' : '新增区域账号'}
-              </Button>
-              <Table
-                style={{ marginTop: 14 }}
-                rowKey={(record) => record.id}
-                columns={areaManagerColumns}
-                dataSource={areaManagers}
-                pagination={{ pageSize: 5, hideOnSinglePage: true }}
-                locale={{ emptyText: <Empty description="暂无区域账号" /> }}
-              />
-            </Card>
-          ) : null}
-        <Row gutter={[16, 16]}>
-          <Col xs={24} md={4}>
-            <Card className="customer-admin-card" bordered={false}>
-              <div className="customer-admin-card-head">
-                <Title level={5}>客户列表</Title>
-                <Space>
-                  <Button size="small" icon={<ReloadOutlined />} onClick={() => void loadCustomers()} />
-                  <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => {
-                    setSelectedCustomerID(null)
-                    setCustomerForm(emptyCustomerForm)
-                    setAssignmentForm(emptyAssignmentForm)
-                    setEditingAssignmentID(null)
-                  }}>新建</Button>
-                </Space>
-              </div>
-              <Space direction="vertical" style={{ width: '100%' }}>
-                {!customers.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无客户" /> : null}
-                {customers.map((customer) => (
-                  <button
-                    key={customer.id}
-                    type="button"
-                    className={`customer-admin-list-item${selectedCustomerID === customer.id ? ' active' : ''}`}
-                    onClick={() => setSelectedCustomerID(customer.id)}
-                  >
-                    <span>
-                      <Text strong>{customer.username}</Text>
-                      <span className="muted-line">{customer.assignments.length} 条链路</span>
-                    </span>
-                    <Tag color={customer.enabled ? 'blue' : 'default'}>{customer.enabled ? '启用' : '停用'}</Tag>
-                  </button>
-                ))}
-              </Space>
-            </Card>
-          </Col>
+  const customerSelectOptions = customers.map((customer) => ({
+    value: customer.id,
+    label: `${customer.username} · ${customer.display_name || customer.username} · ${customer.assignments.length} 条链路`,
+  }))
 
-          <Col xs={24} md={20}>
-            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-              <Card className="customer-admin-card" bordered={false}>
-                <div className="customer-admin-card-head">
-                  <Title level={5}>{selectedCustomerID ? '编辑客户' : '新建客户'}</Title>
-                  {selectedCustomerID ? (
-                    <Popconfirm title="删除该客户及其全部分配？" okText="删除" cancelText="取消" onConfirm={() => void deleteCustomer()}>
-                      <Button danger icon={<DeleteOutlined />}>删除客户</Button>
-                    </Popconfirm>
-                  ) : null}
-                </div>
-                <Row gutter={[12, 12]}>
-                  <Col xs={24} md={8}>
-                    <Text type="secondary">登录用户名</Text>
-                    <Input value={customerForm.username} onChange={(event) => setCustomerForm((current) => ({ ...current, username: event.target.value }))} />
-                  </Col>
-                  <Col xs={24} md={8}>
-                    <Text type="secondary">客户显示名</Text>
-                    <Input value={customerForm.display_name} onChange={(event) => setCustomerForm((current) => ({ ...current, display_name: event.target.value }))} />
-                  </Col>
-                  <Col xs={24} md={8}>
-                    <Text type="secondary">密码{selectedCustomerID ? '（留空不改）' : ''}</Text>
-                    <Input.Password value={customerForm.password} onChange={(event) => setCustomerForm((current) => ({ ...current, password: event.target.value }))} />
-                  </Col>
-                  <Col xs={24} md={8}>
-                    <Text type="secondary">账号状态</Text>
-                    <div className="customer-admin-switch-row">
-                      <Switch checked={customerForm.enabled} onChange={(checked) => setCustomerForm((current) => ({ ...current, enabled: checked }))} />
-                      <Text>{customerForm.enabled ? '启用' : '停用'}</Text>
-                    </div>
-                  </Col>
-                  <Col xs={24} md={16}>
-                    <Text type="secondary">客户入口地址</Text>
-                    <Input value={`${window.location.origin}/customer`} readOnly />
-                  </Col>
-                </Row>
-                <Button style={{ marginTop: 14 }} type="primary" icon={<SaveOutlined />} loading={savingCustomer} onClick={() => void saveCustomer()}>
-                  保存客户
-                </Button>
-              </Card>
+  const areaManagersPanel = canManageAreaManagers ? (
+    <Card className="customer-admin-card" bordered={false}>
+      <div className="customer-admin-card-head">
+        <Title level={5}>区域管理账号</Title>
+        <Space>
+          <Button size="small" icon={<ReloadOutlined />} onClick={() => void loadAreaManagers()}>刷新区域账号</Button>
+          <Button size="small" onClick={() => {
+            setEditingAreaManagerID(null)
+            setAreaManagerForm(emptyAreaManagerForm)
+          }}>清空表单</Button>
+        </Space>
+      </div>
+      <Alert
+        style={{ marginBottom: 12 }}
+        type="info"
+        showIcon
+        message="区域账号权限"
+        description="区域账号只能查看被分配的 Client，能下发 x-ui 转发规则，并且只能管理自己创建的普通客户；Admin 可见全部客户与区域账号。展开区域账号可直接查看其下属用户与链路。"
+      />
+      <Row gutter={[12, 12]}>
+        <Col xs={24} md={5}>
+          <Text type="secondary">登录用户名</Text>
+          <Input value={areaManagerForm.username} onChange={(event) => setAreaManagerForm((current) => ({ ...current, username: event.target.value }))} />
+        </Col>
+        <Col xs={24} md={5}>
+          <Text type="secondary">显示名</Text>
+          <Input value={areaManagerForm.display_name} onChange={(event) => setAreaManagerForm((current) => ({ ...current, display_name: event.target.value }))} />
+        </Col>
+        <Col xs={24} md={5}>
+          <Text type="secondary">密码{editingAreaManagerID ? '（留空不改）' : ''}</Text>
+          <Input.Password value={areaManagerForm.password} onChange={(event) => setAreaManagerForm((current) => ({ ...current, password: event.target.value }))} />
+        </Col>
+        <Col xs={24} md={6}>
+          <Text type="secondary">允许管理的 Client</Text>
+          <Select
+            mode="multiple"
+            style={{ width: '100%' }}
+            showSearch
+            placeholder="选择 Client"
+            value={areaManagerForm.agent_ids}
+            options={agentOptions}
+            optionFilterProp="label"
+            onChange={(values) => setAreaManagerForm((current) => ({ ...current, agent_ids: values }))}
+          />
+        </Col>
+        <Col xs={24} md={3}>
+          <Text type="secondary">状态</Text>
+          <div className="customer-admin-switch-row">
+            <Switch checked={areaManagerForm.enabled} onChange={(checked) => setAreaManagerForm((current) => ({ ...current, enabled: checked }))} />
+            <Text>{areaManagerForm.enabled ? '启用' : '停用'}</Text>
+          </div>
+        </Col>
+      </Row>
+      <Button style={{ marginTop: 14 }} type="primary" icon={<SaveOutlined />} loading={savingAreaManager} onClick={() => void saveAreaManager()}>
+        {editingAreaManagerID ? '保存区域账号' : '新增区域账号'}
+      </Button>
+      <Table
+        style={{ marginTop: 14 }}
+        rowKey={(record) => record.id}
+        columns={areaManagerColumns}
+        dataSource={areaManagers}
+        pagination={{ pageSize: 5, hideOnSinglePage: true }}
+        expandable={{
+          expandedRowRender: renderAreaManagerCustomers,
+          rowExpandable: (record) => Boolean(record.customers?.length),
+        }}
+        locale={{ emptyText: <Empty description="暂无区域账号" /> }}
+      />
+    </Card>
+  ) : null
 
-              <Card className="customer-admin-card" bordered={false}>
-                <div className="customer-admin-card-head">
-                  <Title level={5}>客户端 / 节点分配</Title>
-                  <Button onClick={() => {
-                    setEditingAssignmentID(null)
-                    setAssignmentForm(emptyAssignmentForm)
-                  }}>清空表单</Button>
-                </div>
-                {!selectedCustomerID ? <Alert type="info" showIcon message="先选择或新建客户，再分配链路。" /> : null}
-                <Row gutter={[12, 12]}>
-                  <Col xs={24} md={8}>
-                    <Text type="secondary">入口 Client</Text>
-                    <Select
-                      style={{ width: '100%' }}
-                      showSearch
-                      placeholder="选择 client"
-                      value={assignmentForm.agent_id || undefined}
-                      options={agentOptions}
-                      optionFilterProp="label"
-                      onChange={(value) => setAssignmentForm({ ...emptyAssignmentForm, agent_id: value })}
-                    />
-                  </Col>
-                  <Col xs={24} md={10}>
-                    <Text type="secondary">节点 / 客户端</Text>
-                    <Select
-                      style={{ width: '100%' }}
-                      showSearch
-                      placeholder="选择 x-ui 客户端"
-                      value={assignmentForm.client_key || undefined}
-                      loading={overviewLoading}
-                      disabled={!assignmentForm.agent_id}
-                      options={clientOptions.map(({ value, label }) => ({ value, label }))}
-                      optionFilterProp="label"
-                      onChange={selectClient}
-                    />
-                  </Col>
-                  <Col xs={24} md={6}>
-                    <Text type="secondary">客户可见名称</Text>
-                    <Input value={assignmentForm.public_client_name} onChange={(event) => setAssignmentForm((current) => ({ ...current, public_client_name: event.target.value }))} />
-                  </Col>
-                  <Col xs={24} md={4}>
-                    <Text type="secondary">节点费用</Text>
-                    <InputNumber
-                      style={{ width: '100%' }}
-                      min={0}
-                      precision={2}
-                      value={assignmentForm.revenue_amount}
-                      onChange={(value) => setAssignmentForm((current) => ({ ...current, revenue_amount: Number(value || 0) }))}
-                    />
-                  </Col>
-                  <Col xs={12} md={2}>
-                    <Text type="secondary">币种</Text>
-                    <Select
-                      style={{ width: '100%' }}
-                      value={assignmentForm.revenue_currency}
-                      options={REVENUE_CURRENCIES.map((currency) => ({ value: currency, label: currency }))}
-                      onChange={(value) => setAssignmentForm((current) => ({ ...current, revenue_currency: value as 'CNY' | 'USDT' }))}
-                    />
-                  </Col>
-                  <Col xs={12} md={2}>
-                    <Text type="secondary">周期</Text>
-                    <Select
-                      style={{ width: '100%' }}
-                      value={assignmentForm.revenue_cycle}
-                      options={[
-                        { value: 'month', label: '月' },
-                        { value: 'quarter', label: '季' },
-                        { value: 'year', label: '年' },
-                      ]}
-                      onChange={(value) => setAssignmentForm((current) => ({ ...current, revenue_cycle: value as 'month' | 'quarter' | 'year' }))}
-                    />
-                  </Col>
-                  <Col xs={24} md={8}>
-                    <Text type="secondary">分配状态</Text>
-                    <div className="customer-admin-switch-row">
-                      <Switch checked={assignmentForm.enabled} onChange={(checked) => setAssignmentForm((current) => ({ ...current, enabled: checked }))} />
-                      <Text>{assignmentForm.enabled ? '启用' : '停用'}</Text>
-                    </div>
-                  </Col>
-                  <Col xs={24} md={16}>
-                    <Text type="secondary">选择结果</Text>
-                    <Input value={assignmentForm.inbound_id ? `${assignmentForm.inbound_tag || `Inbound #${assignmentForm.inbound_id}`} / ${assignmentForm.client_email || '未指定客户端'}` : ''} readOnly />
-                  </Col>
-                </Row>
-                <Button style={{ marginTop: 14 }} type="primary" icon={<SaveOutlined />} disabled={!selectedCustomerID} loading={savingAssignment} onClick={() => void saveAssignment()}>
-                  {editingAssignmentID ? '保存分配' : '新增分配'}
-                </Button>
-                <Table
-                  style={{ marginTop: 14 }}
-                  rowKey={(record) => record.id}
-                  columns={assignmentColumns}
-                  dataSource={selectedCustomer?.assignments || []}
-                  pagination={{ pageSize: 5, hideOnSinglePage: true }}
-                  locale={{ emptyText: <Empty description="暂无分配" /> }}
-                />
-              </Card>
+  const customersPanel = (
+    <Row gutter={[16, 16]}>
+      <Col xs={24} md={7} lg={6} xl={5}>
+        <Card className="customer-admin-card" bordered={false}>
+          <div className="customer-admin-card-head">
+            <Title level={5}>客户列表</Title>
+            <Space>
+              <Button size="small" icon={<ReloadOutlined />} onClick={() => void loadCustomers()} />
+              <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => {
+                setSelectedCustomerID(null)
+                setCustomerForm(emptyCustomerForm)
+                setAssignmentForm(emptyAssignmentForm)
+                setEditingAssignmentID(null)
+              }}>新建</Button>
             </Space>
+          </div>
+          <Space direction="vertical" style={{ width: '100%' }}>
+            {!customers.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无客户" /> : null}
+            {customers.map((customer) => (
+              <button
+                key={customer.id}
+                type="button"
+                className={`customer-admin-list-item${selectedCustomerID === customer.id ? ' active' : ''}`}
+                onClick={() => setSelectedCustomerID(customer.id)}
+              >
+                <span>
+                  <Text strong>{customer.username}</Text>
+                  <span className="muted-line">{customer.assignments.length} 条链路</span>
+                </span>
+                <Tag color={customer.enabled ? 'blue' : 'default'}>{customer.enabled ? '启用' : '停用'}</Tag>
+              </button>
+            ))}
+          </Space>
+        </Card>
+      </Col>
+
+      <Col xs={24} md={17} lg={18} xl={19}>
+        <Card className="customer-admin-card" bordered={false}>
+          <div className="customer-admin-card-head">
+            <div>
+              <Title level={5}>{selectedCustomerID ? '编辑客户' : '新建客户'}</Title>
+              <Text type="secondary">普通用户只在创建它的区域账号和 Admin 下可见。</Text>
+            </div>
+            {selectedCustomerID ? (
+              <Popconfirm title="删除该客户及其全部分配？" okText="删除" cancelText="取消" onConfirm={() => void deleteCustomer()}>
+                <Button danger icon={<DeleteOutlined />}>删除客户</Button>
+              </Popconfirm>
+            ) : null}
+          </div>
+          <Row gutter={[12, 12]}>
+            <Col xs={24} md={8}>
+              <Text type="secondary">登录用户名</Text>
+              <Input value={customerForm.username} onChange={(event) => setCustomerForm((current) => ({ ...current, username: event.target.value }))} />
+            </Col>
+            <Col xs={24} md={8}>
+              <Text type="secondary">客户显示名</Text>
+              <Input value={customerForm.display_name} onChange={(event) => setCustomerForm((current) => ({ ...current, display_name: event.target.value }))} />
+            </Col>
+            <Col xs={24} md={8}>
+              <Text type="secondary">密码{selectedCustomerID ? '（留空不改）' : ''}</Text>
+              <Input.Password value={customerForm.password} onChange={(event) => setCustomerForm((current) => ({ ...current, password: event.target.value }))} />
+            </Col>
+            <Col xs={24} md={8}>
+              <Text type="secondary">账号状态</Text>
+              <div className="customer-admin-switch-row">
+                <Switch checked={customerForm.enabled} onChange={(checked) => setCustomerForm((current) => ({ ...current, enabled: checked }))} />
+                <Text>{customerForm.enabled ? '启用' : '停用'}</Text>
+              </div>
+            </Col>
+            <Col xs={24} md={16}>
+              <Text type="secondary">客户入口地址</Text>
+              <Input value={`${window.location.origin}/customer`} readOnly />
+            </Col>
+          </Row>
+          <Space style={{ marginTop: 14 }}>
+            <Button type="primary" icon={<SaveOutlined />} loading={savingCustomer} onClick={() => void saveCustomer()}>
+              保存客户
+            </Button>
+            {selectedCustomerID ? (
+              <Button onClick={() => setActiveManagementTab('assignments')}>管理该客户链路</Button>
+            ) : null}
+          </Space>
+        </Card>
+      </Col>
+    </Row>
+  )
+
+  const assignmentsPanel = (
+    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+      <Card className="customer-admin-card" bordered={false}>
+        <div className="customer-admin-card-head">
+          <div>
+            <Title level={5}>选择客户</Title>
+            <Text type="secondary">先选中普通用户，再维护它可见的客户端 / 节点链路。</Text>
+          </div>
+          <Space>
+            <Button icon={<ReloadOutlined />} onClick={() => void loadCustomers()}>刷新客户</Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => {
+              setSelectedCustomerID(null)
+              setCustomerForm(emptyCustomerForm)
+              setActiveManagementTab('customers')
+            }}>新建客户</Button>
+          </Space>
+        </div>
+        <Select
+          style={{ width: '100%' }}
+          showSearch
+          placeholder="选择要分配链路的客户"
+          value={selectedCustomerID ?? undefined}
+          options={customerSelectOptions}
+          optionFilterProp="label"
+          onChange={(value) => setSelectedCustomerID(value)}
+        />
+      </Card>
+
+      <Card className="customer-admin-card" bordered={false}>
+        <div className="customer-admin-card-head">
+          <div>
+            <Title level={5}>客户端 / 节点分配</Title>
+            <Text type="secondary">当前客户：{selectedCustomer ? selectedCustomer.display_name || selectedCustomer.username : '未选择'}</Text>
+          </div>
+          <Button onClick={() => {
+            setEditingAssignmentID(null)
+            setAssignmentForm(emptyAssignmentForm)
+          }}>清空表单</Button>
+        </div>
+        {!selectedCustomerID ? <Alert type="info" showIcon message="先选择或新建客户，再分配链路。" /> : null}
+        <Row gutter={[12, 12]}>
+          <Col xs={24} md={8}>
+            <Text type="secondary">入口 Client</Text>
+            <Select
+              style={{ width: '100%' }}
+              showSearch
+              placeholder="选择 client"
+              value={assignmentForm.agent_id || undefined}
+              options={agentOptions}
+              optionFilterProp="label"
+              onChange={(value) => setAssignmentForm({ ...emptyAssignmentForm, agent_id: value })}
+            />
+          </Col>
+          <Col xs={24} md={10}>
+            <Text type="secondary">节点 / 客户端</Text>
+            <Select
+              style={{ width: '100%' }}
+              showSearch
+              placeholder="选择 x-ui 客户端"
+              value={assignmentForm.client_key || undefined}
+              loading={overviewLoading}
+              disabled={!assignmentForm.agent_id}
+              options={clientOptions.map(({ value, label }) => ({ value, label }))}
+              optionFilterProp="label"
+              onChange={selectClient}
+            />
+          </Col>
+          <Col xs={24} md={6}>
+            <Text type="secondary">客户可见名称</Text>
+            <Input value={assignmentForm.public_client_name} onChange={(event) => setAssignmentForm((current) => ({ ...current, public_client_name: event.target.value }))} />
+          </Col>
+          <Col xs={24} md={4}>
+            <Text type="secondary">节点费用</Text>
+            <InputNumber
+              style={{ width: '100%' }}
+              min={0}
+              precision={2}
+              value={assignmentForm.revenue_amount}
+              onChange={(value) => setAssignmentForm((current) => ({ ...current, revenue_amount: Number(value || 0) }))}
+            />
+          </Col>
+          <Col xs={12} md={2}>
+            <Text type="secondary">币种</Text>
+            <Select
+              style={{ width: '100%' }}
+              value={assignmentForm.revenue_currency}
+              options={REVENUE_CURRENCIES.map((currency) => ({ value: currency, label: currency }))}
+              onChange={(value) => setAssignmentForm((current) => ({ ...current, revenue_currency: value as 'CNY' | 'USDT' }))}
+            />
+          </Col>
+          <Col xs={12} md={2}>
+            <Text type="secondary">周期</Text>
+            <Select
+              style={{ width: '100%' }}
+              value={assignmentForm.revenue_cycle}
+              options={[
+                { value: 'month', label: '月' },
+                { value: 'quarter', label: '季' },
+                { value: 'year', label: '年' },
+              ]}
+              onChange={(value) => setAssignmentForm((current) => ({ ...current, revenue_cycle: value as 'month' | 'quarter' | 'year' }))}
+            />
+          </Col>
+          <Col xs={24} md={8}>
+            <Text type="secondary">分配状态</Text>
+            <div className="customer-admin-switch-row">
+              <Switch checked={assignmentForm.enabled} onChange={(checked) => setAssignmentForm((current) => ({ ...current, enabled: checked }))} />
+              <Text>{assignmentForm.enabled ? '启用' : '停用'}</Text>
+            </div>
+          </Col>
+          <Col xs={24} md={16}>
+            <Text type="secondary">选择结果</Text>
+            <Input value={assignmentForm.inbound_id ? `${assignmentForm.inbound_tag || `Inbound #${assignmentForm.inbound_id}`} / ${assignmentForm.client_email || '未指定客户端'}` : ''} readOnly />
           </Col>
         </Row>
-        </Space>
-      </Spin>
+        <Button style={{ marginTop: 14 }} type="primary" icon={<SaveOutlined />} disabled={!selectedCustomerID} loading={savingAssignment} onClick={() => void saveAssignment()}>
+          {editingAssignmentID ? '保存分配' : '新增分配'}
+        </Button>
+        <Table
+          style={{ marginTop: 14 }}
+          rowKey={(record) => record.id}
+          columns={assignmentColumns}
+          dataSource={selectedCustomer?.assignments || []}
+          pagination={{ pageSize: 8, hideOnSinglePage: true }}
+          locale={{ emptyText: <Empty description="暂无分配" /> }}
+        />
+      </Card>
+    </Space>
+  )
+
+  const managementTabs = [
+    ...(canManageAreaManagers && areaManagersPanel ? [{ key: 'area', label: '区域账号', children: areaManagersPanel }] : []),
+    { key: 'customers', label: '客户账号', children: customersPanel },
+    { key: 'assignments', label: '链路分配', children: assignmentsPanel },
+  ]
+
+  const content = (
+    <Spin spinning={loading || areaManagersLoading}>
+      <Tabs
+        className="customer-admin-tabs"
+        activeKey={activeManagementTab}
+        items={managementTabs}
+        onChange={(key) => setActiveManagementTab(key as ManagementTabKey)}
+      />
+    </Spin>
   )
 
   if (embedded) {

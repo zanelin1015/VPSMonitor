@@ -133,6 +133,68 @@ func TestSQLiteStoreMigratesLegacyCustomerOwnerColumnsBeforeIndexes(t *testing.T
 	}
 }
 
+func TestSQLiteStoreAreaManagersIncludeOwnedCustomersAndAssignments(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "bridge.db")
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+
+	if _, err := store.RegisterAgent(model.AgentRegisterRequest{
+		AgentID:   "sg-01",
+		AgentName: "Singapore 01",
+	}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+
+	enabled := true
+	manager, err := store.CreateAreaManager(model.AreaManagerAccountRequest{
+		Username: "area-sg",
+		Password: "password123",
+		Enabled:  &enabled,
+		AgentIDs: []string{"sg-01"},
+	})
+	if err != nil {
+		t.Fatalf("CreateAreaManager: %v", err)
+	}
+	customer, err := store.CreateCustomerForOwner(model.CustomerAccountRequest{
+		Username: "customer-a",
+		Password: "password123",
+	}, model.AdminRoleAreaManager, manager.ID)
+	if err != nil {
+		t.Fatalf("CreateCustomerForOwner: %v", err)
+	}
+	if _, err := store.CreateCustomerAssignment(customer.ID, model.CustomerAssignmentRequest{
+		AgentID:          "sg-01",
+		InboundID:        101,
+		InboundTag:       "entry",
+		ClientEmail:      "a@example.com",
+		PublicClientName: "SG Entry A",
+		Enabled:          &enabled,
+	}); err != nil {
+		t.Fatalf("CreateCustomerAssignment: %v", err)
+	}
+
+	managers, err := store.ListAreaManagers()
+	if err != nil {
+		t.Fatalf("ListAreaManagers: %v", err)
+	}
+	if len(managers) != 1 {
+		t.Fatalf("expected 1 manager, got %d", len(managers))
+	}
+	if len(managers[0].Customers) != 1 {
+		t.Fatalf("expected manager customer to be included, got %#v", managers[0].Customers)
+	}
+	gotCustomer := managers[0].Customers[0]
+	if gotCustomer.ID != customer.ID || gotCustomer.OwnerType != model.AdminRoleAreaManager || gotCustomer.OwnerID != manager.ID {
+		t.Fatalf("unexpected owned customer: %#v", gotCustomer.CustomerUser)
+	}
+	if len(gotCustomer.Assignments) != 1 || gotCustomer.Assignments[0].AgentID != "sg-01" {
+		t.Fatalf("expected owned customer assignments, got %#v", gotCustomer.Assignments)
+	}
+}
+
 func sqliteColumnExists(t *testing.T, db *sql.DB, tableName string, columnName string) bool {
 	t.Helper()
 	rows, err := db.Query(`PRAGMA table_info(` + tableName + `)`)

@@ -26,14 +26,23 @@ func (s *SQLiteStore) ListAreaManagers() ([]model.AreaManagerAdminView, error) {
 		if err != nil {
 			return nil, err
 		}
-		item.AgentIDs, err = s.ListAreaManagerAgentIDs(item.ID)
-		if err != nil {
-			return nil, err
-		}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate area managers: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close area manager rows: %w", err)
+	}
+	for i := range items {
+		items[i].AgentIDs, err = s.ListAreaManagerAgentIDs(items[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		items[i].Customers, err = s.ListCustomersForOwner(model.AdminRoleAreaManager, items[i].ID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return items, nil
 }
@@ -47,6 +56,10 @@ func (s *SQLiteStore) GetAreaManager(id int64) (model.AreaManagerAdminView, bool
 		return item, found, err
 	}
 	item.AgentIDs, err = s.ListAreaManagerAgentIDs(id)
+	if err != nil {
+		return model.AreaManagerAdminView{}, false, err
+	}
+	item.Customers, err = s.ListCustomersForOwner(model.AdminRoleAreaManager, id)
 	if err != nil {
 		return model.AreaManagerAdminView{}, false, err
 	}

@@ -191,6 +191,14 @@ html[data-theme='dark'] .customer-hero {
   border: 1px solid var(--card-border);
 }
 
+.customer-admin-tabs > .ant-tabs-nav {
+  margin-bottom: 18px;
+}
+
+.customer-admin-tabs .ant-tabs-tab {
+  padding-inline: 18px;
+}
+
 .customer-admin-card-head {
   display: flex;
   justify-content: space-between;

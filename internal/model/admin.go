@@ -58,13 +58,14 @@ type AreaManagerAccountRequest struct {
 }
 
 type AreaManagerAdminView struct {
-	ID          int64     `json:"id"`
-	Username    string    `json:"username"`
-	DisplayName string    `json:"display_name,omitempty"`
-	Enabled     bool      `json:"enabled"`
-	AgentIDs    []string  `json:"agent_ids,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          int64               `json:"id"`
+	Username    string              `json:"username"`
+	DisplayName string              `json:"display_name,omitempty"`
+	Enabled     bool                `json:"enabled"`
+	AgentIDs    []string            `json:"agent_ids,omitempty"`
+	Customers   []CustomerAdminView `json:"customers,omitempty"`
+	CreatedAt   time.Time           `json:"created_at"`
+	UpdatedAt   time.Time           `json:"updated_at"`
 }
 
 type ClientInstallInfo struct {

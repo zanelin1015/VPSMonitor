@@ -185,6 +185,7 @@ export interface AreaManagerAdminView {
   display_name?: string
   enabled: boolean
   agent_ids?: string[]
+  customers?: CustomerAdminView[]
   created_at: string
   updated_at: string
 }

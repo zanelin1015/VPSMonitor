@@ -152,8 +152,113 @@ interface LoadOptions {
 
 type AdminPageKey = 'dashboard' | 'assets' | 'customers' | 'settings'
 
+interface AdminRouteState {
+  page: AdminPageKey
+  topology: boolean
+  agentId: string
+  tabKey: string
+  tag: string
+  outboundTag: string
+  ruleIndex: number | null
+  nodeAnchor: string
+  topologySearch: string
+}
+
 function hasCustomerDisplayNameField(value: unknown): boolean {
   return Boolean(value && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'customer_display_name'))
+}
+
+function parseAdminRouteState(canManageSystem: boolean): AdminRouteState {
+  const params = new URLSearchParams(window.location.search)
+  const path = window.location.pathname.replace(/\/+$/, '')
+  const rawPage = (params.get('page') || pageFromAdminPath(path)).toLowerCase()
+  const topology = rawPage === 'topology' || params.get('topology') === '1'
+  let page: AdminPageKey = topology ? 'dashboard' : normalizeAdminPage(rawPage)
+  if (page === 'settings' && !canManageSystem) {
+    page = 'dashboard'
+  }
+
+  const ruleParam = Number(params.get('rule') || '')
+  return {
+    page,
+    topology,
+    agentId: params.get('agent') || agentFromAdminPath(path),
+    tabKey: params.get('tab') || 'overview',
+    tag: params.get('tag') || '',
+    outboundTag: params.get('outbound') || '',
+    ruleIndex: Number.isInteger(ruleParam) && ruleParam > 0 ? ruleParam : null,
+    nodeAnchor: params.get('node') || '',
+    topologySearch: params.get('q') || '',
+  }
+}
+
+function buildAdminRouteURL(route: AdminRouteState): string {
+  const params = new URLSearchParams()
+  if (route.topology) {
+    params.set('page', 'topology')
+  } else if (route.page !== 'dashboard') {
+    params.set('page', route.page)
+  }
+  if (route.tag) {
+    params.set('tag', route.tag)
+  }
+  if (route.topology) {
+    if (route.agentId) {
+      params.set('agent', route.agentId)
+    }
+    if (route.topologySearch.trim()) {
+      params.set('q', route.topologySearch.trim())
+    }
+  } else if (route.page === 'assets') {
+    if (route.agentId) {
+      params.set('agent', route.agentId)
+    }
+    if (route.agentId && route.tabKey && route.tabKey !== 'overview') {
+      params.set('tab', route.tabKey)
+    }
+    if (route.outboundTag) {
+      params.set('outbound', route.outboundTag)
+    }
+    if (route.ruleIndex) {
+      params.set('rule', String(route.ruleIndex))
+    }
+    if (route.nodeAnchor) {
+      params.set('node', route.nodeAnchor)
+    }
+  }
+  const query = params.toString()
+  return query ? `/?${query}` : '/'
+}
+
+function normalizeAdminPage(value: string): AdminPageKey {
+  switch (value) {
+    case 'assets':
+    case 'customers':
+    case 'settings':
+      return value
+    default:
+      return 'dashboard'
+  }
+}
+
+function pageFromAdminPath(path: string): string {
+  switch (path) {
+    case '/admin/assets':
+      return 'assets'
+    case '/admin/customers':
+      return 'customers'
+    case '/admin/settings':
+      return 'settings'
+    case '/admin/topology':
+      return 'topology'
+    default:
+      return 'dashboard'
+  }
+}
+
+function agentFromAdminPath(path: string): string {
+  const match = path.match(/^\/admin\/assets\/([^/]+)$/)
+  return match ? decodeURIComponent(match[1]) : ''
 }
 
 export default function App() {
@@ -245,6 +350,8 @@ export default function App() {
   const [clientSearch, setClientSearch] = useState('')
   const [importURLClient, setImportURLClient] = useState<XUIClientView | null>(null)
   const deferredClientSearch = useDeferredValue(clientSearch.trim().toLowerCase())
+  const applyingRouteRef = useRef(false)
+  const lastAdminURLRef = useRef('')
 
   const selectedAgent = agents.find((item) => item.agent_id === selectedAgentId)
   const selectedSummary = overview?.summary || selectedAgent?.summary || {}
@@ -298,6 +405,77 @@ export default function App() {
       setActiveTabKey('overview')
     }
   }, [activeAdminPage, activeTabKey, adminUser, canManageSystem])
+
+  useEffect(() => {
+    if (customerMode || sessionLoading || !adminUser) {
+      return
+    }
+
+    const applyCurrentURL = () => {
+      const route = parseAdminRouteState(canManageSystem)
+      const normalizedURL = buildAdminRouteURL(route)
+      const currentURL = `${window.location.pathname}${window.location.search}`
+      if (currentURL !== normalizedURL) {
+        window.history.replaceState(null, '', normalizedURL)
+      }
+      lastAdminURLRef.current = normalizedURL
+      applyingRouteRef.current = true
+      applyAdminRoute(route)
+      window.setTimeout(() => {
+        applyingRouteRef.current = false
+      }, 0)
+    }
+
+    applyCurrentURL()
+    window.addEventListener('popstate', applyCurrentURL)
+    return () => {
+      window.removeEventListener('popstate', applyCurrentURL)
+    }
+  }, [adminUser, canManageSystem, customerMode, sessionLoading])
+
+  useEffect(() => {
+    if (customerMode || sessionLoading || !adminUser) {
+      return
+    }
+    if (applyingRouteRef.current) {
+      return
+    }
+    const nextURL = buildAdminRouteURL({
+      page: activeAdminPage,
+      topology: topologyVisible,
+      agentId: selectedAgentId,
+      tabKey: activeTabKey,
+      tag: selectedTag,
+      outboundTag: selectedOutboundTag,
+      ruleIndex: selectedRuleIndex,
+      nodeAnchor: selectedNodeAnchor,
+      topologySearch,
+    })
+    const currentURL = `${window.location.pathname}${window.location.search}`
+    if (currentURL === nextURL || lastAdminURLRef.current === nextURL) {
+      lastAdminURLRef.current = nextURL
+      return
+    }
+    if (applyingRouteRef.current) {
+      window.history.replaceState(null, '', nextURL)
+    } else {
+      window.history.pushState(null, '', nextURL)
+    }
+    lastAdminURLRef.current = nextURL
+  }, [
+    activeAdminPage,
+    activeTabKey,
+    adminUser,
+    customerMode,
+    selectedAgentId,
+    selectedNodeAnchor,
+    selectedOutboundTag,
+    selectedRuleIndex,
+    selectedTag,
+    sessionLoading,
+    topologySearch,
+    topologyVisible,
+  ])
 
   useEffect(() => {
     try {
@@ -1837,6 +2015,26 @@ export default function App() {
       const base = current || createEmptyManagedConfig(selectedAgentId, selectedAgent?.agent_name)
       return updater(base)
     })
+  }
+
+  function applyAdminRoute(route: AdminRouteState) {
+    setActiveAdminPage(route.page)
+    setTopologyVisible(route.topology)
+    setSelectedTag(route.tag)
+    setTopologySearch(route.topologySearch)
+    setSelectedOutboundTag(route.outboundTag)
+    setSelectedRuleIndex(route.ruleIndex)
+    setSelectedNodeAnchor(route.nodeAnchor)
+    setClientSearch('')
+
+    if (route.page === 'assets' || route.topology) {
+      setSelectedAgentId(route.agentId)
+      setActiveTabKey(route.topology ? 'overview' : route.tabKey || 'overview')
+      return
+    }
+
+    setSelectedAgentId('')
+    setActiveTabKey('overview')
   }
 
   function updateClientBillingDraft(record: XUIClientView, patch: Partial<XUIClientBillingConfig>) {
