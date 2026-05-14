@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"io/fs"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -250,6 +251,9 @@ func pairCertificateFiles(files []certificateFile) []model.XUILocalCertificate {
 			if entry.ID == "" {
 				continue
 			}
+			if len(entry.DNSNames) == 0 {
+				continue
+			}
 			if _, exists := seen[entry.ID]; exists {
 				continue
 			}
@@ -296,7 +300,7 @@ func buildLocalCertificate(certFile, keyFile certificateFile, dir string) model.
 	if certFile.cert != nil {
 		entry.Subject = certFile.cert.Subject.CommonName
 		entry.Issuer = certFile.cert.Issuer.CommonName
-		entry.DNSNames = append([]string(nil), certFile.cert.DNSNames...)
+		entry.DNSNames = certificateDomainNames(certFile.cert)
 		entry.NotAfter = ptrTime(certFile.cert.NotAfter.UTC())
 		if entry.Name == "" {
 			entry.Name = firstNonEmpty(certFile.cert.Subject.CommonName, filepath.Base(certFile.path))
@@ -306,6 +310,47 @@ func buildLocalCertificate(certFile, keyFile certificateFile, dir string) model.
 		entry.Name = filepath.Base(certFile.path)
 	}
 	return entry
+}
+
+func certificateDomainNames(cert *x509.Certificate) []string {
+	if cert == nil {
+		return nil
+	}
+	values := append([]string{}, cert.DNSNames...)
+	values = append(values, cert.Subject.CommonName)
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		domain := normalizeCertificateDomain(value)
+		if domain == "" {
+			continue
+		}
+		if _, ok := seen[domain]; ok {
+			continue
+		}
+		seen[domain] = struct{}{}
+		result = append(result, domain)
+	}
+	return result
+}
+
+func normalizeCertificateDomain(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	value = strings.TrimSuffix(value, ".")
+	if strings.HasPrefix(value, "*.") {
+		suffix := strings.TrimPrefix(value, "*.")
+		if suffix == "" || net.ParseIP(suffix) != nil || strings.Contains(suffix, " ") {
+			return ""
+		}
+		return "*." + suffix
+	}
+	if value == "" || strings.Contains(value, " ") || strings.Contains(value, ":") {
+		return ""
+	}
+	if net.ParseIP(value) != nil {
+		return ""
+	}
+	return value
 }
 
 func ptrTime(value time.Time) *time.Time {

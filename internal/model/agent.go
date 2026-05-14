@@ -48,8 +48,9 @@ type XUIClientBillingConfig struct {
 }
 
 type AgentEntryConfig struct {
-	Addresses []string            `json:"addresses,omitempty"`
-	Mappings  []AgentEntryMapping `json:"mappings,omitempty"`
+	Addresses    []string            `json:"addresses,omitempty"`
+	ImportDomain string              `json:"import_domain,omitempty"`
+	Mappings     []AgentEntryMapping `json:"mappings,omitempty"`
 }
 
 type AgentEntryMapping struct {

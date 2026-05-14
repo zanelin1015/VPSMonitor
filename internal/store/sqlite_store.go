@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -370,6 +371,7 @@ func hasRenewalConfig(cfg model.VPSRenewalConfig) bool {
 
 func normalizeEntryConfig(cfg model.AgentEntryConfig) model.AgentEntryConfig {
 	cfg.Addresses = normalizeEntryAddresses(cfg.Addresses)
+	cfg.ImportDomain = normalizeEntryImportDomain(cfg.ImportDomain)
 	mappings := make([]model.AgentEntryMapping, 0, len(cfg.Mappings))
 	seen := make(map[string]struct{}, len(cfg.Mappings))
 	for _, mapping := range cfg.Mappings {
@@ -435,6 +437,27 @@ func normalizeEntryAddresses(addresses []string) []string {
 	return result
 }
 
+func normalizeEntryImportDomain(domain string) string {
+	domain = strings.TrimSpace(strings.ToLower(domain))
+	domain = strings.TrimSuffix(domain, ".")
+	domain = strings.TrimPrefix(domain, "https://")
+	domain = strings.TrimPrefix(domain, "http://")
+	if slash := strings.Index(domain, "/"); slash >= 0 {
+		domain = domain[:slash]
+	}
+	if host, _, err := net.SplitHostPort(domain); err == nil {
+		domain = strings.Trim(host, "[]")
+	}
+	domain = strings.Trim(domain, "[]")
+	if domain == "" || strings.Contains(domain, " ") || strings.Contains(domain, "*") || strings.Contains(domain, ":") {
+		return ""
+	}
+	if net.ParseIP(domain) != nil {
+		return ""
+	}
+	return domain
+}
+
 func normalizeEntryProtocol(protocol string) string {
 	switch strings.ToLower(strings.TrimSpace(protocol)) {
 	case "vless":
@@ -452,7 +475,7 @@ func normalizeEntryProtocol(protocol string) string {
 
 func hasEntryConfig(cfg model.AgentEntryConfig) bool {
 	cfg = normalizeEntryConfig(cfg)
-	return len(cfg.Addresses) > 0 || len(cfg.Mappings) > 0
+	return len(cfg.Addresses) > 0 || cfg.ImportDomain != "" || len(cfg.Mappings) > 0
 }
 
 func hasXUIConfig(cfg config.XUIConfig) bool {

@@ -26,7 +26,7 @@ func (a *App) handlePublicFrontendSettings(w http.ResponseWriter, r *http.Reques
 }
 
 func (a *App) handleAdminFrontendSettings(w http.ResponseWriter, r *http.Request) {
-	if _, _, ok := a.requireAdmin(w, r); !ok {
+	if _, _, ok := a.requireRootAdmin(w, r); !ok {
 		return
 	}
 	switch r.Method {
@@ -55,7 +55,7 @@ func (a *App) handleAdminFrontendSettings(w http.ResponseWriter, r *http.Request
 }
 
 func (a *App) handleAdminTags(w http.ResponseWriter, r *http.Request) {
-	if _, _, ok := a.requireAdmin(w, r); !ok {
+	if _, _, ok := a.requireRootAdmin(w, r); !ok {
 		return
 	}
 	switch r.Method {
@@ -84,11 +84,18 @@ func (a *App) handleAdminTags(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleConfigAuditLogs(w http.ResponseWriter, r *http.Request) {
-	if _, _, ok := a.requireAdmin(w, r); !ok {
+	user, _, ok := a.requireAdmin(w, r)
+	if !ok {
 		return
 	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	agentID := r.URL.Query().Get("agent_id")
+	if !isRootAdmin(user) {
+		if agentID == "" || !a.adminCanAccessAgent(user, agentID) {
+			writeJSON(w, http.StatusOK, []model.ConfigAuditLog{})
+			return
+		}
+	}
 	items, err := a.store.ListConfigAuditLogs(agentID, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -98,7 +105,7 @@ func (a *App) handleConfigAuditLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleClientInstallInfo(w http.ResponseWriter, r *http.Request) {
-	if _, _, ok := a.requireAdmin(w, r); !ok {
+	if _, _, ok := a.requireRootAdmin(w, r); !ok {
 		return
 	}
 	if r.Method == http.MethodPut {

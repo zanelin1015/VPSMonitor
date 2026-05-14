@@ -3,7 +3,7 @@ import { Alert, App as AntdApp, Button, Card, Col, Empty, Input, InputNumber, Mo
 import type { ColumnsType } from 'antd/es/table'
 import { DeleteOutlined, EditOutlined, ExportOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons'
 
-import type { CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, DashboardAgentView, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
+import type { AdminUser, AreaManagerAdminView, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, DashboardAgentView, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
 import { fetchJSON } from '../lib/appHelpers'
 import { REVENUE_CURRENCIES } from '../lib/currency'
 
@@ -29,6 +29,14 @@ interface AssignmentFormState {
   enabled: boolean
 }
 
+interface AreaManagerFormState {
+  username: string
+  password: string
+  display_name: string
+  enabled: boolean
+  agent_ids: string[]
+}
+
 const emptyCustomerForm: CustomerFormState = {
   username: '',
   password: '',
@@ -49,6 +57,14 @@ const emptyAssignmentForm: AssignmentFormState = {
   enabled: true,
 }
 
+const emptyAreaManagerForm: AreaManagerFormState = {
+  username: '',
+  password: '',
+  display_name: '',
+  enabled: true,
+  agent_ids: [],
+}
+
 export function CustomerManagementModal(props: {
   open?: boolean
   agents: DashboardAgentView[]
@@ -57,6 +73,7 @@ export function CustomerManagementModal(props: {
   onOpenAssignment?: (assignment: CustomerAssignment) => void
   initialAssignment?: CustomerAssignmentDraft | null
   onInitialAssignmentApplied?: () => void
+  adminUser?: AdminUser | null
   embedded?: boolean
 }) {
   const {
@@ -67,17 +84,24 @@ export function CustomerManagementModal(props: {
     onOpenAssignment,
     initialAssignment = null,
     onInitialAssignmentApplied,
+    adminUser = null,
     embedded = false,
   } = props
   const active = embedded || open
+  const canManageAreaManagers = adminUser?.role !== 'area_manager'
   const { message } = AntdApp.useApp()
   const [customers, setCustomers] = useState<CustomerAdminView[]>([])
+  const [areaManagers, setAreaManagers] = useState<AreaManagerAdminView[]>([])
   const [loading, setLoading] = useState(false)
+  const [areaManagersLoading, setAreaManagersLoading] = useState(false)
   const [savingCustomer, setSavingCustomer] = useState(false)
   const [savingAssignment, setSavingAssignment] = useState(false)
+  const [savingAreaManager, setSavingAreaManager] = useState(false)
   const [selectedCustomerID, setSelectedCustomerID] = useState<number | null>(null)
+  const [editingAreaManagerID, setEditingAreaManagerID] = useState<number | null>(null)
   const [editingAssignmentID, setEditingAssignmentID] = useState<number | null>(null)
   const [customerForm, setCustomerForm] = useState<CustomerFormState>(emptyCustomerForm)
+  const [areaManagerForm, setAreaManagerForm] = useState<AreaManagerFormState>(emptyAreaManagerForm)
   const [assignmentForm, setAssignmentForm] = useState<AssignmentFormState>(emptyAssignmentForm)
   const [overview, setOverview] = useState<XUIOverview | null>(null)
   const [overviewLoading, setOverviewLoading] = useState(false)
@@ -107,8 +131,11 @@ export function CustomerManagementModal(props: {
   useEffect(() => {
     if (active) {
       void loadCustomers()
+      if (canManageAreaManagers) {
+        void loadAreaManagers()
+      }
     }
-  }, [active])
+  }, [active, canManageAreaManagers])
 
   useEffect(() => {
     if (!selectedCustomer) {
@@ -240,6 +267,48 @@ export function CustomerManagementModal(props: {
     },
   ]
 
+  const areaManagerColumns: ColumnsType<AreaManagerAdminView> = [
+    {
+      title: '区域账号',
+      width: 180,
+      render: (_, record) => (
+        <div>
+          <Text strong>{record.username}</Text>
+          <div className="muted-line">{record.display_name || record.username}</div>
+        </div>
+      ),
+    },
+    {
+      title: '可管理 Client',
+      render: (_, record) => {
+        const agentIDs = record.agent_ids || []
+        return agentIDs.length ? (
+          <Space size={[4, 4]} wrap>
+            {agentIDs.map((agentID) => <Tag key={agentID}>{agentName(agentID, agents)}</Tag>)}
+          </Space>
+        ) : <Tag>未分配</Tag>
+      },
+    },
+    {
+      title: '状态',
+      dataIndex: 'enabled',
+      width: 90,
+      render: (enabled: boolean) => <Tag color={enabled ? 'blue' : 'default'}>{enabled ? '启用' : '停用'}</Tag>,
+    },
+    {
+      title: '操作',
+      width: 160,
+      render: (_, record) => (
+        <Space size={6}>
+          <Button size="small" icon={<EditOutlined />} onClick={() => editAreaManager(record)}>编辑</Button>
+          <Popconfirm title="删除该区域账号？" okText="删除" cancelText="取消" onConfirm={() => void deleteAreaManager(record.id)}>
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ]
+
   async function loadCustomers() {
     setLoading(true)
     try {
@@ -256,6 +325,92 @@ export function CustomerManagementModal(props: {
     } finally {
       setLoading(false)
     }
+  }
+
+  async function loadAreaManagers() {
+    if (!canManageAreaManagers) {
+      return
+    }
+    setAreaManagersLoading(true)
+    try {
+      const data = await fetchJSON<AreaManagerAdminView[]>('/api/v1/admin/area-managers')
+      setAreaManagers(Array.isArray(data) ? data : [])
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '加载区域账号失败')
+    } finally {
+      setAreaManagersLoading(false)
+    }
+  }
+
+  async function saveAreaManager() {
+    if (!areaManagerForm.username.trim()) {
+      message.warning('请填写区域账号登录名')
+      return
+    }
+    if (!editingAreaManagerID && areaManagerForm.password.length < 8) {
+      message.warning('新区域账号密码至少 8 位')
+      return
+    }
+    setSavingAreaManager(true)
+    try {
+      const payload = {
+        username: areaManagerForm.username.trim(),
+        password: areaManagerForm.password,
+        display_name: areaManagerForm.display_name.trim(),
+        enabled: areaManagerForm.enabled,
+        agent_ids: areaManagerForm.agent_ids,
+      }
+      if (editingAreaManagerID) {
+        await fetchJSON<AreaManagerAdminView>(`/api/v1/admin/area-managers/${editingAreaManagerID}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        message.success('区域账号已更新')
+      } else {
+        await fetchJSON<AreaManagerAdminView>('/api/v1/admin/area-managers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        message.success('区域账号已创建')
+      }
+      setEditingAreaManagerID(null)
+      setAreaManagerForm(emptyAreaManagerForm)
+      await loadAreaManagers()
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '保存区域账号失败')
+    } finally {
+      setSavingAreaManager(false)
+    }
+  }
+
+  async function deleteAreaManager(id: number) {
+    setSavingAreaManager(true)
+    try {
+      await fetchJSON(`/api/v1/admin/area-managers/${id}`, { method: 'DELETE' })
+      if (editingAreaManagerID === id) {
+        setEditingAreaManagerID(null)
+        setAreaManagerForm(emptyAreaManagerForm)
+      }
+      message.success('区域账号已删除')
+      await loadAreaManagers()
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '删除区域账号失败')
+    } finally {
+      setSavingAreaManager(false)
+    }
+  }
+
+  function editAreaManager(record: AreaManagerAdminView) {
+    setEditingAreaManagerID(record.id)
+    setAreaManagerForm({
+      username: record.username,
+      password: '',
+      display_name: record.display_name || record.username,
+      enabled: record.enabled,
+      agent_ids: record.agent_ids || [],
+    })
   }
 
   async function saveCustomer() {
@@ -421,7 +576,74 @@ export function CustomerManagementModal(props: {
   }
 
   const content = (
-      <Spin spinning={loading}>
+      <Spin spinning={loading || areaManagersLoading}>
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          {canManageAreaManagers ? (
+            <Card className="customer-admin-card" bordered={false}>
+              <div className="customer-admin-card-head">
+                <Title level={5}>区域管理账号</Title>
+                <Space>
+                  <Button size="small" icon={<ReloadOutlined />} onClick={() => void loadAreaManagers()}>刷新区域账号</Button>
+                  <Button size="small" onClick={() => {
+                    setEditingAreaManagerID(null)
+                    setAreaManagerForm(emptyAreaManagerForm)
+                  }}>清空表单</Button>
+                </Space>
+              </div>
+              <Alert
+                style={{ marginBottom: 12 }}
+                type="info"
+                showIcon
+                message="区域账号权限"
+                description="区域账号只能查看被分配的 Client，能下发 x-ui 转发规则，并且只能管理自己创建的普通客户；Admin 可见全部客户与区域账号。"
+              />
+              <Row gutter={[12, 12]}>
+                <Col xs={24} md={5}>
+                  <Text type="secondary">登录用户名</Text>
+                  <Input value={areaManagerForm.username} onChange={(event) => setAreaManagerForm((current) => ({ ...current, username: event.target.value }))} />
+                </Col>
+                <Col xs={24} md={5}>
+                  <Text type="secondary">显示名</Text>
+                  <Input value={areaManagerForm.display_name} onChange={(event) => setAreaManagerForm((current) => ({ ...current, display_name: event.target.value }))} />
+                </Col>
+                <Col xs={24} md={5}>
+                  <Text type="secondary">密码{editingAreaManagerID ? '（留空不改）' : ''}</Text>
+                  <Input.Password value={areaManagerForm.password} onChange={(event) => setAreaManagerForm((current) => ({ ...current, password: event.target.value }))} />
+                </Col>
+                <Col xs={24} md={6}>
+                  <Text type="secondary">允许管理的 Client</Text>
+                  <Select
+                    mode="multiple"
+                    style={{ width: '100%' }}
+                    showSearch
+                    placeholder="选择 Client"
+                    value={areaManagerForm.agent_ids}
+                    options={agentOptions}
+                    optionFilterProp="label"
+                    onChange={(values) => setAreaManagerForm((current) => ({ ...current, agent_ids: values }))}
+                  />
+                </Col>
+                <Col xs={24} md={3}>
+                  <Text type="secondary">状态</Text>
+                  <div className="customer-admin-switch-row">
+                    <Switch checked={areaManagerForm.enabled} onChange={(checked) => setAreaManagerForm((current) => ({ ...current, enabled: checked }))} />
+                    <Text>{areaManagerForm.enabled ? '启用' : '停用'}</Text>
+                  </div>
+                </Col>
+              </Row>
+              <Button style={{ marginTop: 14 }} type="primary" icon={<SaveOutlined />} loading={savingAreaManager} onClick={() => void saveAreaManager()}>
+                {editingAreaManagerID ? '保存区域账号' : '新增区域账号'}
+              </Button>
+              <Table
+                style={{ marginTop: 14 }}
+                rowKey={(record) => record.id}
+                columns={areaManagerColumns}
+                dataSource={areaManagers}
+                pagination={{ pageSize: 5, hideOnSinglePage: true }}
+                locale={{ emptyText: <Empty description="暂无区域账号" /> }}
+              />
+            </Card>
+          ) : null}
         <Row gutter={[16, 16]}>
           <Col xs={24} md={4}>
             <Card className="customer-admin-card" bordered={false}>
@@ -447,8 +669,8 @@ export function CustomerManagementModal(props: {
                     onClick={() => setSelectedCustomerID(customer.id)}
                   >
                     <span>
-                      <Text strong>{customer.display_name || customer.username}</Text>
-                      <span className="muted-line">{customer.username} · {customer.assignments.length} 条链路</span>
+                      <Text strong>{customer.username}</Text>
+                      <span className="muted-line">{customer.assignments.length} 条链路</span>
                     </span>
                     <Tag color={customer.enabled ? 'blue' : 'default'}>{customer.enabled ? '启用' : '停用'}</Tag>
                   </button>
@@ -597,6 +819,7 @@ export function CustomerManagementModal(props: {
             </Space>
           </Col>
         </Row>
+        </Space>
       </Spin>
   )
 

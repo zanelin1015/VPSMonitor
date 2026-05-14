@@ -35,9 +35,13 @@ var topologyLookupIPGeo = defaultTopologyLookupIPGeo
 
 func BuildGlobalDashboard(agents []model.AgentRecord, snapshots []model.AgentSnapshot) model.GlobalDashboardView {
 	resolver := newTopologyResolver()
+	entryByAgent := make(map[string]model.AgentEntryConfig, len(agents))
+	for _, agent := range agents {
+		entryByAgent[agent.AgentID] = agent.Config.Entry
+	}
 	overviewByAgent := make(map[string]*model.XUIOverview, len(snapshots))
 	for _, snapshot := range snapshots {
-		if overview := BuildXUIOverview(snapshot); overview != nil {
+		if overview := BuildXUIOverviewWithOptions(snapshot, XUIOverviewOptions{Entry: entryByAgent[snapshot.AgentID]}); overview != nil {
 			overviewByAgent[snapshot.AgentID] = overview
 		}
 	}
@@ -801,7 +805,12 @@ func buildClientChains(
 func collectCertificateDomains(certificates []model.XUILocalCertificate) []string {
 	result := make([]string, 0)
 	for _, certificate := range certificates {
-		result = append(result, certificate.DNSNames...)
+		for _, name := range certificate.DNSNames {
+			if strings.Contains(name, "*") {
+				continue
+			}
+			result = append(result, name)
+		}
 	}
 	return uniqueNormalizedDomains(result)
 }

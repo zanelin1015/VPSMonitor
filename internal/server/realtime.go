@@ -226,7 +226,8 @@ func (a *App) handleDashboardRealtime(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if _, _, ok := a.requireAdmin(w, r); !ok {
+	user, _, ok := a.requireAdmin(w, r)
+	if !ok {
 		return
 	}
 
@@ -239,7 +240,7 @@ func (a *App) handleDashboardRealtime(w http.ResponseWriter, r *http.Request) {
 	updates, snapshot, unsubscribe := a.realtime.subscribe()
 	defer unsubscribe()
 
-	if err := conn.WriteJSON(model.DashboardRealtimeMessage{Type: realtimeSnapshotMessage, Metrics: snapshot}); err != nil {
+	if err := conn.WriteJSON(model.DashboardRealtimeMessage{Type: realtimeSnapshotMessage, Metrics: a.filterRealtimeMetricsForAdmin(user, snapshot)}); err != nil {
 		return
 	}
 
@@ -261,6 +262,9 @@ func (a *App) handleDashboardRealtime(w http.ResponseWriter, r *http.Request) {
 		case metric, ok := <-updates:
 			if !ok {
 				return
+			}
+			if !a.adminCanAccessAgent(user, metric.AgentID) {
+				continue
 			}
 			if err := conn.WriteJSON(model.DashboardRealtimeMessage{Type: realtimeMetricsMessage, Metric: &metric}); err != nil {
 				return

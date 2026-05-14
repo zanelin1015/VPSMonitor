@@ -2,10 +2,19 @@ package model
 
 import "time"
 
+const (
+	AdminRoleRoot        = "admin"
+	AdminRoleAreaManager = "area_manager"
+)
+
 type AdminUser struct {
-	Username  string    `json:"username"`
-	AvatarURL string    `json:"avatar_url,omitempty"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID          int64     `json:"id,omitempty"`
+	Username    string    `json:"username"`
+	DisplayName string    `json:"display_name,omitempty"`
+	AvatarURL   string    `json:"avatar_url,omitempty"`
+	Role        string    `json:"role,omitempty"`
+	AgentIDs    []string  `json:"agent_ids,omitempty"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type AdminSession struct {
@@ -38,6 +47,24 @@ type AdminAccountUpdateRequest struct {
 	NewUsername     string  `json:"new_username"`
 	NewPassword     string  `json:"new_password"`
 	AvatarURL       *string `json:"avatar_url,omitempty"`
+}
+
+type AreaManagerAccountRequest struct {
+	Username    string   `json:"username"`
+	Password    string   `json:"password,omitempty"`
+	DisplayName string   `json:"display_name,omitempty"`
+	Enabled     *bool    `json:"enabled,omitempty"`
+	AgentIDs    []string `json:"agent_ids,omitempty"`
+}
+
+type AreaManagerAdminView struct {
+	ID          int64     `json:"id"`
+	Username    string    `json:"username"`
+	DisplayName string    `json:"display_name,omitempty"`
+	Enabled     bool      `json:"enabled"`
+	AgentIDs    []string  `json:"agent_ids,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type ClientInstallInfo struct {

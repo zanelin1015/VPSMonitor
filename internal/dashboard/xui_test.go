@@ -136,6 +136,122 @@ func TestBuildXUIOverviewUsesDefaultOutbound(t *testing.T) {
 	}
 }
 
+func TestBuildXUIOverviewImportURLUsesConfiguredDomain(t *testing.T) {
+	now := time.Now().UTC()
+	snapshot := model.AgentSnapshot{
+		AgentID:    "agent-import-domain",
+		ReportedAt: now,
+		XUI: &model.XUISnapshot{
+			CollectedAt: now,
+			Certificates: []model.XUILocalCertificate{
+				{
+					ID:       "domain-cert",
+					Name:     "cert",
+					Subject:  "cert.example.com",
+					DNSNames: []string{"cert.example.com"},
+				},
+			},
+			Inbounds: []map[string]any{
+				{
+					"id":       1,
+					"tag":      "in-vless",
+					"remark":   "Entry",
+					"protocol": "vless",
+					"port":     443,
+					"settings": `{"clients":[{"email":"user@example.com","enable":true,"id":"11111111-1111-1111-1111-111111111111"}]}`,
+				},
+			},
+		},
+	}
+
+	overview := BuildXUIOverviewWithOptions(snapshot, XUIOverviewOptions{Entry: model.AgentEntryConfig{ImportDomain: "links.example.com"}})
+	if overview == nil || len(overview.Clients) != 1 {
+		t.Fatalf("expected overview client")
+	}
+	parsed := mustParseURL(t, overview.Clients[0].ImportURL)
+	if got := parsed.Hostname(); got != "links.example.com" {
+		t.Fatalf("expected configured import domain, got %q", got)
+	}
+}
+
+func TestBuildXUIOverviewImportURLDefaultsToDomainCertificate(t *testing.T) {
+	now := time.Now().UTC()
+	snapshot := model.AgentSnapshot{
+		AgentID:    "agent-import-cert",
+		ReportedAt: now,
+		XUI: &model.XUISnapshot{
+			CollectedAt: now,
+			Certificates: []model.XUILocalCertificate{
+				{ID: "ip-cert", Subject: "203.0.113.10"},
+				{ID: "wildcard-cert", Subject: "*.example.com", DNSNames: []string{"*.example.com"}},
+				{ID: "domain-cert", Subject: "edge.example.com", DNSNames: []string{"edge.example.com"}},
+			},
+			Inbounds: []map[string]any{
+				{
+					"id":       1,
+					"tag":      "in-vless",
+					"remark":   "Entry",
+					"protocol": "vless",
+					"port":     443,
+					"settings": `{"clients":[{"email":"user@example.com","enable":true,"id":"11111111-1111-1111-1111-111111111111"}]}`,
+				},
+			},
+		},
+	}
+
+	overview := BuildXUIOverview(snapshot)
+	if overview == nil || len(overview.Clients) != 1 {
+		t.Fatalf("expected overview client")
+	}
+	if got := len(overview.Certificates); got != 2 {
+		t.Fatalf("expected IP-only cert to be filtered, got %d", got)
+	}
+	parsed := mustParseURL(t, overview.Clients[0].ImportURL)
+	if got := parsed.Hostname(); got != "edge.example.com" {
+		t.Fatalf("expected first connectable certificate domain, got %q", got)
+	}
+}
+
+func TestBuildXUIOverviewLeavesImportURLBlankWithoutDomain(t *testing.T) {
+	now := time.Now().UTC()
+	snapshot := model.AgentSnapshot{
+		AgentID:    "agent-no-domain",
+		ReportedAt: now,
+		Summary: model.VPSSummary{
+			PublicIPv4: "203.0.113.10",
+		},
+		XUI: &model.XUISnapshot{
+			BaseURL:     "https://203.0.113.10:2053",
+			CollectedAt: now,
+			Certificates: []model.XUILocalCertificate{
+				{ID: "ip-cert", Subject: "203.0.113.10"},
+			},
+			Inbounds: []map[string]any{
+				{
+					"id":       1,
+					"tag":      "in-vless",
+					"remark":   "Entry",
+					"protocol": "vless",
+					"listen":   "203.0.113.10",
+					"port":     443,
+					"settings": `{"clients":[{"email":"user@example.com","enable":true,"id":"11111111-1111-1111-1111-111111111111"}]}`,
+				},
+			},
+		},
+	}
+
+	overview := BuildXUIOverview(snapshot)
+	if overview == nil || len(overview.Clients) != 1 {
+		t.Fatalf("expected overview client")
+	}
+	if got := overview.Clients[0].ImportURL; got != "" {
+		t.Fatalf("expected blank import url without domain, got %q", got)
+	}
+	if got := len(overview.Certificates); got != 0 {
+		t.Fatalf("expected IP-only cert to be filtered, got %d", got)
+	}
+}
+
 func TestBuildXUIOverviewPrefersDirectAsDefaultOutbound(t *testing.T) {
 	snapshot := model.AgentSnapshot{
 		AgentID:    "agent-direct-default",

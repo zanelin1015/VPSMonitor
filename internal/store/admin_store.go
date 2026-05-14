@@ -41,6 +41,10 @@ func (s *SQLiteStore) EnsureAdminAccount(username, password string) error {
 }
 
 func (s *SQLiteStore) AuthenticateAdmin(username, password string) (model.AdminUser, bool, error) {
+	username = strings.TrimSpace(username)
+	if username == "" || password == "" {
+		return model.AdminUser{}, false, nil
+	}
 	var (
 		storedUsername string
 		passwordHash   string
@@ -59,7 +63,7 @@ func (s *SQLiteStore) AuthenticateAdmin(username, password string) (model.AdminU
 		return model.AdminUser{}, false, fmt.Errorf("load admin account: %w", err)
 	}
 	if subtle.ConstantTimeCompare([]byte(username), []byte(storedUsername)) != 1 {
-		return model.AdminUser{}, false, nil
+		return s.authenticateAreaManager(username, password)
 	}
 	ok, err := verifyPassword(password, passwordHash)
 	if err != nil {
@@ -69,29 +73,38 @@ func (s *SQLiteStore) AuthenticateAdmin(username, password string) (model.AdminU
 		return model.AdminUser{}, false, nil
 	}
 	return model.AdminUser{
+		ID:        adminAccountID,
 		Username:  storedUsername,
 		AvatarURL: avatarURL,
+		Role:      model.AdminRoleRoot,
 		UpdatedAt: parseTime(updatedAtText),
 	}, true, nil
 }
 
-func (s *SQLiteStore) CreateAdminSession(username string, ttl time.Duration) (string, model.AdminSession, error) {
+func (s *SQLiteStore) CreateAdminSession(user model.AdminUser, ttl time.Duration) (string, model.AdminSession, error) {
 	token, err := randomTokenBytes(adminSessionTokenBytes)
 	if err != nil {
 		return "", model.AdminSession{}, err
 	}
+	role := normalizeAdminRole(user.Role)
+	accountID := user.ID
+	if role == model.AdminRoleRoot || accountID <= 0 {
+		accountID = adminAccountID
+	}
 	now := time.Now().UTC()
 	session := model.AdminSession{
-		Username:  username,
+		Username:  user.Username,
 		CreatedAt: now,
 		ExpiresAt: now.Add(ttl),
 	}
 	_, err = s.db.Exec(`
-		INSERT INTO admin_sessions (token_hash, username, created_at, expires_at, last_seen_at)
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO admin_sessions (token_hash, username, role, account_id, created_at, expires_at, last_seen_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`,
 		sessionTokenHash(token),
-		username,
+		user.Username,
+		role,
+		accountID,
 		session.CreatedAt.Format(time.RFC3339Nano),
 		session.ExpiresAt.Format(time.RFC3339Nano),
 		now.Format(time.RFC3339Nano),
@@ -108,26 +121,23 @@ func (s *SQLiteStore) ValidateAdminSession(token string) (model.AdminUser, model
 	}
 
 	var (
-		sessionUsername string
-		createdAtText   string
-		expiresAtText   string
-		accountUsername string
-		avatarURL       string
-		updatedAtText   string
+		sessionUsername  string
+		sessionRole      string
+		sessionAccountID int64
+		createdAtText    string
+		expiresAtText    string
 	)
 	tokenHash := sessionTokenHash(token)
 	err := s.db.QueryRow(`
-		SELECT s.username, s.created_at, s.expires_at, a.username, a.avatar_url, a.updated_at
-		FROM admin_sessions s
-		JOIN admin_accounts a ON a.id = ?
-		WHERE s.token_hash = ?
-	`, adminAccountID, tokenHash).Scan(
+		SELECT username, role, account_id, created_at, expires_at
+		FROM admin_sessions
+		WHERE token_hash = ?
+	`, tokenHash).Scan(
 		&sessionUsername,
+		&sessionRole,
+		&sessionAccountID,
 		&createdAtText,
 		&expiresAtText,
-		&accountUsername,
-		&avatarURL,
-		&updatedAtText,
 	)
 	if err == sql.ErrNoRows {
 		return model.AdminUser{}, model.AdminSession{}, false, nil
@@ -146,12 +156,32 @@ func (s *SQLiteStore) ValidateAdminSession(token string) (model.AdminUser, model
 		return model.AdminUser{}, model.AdminSession{}, false, nil
 	}
 
+	var user model.AdminUser
+	var ok bool
+	role := normalizeAdminRole(sessionRole)
+	if role == model.AdminRoleAreaManager {
+		user, ok, err = s.loadAreaManagerAdminUser(sessionAccountID)
+		if err != nil {
+			return model.AdminUser{}, model.AdminSession{}, false, err
+		}
+		if !ok {
+			_ = s.DeleteAdminSession(token)
+			return model.AdminUser{}, model.AdminSession{}, false, nil
+		}
+	} else {
+		user, ok, err = s.loadRootAdminUser()
+		if err != nil {
+			return model.AdminUser{}, model.AdminSession{}, false, err
+		}
+		if !ok {
+			_ = s.DeleteAdminSession(token)
+			return model.AdminUser{}, model.AdminSession{}, false, nil
+		}
+	}
+
 	_, _ = s.db.Exec(`UPDATE admin_sessions SET last_seen_at = ? WHERE token_hash = ?`, time.Now().UTC().Format(time.RFC3339Nano), tokenHash)
-	return model.AdminUser{
-		Username:  accountUsername,
-		AvatarURL: avatarURL,
-		UpdatedAt: parseTime(updatedAtText),
-	}, session, true, nil
+	session.Username = sessionUsername
+	return user, session, true, nil
 }
 
 func (s *SQLiteStore) DeleteAdminSession(token string) error {
@@ -252,7 +282,109 @@ func (s *SQLiteStore) UpdateAdminAccount(req model.AdminAccountUpdateRequest, ke
 		return model.AdminUser{}, fmt.Errorf("commit admin account update: %w", err)
 	}
 
-	return model.AdminUser{Username: newUsername, AvatarURL: newAvatar, UpdatedAt: now}, nil
+	return model.AdminUser{ID: adminAccountID, Username: newUsername, AvatarURL: newAvatar, Role: model.AdminRoleRoot, UpdatedAt: now}, nil
+}
+
+func (s *SQLiteStore) authenticateAreaManager(username, password string) (model.AdminUser, bool, error) {
+	var (
+		user          model.AdminUser
+		passwordHash  string
+		enabled       int
+		updatedAtText string
+	)
+	err := s.db.QueryRow(`
+		SELECT id, username, password_hash, display_name, enabled, updated_at
+		FROM area_manager_accounts
+		WHERE username = ?
+	`, username).Scan(&user.ID, &user.Username, &passwordHash, &user.DisplayName, &enabled, &updatedAtText)
+	if err == sql.ErrNoRows {
+		return model.AdminUser{}, false, nil
+	}
+	if err != nil {
+		return model.AdminUser{}, false, fmt.Errorf("load area manager account: %w", err)
+	}
+	if enabled == 0 {
+		return model.AdminUser{}, false, nil
+	}
+	if subtle.ConstantTimeCompare([]byte(strings.ToLower(username)), []byte(strings.ToLower(user.Username))) != 1 {
+		return model.AdminUser{}, false, nil
+	}
+	ok, err := verifyPassword(password, passwordHash)
+	if err != nil {
+		return model.AdminUser{}, false, err
+	}
+	if !ok {
+		return model.AdminUser{}, false, nil
+	}
+	user.Role = model.AdminRoleAreaManager
+	user.UpdatedAt = parseTime(updatedAtText)
+	user.AgentIDs, err = s.ListAreaManagerAgentIDs(user.ID)
+	if err != nil {
+		return model.AdminUser{}, false, err
+	}
+	return user, true, nil
+}
+
+func (s *SQLiteStore) loadRootAdminUser() (model.AdminUser, bool, error) {
+	var (
+		username      string
+		avatarURL     string
+		updatedAtText string
+	)
+	err := s.db.QueryRow(`
+		SELECT username, avatar_url, updated_at
+		FROM admin_accounts
+		WHERE id = ?
+	`, adminAccountID).Scan(&username, &avatarURL, &updatedAtText)
+	if err == sql.ErrNoRows {
+		return model.AdminUser{}, false, nil
+	}
+	if err != nil {
+		return model.AdminUser{}, false, fmt.Errorf("load admin account: %w", err)
+	}
+	return model.AdminUser{ID: adminAccountID, Username: username, AvatarURL: avatarURL, Role: model.AdminRoleRoot, UpdatedAt: parseTime(updatedAtText)}, true, nil
+}
+
+func (s *SQLiteStore) loadAreaManagerAdminUser(id int64) (model.AdminUser, bool, error) {
+	if id <= 0 {
+		return model.AdminUser{}, false, nil
+	}
+	var (
+		user          model.AdminUser
+		enabled       int
+		updatedAtText string
+	)
+	err := s.db.QueryRow(`
+		SELECT id, username, display_name, enabled, updated_at
+		FROM area_manager_accounts
+		WHERE id = ?
+	`, id).Scan(&user.ID, &user.Username, &user.DisplayName, &enabled, &updatedAtText)
+	if err == sql.ErrNoRows {
+		return model.AdminUser{}, false, nil
+	}
+	if err != nil {
+		return model.AdminUser{}, false, fmt.Errorf("load area manager account: %w", err)
+	}
+	if enabled == 0 {
+		return model.AdminUser{}, false, nil
+	}
+	user.Role = model.AdminRoleAreaManager
+	user.UpdatedAt = parseTime(updatedAtText)
+	agentIDs, err := s.ListAreaManagerAgentIDs(user.ID)
+	if err != nil {
+		return model.AdminUser{}, false, err
+	}
+	user.AgentIDs = agentIDs
+	return user, true, nil
+}
+
+func normalizeAdminRole(role string) string {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case model.AdminRoleAreaManager:
+		return model.AdminRoleAreaManager
+	default:
+		return model.AdminRoleRoot
+	}
 }
 
 func normalizeAdminAvatarURL(value string) (string, error) {

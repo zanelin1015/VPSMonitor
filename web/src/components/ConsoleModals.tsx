@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react'
 
 import type {
+  AdminUser,
   CustomerAssignment,
   CustomerAssignmentDraft,
   DashboardAgentView,
@@ -42,6 +43,7 @@ export interface ConsoleModalsProps {
   accountModalOpen: boolean
   accountSaving: boolean
   agents: DashboardAgentView[]
+  adminUser: AdminUser | null
   clientInstallCommandKind: ClientInstallCommandKind
   clientInstallForm: ClientInstallCommandForm
   clientInstallLoading: boolean
@@ -119,6 +121,7 @@ export function ConsoleModals(props: ConsoleModalsProps) {
     accountModalOpen,
     accountSaving,
     agents,
+    adminUser,
     clientInstallCommandKind,
     clientInstallForm,
     clientInstallLoading,
@@ -259,6 +262,7 @@ export function ConsoleModals(props: ConsoleModalsProps) {
       <CustomerManagementModal
         open={customerModalOpen}
         agents={agents}
+        adminUser={adminUser}
         initialAssignment={customerAssignmentDraft}
         onInitialAssignmentApplied={onCustomerAssignmentDraftApplied}
         onClose={onCloseCustomerModal}

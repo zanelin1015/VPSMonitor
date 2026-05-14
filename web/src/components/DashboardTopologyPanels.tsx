@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Empty, Space, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Empty, Input, Space, Tag, Typography } from 'antd'
 import { ReloadOutlined } from '@ant-design/icons'
 
 import type { ClientChainStep, ClientChainView, DashboardAgentView, GlobalDashboardView, IPGeoView, TopologyLinkView } from '../types'
@@ -94,6 +94,8 @@ export function renderCNFlowPanel(props: {
   canRefreshCurrentNode: boolean
   currentNodeLoading: boolean
   onRefreshCurrentNode: () => void
+  searchText: string
+  onSearchTextChange: (value: string) => void
 }) {
   const {
     dashboardView,
@@ -108,13 +110,17 @@ export function renderCNFlowPanel(props: {
     canRefreshCurrentNode,
     currentNodeLoading,
     onRefreshCurrentNode,
+    searchText,
+    onSearchTextChange,
   } = props
   const rows = buildCNFlowRows(chains, agents)
   const selectedAgent = agents.find((agent) => agent.agent_id === selectedAgentId)
   const flowMode: 'cn' | 'agent' | 'tag' = selectedAgentId ? 'agent' : selectedTag ? 'tag' : 'cn'
-  const visibleRows = selectedAgentId ? rows.filter((row) => row.rootAgentID === selectedAgentId) : rows
+  const scopedRows = selectedAgentId ? rows.filter((row) => row.rootAgentID === selectedAgentId) : rows
+  const visibleRows = filterCNFlowRows(scopedRows, searchText)
   const toolbarAgents = selectedTag ? agents.filter((agent) => hasSelectedTag(agent.tags, selectedTag)) : agents
   const headerTitle = flowMode === 'agent' ? `${selectedAgent?.agent_name || selectedAgentId} 节点客户端拓扑` : flowMode === 'tag' ? `${selectedTag} 标签链路拓扑` : 'CN 出发链路拓扑'
+  const normalizedSearch = searchText.trim()
 
   const renderSource = () => {
     return (
@@ -321,11 +327,20 @@ export function renderCNFlowPanel(props: {
             <Tag color="gold">出口 {uniqueCountries(rows).length}</Tag>
             <Tag color="blue">客户端 {dashboardView.totals.client_count}</Tag>
             <Tag>节点总数 {dashboardView.totals.node_count}</Tag>
+            {normalizedSearch ? <Tag color="green">匹配 {visibleRows.length}/{scopedRows.length}</Tag> : null}
           </Space>
         </div>
       </div>
 
       <div className="cn-flow-toolbar">
+        <Input.Search
+          allowClear
+          className="cn-flow-search"
+          value={searchText}
+          placeholder="搜索客户端 / 节点 / client名称 / 域名"
+          onChange={(event) => onSearchTextChange(event.target.value)}
+          onSearch={onSearchTextChange}
+        />
         <button className={`cn-flow-agent-filter${!selectedAgentId ? ' active' : ''}`} onClick={() => onSelectAgent('')}>
           全部链路
         </button>
@@ -364,7 +379,7 @@ export function renderCNFlowPanel(props: {
           </div>
         </div>
       ) : (
-        <Empty description="暂无可展示的 CN 访问链路" />
+        <Empty description={normalizedSearch ? '没有匹配的客户端、节点、client 名称或域名' : '暂无可展示的 CN 访问链路'} />
       )}
     </Card>
   )
@@ -403,6 +418,7 @@ interface CNFlowRow {
   exitReason: string
   loopDetected?: boolean
   unresolvedReason?: string
+  searchText: string
 }
 
 function shouldShowChainWarning(row: CNFlowRow): boolean {
@@ -449,6 +465,7 @@ function buildCNFlowRows(chains: ClientChainView[], agents: DashboardAgentView[]
     const exitAgentID = lastHop?.targetAgentID || lastOutbound?.agent_id || chain.root_agent_id
     const exitAgent = exitAgentID ? agentByID.get(exitAgentID) : undefined
     const country = inferExitCountry(exitAgent, lastOutbound)
+    const searchText = buildChainSearchText(chain, hops, country)
     return {
       key: chain.key,
       rootAgentID: chain.root_agent_id,
@@ -465,6 +482,7 @@ function buildCNFlowRows(chains: ClientChainView[], agents: DashboardAgentView[]
       unresolvedReason: isExpectedTerminalExit(lastOutbound?.label, lastOutbound?.target || lastOutbound?.detail, chain.unresolved_reason)
         ? undefined
         : chain.unresolved_reason,
+      searchText,
     }
   })
   const clientsByEntry = new Map<string, string[]>()
@@ -486,6 +504,82 @@ function buildCNFlowRows(chains: ClientChainView[], agents: DashboardAgentView[]
     }
   }
   return rows
+}
+
+function filterCNFlowRows(rows: CNFlowRow[], query: string): CNFlowRow[] {
+  const tokens = query
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+  if (!tokens.length) {
+    return rows
+  }
+  return rows.filter((row) => tokens.every((token) => row.searchText.includes(token)))
+}
+
+function buildChainSearchText(chain: ClientChainView, hops: CNFlowHop[], country: { code: string; label: string }): string {
+  const values: Array<string | undefined> = [
+    chain.key,
+    chain.root_agent_id,
+    chain.root_agent_name,
+    ...(chain.root_agent_tags || []),
+    chain.root_client_email,
+    chain.root_client_remark,
+    chain.root_inbound_tag,
+    chain.unresolved_reason,
+    country.code,
+    country.label,
+  ]
+  chain.steps.forEach((step) => {
+    values.push(
+      step.step_type,
+      step.agent_id,
+      step.agent_name,
+      ...(step.agent_tags || []),
+      step.label,
+      step.detail,
+      step.protocol,
+      step.outbound_tag,
+      step.target,
+      step.target_ip,
+      step.target_geo?.ip,
+      step.target_geo?.country_code,
+      step.target_geo?.country_name,
+      step.target_geo?.region_name,
+      step.target_geo?.city,
+      step.match_reason,
+    )
+    if (step.port) {
+      values.push(String(step.port))
+    }
+    if (step.rule_index) {
+      values.push(String(step.rule_index))
+    }
+  })
+  hops.forEach((hop) => {
+    values.push(
+      hop.currentAgentID,
+      hop.currentAgentName,
+      hop.currentInboundLabel,
+      hop.currentDetail,
+      hop.outboundLabel,
+      hop.outboundDetail,
+      hop.outboundTargetIP,
+      hop.outboundTargetGeo?.ip,
+      hop.outboundTargetGeo?.country_code,
+      hop.outboundTargetGeo?.country_name,
+      hop.outboundTargetGeo?.region_name,
+      hop.outboundTargetGeo?.city,
+      hop.targetAgentID,
+      hop.targetAgentName,
+      hop.targetInboundLabel,
+      hop.targetDetail,
+      hop.targetProtocol,
+      hop.targetClientLabel,
+    )
+  })
+  return values.filter(Boolean).join(' ').toLowerCase()
 }
 
 function formatStepNodeLabel(step: ClientChainStep): string {

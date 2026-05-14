@@ -86,6 +86,7 @@ export interface AgentDetailPanelProps {
   xuiActions: XUIAction[]
   xuiActionsLoading: boolean
   canOpenXUI: boolean
+  canManageConfig: boolean
   currentAgentLoading: boolean
   onActiveTabChange: (key: string) => void
   onClientSearchChange: (value: string) => void
@@ -151,6 +152,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     xuiActions,
     xuiActionsLoading,
     canOpenXUI,
+    canManageConfig,
     currentAgentLoading,
     onActiveTabChange,
     onClientSearchChange,
@@ -321,6 +323,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
               size="small"
               min={0}
               precision={2}
+              disabled={!canManageConfig}
               style={{ width: 92 }}
               value={billing.revenue_amount || 0}
               onChange={(value) => onUpdateClientBillingDraft(record, { revenue_amount: Number(value || 0) })}
@@ -328,6 +331,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
             <Select
               size="small"
               style={{ width: 78 }}
+              disabled={!canManageConfig}
               value={billing.revenue_currency || 'CNY'}
               options={REVENUE_CURRENCIES.map((currency) => ({ value: currency, label: currency }))}
               onChange={(value) => onUpdateClientBillingDraft(record, { revenue_currency: value as 'CNY' | 'USDT' })}
@@ -335,6 +339,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
             <Select
               size="small"
               style={{ width: 78 }}
+              disabled={!canManageConfig}
               value={billing.revenue_cycle || 'month'}
               options={[
                 { value: 'month', label: '月' },
@@ -343,7 +348,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
               ]}
               onChange={(value) => onUpdateClientBillingDraft(record, { revenue_cycle: value as 'month' | 'quarter' | 'year' })}
             />
-            <Button size="small" type="primary" loading={configSavingSection === 'renewal'} onClick={() => onSaveClientBilling(record)}>
+            <Button size="small" type="primary" disabled={!canManageConfig} loading={configSavingSection === 'renewal'} onClick={() => onSaveClientBilling(record)}>
               保存
             </Button>
           </Space>
@@ -365,12 +370,14 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
                 size="small"
                 type="date"
                 style={{ width: 132 }}
+                disabled={!canManageConfig}
                 value={formatDateInputFromMillis(effectiveExpiry)}
                 onChange={(event) => onUpdateClientBillingDraft(record, { expire_time: dateInputToExpiryMillis(event.target.value) })}
               />
               <Select
                 size="small"
                 style={{ width: 78 }}
+                disabled={!canManageConfig}
                 value={billing.expire_cycle || 'month'}
                 options={[
                   { value: 'month', label: '月' },
@@ -381,11 +388,12 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
               />
               <Switch
                 size="small"
+                disabled={!canManageConfig}
                 checked={Boolean(billing.expire_auto_renew)}
                 onChange={(checked: boolean) => onUpdateClientBillingDraft(record, { expire_auto_renew: checked, expire_time: effectiveExpiry })}
               />
               <Text type="secondary">周期刷新</Text>
-              <Button size="small" type="primary" loading={configSavingSection === 'renewal'} onClick={() => onSaveClientBilling(record)}>
+              <Button size="small" type="primary" disabled={!canManageConfig} loading={configSavingSection === 'renewal'} onClick={() => onSaveClientBilling(record)}>
                 保存
               </Button>
             </Space>
@@ -667,7 +675,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
                 <Empty description="暂无本机证书数据" />
               ),
             },
-            {
+            ...(canManageConfig ? [{
               key: 'config',
               label: (
                 <Space size={6}>
@@ -678,6 +686,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
               children: renderManagedConfigPanel({
                 selectedAgent,
                 managedConfig,
+                certificates: overview?.certificates || [],
                 configLoading,
                 configSavingSection,
                 configError,
@@ -703,7 +712,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
                 configAuditsLoading,
                 currencyOptions,
               }),
-            },
+            }] : []),
             {
               key: 'nodes',
               label: `节点 (${overview?.nodes.length || 0})`,

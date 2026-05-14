@@ -1,7 +1,7 @@
-import { Alert, Button, Card, Col, Empty, Input, InputNumber, List, Row, Select, Space, Spin, Switch, Typography } from 'antd'
+import { Alert, AutoComplete, Button, Card, Col, Empty, Input, InputNumber, List, Row, Select, Space, Spin, Switch, Typography } from 'antd'
 import { DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 
-import type { AgentEntryConfig, AgentEntryMapping, AgentListItem, ConfigAuditLog, ManagedAgentConfig, VPSRenewalConfig, XUIConfig } from '../types'
+import type { AgentEntryConfig, AgentEntryMapping, AgentListItem, ConfigAuditLog, ManagedAgentConfig, VPSRenewalConfig, XUIConfig, XUILocalCertificate } from '../types'
 import { DEFAULT_COST_CURRENCY, type CurrencyCode } from '../lib/currency'
 import { bytesToGB, gbToBytes } from '../lib/traffic'
 import type { ConfigSectionKey } from '../lib/appHelpers'
@@ -12,6 +12,7 @@ const { Text, Title } = Typography
 export interface ConfigPanelProps {
   selectedAgent?: AgentListItem
   managedConfig: ManagedAgentConfig | null
+  certificates: XUILocalCertificate[]
   configLoading: boolean
   configSavingSection: ConfigSectionKey | null
   configError: string
@@ -39,6 +40,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
   const {
     selectedAgent,
     managedConfig,
+    certificates,
     configLoading,
     configSavingSection,
     configError,
@@ -80,8 +82,11 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
 
   const entryConfig: AgentEntryConfig = {
     addresses: managedConfig.entry?.addresses || [],
+    import_domain: managedConfig.entry?.import_domain || '',
     mappings: managedConfig.entry?.mappings || [],
   }
+  const domainOptions = buildCertificateDomainOptions(certificates)
+  const defaultImportDomain = domainOptions.find((option) => !option.value.startsWith('*.'))?.value || ''
   const updateEntryMapping = (index: number, patch: Partial<AgentEntryMapping>) => {
     const mappings = (entryConfig.mappings || []).map((mapping, currentIndex) => (currentIndex === index ? { ...mapping, ...patch } : mapping))
     onEntryChange({ mappings })
@@ -366,6 +371,25 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
           description="当转发配置里填写的是连接 IP/域名，但 Client 查询到的公网 IP 不同，可以在这里配置入口地址和外部端口到内部节点端口的映射。拓扑会优先按入口地址 + 外部端口 + 节点类型匹配。"
         />
         <Row gutter={[16, 16]}>
+          <Col xs={24} md={12}>
+            <Text type="secondary">导入链接域名</Text>
+            <AutoComplete
+              allowClear
+              value={entryConfig.import_domain || ''}
+              options={domainOptions}
+              placeholder={defaultImportDomain ? `默认使用第一个域名证书：${defaultImportDomain}` : '无域名证书时留空；可手动输入域名'}
+              onChange={(value) => onEntryChange({ import_domain: value })}
+              filterOption={(inputValue, option) => String(option?.value || '').toLowerCase().includes(inputValue.toLowerCase())}
+              style={{ width: '100%' }}
+            />
+            <Text type="secondary">
+              {entryConfig.import_domain
+                ? '生成 VLESS/VMess/Trojan 等单节点导入链接时固定使用该域名，不再回退到 IP。'
+                : defaultImportDomain
+                  ? '未填写时后端会自动使用第一个可连接的域名证书；只上传域名证书，IP 证书会被过滤。'
+                  : '未填写且没有域名证书时，导入链接不会使用 IP；需要手动输入域名后再保存。'}
+            </Text>
+          </Col>
           <Col xs={24}>
             <Text type="secondary">入口地址</Text>
             <Input.TextArea
@@ -451,4 +475,36 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
 
     </Space>
   )
+}
+
+function buildCertificateDomainOptions(certificates: XUILocalCertificate[]) {
+  const seen = new Set<string>()
+  const options: { value: string; label: string }[] = []
+  certificates.forEach((certificate) => {
+    const names = certificate.dns_names || []
+    names.forEach((name) => {
+      const value = normalizeDomainOption(name)
+      if (!value || seen.has(value)) {
+        return
+      }
+      seen.add(value)
+      options.push({
+        value,
+        label: certificate.name ? `${value} · ${certificate.name}` : value,
+      })
+    })
+  })
+  return options
+}
+
+function normalizeDomainOption(value?: string) {
+  const domain = (value || '').trim().toLowerCase().replace(/\.$/, '')
+  if (!domain || domain.includes(' ') || domain.includes('*') || isIPLike(domain)) {
+    return ''
+  }
+  return domain
+}
+
+function isIPLike(value: string) {
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(value) || (value.includes(':') && /^[0-9a-f:]+$/i.test(value))
 }

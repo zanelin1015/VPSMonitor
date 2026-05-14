@@ -460,7 +460,7 @@ func TestSQLiteStoreAdminAuthLifecycle(t *testing.T) {
 		t.Fatalf("expected admin login, got ok=%v username=%q", ok, user.Username)
 	}
 
-	token, _, err := store.CreateAdminSession(user.Username, time.Hour)
+	token, _, err := store.CreateAdminSession(user, time.Hour)
 	if err != nil {
 		t.Fatalf("CreateAdminSession: %v", err)
 	}
@@ -497,6 +497,90 @@ func TestSQLiteStoreAdminAuthLifecycle(t *testing.T) {
 		t.Fatalf("ValidateAdminSession after update: %v", err)
 	} else if !ok || sessionUser.Username != "owner" || sessionUser.AvatarURL == "" {
 		t.Fatalf("expected updated session user, got ok=%v user=%#v", ok, sessionUser)
+	}
+}
+
+func TestSQLiteStoreAreaManagerScope(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "bridge.db")
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+
+	if err := store.EnsureAdminAccount("admin", "admin-password"); err != nil {
+		t.Fatalf("EnsureAdminAccount: %v", err)
+	}
+	if _, err := store.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk-01", AgentName: "HK Entry"}); err != nil {
+		t.Fatalf("RegisterAgent hk: %v", err)
+	}
+	if _, err := store.RegisterAgent(model.AgentRegisterRequest{AgentID: "us-01", AgentName: "US Entry"}); err != nil {
+		t.Fatalf("RegisterAgent us: %v", err)
+	}
+
+	enabled := true
+	manager, err := store.CreateAreaManager(model.AreaManagerAccountRequest{
+		Username:    "east",
+		Password:    "manager-pass",
+		DisplayName: "East Region",
+		Enabled:     &enabled,
+		AgentIDs:    []string{"hk-01"},
+	})
+	if err != nil {
+		t.Fatalf("CreateAreaManager: %v", err)
+	}
+	if len(manager.AgentIDs) != 1 || manager.AgentIDs[0] != "hk-01" {
+		t.Fatalf("unexpected manager agents: %#v", manager)
+	}
+
+	user, ok, err := store.AuthenticateAdmin("east", "manager-pass")
+	if err != nil {
+		t.Fatalf("AuthenticateAdmin manager: %v", err)
+	}
+	if !ok || user.Role != model.AdminRoleAreaManager || user.ID != manager.ID || len(user.AgentIDs) != 1 || user.AgentIDs[0] != "hk-01" {
+		t.Fatalf("expected area manager login, ok=%v user=%#v", ok, user)
+	}
+	token, _, err := store.CreateAdminSession(user, time.Hour)
+	if err != nil {
+		t.Fatalf("CreateAdminSession manager: %v", err)
+	}
+	sessionUser, _, ok, err := store.ValidateAdminSession(token)
+	if err != nil {
+		t.Fatalf("ValidateAdminSession manager: %v", err)
+	}
+	if !ok || sessionUser.Role != model.AdminRoleAreaManager || sessionUser.Username != "east" {
+		t.Fatalf("unexpected manager session user: ok=%v user=%#v", ok, sessionUser)
+	}
+
+	adminCustomer, err := store.CreateCustomer(model.CustomerAccountRequest{
+		Username: "admin-customer",
+		Password: "customer-pass",
+		Enabled:  &enabled,
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomer admin: %v", err)
+	}
+	managerCustomer, err := store.CreateCustomerForOwner(model.CustomerAccountRequest{
+		Username: "east-customer",
+		Password: "customer-pass",
+		Enabled:  &enabled,
+	}, model.AdminRoleAreaManager, manager.ID)
+	if err != nil {
+		t.Fatalf("CreateCustomer manager: %v", err)
+	}
+
+	scopedCustomers, err := store.ListCustomersForOwner(model.AdminRoleAreaManager, manager.ID)
+	if err != nil {
+		t.Fatalf("ListCustomersForOwner: %v", err)
+	}
+	if len(scopedCustomers) != 1 || scopedCustomers[0].ID != managerCustomer.ID {
+		t.Fatalf("expected only manager-owned customer, got %#v", scopedCustomers)
+	}
+	if ok, err := store.CustomerOwnedBy(adminCustomer.ID, model.AdminRoleAreaManager, manager.ID); err != nil || ok {
+		t.Fatalf("expected admin customer hidden from manager, ok=%v err=%v", ok, err)
+	}
+	if ok, err := store.AreaManagerCanAccessAgent(manager.ID, "us-01"); err != nil || ok {
+		t.Fatalf("expected unassigned agent access to be denied, ok=%v err=%v", ok, err)
 	}
 }
 

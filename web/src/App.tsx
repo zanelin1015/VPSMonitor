@@ -181,6 +181,7 @@ export default function App() {
   const [exchangeRates, setExchangeRates] = useState<ExchangeRatesState>(() => defaultExchangeRatesState())
   const [currencyOptions, setCurrencyOptions] = useState<CurrencyCode[]>(() => [...COMMON_COST_CURRENCIES])
   const [selectedTag, setSelectedTag] = useState('')
+  const [topologySearch, setTopologySearch] = useState('')
   const [activeAdminPage, setActiveAdminPage] = useState<AdminPageKey>('dashboard')
   const [agentViewMode, setAgentViewMode] = useState<AgentViewMode>('card')
   const [selectedAgentId, setSelectedAgentId] = useState('')
@@ -251,6 +252,8 @@ export default function App() {
   const topologyScopeLabel = selectedAgentId ? selectedAgent?.agent_name || selectedAgentId : selectedTag ? `${selectedTag} 标签` : '全部 Client'
   const heroTitle = '南风VPS监控'
   const customerMode = window.location.pathname.replace(/\/+$/, '') === '/customer'
+  const isAreaManagerAccount = adminUser?.role === 'area_manager'
+  const canManageSystem = Boolean(adminUser && !isAreaManagerAccount)
   useEffect(() => {
     if (customerMode) {
       setSessionLoading(false)
@@ -270,17 +273,31 @@ export default function App() {
   useEffect(() => {
     if (adminUser) {
       void loadAgents()
-      void loadTelegramBots()
-      void loadTagSettings()
+      if (canManageSystem) {
+        void loadTelegramBots()
+        void loadTagSettings()
+      }
       void loadExchangeRates()
     }
-  }, [adminUser])
+  }, [adminUser, canManageSystem])
 
   useEffect(() => {
     if (adminUser && updateModalOpen) {
       void loadUpdateLatestInfo()
     }
   }, [adminUser, updateModalOpen])
+
+  useEffect(() => {
+    if (!adminUser || canManageSystem) {
+      return
+    }
+    if (activeAdminPage === 'settings') {
+      setActiveAdminPage('dashboard')
+    }
+    if (activeTabKey === 'config') {
+      setActiveTabKey('overview')
+    }
+  }, [activeAdminPage, activeTabKey, adminUser, canManageSystem])
 
   useEffect(() => {
     try {
@@ -1329,6 +1346,7 @@ export default function App() {
             <PersonalCenterDropdown
               adminUser={adminUser}
               systemInfo={systemInfo}
+              canManageSystem={canManageSystem}
               onOpenAccount={() => {
                 setAccountForm({
                   current_password: '',
@@ -1381,17 +1399,17 @@ export default function App() {
               <TeamOutlined />
               <span>客户</span>
             </button>
-            <button type="button" className={activeAdminPage === 'settings' ? 'active' : ''} onClick={() => {
+            {canManageSystem ? <button type="button" className={activeAdminPage === 'settings' ? 'active' : ''} onClick={() => {
               setActiveAdminPage('settings')
               void openFrontendSettingsModal(false)
             }}>
               <SettingOutlined />
               <span>设置</span>
-            </button>
+            </button> : null}
           </nav>
           <div className="admin-mobile-actions">
             <Button size="small" icon={<ReloadOutlined />} loading={agentsLoading} onClick={() => void loadAgents()}>刷新</Button>
-            <Button size="small" icon={<DeploymentUnitOutlined />} onClick={() => void openClientInstallModal()}>安装 Client</Button>
+            {canManageSystem ? <Button size="small" icon={<DeploymentUnitOutlined />} onClick={() => void openClientInstallModal()}>安装 Client</Button> : null}
             <Select
               size="small"
               value={themeMode}
@@ -1447,14 +1465,14 @@ export default function App() {
               <span>客户管理</span>
               <small>账号与授权</small>
             </button>
-            <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'settings' ? ' active' : ''}`} onClick={() => {
+            {canManageSystem ? <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'settings' ? ' active' : ''}`} onClick={() => {
               setActiveAdminPage('settings')
               void openFrontendSettingsModal(false)
             }}>
               <SettingOutlined />
               <span>系统设置</span>
               <small>样式与更新</small>
-            </button>
+            </button> : null}
           </nav>
           <div className="admin-oa-sider-foot">
             <span>在线 Client</span>
@@ -1474,11 +1492,12 @@ export default function App() {
           </div>
           <div className="hero-actions hero-actions-column">
             <Button icon={<ReloadOutlined />} loading={agentsLoading} onClick={() => void loadAgents()}>刷新</Button>
-            <Button icon={<DeploymentUnitOutlined />} onClick={() => void openClientInstallModal()}>安装 Client</Button>
+            {canManageSystem ? <Button icon={<DeploymentUnitOutlined />} onClick={() => void openClientInstallModal()}>安装 Client</Button> : null}
             <Button icon={<TeamOutlined />} onClick={() => setActiveAdminPage('customers')}>客户</Button>
             <PersonalCenterDropdown
               adminUser={adminUser}
               systemInfo={systemInfo}
+              canManageSystem={canManageSystem}
               onOpenAccount={() => {
                 setAccountForm({
                   current_password: '',
@@ -1520,6 +1539,7 @@ export default function App() {
           accountModalOpen={accountModalOpen}
           accountSaving={accountSaving}
           agents={agents}
+          adminUser={adminUser}
           clientInstallCommandKind={clientInstallCommandKind}
           clientInstallForm={clientInstallForm}
           clientInstallLoading={clientInstallLoading}
@@ -1599,6 +1619,7 @@ export default function App() {
             <CustomerManagementModal
               embedded
               agents={agents}
+              adminUser={adminUser}
               initialAssignment={customerAssignmentDraft}
               onInitialAssignmentApplied={() => setCustomerAssignmentDraft(null)}
               onConfigChanged={() => loadAgents()}
@@ -1712,6 +1733,8 @@ export default function App() {
                         void requestAgentSnapshot(selectedAgentId)
                       }
                     },
+                    searchText: topologySearch,
+                    onSearchTextChange: setTopologySearch,
                   })}
               </div>
             ) : null}
@@ -1723,6 +1746,7 @@ export default function App() {
                 agentLogsError={agentLogsError}
                 agentLogsLoading={agentLogsLoading}
                 canOpenXUI={Boolean(managedConfig?.xui?.base_url)}
+                canManageConfig={canManageSystem}
                 clientSearch={clientSearch}
                 configAudits={configAudits}
                 configAuditsLoading={configAuditsLoading}

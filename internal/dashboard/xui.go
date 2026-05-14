@@ -86,7 +86,15 @@ type clientStat struct {
 	lastOnline int64
 }
 
+type XUIOverviewOptions struct {
+	Entry model.AgentEntryConfig
+}
+
 func BuildXUIOverview(snapshot model.AgentSnapshot) *model.XUIOverview {
+	return BuildXUIOverviewWithOptions(snapshot, XUIOverviewOptions{})
+}
+
+func BuildXUIOverviewWithOptions(snapshot model.AgentSnapshot, options XUIOverviewOptions) *model.XUIOverview {
 	if snapshot.XUI == nil {
 		return nil
 	}
@@ -96,7 +104,8 @@ func BuildXUIOverview(snapshot model.AgentSnapshot) *model.XUIOverview {
 	outbounds, defaultOutboundTag := normalizeOutbounds(snapshot.XUI.Outbounds, trafficByTag)
 	balancers := normalizeBalancers(snapshot.XUI.RawConfig, outbounds)
 	globalRuleIndexes := collectGlobalRuleIndexes(rules)
-	inbounds := normalizeInbounds(snapshot.XUI.Inbounds, rules, defaultOutboundTag, globalRuleIndexes, snapshot.ReportedAt, snapshot.Summary, snapshot.XUI.BaseURL)
+	certificates := filterDomainCertificates(snapshot.XUI.Certificates)
+	inbounds := normalizeInbounds(snapshot.XUI.Inbounds, rules, defaultOutboundTag, globalRuleIndexes, snapshot.ReportedAt, certificates, options.Entry)
 	clients, onlineCount := normalizeClients(inbounds, rules, defaultOutboundTag, globalRuleIndexes, snapshot.ReportedAt)
 
 	nodes := make([]model.XUINodeView, 0, len(inbounds))
@@ -138,12 +147,13 @@ func BuildXUIOverview(snapshot model.AgentSnapshot) *model.XUIOverview {
 		Outbounds:         outbounds,
 		Balancers:         balancers,
 		RoutingRules:      unwrapRules(rules),
-		Certificates:      append([]model.XUILocalCertificate{}, snapshot.XUI.Certificates...),
+		Certificates:      append([]model.XUILocalCertificate{}, certificates...),
 	}
 }
 
-func normalizeInbounds(rawInbounds []map[string]any, rules []routeRule, defaultOutboundTag string, globalRuleIndexes []int, reportedAt time.Time, summary model.VPSSummary, baseURL string) []inboundRecord {
+func normalizeInbounds(rawInbounds []map[string]any, rules []routeRule, defaultOutboundTag string, globalRuleIndexes []int, reportedAt time.Time, certificates []model.XUILocalCertificate, entry model.AgentEntryConfig) []inboundRecord {
 	result := make([]inboundRecord, 0, len(rawInbounds))
+	importHost := chooseSingleNodeImportHost(entry.ImportDomain, certificates)
 	for _, raw := range rawInbounds {
 		streamMeta := parseInboundStreamSettings(raw["streamSettings"])
 		protocolMeta := parseInboundProtocolSettings(raw["settings"])
@@ -176,7 +186,7 @@ func normalizeInbounds(rawInbounds []map[string]any, rules []routeRule, defaultO
 			},
 			clientStats:         parseClientStats(raw["clientStats"]),
 			clients:             parseInboundClients(raw["settings"]),
-			importHost:          chooseSingleNodeImportHost(stringValue(raw["listen"]), summary, baseURL),
+			importHost:          importHost,
 			vlessEncryption:     protocolMeta.vlessEncryption,
 			shadowsocksMethod:   protocolMeta.shadowsocksMethod,
 			shadowsocksPassword: protocolMeta.shadowsocksPassword,
@@ -644,18 +654,94 @@ func parseInboundStreamSettings(raw any) inboundStreamMeta {
 	return meta
 }
 
-func chooseSingleNodeImportHost(listen string, summary model.VPSSummary, baseURL string) string {
-	listen = strings.TrimSpace(listen)
-	if listen != "" && listen != "0.0.0.0" && listen != "::" && listen != "[::]" {
-		return strings.Trim(listen, "[]")
+func chooseSingleNodeImportHost(configuredDomain string, certificates []model.XUILocalCertificate) string {
+	if domain := normalizeImportDomain(configuredDomain); domain != "" {
+		return domain
 	}
-	if parsed, err := url.Parse(baseURL); err == nil && parsed.Hostname() != "" {
-		return parsed.Hostname()
+	if domain := firstCertificateDomain(certificates); domain != "" {
+		return domain
 	}
-	if summary.PublicIPv4 != "" {
-		return summary.PublicIPv4
+	return ""
+}
+
+func filterDomainCertificates(certificates []model.XUILocalCertificate) []model.XUILocalCertificate {
+	result := make([]model.XUILocalCertificate, 0, len(certificates))
+	for _, cert := range certificates {
+		domains := certificateDomains(cert)
+		if len(domains) == 0 {
+			continue
+		}
+		cert.DNSNames = domains
+		result = append(result, cert)
 	}
-	return summary.PublicIPv6
+	return result
+}
+
+func firstCertificateDomain(certificates []model.XUILocalCertificate) string {
+	for _, cert := range certificates {
+		for _, domain := range cert.DNSNames {
+			if normalized := normalizeImportDomain(domain); normalized != "" {
+				return normalized
+			}
+		}
+		if normalized := normalizeImportDomain(cert.Subject); normalized != "" {
+			return normalized
+		}
+	}
+	return ""
+}
+
+func certificateDomains(cert model.XUILocalCertificate) []string {
+	values := append([]string{}, cert.DNSNames...)
+	values = append(values, cert.Subject)
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		normalized := normalizeCertificateDomain(value)
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		result = append(result, normalized)
+	}
+	return result
+}
+
+func normalizeCertificateDomain(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	value = strings.TrimSuffix(value, ".")
+	if strings.HasPrefix(value, "*.") {
+		suffix := strings.TrimPrefix(value, "*.")
+		if suffix == "" || strings.Contains(suffix, " ") || net.ParseIP(suffix) != nil {
+			return ""
+		}
+		return "*." + suffix
+	}
+	return normalizeImportDomain(value)
+}
+
+func normalizeImportDomain(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	value = strings.TrimSuffix(value, ".")
+	value = strings.TrimPrefix(value, "https://")
+	value = strings.TrimPrefix(value, "http://")
+	if slash := strings.Index(value, "/"); slash >= 0 {
+		value = value[:slash]
+	}
+	if host, _, err := net.SplitHostPort(value); err == nil {
+		value = host
+	}
+	value = strings.Trim(value, "[]")
+	if value == "" || strings.Contains(value, " ") || strings.Contains(value, "*") || strings.Contains(value, ":") {
+		return ""
+	}
+	if net.ParseIP(value) != nil {
+		return ""
+	}
+	return value
 }
 
 func buildSingleNodeImportURL(inbound inboundRecord, cfg clientConfig) string {

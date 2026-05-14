@@ -39,6 +39,7 @@ export interface AccountFormState {
 export function PersonalCenterDropdown(props: {
   adminUser: AdminUser
   systemInfo?: SystemInfo | null
+  canManageSystem?: boolean
   onOpenAccount: () => void
   onOpenClientInstall: () => void
   onOpenTelegram: () => void
@@ -47,7 +48,7 @@ export function PersonalCenterDropdown(props: {
   onOpenUpdates: () => void
   onLogout: () => void
 }) {
-  const { adminUser, systemInfo, onOpenAccount, onOpenClientInstall, onOpenTelegram, onOpenCustomers, onOpenFrontendSettings, onOpenUpdates, onLogout } = props
+  const { adminUser, systemInfo, canManageSystem = true, onOpenAccount, onOpenClientInstall, onOpenTelegram, onOpenCustomers, onOpenFrontendSettings, onOpenUpdates, onLogout } = props
   const items: MenuProps['items'] = [
     {
       key: 'profile',
@@ -56,10 +57,11 @@ export function PersonalCenterDropdown(props: {
         <div className="personal-center-menu-profile">
           <AdminAvatar user={adminUser} size={52} className="personal-center-menu-avatar" />
           <div>
-            <Text type="secondary">当前管理员</Text>
+            <Text type="secondary">{adminUser.role === 'area_manager' ? '当前区域账号' : '当前管理员'}</Text>
             <div className="personal-center-menu-name">{adminUser.username}</div>
             <Space wrap size={6}>
               <Tag color="success">已登录</Tag>
+              {adminUser.role === 'area_manager' ? <Tag color="gold">区域管理</Tag> : null}
               {systemInfo?.version ? <Tag color="blue">Server v{systemInfo.version}</Tag> : null}
             </Space>
           </div>
@@ -67,12 +69,12 @@ export function PersonalCenterDropdown(props: {
       ),
     },
     { type: 'divider' },
-    { key: 'account', icon: <EditOutlined />, label: '账号与头像' },
-    { key: 'client-install', icon: <CloudDownloadOutlined />, label: 'Client 安装命令' },
-    { key: 'telegram', icon: <BellOutlined />, label: 'TG 告警机器人' },
+    ...(canManageSystem ? [{ key: 'account', icon: <EditOutlined />, label: '账号与头像' }] : []),
+    ...(canManageSystem ? [{ key: 'client-install', icon: <CloudDownloadOutlined />, label: 'Client 安装命令' }] : []),
+    ...(canManageSystem ? [{ key: 'telegram', icon: <BellOutlined />, label: 'TG 告警机器人' }] : []),
     { key: 'customers', icon: <TeamOutlined />, label: '人员管理' },
-    { key: 'frontend', icon: <SettingOutlined />, label: '前端样式自定义' },
-    { key: 'updates', icon: <SettingOutlined />, label: '在线更新' },
+    ...(canManageSystem ? [{ key: 'frontend', icon: <SettingOutlined />, label: '前端样式自定义' }] : []),
+    ...(canManageSystem ? [{ key: 'updates', icon: <SettingOutlined />, label: '在线更新' }] : []),
     { type: 'divider' },
     { key: 'logout', danger: true, icon: <LogoutOutlined />, label: '退出登录' },
   ]

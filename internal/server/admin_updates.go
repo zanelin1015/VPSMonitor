@@ -17,7 +17,7 @@ import (
 )
 
 func (a *App) handleAdminUpdates(w http.ResponseWriter, r *http.Request, parts []string) {
-	if _, _, ok := a.requireAdmin(w, r); !ok {
+	if _, _, ok := a.requireRootAdmin(w, r); !ok {
 		return
 	}
 	if len(parts) != 1 {

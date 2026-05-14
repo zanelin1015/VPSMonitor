@@ -198,8 +198,14 @@
 .cn-flow-toolbar {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   margin-bottom: 16px;
+}
+
+.cn-flow-search {
+  width: min(360px, 100%);
+  flex: 0 1 360px;
 }
 
 .cn-flow-agent-filter {
@@ -901,6 +907,10 @@ textarea,
     overflow-x: auto;
     padding-bottom: 6px;
     -webkit-overflow-scrolling: touch;
+  }
+
+  .cn-flow-search {
+    flex: 0 0 260px;
   }
 
   .cn-flow-agent-filter {

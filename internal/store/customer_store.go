@@ -11,11 +11,29 @@ import (
 )
 
 func (s *SQLiteStore) ListCustomers() ([]model.CustomerAdminView, error) {
-	rows, err := s.db.Query(`
-		SELECT id, username, display_name, style_code, enabled, created_at, updated_at
+	return s.listCustomers("", 0)
+}
+
+func (s *SQLiteStore) ListCustomersForOwner(ownerType string, ownerID int64) ([]model.CustomerAdminView, error) {
+	ownerType = normalizeCustomerOwnerType(ownerType)
+	if ownerID <= 0 {
+		return nil, nil
+	}
+	return s.listCustomers(ownerType, ownerID)
+}
+
+func (s *SQLiteStore) listCustomers(ownerType string, ownerID int64) ([]model.CustomerAdminView, error) {
+	query := `
+		SELECT id, username, display_name, style_code, owner_type, owner_id, enabled, created_at, updated_at
 		FROM customer_accounts
-		ORDER BY created_at DESC, id DESC
-	`)
+	`
+	args := []any{}
+	if ownerType != "" && ownerID > 0 {
+		query += ` WHERE owner_type = ? AND owner_id = ?`
+		args = append(args, ownerType, ownerID)
+	}
+	query += ` ORDER BY created_at DESC, id DESC`
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list customers: %w", err)
 	}
@@ -47,7 +65,7 @@ func (s *SQLiteStore) GetCustomer(id int64) (model.CustomerAdminView, bool, erro
 		return model.CustomerAdminView{}, false, nil
 	}
 	row := s.db.QueryRow(`
-		SELECT id, username, display_name, style_code, enabled, created_at, updated_at
+		SELECT id, username, display_name, style_code, owner_type, owner_id, enabled, created_at, updated_at
 		FROM customer_accounts
 		WHERE id = ?
 	`, id)
@@ -66,6 +84,10 @@ func (s *SQLiteStore) GetCustomer(id int64) (model.CustomerAdminView, bool, erro
 }
 
 func (s *SQLiteStore) CreateCustomer(req model.CustomerAccountRequest) (model.CustomerAdminView, error) {
+	return s.CreateCustomerForOwner(req, model.AdminRoleRoot, adminAccountID)
+}
+
+func (s *SQLiteStore) CreateCustomerForOwner(req model.CustomerAccountRequest, ownerType string, ownerID int64) (model.CustomerAdminView, error) {
 	username, displayName, enabled, err := normalizeCustomerAccountRequest(req, true)
 	if err != nil {
 		return model.CustomerAdminView{}, err
@@ -77,11 +99,15 @@ func (s *SQLiteStore) CreateCustomer(req model.CustomerAccountRequest) (model.Cu
 	if err != nil {
 		return model.CustomerAdminView{}, err
 	}
+	ownerType = normalizeCustomerOwnerType(ownerType)
+	if ownerID <= 0 {
+		ownerID = adminAccountID
+	}
 	now := time.Now().UTC()
 	result, err := s.db.Exec(`
-		INSERT INTO customer_accounts (username, password_hash, display_name, style_code, enabled, created_at, updated_at)
-		VALUES (?, ?, ?, '', ?, ?, ?)
-	`, username, hash, displayName, boolInt(enabled), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
+		INSERT INTO customer_accounts (username, password_hash, display_name, style_code, owner_type, owner_id, enabled, created_at, updated_at)
+		VALUES (?, ?, ?, '', ?, ?, ?, ?, ?)
+	`, username, hash, displayName, ownerType, ownerID, boolInt(enabled), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
 	if err != nil {
 		return model.CustomerAdminView{}, fmt.Errorf("create customer: %w", err)
 	}
@@ -97,6 +123,27 @@ func (s *SQLiteStore) CreateCustomer(req model.CustomerAccountRequest) (model.Cu
 		return model.CustomerAdminView{}, fmt.Errorf("created customer not found")
 	}
 	return customer, nil
+}
+
+func (s *SQLiteStore) CustomerOwnedBy(customerID int64, ownerType string, ownerID int64) (bool, error) {
+	if customerID <= 0 || ownerID <= 0 {
+		return false, nil
+	}
+	ownerType = normalizeCustomerOwnerType(ownerType)
+	var exists int
+	err := s.db.QueryRow(`
+		SELECT 1
+		FROM customer_accounts
+		WHERE id = ? AND owner_type = ? AND owner_id = ?
+		LIMIT 1
+	`, customerID, ownerType, ownerID).Scan(&exists)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("check customer owner: %w", err)
+	}
+	return exists == 1, nil
 }
 
 func (s *SQLiteStore) UpdateCustomer(id int64, req model.CustomerAccountRequest) (model.CustomerAdminView, error) {
@@ -620,13 +667,22 @@ func scanCustomerUser(scanner rowScanner) (model.CustomerUser, error) {
 		createdAtText string
 		updatedAtText string
 	)
-	if err := scanner.Scan(&user.ID, &user.Username, &user.DisplayName, &user.StyleCode, &enabled, &createdAtText, &updatedAtText); err != nil {
+	if err := scanner.Scan(&user.ID, &user.Username, &user.DisplayName, &user.StyleCode, &user.OwnerType, &user.OwnerID, &enabled, &createdAtText, &updatedAtText); err != nil {
 		return model.CustomerUser{}, err
 	}
 	user.Enabled = enabled != 0
 	user.CreatedAt = parseTime(createdAtText)
 	user.UpdatedAt = parseTime(updatedAtText)
 	return user, nil
+}
+
+func normalizeCustomerOwnerType(ownerType string) string {
+	switch strings.ToLower(strings.TrimSpace(ownerType)) {
+	case model.AdminRoleAreaManager:
+		return model.AdminRoleAreaManager
+	default:
+		return model.AdminRoleRoot
+	}
 }
 
 func scanCustomerAssignment(scanner rowScanner) (model.CustomerAssignment, error) {

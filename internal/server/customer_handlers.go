@@ -196,7 +196,7 @@ func (a *App) customerOverview(user model.CustomerUser) (model.CustomerOverviewR
 	snapshots := a.store.ListLatest()
 	view := dashboard.BuildGlobalDashboard(agents, snapshots)
 	a.realtime.applyToDashboard(&view)
-	clientMap := buildCustomerClientMap(snapshots)
+	clientMap := buildCustomerClientMap(snapshots, agents)
 	chainMap := make(map[string]model.ClientChainView, len(view.ClientChains))
 	for _, chain := range view.ClientChains {
 		chainMap[chain.Key] = chain
@@ -221,10 +221,14 @@ type customerClientRef struct {
 	Client model.XUIClientView
 }
 
-func buildCustomerClientMap(snapshots []model.AgentSnapshot) map[string]customerClientRef {
+func buildCustomerClientMap(snapshots []model.AgentSnapshot, agents []model.AgentRecord) map[string]customerClientRef {
+	entryByAgent := make(map[string]model.AgentEntryConfig, len(agents))
+	for _, agent := range agents {
+		entryByAgent[agent.AgentID] = agent.Config.Entry
+	}
 	result := make(map[string]customerClientRef)
 	for _, snapshot := range snapshots {
-		overview := dashboard.BuildXUIOverview(snapshot)
+		overview := dashboard.BuildXUIOverviewWithOptions(snapshot, dashboard.XUIOverviewOptions{Entry: entryByAgent[snapshot.AgentID]})
 		if overview == nil {
 			continue
 		}

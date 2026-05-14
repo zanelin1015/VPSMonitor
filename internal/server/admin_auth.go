@@ -26,7 +26,7 @@ func (a *App) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
-	token, session, err := a.store.CreateAdminSession(user.Username, adminSessionTTL)
+	token, session, err := a.store.CreateAdminSession(user, adminSessionTTL)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -44,7 +44,7 @@ func (a *App) handleAdminLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleAdminAccountUpdate(w http.ResponseWriter, r *http.Request) {
-	_, token, ok := a.requireAdmin(w, r)
+	_, token, ok := a.requireRootAdmin(w, r)
 	if !ok {
 		return
 	}
@@ -66,7 +66,7 @@ func (a *App) handleAdminAccountUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleAdminTelegramBots(w http.ResponseWriter, r *http.Request, parts []string) {
-	if _, _, ok := a.requireAdmin(w, r); !ok {
+	if _, _, ok := a.requireRootAdmin(w, r); !ok {
 		return
 	}
 
@@ -171,6 +171,18 @@ func (a *App) requireAdmin(w http.ResponseWriter, r *http.Request) (model.AdminU
 	return user, token, true
 }
 
+func (a *App) requireRootAdmin(w http.ResponseWriter, r *http.Request) (model.AdminUser, string, bool) {
+	user, token, ok := a.requireAdmin(w, r)
+	if !ok {
+		return model.AdminUser{}, "", false
+	}
+	if !isRootAdmin(user) {
+		writeError(w, http.StatusForbidden, "admin permission required")
+		return model.AdminUser{}, "", false
+	}
+	return user, token, true
+}
+
 func (a *App) currentAdmin(r *http.Request) (model.AdminUser, string, bool) {
 	token := readAdminSessionToken(r)
 	user, _, ok, err := a.store.ValidateAdminSession(token)
@@ -178,6 +190,14 @@ func (a *App) currentAdmin(r *http.Request) (model.AdminUser, string, bool) {
 		return model.AdminUser{}, "", false
 	}
 	return user, token, true
+}
+
+func isRootAdmin(user model.AdminUser) bool {
+	return user.Role == "" || user.Role == model.AdminRoleRoot
+}
+
+func isAreaManager(user model.AdminUser) bool {
+	return user.Role == model.AdminRoleAreaManager
 }
 
 func readAdminSessionToken(r *http.Request) string {

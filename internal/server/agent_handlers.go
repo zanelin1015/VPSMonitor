@@ -51,7 +51,8 @@ func (a *App) handleAgents(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if _, _, ok := a.requireAdmin(w, r); !ok {
+	user, _, ok := a.requireAdmin(w, r)
+	if !ok {
 		return
 	}
 
@@ -60,6 +61,7 @@ func (a *App) handleAgents(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	agents = a.filterAgentRecordsForAdmin(user, agents)
 
 	items := make([]model.AgentListItem, 0, len(agents))
 	for _, agent := range agents {
@@ -91,7 +93,8 @@ func (a *App) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if _, _, ok := a.requireAdmin(w, r); !ok {
+	user, _, ok := a.requireAdmin(w, r)
+	if !ok {
 		return
 	}
 
@@ -100,7 +103,8 @@ func (a *App) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	view := dashboard.BuildGlobalDashboard(agents, a.store.ListLatest())
+	agents = a.filterAgentRecordsForAdmin(user, agents)
+	view := dashboard.BuildGlobalDashboard(agents, a.filterSnapshotsForAdmin(user, a.store.ListLatest()))
 	a.realtime.applyToDashboard(&view)
 	writeJSON(w, http.StatusOK, view)
 }
@@ -143,7 +147,7 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
-		if _, _, ok := a.requireAdmin(w, r); !ok {
+		if _, _, ok := a.requireAgentAdmin(w, r, agentID); !ok {
 			return
 		}
 		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
@@ -174,7 +178,7 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
-		if _, _, ok := a.requireAdmin(w, r); !ok {
+		if _, _, ok := a.requireAgentAdmin(w, r, agentID); !ok {
 			return
 		}
 		snapshot, ok := a.store.GetLatest(agentID)
@@ -182,7 +186,12 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "snapshot not found")
 			return
 		}
-		overview := dashboard.BuildXUIOverview(snapshot)
+		cfg, _, err := a.store.GetAgentConfig(agentID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		overview := dashboard.BuildXUIOverviewWithOptions(snapshot, dashboard.XUIOverviewOptions{Entry: cfg.Entry})
 		if overview == nil {
 			writeError(w, http.StatusNotFound, "x-ui snapshot not found")
 			return
@@ -198,7 +207,7 @@ func (a *App) handleAgentRefresh(w http.ResponseWriter, r *http.Request, agentID
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if _, _, ok := a.requireAdmin(w, r); !ok {
+	if _, _, ok := a.requireAgentAdmin(w, r, agentID); !ok {
 		return
 	}
 	if _, found, err := a.store.GetAgent(agentID); err != nil {
@@ -220,7 +229,7 @@ func (a *App) handleAgentRefresh(w http.ResponseWriter, r *http.Request, agentID
 }
 
 func (a *App) handleAgentLogs(w http.ResponseWriter, r *http.Request, agentID string) {
-	if _, _, ok := a.requireAdmin(w, r); !ok {
+	if _, _, ok := a.requireAgentAdmin(w, r, agentID); !ok {
 		return
 	}
 	snapshot, ok := a.store.GetLatest(agentID)
@@ -244,7 +253,11 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 	if len(parts) == 0 {
 		switch r.Method {
 		case http.MethodGet:
-			if _, _, ok := a.currentAdmin(r); ok {
+			if user, _, ok := a.currentAdmin(r); ok {
+				if !a.adminCanAccessAgent(user, agentID) {
+					writeError(w, http.StatusForbidden, "agent is not assigned to this account")
+					return
+				}
 				limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 				actions, err := a.store.ListXUIActions(agentID, limit)
 				if err != nil {
@@ -266,12 +279,17 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 			}
 			writeJSON(w, http.StatusOK, actions)
 		case http.MethodPost:
-			if _, _, ok := a.requireAdmin(w, r); !ok {
+			user, _, ok := a.requireAgentAdmin(w, r, agentID)
+			if !ok {
 				return
 			}
 			var req model.XUIActionRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				writeError(w, http.StatusBadRequest, fmt.Sprintf("decode x-ui action: %v", err))
+				return
+			}
+			if isAreaManager(user) && !a.areaManagerXUIActionAllowed(req.Kind) {
+				writeError(w, http.StatusForbidden, "area manager can only create routing rule actions")
 				return
 			}
 			action, err := a.store.CreateXUIAction(agentID, req)
@@ -326,7 +344,8 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 }
 
 func (a *App) handleAgentRecord(w http.ResponseWriter, r *http.Request, agentID string) {
-	if _, _, ok := a.requireAdmin(w, r); !ok {
+	user, _, ok := a.requireAgentAdmin(w, r, agentID)
+	if !ok {
 		return
 	}
 	agent, found, err := a.store.GetAgent(agentID)
@@ -346,6 +365,7 @@ func (a *App) handleAgentRecord(w http.ResponseWriter, r *http.Request, agentID 
 		agent.Arch = snapshot.Arch
 		agent.SystemVersion = snapshot.SystemVersion
 	}
+	agent.Config = a.sanitizeManagedConfigForAdmin(user, agent.Config)
 	writeJSON(w, http.StatusOK, agent)
 }
 
@@ -365,9 +385,12 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 			writeError(w, http.StatusNotFound, "agent not found")
 			return
 		}
+		if user, _, ok := a.currentAdmin(r); ok {
+			cfg = a.sanitizeManagedConfigForAdmin(user, cfg)
+		}
 		writeJSON(w, http.StatusOK, cfg)
 	case http.MethodPut:
-		user, _, ok := a.requireAdmin(w, r)
+		user, _, ok := a.requireRootAdmin(w, r)
 		if !ok {
 			return
 		}
@@ -465,8 +488,8 @@ func (a *App) isRegistrationAuthorized(token string) bool {
 }
 
 func (a *App) isConfigReadAuthorized(agentID string, r *http.Request) bool {
-	if _, _, ok := a.currentAdmin(r); ok {
-		return true
+	if user, _, ok := a.currentAdmin(r); ok {
+		return a.adminCanAccessAgent(user, agentID)
 	}
 	return a.isAuthorized(agentID, r.Header.Get("X-Agent-Token"))
 }

@@ -107,6 +107,7 @@ export interface ManagedAgentConfig {
 
 export interface AgentEntryConfig {
   addresses?: string[]
+  import_domain?: string
   mappings?: AgentEntryMapping[]
 }
 
@@ -119,8 +120,12 @@ export interface AgentEntryMapping {
 }
 
 export interface AdminUser {
+  id?: number
   username: string
+  display_name?: string
   avatar_url?: string
+  role?: 'admin' | 'area_manager'
+  agent_ids?: string[]
   updated_at: string
 }
 
@@ -134,6 +139,8 @@ export interface CustomerUser {
   username: string
   display_name?: string
   style_code?: string
+  owner_type?: string
+  owner_id?: number
   enabled: boolean
   created_at: string
   updated_at: string
@@ -170,6 +177,16 @@ export interface CustomerAssignmentDraft {
 
 export interface CustomerAdminView extends CustomerUser {
   assignments: CustomerAssignment[]
+}
+
+export interface AreaManagerAdminView {
+  id: number
+  username: string
+  display_name?: string
+  enabled: boolean
+  agent_ids?: string[]
+  created_at: string
+  updated_at: string
 }
 
 export interface CustomerLinkStep {

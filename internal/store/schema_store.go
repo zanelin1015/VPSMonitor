@@ -32,9 +32,32 @@ func (s *SQLiteStore) init() error {
 		CREATE TABLE IF NOT EXISTS admin_sessions (
 			token_hash TEXT PRIMARY KEY,
 			username TEXT NOT NULL,
+			role TEXT NOT NULL DEFAULT 'admin',
+			account_id INTEGER NOT NULL DEFAULT 1,
 			created_at TEXT NOT NULL,
 			expires_at TEXT NOT NULL,
 			last_seen_at TEXT NOT NULL
+		);
+		`,
+		`
+		CREATE TABLE IF NOT EXISTS area_manager_accounts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+			password_hash TEXT NOT NULL,
+			display_name TEXT NOT NULL DEFAULT '',
+			enabled INTEGER NOT NULL DEFAULT 1,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+		`,
+		`
+		CREATE TABLE IF NOT EXISTS area_manager_agents (
+			manager_id INTEGER NOT NULL,
+			agent_id TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			PRIMARY KEY(manager_id, agent_id),
+			FOREIGN KEY(manager_id) REFERENCES area_manager_accounts(id) ON DELETE CASCADE,
+			FOREIGN KEY(agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE
 		);
 		`,
 		`
@@ -44,6 +67,8 @@ func (s *SQLiteStore) init() error {
 			password_hash TEXT NOT NULL,
 			display_name TEXT NOT NULL DEFAULT '',
 			style_code TEXT NOT NULL DEFAULT '',
+			owner_type TEXT NOT NULL DEFAULT 'admin',
+			owner_id INTEGER NOT NULL DEFAULT 1,
 			enabled INTEGER NOT NULL DEFAULT 1,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
@@ -197,6 +222,8 @@ func (s *SQLiteStore) init() error {
 		`,
 		`CREATE INDEX IF NOT EXISTS idx_snapshots_agent_reported_at ON snapshots(agent_id, reported_at DESC, id DESC);`,
 		`CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires_at ON admin_sessions(expires_at);`,
+		`CREATE INDEX IF NOT EXISTS idx_area_manager_agents_agent ON area_manager_agents(agent_id, manager_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_customer_accounts_owner ON customer_accounts(owner_type, owner_id, id);`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_sessions_expires_at ON customer_sessions(expires_at);`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_assignments_customer ON customer_assignments(customer_id, enabled, id);`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_assignments_agent ON customer_assignments(agent_id, inbound_id, client_email);`,
@@ -229,7 +256,19 @@ func (s *SQLiteStore) init() error {
 	if err := s.ensureColumn("admin_accounts", "avatar_url", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	if err := s.ensureColumn("admin_sessions", "role", "TEXT NOT NULL DEFAULT 'admin'"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("admin_sessions", "account_id", "INTEGER NOT NULL DEFAULT 1"); err != nil {
+		return err
+	}
 	if err := s.ensureColumn("customer_accounts", "style_code", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("customer_accounts", "owner_type", "TEXT NOT NULL DEFAULT 'admin'"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("customer_accounts", "owner_id", "INTEGER NOT NULL DEFAULT 1"); err != nil {
 		return err
 	}
 	return nil

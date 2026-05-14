@@ -1006,6 +1006,7 @@ function formatAddressInput(addresses: string[] | undefined): string {
 function normalizeEntryConfig(config?: AgentEntryConfig): AgentEntryConfig {
   return {
     addresses: parseAddressInput((config?.addresses || []).join('\n')),
+    import_domain: normalizeImportDomain(config?.import_domain),
     mappings: (config?.mappings || []).map((mapping) => ({
       address: mapping.address || '',
       external_port: Math.max(0, Number(mapping.external_port || 0)),
@@ -1014,6 +1015,26 @@ function normalizeEntryConfig(config?: AgentEntryConfig): AgentEntryConfig {
       note: mapping.note || '',
     })),
   }
+}
+
+function normalizeImportDomain(value?: string): string {
+  let domain = (value || '').trim().toLowerCase()
+  domain = domain.replace(/^https?:\/\//, '').split('/')[0].replace(/\.$/, '')
+  const portMatch = domain.match(/^([^:[\]]+):\d+$/)
+  if (portMatch) {
+    domain = portMatch[1]
+  }
+  if (!domain || domain.includes(' ') || domain.includes('*') || domain.includes(':') || isLikelyIP(domain)) {
+    return ''
+  }
+  return domain
+}
+
+function isLikelyIP(value: string): boolean {
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(value)) {
+    return true
+  }
+  return /^[0-9a-f:]+$/i.test(value) && value.includes(':')
 }
 
 function normalizeEntryProtocol(protocol?: string): AgentEntryMapping['protocol'] {
@@ -1043,6 +1064,7 @@ function buildSectionSavePayload(base: ManagedAgentConfig, draft: ManagedAgentCo
     renewal: { ...(base.renewal || {}) },
     entry: {
       addresses: [...(base.entry?.addresses || [])],
+      import_domain: base.entry?.import_domain || '',
       mappings: (base.entry?.mappings || []).map((mapping) => ({ ...mapping })),
     },
     xui: { ...base.xui },
@@ -1063,6 +1085,7 @@ function buildSectionSavePayload(base: ManagedAgentConfig, draft: ManagedAgentCo
     case 'entry':
       payload.entry = {
         addresses: [...(draft.entry?.addresses || [])],
+        import_domain: draft.entry?.import_domain || '',
         mappings: (draft.entry?.mappings || []).map((mapping) => ({ ...mapping })),
       }
       break
@@ -1091,6 +1114,7 @@ function mergeSavedSectionIntoDraft(draft: ManagedAgentConfig, saved: ManagedAge
     case 'entry':
       next.entry = {
         addresses: [...(saved.entry?.addresses || [])],
+        import_domain: saved.entry?.import_domain || '',
         mappings: (saved.entry?.mappings || []).map((mapping) => ({ ...mapping })),
       }
       break
@@ -1434,6 +1458,7 @@ function createEmptyManagedConfig(agentID: string, agentName?: string): ManagedA
     },
     entry: {
       addresses: [],
+      import_domain: '',
       mappings: [],
     },
     xui: {

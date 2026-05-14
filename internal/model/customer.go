@@ -7,6 +7,8 @@ type CustomerUser struct {
 	Username    string    `json:"username"`
 	DisplayName string    `json:"display_name,omitempty"`
 	StyleCode   string    `json:"style_code,omitempty"`
+	OwnerType   string    `json:"owner_type,omitempty"`
+	OwnerID     int64     `json:"owner_id,omitempty"`
 	Enabled     bool      `json:"enabled"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`

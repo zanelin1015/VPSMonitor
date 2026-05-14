@@ -18,7 +18,15 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 	if len(parts) == 0 || parts[0] == "" {
 		switch r.Method {
 		case http.MethodGet:
-			customers, err := a.store.ListCustomers()
+			var (
+				customers []model.CustomerAdminView
+				err       error
+			)
+			if isRootAdmin(user) {
+				customers, err = a.store.ListCustomers()
+			} else {
+				customers, err = a.store.ListCustomersForOwner(model.AdminRoleAreaManager, user.ID)
+			}
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
@@ -30,7 +38,13 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 				writeError(w, http.StatusBadRequest, fmt.Sprintf("decode customer request: %v", err))
 				return
 			}
-			customer, err := a.store.CreateCustomer(req)
+			ownerType := model.AdminRoleRoot
+			ownerID := int64(1)
+			if isAreaManager(user) {
+				ownerType = model.AdminRoleAreaManager
+				ownerID = user.ID
+			}
+			customer, err := a.store.CreateCustomerForOwner(req, ownerType, ownerID)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
@@ -45,6 +59,15 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 	customerID, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil || customerID <= 0 {
 		writeError(w, http.StatusBadRequest, "invalid customer id")
+		return
+	}
+	visible, err := a.customerVisibleToAdmin(user, customerID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !visible {
+		writeError(w, http.StatusNotFound, "customer not found")
 		return
 	}
 	if len(parts) == 1 {
@@ -100,6 +123,10 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 				writeError(w, http.StatusBadRequest, fmt.Sprintf("decode assignment request: %v", err))
 				return
 			}
+			if !a.adminCanAccessAgent(user, req.AgentID) {
+				writeError(w, http.StatusForbidden, "agent is not assigned to this account")
+				return
+			}
 			assignment, err := a.store.CreateCustomerAssignment(customerID, req)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
@@ -126,6 +153,10 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 		var req model.CustomerAssignmentRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode assignment request: %v", err))
+			return
+		}
+		if !a.adminCanAccessAgent(user, req.AgentID) {
+			writeError(w, http.StatusForbidden, "agent is not assigned to this account")
 			return
 		}
 		assignment, err := a.store.UpdateCustomerAssignment(customerID, assignmentID, req)
