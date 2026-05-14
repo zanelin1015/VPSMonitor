@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -266,6 +267,87 @@ func (s *SQLiteStore) AreaManagerCanAccessAgent(managerID int64, agentID string)
 		return false, fmt.Errorf("check area manager agent access: %w", err)
 	}
 	return exists == 1, nil
+}
+
+func (s *SQLiteStore) ListAreaManagerAgentTags(managerID int64) (map[string][]string, error) {
+	result := make(map[string][]string)
+	if managerID <= 0 {
+		return result, nil
+	}
+	rows, err := s.db.Query(`
+		SELECT agent_id, tags_json
+		FROM area_manager_agent_tags
+		WHERE manager_id = ?
+	`, managerID)
+	if err != nil {
+		return nil, fmt.Errorf("list area manager agent tags: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var agentID, raw string
+		if err := rows.Scan(&agentID, &raw); err != nil {
+			return nil, fmt.Errorf("scan area manager agent tags: %w", err)
+		}
+		var tags []string
+		if raw != "" {
+			_ = json.Unmarshal([]byte(raw), &tags)
+		}
+		result[agentID] = normalizeTags(tags)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate area manager agent tags: %w", err)
+	}
+	return result, nil
+}
+
+func (s *SQLiteStore) GetAreaManagerAgentTags(managerID int64, agentID string) ([]string, bool, error) {
+	agentID = strings.TrimSpace(agentID)
+	if managerID <= 0 || agentID == "" {
+		return nil, false, nil
+	}
+	var raw string
+	err := s.db.QueryRow(`
+		SELECT tags_json
+		FROM area_manager_agent_tags
+		WHERE manager_id = ? AND agent_id = ?
+	`, managerID, agentID).Scan(&raw)
+	if err == sql.ErrNoRows {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("load area manager agent tags: %w", err)
+	}
+	var tags []string
+	if raw != "" {
+		_ = json.Unmarshal([]byte(raw), &tags)
+	}
+	return normalizeTags(tags), true, nil
+}
+
+func (s *SQLiteStore) SaveAreaManagerAgentTags(managerID int64, agentID string, tags []string) ([]string, error) {
+	agentID = strings.TrimSpace(agentID)
+	if managerID <= 0 {
+		return nil, fmt.Errorf("invalid area manager id")
+	}
+	if agentID == "" {
+		return nil, fmt.Errorf("agent_id is required")
+	}
+	normalized := normalizeTags(tags)
+	data, err := json.Marshal(normalized)
+	if err != nil {
+		return nil, fmt.Errorf("encode area manager agent tags: %w", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err = s.db.Exec(`
+		INSERT INTO area_manager_agent_tags (manager_id, agent_id, tags_json, updated_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(manager_id, agent_id) DO UPDATE SET tags_json = excluded.tags_json, updated_at = excluded.updated_at
+	`, managerID, agentID, string(data), now)
+	if err != nil {
+		return nil, fmt.Errorf("save area manager agent tags: %w", err)
+	}
+	return normalized, nil
 }
 
 func (s *SQLiteStore) normalizeAreaManagerRequest(req model.AreaManagerAccountRequest, creating bool) (string, string, bool, []string, error) {

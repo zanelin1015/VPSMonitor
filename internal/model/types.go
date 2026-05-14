@@ -179,22 +179,23 @@ type NezhaSnapshot struct {
 }
 
 type AgentListItem struct {
-	AgentID       string           `json:"agent_id"`
-	AgentName     string           `json:"agent_name,omitempty"`
-	ClientVersion string           `json:"client_version,omitempty"`
-	ClientOS      string           `json:"client_os,omitempty"`
-	ClientArch    string           `json:"client_arch,omitempty"`
-	SystemVersion string           `json:"system_version,omitempty"`
-	SortOrder     int              `json:"sort_order,omitempty"`
-	Tags          []string         `json:"tags,omitempty"`
-	Renewal       VPSRenewalConfig `json:"renewal,omitempty"`
-	Entry         AgentEntryConfig `json:"entry,omitempty"`
-	ReportedAt    *time.Time       `json:"reported_at,omitempty"`
-	RealtimeAt    *time.Time       `json:"realtime_at,omitempty"`
-	RegisteredAt  *time.Time       `json:"registered_at,omitempty"`
-	UpdatedAt     *time.Time       `json:"updated_at,omitempty"`
-	LastSeenAt    *time.Time       `json:"last_seen_at,omitempty"`
-	HasConfig     bool             `json:"has_config"`
-	Summary       VPSSummary       `json:"summary"`
-	Geo           *IPGeoView       `json:"geo,omitempty"`
+	AgentID             string           `json:"agent_id"`
+	AgentName           string           `json:"agent_name,omitempty"`
+	CustomerDisplayName string           `json:"customer_display_name,omitempty"`
+	ClientVersion       string           `json:"client_version,omitempty"`
+	ClientOS            string           `json:"client_os,omitempty"`
+	ClientArch          string           `json:"client_arch,omitempty"`
+	SystemVersion       string           `json:"system_version,omitempty"`
+	SortOrder           int              `json:"sort_order,omitempty"`
+	Tags                []string         `json:"tags,omitempty"`
+	Renewal             VPSRenewalConfig `json:"renewal,omitempty"`
+	Entry               AgentEntryConfig `json:"entry,omitempty"`
+	ReportedAt          *time.Time       `json:"reported_at,omitempty"`
+	RealtimeAt          *time.Time       `json:"realtime_at,omitempty"`
+	RegisteredAt        *time.Time       `json:"registered_at,omitempty"`
+	UpdatedAt           *time.Time       `json:"updated_at,omitempty"`
+	LastSeenAt          *time.Time       `json:"last_seen_at,omitempty"`
+	HasConfig           bool             `json:"has_config"`
+	Summary             VPSSummary       `json:"summary"`
+	Geo                 *IPGeoView       `json:"geo,omitempty"`
 }

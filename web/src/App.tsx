@@ -24,6 +24,7 @@ import {
 import type {
   AdminAuthResponse,
   AdminUser,
+  AreaAgentTagsResponse,
   AgentListItem,
   AgentLogsResponse,
   AgentRefreshResponse,
@@ -261,6 +262,33 @@ function agentFromAdminPath(path: string): string {
   return match ? decodeURIComponent(match[1]) : ''
 }
 
+function sanitizeAreaRealtimeMetric(metric: AgentRealtimeMetrics): AgentRealtimeMetrics {
+  return {
+    agent_id: metric.agent_id,
+    reported_at: metric.reported_at,
+    summary: {
+      net_traffic_sent: metric.summary?.net_traffic_sent,
+      net_traffic_recv: metric.summary?.net_traffic_recv,
+      net_traffic_total: metric.summary?.net_traffic_total,
+      net_io_up: metric.summary?.net_io_up,
+      net_io_down: metric.summary?.net_io_down,
+    },
+  }
+}
+
+function isAreaManagerAdminUser(user: AdminUser | null): boolean {
+  if (!user) {
+    return false
+  }
+  if (user.role === 'area_manager') {
+    return true
+  }
+  if (user.role === 'admin') {
+    return false
+  }
+  return Boolean((user.agent_ids || []).length || (user.id && user.id !== 1))
+}
+
 export default function App() {
   const { message } = AntdApp.useApp()
   const { mode: themeMode, effectiveMode, setMode: setThemeMode } = useAppTheme()
@@ -359,7 +387,7 @@ export default function App() {
   const topologyScopeLabel = selectedAgentId ? selectedAgent?.agent_name || selectedAgentId : selectedTag ? `${selectedTag} 标签` : '全部 Client'
   const heroTitle = '南风VPS监控'
   const customerMode = window.location.pathname.replace(/\/+$/, '') === '/customer'
-  const isAreaManagerAccount = adminUser?.role === 'area_manager'
+  const isAreaManagerAccount = isAreaManagerAdminUser(adminUser)
   const canManageSystem = Boolean(adminUser && !isAreaManagerAccount)
   useEffect(() => {
     if (customerMode) {
@@ -383,8 +411,8 @@ export default function App() {
       if (canManageSystem) {
         void loadTelegramBots()
         void loadTagSettings()
+        void loadExchangeRates()
       }
-      void loadExchangeRates()
     }
   }, [adminUser, canManageSystem])
 
@@ -792,12 +820,13 @@ export default function App() {
   }
 
   function applyRealtimeMetrics(metrics: AgentRealtimeMetrics[]) {
-    setAgents((current) => mergeRealtimeMetricsIntoAgents(current, metrics))
+    const visibleMetrics = isAreaManagerAccount ? metrics.map(sanitizeAreaRealtimeMetric) : metrics
+    setAgents((current) => mergeRealtimeMetricsIntoAgents(current, visibleMetrics))
     setDashboardView((current) =>
       current
         ? {
             ...current,
-            agents: mergeRealtimeMetricsIntoAgents(current.agents, metrics),
+            agents: mergeRealtimeMetricsIntoAgents(current.agents, visibleMetrics),
           }
         : current,
     )
@@ -805,7 +834,7 @@ export default function App() {
       if (!current) {
         return current
       }
-      const metric = metrics.find((item) => item.agent_id === current.agent_id)
+      const metric = visibleMetrics.find((item) => item.agent_id === current.agent_id)
       if (!metric) {
         return current
       }
@@ -1022,10 +1051,49 @@ export default function App() {
     }
   }
 
+  async function saveAreaAgentTags(nextTags = managedConfig?.tags || []) {
+    if (!selectedAgentId) {
+      return false
+    }
+    setTagSaving(true)
+    try {
+      const normalized = mergeTagOptions([], nextTags)
+      const data = await fetchJSON<AreaAgentTagsResponse>(`/api/v1/admin/area-agent-tags/${encodeURIComponent(selectedAgentId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tags: normalized }),
+      })
+      const savedTags = mergeTagOptions([], data.tags || [])
+      setTagOptions((current) => mergeTagOptions(current, savedTags))
+      setManagedConfig((current) => current ? { ...current, tags: savedTags } : current)
+      setSavedManagedConfig((current) => current ? { ...current, tags: savedTags } : current)
+      managedConfigDirtyRef.current = false
+      message.success('区域账号标签已保存')
+      await loadAgents({ silent: true })
+      return true
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      message.error(error instanceof Error ? error.message : '保存区域标签失败')
+      return false
+    } finally {
+      setTagSaving(false)
+    }
+  }
+
   async function createTagOption() {
     const parsed = parseTagInput(newTagName)
     if (!parsed.length) {
       message.warning('请输入标签名称')
+      return
+    }
+    if (!canManageSystem) {
+      const nextTags = mergeTagOptions(tagOptions, parsed)
+      setTagOptions(nextTags)
+      updateManagedConfig((current) => ({ ...current, tags: mergeTagOptions(current.tags || [], parsed) }))
+      setNewTagName('')
+      message.success('标签已加入当前区域草稿，请保存后生效')
       return
     }
     const nextTags = mergeTagOptions(tagOptions, parsed)
@@ -1469,7 +1537,9 @@ export default function App() {
   const offlineAgentCount = Math.max(scopedAgentCount - onlineAgentCount, 0)
   const xuiErrorAgentCount = filteredAgents.filter((agent) => Boolean(agent.summary.last_collection_err)).length
   const scopedNetwork = summarizeAgentNetwork(filteredAgents)
-  const monthlyFinance = summarizeMonthlyFinance(filteredAgents, costCurrency, exchangeRates)
+  const monthlyFinance = canManageSystem
+    ? summarizeMonthlyFinance(filteredAgents, costCurrency, exchangeRates)
+    : { costTotal: 0, costCount: 0, revenueTotal: 0, revenueCount: 0, profitTotal: 0, missingCostCount: 0, missingRevenueCount: 0 }
   const filteredTagLinks = (dashboardView?.links || []).filter((link) => topologyMatchesSelectedTag(link, selectedTag))
   const filteredChains = (dashboardView?.client_chains || []).filter((chain) => chainMatchesSelectedTag(chain, selectedTag))
 
@@ -1508,7 +1578,7 @@ export default function App() {
   const showWorkbenchDashboard = activeAdminPage === 'dashboard' && !topologyVisible
   return (
     <div className="page-shell admin-page-shell">
-      <VisualEffects />
+      <VisualEffects disabled={isAreaManagerAccount} />
       <div className="page-background page-background-left" />
       <div className="page-background page-background-right" />
       <div className={`app-shell admin-oa-shell${centerPanelOpen ? ' topology-open-shell' : ''}`}>
@@ -1615,7 +1685,7 @@ export default function App() {
             }}>
               <DashboardOutlined />
               <span>工作台</span>
-              <small>总览与财务</small>
+              <small>{isAreaManagerAccount ? '授权总览' : '总览与财务'}</small>
             </button>
             <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'assets' ? ' active' : ''}`} onClick={() => {
               setActiveAdminPage('assets')
@@ -1665,7 +1735,9 @@ export default function App() {
             <div className="eyebrow">管理后台 / 工作台</div>
             <Title level={1}>{heroTitle}</Title>
             <Paragraph className="hero-copy">
-              统一管理 Client、x-ui 托管配置、客户账号、财务月览与跨 Client 拓扑联动。
+              {isAreaManagerAccount
+                ? '管理已授权 Client、客户账号、区域标签与可见拓扑链路。'
+                : '统一管理 Client、x-ui 托管配置、客户账号、财务月览与跨 Client 拓扑联动。'}
             </Paragraph>
           </div>
           <div className="hero-actions hero-actions-column">
@@ -1823,6 +1895,7 @@ export default function App() {
               scopedNetwork={scopedNetwork}
               monthlyFinance={monthlyFinance}
               costCurrency={costCurrency}
+              restrictedView={isAreaManagerAccount}
               onSelectAgent={(agentID) => openAgentDetailPanel(agentID)}
               onOpenTopology={openTopologyPanel}
             />
@@ -1847,6 +1920,7 @@ export default function App() {
             currentAgentLabel={selectedAgent?.agent_name || selectedAgent?.agent_id || ''}
             currentIPv4={selectedSummary.public_ipv4 || ''}
             compact={centerPanelOpen}
+            restrictedView={isAreaManagerAccount}
             onCostCurrencyChange={setCostCurrency}
           />
 
@@ -1860,6 +1934,7 @@ export default function App() {
             viewMode={agentViewMode}
             panelExpanded={centerPanelOpen}
             topologyVisible={topologyVisible}
+            restrictedView={isAreaManagerAccount}
             onToggleViewMode={toggleAgentViewMode}
             onToggleTopology={() => {
               if (topologyVisible) {
@@ -1898,13 +1973,14 @@ export default function App() {
                       selectTopologyAgent(agentID)
                     },
                     onJumpNode: jumpToNode,
-                    canOpenXUI: Boolean(managedConfig?.xui?.base_url),
+                    restrictedView: isAreaManagerAccount,
+                    canOpenXUI: !isAreaManagerAccount && Boolean(managedConfig?.xui?.base_url),
                     onOpenXUI: () => {
                       if (managedConfig?.xui?.base_url) {
                         window.open(managedConfig.xui.base_url, '_blank', 'noopener,noreferrer')
                       }
                     },
-                    canRefreshCurrentNode: Boolean(selectedAgentId),
+                    canRefreshCurrentNode: !isAreaManagerAccount && Boolean(selectedAgentId),
                     currentNodeLoading: overviewLoading || configLoading || agentRefreshLoading,
                     onRefreshCurrentNode: () => {
                       if (selectedAgentId) {
@@ -1925,6 +2001,7 @@ export default function App() {
                 agentLogsLoading={agentLogsLoading}
                 canOpenXUI={Boolean(managedConfig?.xui?.base_url)}
                 canManageConfig={canManageSystem}
+                restrictedView={isAreaManagerAccount}
                 clientSearch={clientSearch}
                 configAudits={configAudits}
                 configAuditsLoading={configAuditsLoading}
@@ -1997,6 +2074,7 @@ export default function App() {
                   setTagOptions((current) => mergeTagOptions(current, values))
                   updateManagedConfig((current) => ({ ...current, tags: values }))
                 }}
+                onSaveAreaTags={(values) => void saveAreaAgentTags(values)}
                 onUpdateClientBillingDraft={updateClientBillingDraft}
                 onXUIChange={(patch) => updateManagedConfig((current) => ({ ...current, xui: { ...current.xui, ...patch } }))}
               />

@@ -127,14 +127,21 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 				writeError(w, http.StatusForbidden, "agent is not assigned to this account")
 				return
 			}
+			if isAreaManager(user) {
+				req.RevenueAmount = nil
+				req.RevenueCurrency = ""
+				req.RevenueCycle = ""
+			}
 			assignment, err := a.store.CreateCustomerAssignment(customerID, req)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			if err := a.syncCustomerAssignmentRevenue(req, user.Username); err != nil {
-				writeError(w, http.StatusBadRequest, err.Error())
-				return
+			if isRootAdmin(user) {
+				if err := a.syncCustomerAssignmentRevenue(req, user.Username); err != nil {
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
 			}
 			writeJSON(w, http.StatusOK, assignment)
 		default:
@@ -159,6 +166,11 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 			writeError(w, http.StatusForbidden, "agent is not assigned to this account")
 			return
 		}
+		if isAreaManager(user) {
+			req.RevenueAmount = nil
+			req.RevenueCurrency = ""
+			req.RevenueCycle = ""
+		}
 		assignment, err := a.store.UpdateCustomerAssignment(customerID, assignmentID, req)
 		if err != nil {
 			status := http.StatusBadRequest
@@ -168,9 +180,11 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 			writeError(w, status, err.Error())
 			return
 		}
-		if err := a.syncCustomerAssignmentRevenue(req, user.Username); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
+		if isRootAdmin(user) {
+			if err := a.syncCustomerAssignmentRevenue(req, user.Username); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
 		}
 		writeJSON(w, http.StatusOK, assignment)
 	case http.MethodDelete:

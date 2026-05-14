@@ -14,8 +14,13 @@ declare global {
   }
 }
 
-export function VisualEffects() {
+export function VisualEffects(props: { disabled?: boolean } = {}) {
+  const { disabled = false } = props
   useEffect(() => {
+    if (disabled) {
+      clearCustomFrontendCode()
+      return undefined
+    }
     let cancelled = false
     void fetchJSON<FrontendSettings>('/api/v1/frontend-settings')
       .then((settings) => {
@@ -32,7 +37,7 @@ export function VisualEffects() {
       cancelled = true
       clearCustomFrontendCode()
     }
-  }, [])
+  }, [disabled])
 
   return null
 }

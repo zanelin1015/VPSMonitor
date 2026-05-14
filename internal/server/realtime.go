@@ -266,6 +266,7 @@ func (a *App) handleDashboardRealtime(w http.ResponseWriter, r *http.Request) {
 			if !a.adminCanAccessAgent(user, metric.AgentID) {
 				continue
 			}
+			metric = a.sanitizeRealtimeMetricForAdmin(user, metric)
 			if err := conn.WriteJSON(model.DashboardRealtimeMessage{Type: realtimeMetricsMessage, Metric: &metric}); err != nil {
 				return
 			}

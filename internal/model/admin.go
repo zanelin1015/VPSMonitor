@@ -99,6 +99,15 @@ type TagSettingsResponse struct {
 	Tags []string `json:"tags"`
 }
 
+type AreaAgentTagsRequest struct {
+	Tags []string `json:"tags"`
+}
+
+type AreaAgentTagsResponse struct {
+	AgentID string   `json:"agent_id"`
+	Tags    []string `json:"tags"`
+}
+
 type FrontendSettings struct {
 	CustomCode string `json:"custom_code"`
 }

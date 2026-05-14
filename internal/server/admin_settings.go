@@ -83,6 +83,62 @@ func (a *App) handleAdminTags(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (a *App) handleAdminAreaAgentTags(w http.ResponseWriter, r *http.Request, parts []string) {
+	user, _, ok := a.requireAdmin(w, r)
+	if !ok {
+		return
+	}
+	if !isAreaManager(user) {
+		writeError(w, http.StatusForbidden, "area manager permission required")
+		return
+	}
+	if len(parts) == 0 || parts[0] == "" {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		tags, err := a.store.ListAreaManagerAgentTags(user.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, tags)
+		return
+	}
+	agentID := strings.TrimSpace(parts[0])
+	if agentID == "" || len(parts) > 1 {
+		writeError(w, http.StatusNotFound, "route not found")
+		return
+	}
+	if !a.adminCanAccessAgent(user, agentID) {
+		writeError(w, http.StatusForbidden, "agent is not assigned to this account")
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		tags, _, err := a.store.GetAreaManagerAgentTags(user.ID, agentID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, model.AreaAgentTagsResponse{AgentID: agentID, Tags: tags})
+	case http.MethodPut:
+		var req model.AreaAgentTagsRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode area agent tags: %v", err))
+			return
+		}
+		tags, err := a.store.SaveAreaManagerAgentTags(user.ID, agentID, req.Tags)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, model.AreaAgentTagsResponse{AgentID: agentID, Tags: tags})
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
 func (a *App) handleConfigAuditLogs(w http.ResponseWriter, r *http.Request) {
 	user, _, ok := a.requireAdmin(w, r)
 	if !ok {

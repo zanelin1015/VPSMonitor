@@ -89,6 +89,7 @@ export function renderCNFlowPanel(props: {
   chains: ClientChainView[]
   onSelectAgent: (agentID: string) => void
   onJumpNode: (agentID?: string, nodeLabel?: string) => void
+  restrictedView?: boolean
   canOpenXUI: boolean
   onOpenXUI: () => void
   canRefreshCurrentNode: boolean
@@ -105,6 +106,7 @@ export function renderCNFlowPanel(props: {
     chains,
     onSelectAgent,
     onJumpNode,
+    restrictedView = false,
     canOpenXUI,
     onOpenXUI,
     canRefreshCurrentNode,
@@ -314,14 +316,14 @@ export function renderCNFlowPanel(props: {
           <Title level={3}>{headerTitle}</Title>
         </div>
         <div className="cn-flow-header-actions">
-          <Space wrap className="cn-flow-header-buttons">
+          {!restrictedView ? <Space wrap className="cn-flow-header-buttons">
             <Button disabled={!canOpenXUI} onClick={onOpenXUI}>
               打开 x-ui 面板
             </Button>
             <Button icon={<ReloadOutlined />} type="primary" disabled={!canRefreshCurrentNode} loading={currentNodeLoading} onClick={onRefreshCurrentNode}>
               立即获取节点信息
             </Button>
-          </Space>
+          </Space> : null}
           <Space wrap className="cn-flow-header-meta">
             <Tag color="cyan">链路 {dashboardView.totals.link_count}</Tag>
             <Tag color="gold">出口 {uniqueCountries(rows).length}</Tag>

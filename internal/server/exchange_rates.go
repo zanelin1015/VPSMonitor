@@ -20,7 +20,7 @@ func (a *App) handleAdminExchangeRates(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if _, _, ok := a.requireAdmin(w, r); !ok {
+	if _, _, ok := a.requireRootAdmin(w, r); !ok {
 		return
 	}
 

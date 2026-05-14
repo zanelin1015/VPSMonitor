@@ -67,6 +67,19 @@ const emptyAreaManagerForm: AreaManagerFormState = {
   agent_ids: [],
 }
 
+function isAreaManagerAdminUser(user: AdminUser | null): boolean {
+  if (!user) {
+    return false
+  }
+  if (user.role === 'area_manager') {
+    return true
+  }
+  if (user.role === 'admin') {
+    return false
+  }
+  return Boolean((user.agent_ids || []).length || (user.id && user.id !== 1))
+}
+
 export function CustomerManagementModal(props: {
   open?: boolean
   agents: DashboardAgentView[]
@@ -90,7 +103,8 @@ export function CustomerManagementModal(props: {
     embedded = false,
   } = props
   const active = embedded || open
-  const canManageAreaManagers = adminUser?.role !== 'area_manager'
+  const canManageAreaManagers = !isAreaManagerAdminUser(adminUser)
+  const canViewFinance = canManageAreaManagers
   const { message } = AntdApp.useApp()
   const [activeManagementTab, setActiveManagementTab] = useState<ManagementTabKey>(canManageAreaManagers ? 'area' : 'customers')
   const [customers, setCustomers] = useState<CustomerAdminView[]>([])
@@ -281,6 +295,9 @@ export function CustomerManagementModal(props: {
       ),
     },
   ]
+  const visibleAssignmentColumns = canViewFinance
+    ? assignmentColumns
+    : assignmentColumns.filter((column) => String(column.key || '') !== 'revenue')
 
   const areaCustomerColumns: ColumnsType<CustomerAdminView> = [
     {
@@ -587,9 +604,11 @@ export function CustomerManagementModal(props: {
         inbound_tag: assignmentForm.inbound_tag,
         client_email: assignmentForm.client_email,
         public_client_name: assignmentForm.public_client_name,
-        revenue_amount: assignmentForm.revenue_amount,
-        revenue_currency: assignmentForm.revenue_currency,
-        revenue_cycle: assignmentForm.revenue_cycle,
+        ...(canViewFinance ? {
+          revenue_amount: assignmentForm.revenue_amount,
+          revenue_currency: assignmentForm.revenue_currency,
+          revenue_cycle: assignmentForm.revenue_cycle,
+        } : {}),
         enabled: assignmentForm.enabled,
       }
       if (editingAssignmentID) {
@@ -660,7 +679,7 @@ export function CustomerManagementModal(props: {
         inbound_tag: client.inbound_tag || '',
         client_email: client.email || '',
         public_client_name: current.public_client_name || defaultPublicClientName(client, assignmentForm.agent_id, agents),
-        ...billingFormPatch(clientBilling(assignmentForm.agent_id, client.inbound_id, client.inbound_tag || '', client.email || '', agents)),
+        ...(canViewFinance ? billingFormPatch(clientBilling(assignmentForm.agent_id, client.inbound_id, client.inbound_tag || '', client.email || '', agents)) : {}),
       }))
       return
     }
@@ -673,7 +692,7 @@ export function CustomerManagementModal(props: {
         inbound_tag: node.tag || '',
         client_email: '',
         public_client_name: current.public_client_name || defaultPublicNodeName(node, assignmentForm.agent_id, agents),
-        ...billingFormPatch(clientBilling(assignmentForm.agent_id, node.id, node.tag || '', '', agents)),
+        ...(canViewFinance ? billingFormPatch(clientBilling(assignmentForm.agent_id, node.id, node.tag || '', '', agents)) : {}),
       }))
     }
   }
@@ -912,7 +931,7 @@ export function CustomerManagementModal(props: {
             <Text type="secondary">客户可见名称</Text>
             <Input value={assignmentForm.public_client_name} onChange={(event) => setAssignmentForm((current) => ({ ...current, public_client_name: event.target.value }))} />
           </Col>
-          <Col xs={24} md={4}>
+          {canViewFinance ? <Col xs={24} md={4}>
             <Text type="secondary">节点费用</Text>
             <InputNumber
               style={{ width: '100%' }}
@@ -921,8 +940,8 @@ export function CustomerManagementModal(props: {
               value={assignmentForm.revenue_amount}
               onChange={(value) => setAssignmentForm((current) => ({ ...current, revenue_amount: Number(value || 0) }))}
             />
-          </Col>
-          <Col xs={12} md={2}>
+          </Col> : null}
+          {canViewFinance ? <Col xs={12} md={2}>
             <Text type="secondary">币种</Text>
             <Select
               style={{ width: '100%' }}
@@ -930,8 +949,8 @@ export function CustomerManagementModal(props: {
               options={REVENUE_CURRENCIES.map((currency) => ({ value: currency, label: currency }))}
               onChange={(value) => setAssignmentForm((current) => ({ ...current, revenue_currency: value as 'CNY' | 'USDT' }))}
             />
-          </Col>
-          <Col xs={12} md={2}>
+          </Col> : null}
+          {canViewFinance ? <Col xs={12} md={2}>
             <Text type="secondary">周期</Text>
             <Select
               style={{ width: '100%' }}
@@ -943,7 +962,7 @@ export function CustomerManagementModal(props: {
               ]}
               onChange={(value) => setAssignmentForm((current) => ({ ...current, revenue_cycle: value as 'month' | 'quarter' | 'year' }))}
             />
-          </Col>
+          </Col> : null}
           <Col xs={24} md={8}>
             <Text type="secondary">分配状态</Text>
             <div className="customer-admin-switch-row">
@@ -962,7 +981,7 @@ export function CustomerManagementModal(props: {
         <Table
           style={{ marginTop: 14 }}
           rowKey={(record) => record.id}
-          columns={assignmentColumns}
+          columns={visibleAssignmentColumns}
           dataSource={selectedCustomer?.assignments || []}
           pagination={{ pageSize: 8, hideOnSinglePage: true }}
           locale={{ emptyText: <Empty description="暂无分配" /> }}

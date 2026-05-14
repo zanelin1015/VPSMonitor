@@ -87,6 +87,7 @@ export interface AgentDetailPanelProps {
   xuiActionsLoading: boolean
   canOpenXUI: boolean
   canManageConfig: boolean
+  restrictedView?: boolean
   currentAgentLoading: boolean
   onActiveTabChange: (key: string) => void
   onClientSearchChange: (value: string) => void
@@ -114,6 +115,7 @@ export interface AgentDetailPanelProps {
   onSaveManagedConfigSection: (section: ConfigSectionKey) => void
   onSelectTag: (tag: string) => void
   onTagsChange: (values: string[]) => void
+  onSaveAreaTags?: (values: string[]) => void
   onUpdateClientBillingDraft: (record: XUIClientView, patch: Partial<XUIClientBillingConfig>) => void
   onXUIChange: (patch: Partial<XUIConfig>) => void
 }
@@ -153,6 +155,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     xuiActionsLoading,
     canOpenXUI,
     canManageConfig,
+    restrictedView = false,
     currentAgentLoading,
     onActiveTabChange,
     onClientSearchChange,
@@ -180,6 +183,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onSaveManagedConfigSection,
     onSelectTag,
     onTagsChange,
+    onSaveAreaTags,
     onUpdateClientBillingDraft,
     onXUIChange,
   } = props
@@ -278,6 +282,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     {
       title: '协议',
       dataIndex: 'protocol',
+      key: 'protocol',
       width: 100,
       render: (value?: string) => <Tag color="geekblue">{value || '-'}</Tag>,
     },
@@ -304,9 +309,9 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         const total = clientTrafficTotal(record)
         return (
           <div className="client-traffic-cell">
-            <span>总 {formatBytes(total)}</span>
-            <span>上传 {formatBytes(up)}</span>
-            <span>下载 {formatBytes(down)}</span>
+            <span>{restrictedView ? '已用' : '总'} {formatBytes(total)}</span>
+            {!restrictedView ? <span>上传 {formatBytes(up)}</span> : null}
+            {!restrictedView ? <span>下载 {formatBytes(down)}</span> : null}
           </div>
         )
       },
@@ -404,6 +409,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     {
       title: '最近活跃',
       dataIndex: 'last_online',
+      key: 'last_online',
       width: 160,
       render: (value?: number) => formatRelativeTime(value),
     },
@@ -448,6 +454,9 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       render: (_, record) => <RouteBadge route={record.route} onJumpOutbound={onJumpOutbound} onJumpRule={onJumpRule} />,
     },
   ]
+  const visibleClientColumns = restrictedView
+    ? clientColumns.filter((column) => !['protocol', 'status', 'billing', 'expiry', 'last_online', 'route'].includes(String(column.key || '')))
+    : clientColumns
 
   const routingColumns: ColumnsType<XUIRoutingRuleView> = [
     {
@@ -606,10 +615,30 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
               <Tag color="orange" style={{ cursor: 'pointer' }} onClick={onOpenLogs}>x-ui 异常</Tag>
             ) : null}
             <Button onClick={onOpenLogs}>查看日志</Button>
-            <Button disabled={!canOpenXUI} onClick={onOpenXUI}>打开 x-ui 面板</Button>
-            <Button icon={<ReloadOutlined />} loading={currentAgentLoading} onClick={onRefreshCurrentAgent}>立即获取 Client 信息</Button>
+            {!restrictedView ? <Button disabled={!canOpenXUI} onClick={onOpenXUI}>打开 x-ui 面板</Button> : null}
+            {!restrictedView ? <Button icon={<ReloadOutlined />} loading={currentAgentLoading} onClick={onRefreshCurrentAgent}>立即获取 Client 信息</Button> : null}
           </Space>
         </div>
+        {restrictedView ? (
+          <div className="selected-agent-toolbar area-agent-tags-toolbar">
+            <div>
+              <Text type="secondary">区域账号私有标签</Text>
+              <div className="muted-line">标签只对当前区域账号生效，不会影响 Admin 或其他区域账号。</div>
+            </div>
+            <Space wrap>
+              <Select
+                mode="tags"
+                allowClear
+                style={{ minWidth: 280 }}
+                placeholder="输入并回车添加标签"
+                value={managedConfig?.tags || selectedAgent.tags || []}
+                options={mergeTagOptions(tagOptions, managedConfig?.tags || selectedAgent.tags || []).map((tag) => ({ value: tag, label: tag }))}
+                onChange={(values) => onTagsChange(mergeTagOptions([], values))}
+              />
+              <Button type="primary" loading={tagSaving} onClick={() => onSaveAreaTags?.(managedConfig?.tags || selectedAgent.tags || [])}>保存标签</Button>
+            </Space>
+          </div>
+        ) : null}
         <Tabs
           activeKey={activeTabKey}
           onChange={onActiveTabChange}
@@ -741,7 +770,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
               children: overview ? (
                 <Space direction="vertical" style={{ width: '100%' }} size="middle">
                   <Input.Search allowClear placeholder="按邮箱、备注、节点标签筛选客户端" value={clientSearch} onChange={(event) => onClientSearchChange(event.target.value)} />
-                  <Table rowKey={(record) => `${record.inbound_tag}-${record.email}`} columns={clientColumns} dataSource={filteredClients} pagination={{ pageSize: 12, hideOnSinglePage: true }} scroll={{ x: 1780 }} />
+                  <Table rowKey={(record) => `${record.inbound_tag}-${record.email}`} columns={visibleClientColumns} dataSource={filteredClients} pagination={{ pageSize: 12, hideOnSinglePage: true }} scroll={{ x: restrictedView ? 980 : 1780 }} />
                 </Space>
               ) : (
                 <Empty description="暂无客户端数据" />

@@ -66,25 +66,27 @@ func (a *App) handleAgents(w http.ResponseWriter, r *http.Request) {
 	items := make([]model.AgentListItem, 0, len(agents))
 	for _, agent := range agents {
 		items = append(items, model.AgentListItem{
-			AgentID:       agent.AgentID,
-			AgentName:     agent.AgentName,
-			ClientVersion: agent.Version,
-			ClientOS:      agent.OS,
-			ClientArch:    agent.Arch,
-			SystemVersion: agent.SystemVersion,
-			SortOrder:     agent.SortOrder,
-			Tags:          agent.Tags,
-			Renewal:       agent.Config.Renewal,
-			Entry:         agent.Config.Entry,
-			ReportedAt:    agent.ReportedAt,
-			RegisteredAt:  &agent.RegisteredAt,
-			UpdatedAt:     &agent.UpdatedAt,
-			LastSeenAt:    agent.LastSeenAt,
-			Summary:       agent.Summary,
-			HasConfig:     agent.HasConfig,
+			AgentID:             agent.AgentID,
+			AgentName:           agent.AgentName,
+			CustomerDisplayName: agent.CustomerDisplayName,
+			ClientVersion:       agent.Version,
+			ClientOS:            agent.OS,
+			ClientArch:          agent.Arch,
+			SystemVersion:       agent.SystemVersion,
+			SortOrder:           agent.SortOrder,
+			Tags:                agent.Tags,
+			Renewal:             agent.Config.Renewal,
+			Entry:               agent.Config.Entry,
+			ReportedAt:          agent.ReportedAt,
+			RegisteredAt:        &agent.RegisteredAt,
+			UpdatedAt:           &agent.UpdatedAt,
+			LastSeenAt:          agent.LastSeenAt,
+			Summary:             agent.Summary,
+			HasConfig:           agent.HasConfig,
 		})
 	}
 	a.realtime.applyToAgentItems(items)
+	items = a.sanitizeAgentListItemsForAdmin(user, items)
 	writeJSON(w, http.StatusOK, items)
 }
 
@@ -106,6 +108,7 @@ func (a *App) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	agents = a.filterAgentRecordsForAdmin(user, agents)
 	view := dashboard.BuildGlobalDashboard(agents, a.filterSnapshotsForAdmin(user, a.store.ListLatest()))
 	a.realtime.applyToDashboard(&view)
+	a.sanitizeDashboardForAdmin(user, &view)
 	writeJSON(w, http.StatusOK, view)
 }
 
@@ -178,7 +181,8 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
-		if _, _, ok := a.requireAgentAdmin(w, r, agentID); !ok {
+		user, _, ok := a.requireAgentAdmin(w, r, agentID)
+		if !ok {
 			return
 		}
 		snapshot, ok := a.store.GetLatest(agentID)
@@ -196,6 +200,10 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "x-ui snapshot not found")
 			return
 		}
+		if isAreaManager(user) {
+			overview.AgentName = areaManagerDisplayName(cfg.CustomerDisplayName, cfg.AgentName, agentID)
+		}
+		a.sanitizeXUIOverviewForAdmin(user, overview)
 		writeJSON(w, http.StatusOK, overview)
 	default:
 		writeError(w, http.StatusNotFound, "route not found")
@@ -207,7 +215,8 @@ func (a *App) handleAgentRefresh(w http.ResponseWriter, r *http.Request, agentID
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if _, _, ok := a.requireAgentAdmin(w, r, agentID); !ok {
+	user, _, ok := a.requireAgentAdmin(w, r, agentID)
+	if !ok {
 		return
 	}
 	if _, found, err := a.store.GetAgent(agentID); err != nil {
@@ -215,6 +224,10 @@ func (a *App) handleAgentRefresh(w http.ResponseWriter, r *http.Request, agentID
 		return
 	} else if !found {
 		writeError(w, http.StatusNotFound, "agent not found")
+		return
+	}
+	if isAreaManager(user) {
+		writeError(w, http.StatusForbidden, "area manager cannot trigger client refresh")
 		return
 	}
 	if !a.realtime.sendAgentControl(agentID, model.AgentControlMessage{Type: model.AgentControlCollectNow}) {
@@ -365,7 +378,7 @@ func (a *App) handleAgentRecord(w http.ResponseWriter, r *http.Request, agentID 
 		agent.Arch = snapshot.Arch
 		agent.SystemVersion = snapshot.SystemVersion
 	}
-	agent.Config = a.sanitizeManagedConfigForAdmin(user, agent.Config)
+	agent = a.sanitizeAgentRecordForAdmin(user, agent)
 	writeJSON(w, http.StatusOK, agent)
 }
 

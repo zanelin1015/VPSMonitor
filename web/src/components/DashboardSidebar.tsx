@@ -97,10 +97,11 @@ export function AdminWorkbenchDashboard(props: {
   scopedNetwork: { sent: number; recv: number; up: number; down: number }
   monthlyFinance: MonthlyFinanceSummary
   costCurrency: CurrencyCode
+  restrictedView?: boolean
   onSelectAgent: (agentID: string) => void
   onOpenTopology: () => void
 }) {
-  const { agents, dashboardView, selectedTag, scopedNetwork, monthlyFinance, costCurrency, onSelectAgent, onOpenTopology } = props
+  const { agents, dashboardView, selectedTag, scopedNetwork, monthlyFinance, costCurrency, restrictedView = false, onSelectAgent, onOpenTopology } = props
   const statusRows = useMemo<WorkbenchMetricRow[]>(() => agents.map((agent) => {
     const renewal = calculateRenewalStatus(agent.renewal)
     return {
@@ -174,9 +175,9 @@ export function AdminWorkbenchDashboard(props: {
         <WorkbenchKpi label="服务器在线率" value={`${onlinePercent.toFixed(0)}%`} note={`${onlineRows.length}/${totalAgents} 在线`} tone={offlineRows.length ? 'warn' : 'ok'} />
         <WorkbenchKpi label="客户端在线率" value={`${clientOnlinePercent.toFixed(0)}%`} note={`${scopedOnlineClientCount}/${scopedClientCount} 在线`} tone={scopedClientCount && scopedOnlineClientCount < scopedClientCount ? 'warn' : 'ok'} />
         <WorkbenchRealtimeKpi up={scopedNetwork.up} down={scopedNetwork.down} />
-        <WorkbenchKpi label="周期总流量" value={formatBytes(scopedNetwork.sent + scopedNetwork.recv)} note={`↑${formatBytes(scopedNetwork.sent)} · ↓${formatBytes(scopedNetwork.recv)}`} tone="traffic" />
-        <WorkbenchKpi label="续费风险" value={`${renewalRiskCount}`} note={`30天内 ${renewalWithin30Count}`} tone={renewalRiskCount ? 'bad' : 'ok'} />
-        <WorkbenchKpi label="本月利润" value={formatMoney(monthlyFinance.profitTotal, costCurrency)} note={`收入 ${formatMoney(monthlyFinance.revenueTotal, costCurrency)}`} tone={monthlyFinance.profitTotal >= 0 ? 'profit' : 'bad'} />
+        <WorkbenchKpi label={restrictedView ? '授权周期已用' : '周期总流量'} value={formatBytes(scopedNetwork.sent + scopedNetwork.recv)} note={restrictedView ? '仅统计有权限的 Client' : `↑${formatBytes(scopedNetwork.sent)} · ↓${formatBytes(scopedNetwork.recv)}`} tone="traffic" />
+        {!restrictedView ? <WorkbenchKpi label="续费风险" value={`${renewalRiskCount}`} note={`30天内 ${renewalWithin30Count}`} tone={renewalRiskCount ? 'bad' : 'ok'} /> : null}
+        {!restrictedView ? <WorkbenchKpi label="本月利润" value={formatMoney(monthlyFinance.profitTotal, costCurrency)} note={`收入 ${formatMoney(monthlyFinance.revenueTotal, costCurrency)}`} tone={monthlyFinance.profitTotal >= 0 ? 'profit' : 'bad'} /> : null}
         <Button size="small" onClick={onOpenTopology} icon={<ApartmentOutlined />}>拓扑</Button>
       </div>
 
@@ -218,18 +219,18 @@ export function AdminWorkbenchDashboard(props: {
             <Text strong>流量水位 Top</Text>
             <Tag color={trafficRiskRows.length ? 'orange' : 'blue'}>{trafficRiskRows.length ? `风险 ${trafficRiskRows.length}` : '正常'}</Tag>
           </div>
-          <WorkbenchTrafficList rows={trafficRows} maxValue={maxTraffic} onSelectAgent={onSelectAgent} />
+          <WorkbenchTrafficList rows={trafficRows} maxValue={maxTraffic} restrictedView={restrictedView} onSelectAgent={onSelectAgent} />
         </Card>
 
-        <Card bordered={false} className="surface-card admin-workbench-card workbench-renewal-card">
+        {!restrictedView ? <Card bordered={false} className="surface-card admin-workbench-card workbench-renewal-card">
           <div className="admin-workbench-card-title">
             <Text strong>续费 / 到期风险</Text>
             <Tag color={renewalRiskCount ? 'red' : 'green'}>{renewalRows.length ? `已配置 ${renewalRows.length}` : '未配置'}</Tag>
           </div>
           <WorkbenchRenewalList rows={renewalRiskRows} onSelectAgent={onSelectAgent} />
-        </Card>
+        </Card> : null}
 
-        <Card bordered={false} className="surface-card admin-workbench-card workbench-finance-card">
+        {!restrictedView ? <Card bordered={false} className="surface-card admin-workbench-card workbench-finance-card">
           <div className="admin-workbench-card-title">
             <Text strong>财务月览</Text>
             <Tag color={monthlyFinance.profitTotal >= 0 ? 'green' : 'red'}>{costCurrency}</Tag>
@@ -250,9 +251,9 @@ export function AdminWorkbenchDashboard(props: {
             <span>成本 Client VPS {monthlyFinance.costCount}</span>
             <span>收费客户端 {monthlyFinance.revenueCount}</span>
           </div>
-        </Card>
+        </Card> : null}
 
-        <Card bordered={false} className="surface-card admin-workbench-card workbench-ops-card">
+        {!restrictedView ? <Card bordered={false} className="surface-card admin-workbench-card workbench-ops-card">
           <div className="admin-workbench-card-title">
             <Text strong>业务拓扑与告警</Text>
             <Button size="small" type="link" onClick={onOpenTopology}>查看拓扑</Button>
@@ -276,7 +277,7 @@ export function AdminWorkbenchDashboard(props: {
               </button>
             )) : <div className="workbench-alert-empty">暂无离线、流量、续费或采集告警</div>}
           </div>
-        </Card>
+        </Card> : null}
       </div>
     </section>
   )
@@ -467,9 +468,10 @@ function WorkbenchSpeedTrend(props: { up: number; down: number }) {
 function WorkbenchTrafficList(props: {
   rows: WorkbenchMetricRow[]
   maxValue: number
+  restrictedView?: boolean
   onSelectAgent: (agentID: string) => void
 }) {
-  const { rows, maxValue, onSelectAgent } = props
+  const { rows, maxValue, restrictedView = false, onSelectAgent } = props
   if (!rows.length) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无流量数据" />
   }
@@ -477,7 +479,9 @@ function WorkbenchTrafficList(props: {
     <div className="workbench-progress-list">
       {rows.map((row) => {
         const percent = typeof row.traffic.total.percent === 'number' ? row.traffic.total.percent : percentOf(row.traffic.total.used, maxValue)
-        const value = row.traffic.total.total > 0
+        const value = restrictedView
+          ? `已用 ${formatBytes(row.traffic.total.used)}`
+          : row.traffic.total.total > 0
           ? `${formatBytes(row.traffic.total.used)} / ${formatBytes(row.traffic.total.total)}`
           : `${formatBytes(row.traffic.total.used)} · 无上限`
         return (
@@ -485,8 +489,8 @@ function WorkbenchTrafficList(props: {
             <MiniProgress
               label={agentWorkbenchName(row.agent)}
               value={value}
-              percent={percent}
-              level={row.traffic.total.total > 0 ? row.traffic.total.level : 'neutral'}
+              percent={restrictedView ? percentOf(row.traffic.total.used, maxValue) : percent}
+              level={restrictedView ? 'neutral' : row.traffic.total.total > 0 ? row.traffic.total.level : 'neutral'}
             />
           </button>
         )
@@ -762,6 +766,7 @@ export function OverviewSummaryCard(props: {
   currentAgentLabel: string
   currentIPv4: string
   compact?: boolean
+  restrictedView?: boolean
   onCostCurrencyChange: (currency: CurrencyCode) => void
 }) {
   const {
@@ -782,6 +787,7 @@ export function OverviewSummaryCard(props: {
     currentAgentLabel,
     currentIPv4,
     compact,
+    restrictedView = false,
     onCostCurrencyChange,
   } = props
   const [financeDetailOpen, setFinanceDetailOpen] = useState(false)
@@ -805,7 +811,7 @@ export function OverviewSummaryCard(props: {
   )
 
   useEffect(() => {
-    if (!financeDetailOpen || customerRows.length || customerRowsLoading) {
+    if (restrictedView || !financeDetailOpen || customerRows.length || customerRowsLoading) {
       return
     }
     let cancelled = false
@@ -829,7 +835,7 @@ export function OverviewSummaryCard(props: {
     return () => {
       cancelled = true
     }
-  }, [customerRows.length, customerRowsLoading, financeDetailOpen])
+  }, [customerRows.length, customerRowsLoading, financeDetailOpen, restrictedView])
   const costColumns: ColumnsType<MonthlyFinanceCostDetail> = [
     {
       title: 'Client VPS',
@@ -1014,20 +1020,22 @@ export function OverviewSummaryCard(props: {
                   <span className="network-down">在线 {onlineAgentCount}</span>
                   <span className="network-up">离线 {offlineAgentCount}</span>
                 </div>
-                <div className="overview-stat-foot">x-ui 异常 {xuiErrorAgentCount} · 出站 {dashboardView.totals.outbound_count} · 规则 {dashboardView.totals.routing_rule_count}</div>
+                <div className="overview-stat-foot">
+                  {restrictedView ? `仅显示已授权 Client · 链路 ${dashboardView.totals.chain_count}` : `x-ui 异常 ${xuiErrorAgentCount} · 出站 ${dashboardView.totals.outbound_count} · 规则 ${dashboardView.totals.routing_rule_count}`}
+                </div>
               </section>
               <section className="overview-stat-card overview-network-card">
-                <div className="overview-stat-title">本周期流量</div>
+                <div className="overview-stat-title">{restrictedView ? '周期已用流量' : '本周期流量'}</div>
                 <div className="overview-network-total">
-                  <span className="network-up">↑{formatBytes(scopedNetwork.sent)}</span>
-                  <span className="network-down">↓{formatBytes(scopedNetwork.recv)}</span>
+                  {restrictedView ? <span className="network-up">{formatBytes(scopedNetwork.sent + scopedNetwork.recv)}</span> : <span className="network-up">↑{formatBytes(scopedNetwork.sent)}</span>}
+                  {!restrictedView ? <span className="network-down">↓{formatBytes(scopedNetwork.recv)}</span> : null}
                 </div>
-                <div className="overview-network-speed">
+                {!restrictedView ? <div className="overview-network-speed">
                   <span>⬆ {formatSpeed(scopedNetwork.up)}</span>
                   <span>⬇ {formatSpeed(scopedNetwork.down)}</span>
-                </div>
+                </div> : <div className="overview-stat-foot">不展示总额度，仅展示授权范围内已用总量</div>}
               </section>
-              <section
+              {!restrictedView ? <section
                 className="overview-stat-card overview-cost-card overview-cost-card-clickable"
                 role="button"
                 tabIndex={0}
@@ -1059,7 +1067,7 @@ export function OverviewSummaryCard(props: {
                   营收 {formatMoney(monthlyFinance.revenueTotal, costCurrency)} · 花销 {formatMoney(monthlyFinance.costTotal, costCurrency)}
                 </div>
                 {exchangeRates.error ? <div className="overview-stat-foot">汇率加载失败：{exchangeRates.error}</div> : null}
-              </section>
+              </section> : null}
             </div>
             <div className="overview-summary-strip">
               <span>已匹配链路 · {dashboardView.totals.link_count}</span>
@@ -1067,9 +1075,9 @@ export function OverviewSummaryCard(props: {
               <span>标签视图 · {selectedTag || '全部'}</span>
               <span>计算时间 · {formatDateTime(dashboardView.generated_at)}</span>
               <span>当前详情节点 · {currentAgentLabel || '-'}</span>
-              <span>当前节点 IPv4 · {currentIPv4 || '-'}</span>
+              {!restrictedView ? <span>当前节点 IPv4 · {currentIPv4 || '-'}</span> : null}
             </div>
-            {financeDetailOpen ? (
+            {!restrictedView && financeDetailOpen ? (
               <div className="finance-detail-panel">
                 <div className="finance-detail-head">
                   <div>
@@ -1304,13 +1312,14 @@ export function AgentRail(props: {
   viewMode: AgentViewMode
   panelExpanded: boolean
   topologyVisible: boolean
+  restrictedView?: boolean
   onToggleViewMode: () => void
   onToggleTopology: () => void
   onRefresh: () => void
   onSelectTag: (tag: string) => void
   onSelectAgent: (agentID: string, active: boolean) => void
 }) {
-  const { agents, loading, error, selectedTag, selectedAgentId, tagFilterOptions, viewMode, panelExpanded, topologyVisible, onToggleViewMode, onToggleTopology, onRefresh, onSelectTag, onSelectAgent } = props
+  const { agents, loading, error, selectedTag, selectedAgentId, tagFilterOptions, viewMode, panelExpanded, topologyVisible, restrictedView = false, onToggleViewMode, onToggleTopology, onRefresh, onSelectTag, onSelectAgent } = props
   const effectiveViewMode: AgentViewMode = panelExpanded ? 'list' : viewMode
   const [agentPage, setAgentPage] = useState(1)
   const [agentPageSize, setAgentPageSize] = useState(10)
@@ -1420,6 +1429,7 @@ export function AgentRail(props: {
                 active={item.agent_id === selectedAgentId}
                 viewMode={effectiveViewMode}
                 compact={panelExpanded}
+                restrictedView={restrictedView}
                 onSelect={onSelectAgent}
               />
             )}
@@ -1436,13 +1446,16 @@ function AgentRailItem(props: {
   active: boolean
   viewMode: AgentViewMode
   compact?: boolean
+  restrictedView?: boolean
   onSelect: (agentID: string, active: boolean) => void
 }) {
-  const { item, index, active, viewMode, compact = false, onSelect } = props
+  const { item, index, active, viewMode, compact = false, restrictedView = false, onSelect } = props
   const renewalStatus = calculateRenewalStatus(item.renewal)
   const trafficStatus = calculateTrafficStatus(item)
-  const trafficTotalLabel = trafficStatus.isPeriod ? '周期总流量' : '总流量'
-  const trafficSummaryValue = `${trafficStatus.total.label} · 上传 ${formatBytes(trafficStatus.upload.used)} · 下载 ${formatBytes(trafficStatus.download.used)}`
+  const trafficTotalLabel = restrictedView ? '周期已用流量' : trafficStatus.isPeriod ? '周期总流量' : '总流量'
+  const trafficSummaryValue = restrictedView
+    ? formatBytes(trafficStatus.total.used)
+    : `${trafficStatus.total.label} · 上传 ${formatBytes(trafficStatus.upload.used)} · 下载 ${formatBytes(trafficStatus.download.used)}`
   const cpuPercent = clampMetricPercent(item.summary.cpu)
   const memPercent = calculateMemoryPercent(item.summary)
   const displayStatus = agentDisplayStatus(item)
@@ -1458,7 +1471,7 @@ function AgentRailItem(props: {
     : item.reported_at
       ? `上报 ${formatDateTime(item.reported_at)}`
       : '尚未上报'
-  const footerText = compact ? activityText : `${item.has_config ? '已托管配置' : '待配置'} · ${activityText}`
+  const footerText = restrictedView ? `已用 ${formatBytes(trafficStatus.total.used)}` : compact ? activityText : `${item.has_config ? '已托管配置' : '待配置'} · ${activityText}`
   const compactTags = tags.slice(0, 3)
   const compactExtraTagCount = Math.max(0, tags.length - compactTags.length)
 
@@ -1473,14 +1486,15 @@ function AgentRailItem(props: {
             statusLevel={statusLevel}
             statusLabel={displayStatus.label}
             displaySortOrder={displaySortOrder}
-            showStatus={showStatusText}
+            showStatus={!restrictedView && showStatusText}
+            restrictedView={restrictedView}
           />
-          <div className="agent-meta agent-compact-location">
+          {!restrictedView ? <div className="agent-meta agent-compact-location">
             <span>{addressText}</span>
             {locationText ? <span title={locationText}>· {locationText}</span> : null}
-          </div>
+          </div> : null}
           <div className="agent-compact-tags">
-            <AgentRailTags item={item} tags={compactTags} />
+            <AgentRailTags item={item} tags={compactTags} restrictedView={restrictedView} />
             {compactExtraTagCount ? <span className="agent-tag-chip">+{compactExtraTagCount}</span> : null}
           </div>
           <div className="agent-meta agent-footer-line agent-compact-footer">{footerText}</div>
@@ -1503,24 +1517,25 @@ function AgentRailItem(props: {
                 statusLabel={displayStatus.label}
                 displaySortOrder={displaySortOrder}
                 showStatus={false}
+                restrictedView={restrictedView}
               />
-              <div className="agent-meta agent-location agent-list-location">
+              {!restrictedView ? <div className="agent-meta agent-location agent-list-location">
                 <span>{addressText}</span>
                 {locationText ? <span>· {locationText}</span> : null}
-              </div>
+              </div> : null}
               <div className="agent-meta agent-footer-line agent-list-footer">{footerText}</div>
             </div>
             <div className="agent-list-runtime">
-              {showStatusText ? <span className={`agent-status-pill agent-status-${statusLevel}`}>{displayStatus.label}</span> : null}
-              <AgentRailRuntime item={item} />
-              <AgentSpeedTags item={item} />
+              {!restrictedView && showStatusText ? <span className={`agent-status-pill agent-status-${statusLevel}`}>{displayStatus.label}</span> : null}
+              {!restrictedView ? <AgentRailRuntime item={item} /> : null}
+              {!restrictedView ? <AgentSpeedTags item={item} /> : null}
               <div className="agent-list-top-tags">
-                <AgentRailTags item={item} tags={tags} />
+                <AgentRailTags item={item} tags={tags} restrictedView={restrictedView} />
               </div>
             </div>
             <div className="agent-list-metrics">
-              <AgentMeters item={item} cpuPercent={cpuPercent} memPercent={memPercent} showNetwork={false} />
-              <AgentFlowProgress renewalStatus={renewalStatus} trafficLabel={trafficTotalLabel} trafficValue={trafficSummaryValue} trafficStatus={trafficStatus} />
+              {!restrictedView ? <AgentMeters item={item} cpuPercent={cpuPercent} memPercent={memPercent} showNetwork={false} /> : null}
+              <AgentFlowProgress renewalStatus={restrictedView ? null : renewalStatus} trafficLabel={trafficTotalLabel} trafficValue={trafficSummaryValue} trafficStatus={trafficStatus} restrictedView={restrictedView} />
             </div>
           </>
         ) : (
@@ -1532,19 +1547,20 @@ function AgentRailItem(props: {
               statusLevel={statusLevel}
               statusLabel={displayStatus.label}
               displaySortOrder={displaySortOrder}
-              showStatus={showStatusText}
+              showStatus={!restrictedView && showStatusText}
+              restrictedView={restrictedView}
             />
-            <div className="agent-meta agent-location">
+            {!restrictedView ? <div className="agent-meta agent-location">
               <span>{addressText}</span>
               {locationText ? <span>· {locationText}</span> : null}
-            </div>
-            <AgentRailTags item={item} tags={tags} />
-            <AgentRailRuntime item={item} />
-            <div className="agent-meter-grid">
+            </div> : null}
+            <AgentRailTags item={item} tags={tags} restrictedView={restrictedView} />
+            {!restrictedView ? <AgentRailRuntime item={item} /> : null}
+            {!restrictedView ? <div className="agent-meter-grid">
               <AgentMeters item={item} cpuPercent={cpuPercent} memPercent={memPercent} />
-            </div>
+            </div> : null}
             <div className="agent-traffic-grid">
-              <AgentFlowProgress renewalStatus={renewalStatus} trafficLabel={trafficTotalLabel} trafficValue={trafficSummaryValue} trafficStatus={trafficStatus} />
+              <AgentFlowProgress renewalStatus={restrictedView ? null : renewalStatus} trafficLabel={trafficTotalLabel} trafficValue={trafficSummaryValue} trafficStatus={trafficStatus} restrictedView={restrictedView} />
             </div>
             <div className="agent-meta agent-footer-line">{footerText}</div>
           </>
@@ -1562,14 +1578,15 @@ function AgentRailHeader(props: {
   statusLabel: string
   displaySortOrder: number
   showStatus?: boolean
+  restrictedView?: boolean
 }) {
-  const { item, countryCode, locationText, statusLevel, statusLabel, displaySortOrder, showStatus = true } = props
+  const { item, countryCode, locationText, statusLevel, statusLabel, displaySortOrder, showStatus = true, restrictedView = false } = props
   return (
     <div className="agent-card-head">
       <div className="agent-title-line">
-        <span className={`agent-state-dot agent-state-${statusLevel}`} />
+        {!restrictedView ? <span className={`agent-state-dot agent-state-${statusLevel}`} /> : null}
         <span className="agent-order-chip">#{displaySortOrder}</span>
-        <span className="agent-flag" title={locationText || countryCode || '未知地区'}>{countryFlag(countryCode)}</span>
+        {!restrictedView ? <span className="agent-flag" title={locationText || countryCode || '未知地区'}>{countryFlag(countryCode)}</span> : null}
         <span className="agent-name">{item.agent_name || item.agent_id}</span>
       </div>
       {showStatus ? <span className={`agent-status-pill agent-status-${statusLevel}`}>{statusLabel}</span> : null}
@@ -1577,15 +1594,15 @@ function AgentRailHeader(props: {
   )
 }
 
-function AgentRailTags(props: { item: DashboardAgentView; tags: string[] }) {
-  const { item, tags } = props
+function AgentRailTags(props: { item: DashboardAgentView; tags: string[]; restrictedView?: boolean }) {
+  const { item, tags, restrictedView = false } = props
   return (
     <div className="agent-tag-row">
       {tags.map((tag) => (
         <span className="agent-tag-chip" key={tag} style={tagChipStyle(tag)}>{tag}</span>
       ))}
-      {item.summary.last_collection_err ? <span className="agent-tag-chip agent-tag-warn" title={item.summary.last_collection_err}>x-ui 异常</span> : null}
-      {xrayIssueLabel(item) ? <span className="agent-tag-chip agent-tag-warn">{xrayIssueLabel(item)}</span> : null}
+      {!restrictedView && item.summary.last_collection_err ? <span className="agent-tag-chip agent-tag-warn" title={item.summary.last_collection_err}>x-ui 异常</span> : null}
+      {!restrictedView && xrayIssueLabel(item) ? <span className="agent-tag-chip agent-tag-warn">{xrayIssueLabel(item)}</span> : null}
     </div>
   )
 }
@@ -1701,8 +1718,9 @@ function AgentFlowProgress(props: {
   trafficLabel: string
   trafficValue: string
   trafficStatus: ReturnType<typeof calculateTrafficStatus>
+  restrictedView?: boolean
 }) {
-  const { renewalStatus, trafficLabel, trafficValue, trafficStatus } = props
+  const { renewalStatus, trafficLabel, trafficValue, trafficStatus, restrictedView = false } = props
   return (
     <>
       {renewalStatus ? (
@@ -1717,9 +1735,9 @@ function AgentFlowProgress(props: {
       <MiniProgress
         label={trafficLabel}
         value={trafficValue}
-        percent={trafficStatus.total.percent}
-        showTrack
-        level={trafficStatus.total.level}
+        percent={restrictedView ? undefined : trafficStatus.total.percent}
+        showTrack={!restrictedView}
+        level={restrictedView ? 'neutral' : trafficStatus.total.level}
         className="agent-wide-progress"
       />
     </>

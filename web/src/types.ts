@@ -297,6 +297,11 @@ export interface TagSettingsResponse {
   tags: string[]
 }
 
+export interface AreaAgentTagsResponse {
+  agent_id: string
+  tags: string[]
+}
+
 export interface FrontendSettings {
   custom_code: string
 }
