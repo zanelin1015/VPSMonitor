@@ -908,6 +908,64 @@ func TestXUIExecuteFallsBackToLocalDBWhenTemplateAPI404(t *testing.T) {
 	}
 }
 
+func TestXUIExecuteFallsBackToLocalDBWhenLoginForbidden(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "x-ui.db")
+	createLocalXUITestDB(t, dbPath)
+
+	client, err := NewXUIClient(config.XUIConfig{
+		Enabled:  true,
+		BaseURL:  "https://xui.local",
+		DBPath:   dbPath,
+		Username: "admin",
+		Password: "pass",
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewXUIClient: %v", err)
+	}
+
+	restarted := false
+	client.client = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/login", "/panel/api/xray/":
+				return &http.Response{
+					StatusCode: http.StatusForbidden,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(bytes.NewReader([]byte("forbidden"))),
+					Request:    req,
+				}, nil
+			case "/panel/api/server/restartXrayService":
+				restarted = true
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "restarted"}), nil
+			default:
+				t.Fatalf("unexpected path: %s", req.URL.Path)
+				return nil, nil
+			}
+		}),
+	}
+
+	result, err := client.ExecuteAction(context.Background(), model.XUIAction{
+		Kind: model.XUIActionAddRoutingRule,
+		Payload: map[string]any{
+			"rule": map[string]any{
+				"type":        "field",
+				"inboundTag":  []string{"inbound-443"},
+				"outboundTag": "direct",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteAction: %v", err)
+	}
+	if result["rule_index"] != 2 || result["restarted"] != true {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+	if !restarted {
+		t.Fatalf("expected xray restart after local db update")
+	}
+}
+
 func TestXUIExecuteUpsertRoutingRuleAddsOutboundAndRuleOnce(t *testing.T) {
 	client, err := NewXUIClient(config.XUIConfig{
 		Enabled:  true,

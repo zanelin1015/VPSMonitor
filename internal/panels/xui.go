@@ -14,6 +14,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -263,7 +264,10 @@ func mergeRicherXrayConfig(primary map[string]any, fallback map[string]any) map[
 
 func (c *XUIClient) ExecuteAction(ctx context.Context, action model.XUIAction) (map[string]any, error) {
 	if err := c.ensureActionSession(ctx); err != nil {
-		return nil, err
+		if !actionCanUseLocalXrayFallback(action.Kind) {
+			return nil, err
+		}
+		c.invalidateSession()
 	}
 	result, err := c.executeActionAuthenticated(ctx, action)
 	if err == nil || !isXUIAuthError(err) {
@@ -274,6 +278,15 @@ func (c *XUIClient) ExecuteAction(ctx context.Context, action model.XUIAction) (
 		return nil, loginErr
 	}
 	return c.executeActionAuthenticated(ctx, action)
+}
+
+func actionCanUseLocalXrayFallback(kind string) bool {
+	switch kind {
+	case model.XUIActionAddOutbound, model.XUIActionAddRoutingRule, model.XUIActionUpsertRoutingRule:
+		return true
+	default:
+		return false
+	}
 }
 
 func (c *XUIClient) executeActionAuthenticated(ctx context.Context, action model.XUIAction) (map[string]any, error) {
@@ -1160,7 +1173,7 @@ func (c *XUIClient) getMutableXrayConfig(ctx context.Context) (mutableXrayConfig
 	if err == nil {
 		return mutableXrayConfig{config: configJSON, source: "api"}, nil
 	}
-	if !isXUIHTTPStatus(err, http.StatusNotFound) {
+	if !isXUIHTTPStatus(err, http.StatusNotFound) && !isXUIAuthError(err) {
 		return mutableXrayConfig{}, err
 	}
 	localConfig, dbPath, localErr := c.readLocalMutableXrayConfig(ctx)
@@ -1284,7 +1297,55 @@ func (c *XUIClient) restartIfRequested(ctx context.Context, payload map[string]a
 }
 
 func (c *XUIClient) restartXrayService(ctx context.Context) error {
-	return c.postFormAction(ctx, "/panel/api/server/restartXrayService", url.Values{})
+	if err := c.postFormAction(ctx, "/panel/api/server/restartXrayService", url.Values{}); err != nil {
+		if isXUIAuthError(err) {
+			if localErr := restartLocalXUIService(ctx); localErr == nil {
+				return nil
+			} else {
+				return fmt.Errorf("%w (local x-ui restart fallback failed: %v)", err, localErr)
+			}
+		}
+		return err
+	}
+	return nil
+}
+
+func restartLocalXUIService(ctx context.Context) error {
+	if runtime.GOOS == "windows" {
+		return fmt.Errorf("local x-ui restart is only supported on linux clients")
+	}
+	commands := [][]string{}
+	if commandAvailable("systemctl") {
+		commands = append(commands, []string{"systemctl", "restart", "x-ui"})
+	}
+	if commandAvailable("service") {
+		commands = append(commands, []string{"service", "x-ui", "restart"})
+	}
+	if commandAvailable("x-ui") {
+		commands = append(commands, []string{"x-ui", "restart"})
+	}
+	if len(commands) == 0 {
+		return fmt.Errorf("systemctl/service/x-ui command not found")
+	}
+	var errs []string
+	for _, command := range commands {
+		runCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		output, err := exec.CommandContext(runCtx, command[0], command[1:]...).CombinedOutput()
+		cancel()
+		if err == nil && runCtx.Err() == nil {
+			return nil
+		}
+		if runCtx.Err() != nil {
+			err = runCtx.Err()
+		}
+		errs = append(errs, fmt.Sprintf("%s: %v: %s", strings.Join(command, " "), err, strings.TrimSpace(string(output))))
+	}
+	return errors.New(strings.Join(errs, "; "))
+}
+
+func commandAvailable(name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
 }
 
 func (c *XUIClient) getStatus(ctx context.Context) (model.XUIServerStatus, error) {
