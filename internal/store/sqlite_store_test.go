@@ -193,6 +193,29 @@ func TestSQLiteStoreAreaManagersIncludeOwnedCustomersAndAssignments(t *testing.T
 	if len(gotCustomer.Assignments) != 1 || gotCustomer.Assignments[0].AgentID != "sg-01" {
 		t.Fatalf("expected owned customer assignments, got %#v", gotCustomer.Assignments)
 	}
+	directAssignments, err := store.CreateAreaManagerAssignments(manager.ID, []model.AreaManagerAssignmentRequest{
+		{
+			AgentID:          "sg-01",
+			InboundID:        102,
+			InboundTag:       "entry-b",
+			ClientEmail:      "b@example.com",
+			PublicClientName: "SG Entry B",
+			Enabled:          &enabled,
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateAreaManagerAssignments: %v", err)
+	}
+	if len(directAssignments) != 1 || directAssignments[0].ClientEmail != "b@example.com" {
+		t.Fatalf("unexpected direct assignments: %#v", directAssignments)
+	}
+	updatedManager, found, err := store.GetAreaManager(manager.ID)
+	if err != nil || !found {
+		t.Fatalf("GetAreaManager found=%v err=%v", found, err)
+	}
+	if len(updatedManager.Assignments) != 1 || updatedManager.Assignments[0].AgentID != "sg-01" {
+		t.Fatalf("expected direct area manager assignment, got %#v", updatedManager.Assignments)
+	}
 }
 
 func sqliteColumnExists(t *testing.T, db *sql.DB, tableName string, columnName string) bool {

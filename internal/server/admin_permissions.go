@@ -380,28 +380,35 @@ func (a *App) areaManagerClientScope(user model.AdminUser) areaManagerClientScop
 	if err != nil {
 		return scope
 	}
+	assignments, err := a.store.ListAreaManagerAssignments(user.ID)
+	if err == nil {
+		for _, assignment := range assignments {
+			addAreaManagerScopeAssignment(&scope, assignment.AgentID, assignment.InboundID, assignment.InboundTag, assignment.ClientEmail, assignment.Enabled)
+		}
+	}
 	for _, customer := range customers {
 		for _, assignment := range customer.Assignments {
-			if !assignment.Enabled {
-				continue
-			}
-			if assignment.AgentID == "" {
-				continue
-			}
-			if assignment.ClientEmail != "" {
-				scope.exactClients[areaClientExactKey(assignment.AgentID, assignment.InboundID, assignment.InboundTag, assignment.ClientEmail)] = struct{}{}
-				if assignment.InboundTag != "" {
-					scope.exactClients[areaClientExactKey(assignment.AgentID, assignment.InboundID, "", assignment.ClientEmail)] = struct{}{}
-				}
-				continue
-			}
-			scope.inbounds[areaClientInboundKey(assignment.AgentID, assignment.InboundID, assignment.InboundTag)] = struct{}{}
-			if assignment.InboundTag != "" {
-				scope.inbounds[areaClientInboundKey(assignment.AgentID, assignment.InboundID, "")] = struct{}{}
-			}
+			addAreaManagerScopeAssignment(&scope, assignment.AgentID, assignment.InboundID, assignment.InboundTag, assignment.ClientEmail, assignment.Enabled)
 		}
 	}
 	return scope
+}
+
+func addAreaManagerScopeAssignment(scope *areaManagerClientScope, agentID string, inboundID int, inboundTag, clientEmail string, enabled bool) {
+	if scope == nil || !enabled || agentID == "" {
+		return
+	}
+	if clientEmail != "" {
+		scope.exactClients[areaClientExactKey(agentID, inboundID, inboundTag, clientEmail)] = struct{}{}
+		if inboundTag != "" {
+			scope.exactClients[areaClientExactKey(agentID, inboundID, "", clientEmail)] = struct{}{}
+		}
+		return
+	}
+	scope.inbounds[areaClientInboundKey(agentID, inboundID, inboundTag)] = struct{}{}
+	if inboundTag != "" {
+		scope.inbounds[areaClientInboundKey(agentID, inboundID, "")] = struct{}{}
+	}
 }
 
 func (s areaManagerClientScope) allowsClient(agentID string, inboundID int, inboundTag, email string) bool {

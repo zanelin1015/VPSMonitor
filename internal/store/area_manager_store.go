@@ -40,6 +40,10 @@ func (s *SQLiteStore) ListAreaManagers() ([]model.AreaManagerAdminView, error) {
 		if err != nil {
 			return nil, err
 		}
+		items[i].Assignments, err = s.ListAreaManagerAssignments(items[i].ID)
+		if err != nil {
+			return nil, err
+		}
 		items[i].Customers, err = s.ListCustomersForOwner(model.AdminRoleAreaManager, items[i].ID)
 		if err != nil {
 			return nil, err
@@ -57,6 +61,10 @@ func (s *SQLiteStore) GetAreaManager(id int64) (model.AreaManagerAdminView, bool
 		return item, found, err
 	}
 	item.AgentIDs, err = s.ListAreaManagerAgentIDs(id)
+	if err != nil {
+		return model.AreaManagerAdminView{}, false, err
+	}
+	item.Assignments, err = s.ListAreaManagerAssignments(id)
 	if err != nil {
 		return model.AreaManagerAdminView{}, false, err
 	}
@@ -269,6 +277,148 @@ func (s *SQLiteStore) AreaManagerCanAccessAgent(managerID int64, agentID string)
 	return exists == 1, nil
 }
 
+func (s *SQLiteStore) AddAreaManagerAgents(managerID int64, agentIDs []string) error {
+	if managerID <= 0 {
+		return fmt.Errorf("invalid area manager id")
+	}
+	agentIDs, err := s.normalizeAreaManagerAgentIDs(agentIDs)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	for _, agentID := range agentIDs {
+		if _, err := s.db.Exec(`
+			INSERT OR IGNORE INTO area_manager_agents (manager_id, agent_id, created_at)
+			VALUES (?, ?, ?)
+		`, managerID, agentID, now); err != nil {
+			return fmt.Errorf("assign agent %s to area manager: %w", agentID, err)
+		}
+	}
+	return nil
+}
+
+func (s *SQLiteStore) ListAreaManagerAssignments(managerID int64) ([]model.AreaManagerAssignment, error) {
+	if managerID <= 0 {
+		return nil, nil
+	}
+	rows, err := s.db.Query(`
+		SELECT id, manager_id, agent_id, inbound_id, inbound_tag, client_email, public_client_name,
+			enabled, created_at, updated_at
+		FROM area_manager_assignments
+		WHERE manager_id = ?
+		ORDER BY agent_id ASC, inbound_id ASC, client_email ASC, id ASC
+	`, managerID)
+	if err != nil {
+		return nil, fmt.Errorf("list area manager assignments: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]model.AreaManagerAssignment, 0)
+	for rows.Next() {
+		item, err := scanAreaManagerAssignment(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate area manager assignments: %w", err)
+	}
+	return items, nil
+}
+
+func (s *SQLiteStore) CreateAreaManagerAssignment(managerID int64, req model.AreaManagerAssignmentRequest) (model.AreaManagerAssignment, error) {
+	items, err := s.CreateAreaManagerAssignments(managerID, []model.AreaManagerAssignmentRequest{req})
+	if err != nil {
+		return model.AreaManagerAssignment{}, err
+	}
+	if len(items) == 0 {
+		return model.AreaManagerAssignment{}, fmt.Errorf("created area manager assignment not found")
+	}
+	return items[0], nil
+}
+
+func (s *SQLiteStore) CreateAreaManagerAssignments(managerID int64, requests []model.AreaManagerAssignmentRequest) ([]model.AreaManagerAssignment, error) {
+	if managerID <= 0 {
+		return nil, fmt.Errorf("invalid area manager id")
+	}
+	if len(requests) == 0 {
+		return []model.AreaManagerAssignment{}, nil
+	}
+	normalized := make([]model.AreaManagerAssignmentRequest, 0, len(requests))
+	agentSet := make(map[string]struct{})
+	for _, req := range requests {
+		item, err := s.normalizeAreaManagerAssignmentRequest(req)
+		if err != nil {
+			return nil, err
+		}
+		normalized = append(normalized, item)
+		agentSet[item.AgentID] = struct{}{}
+	}
+	agentIDs := make([]string, 0, len(agentSet))
+	for agentID := range agentSet {
+		agentIDs = append(agentIDs, agentID)
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("begin area manager assignments: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	for _, agentID := range agentIDs {
+		if _, err = tx.Exec(`
+			INSERT OR IGNORE INTO area_manager_agents (manager_id, agent_id, created_at)
+			VALUES (?, ?, ?)
+		`, managerID, agentID, now); err != nil {
+			return nil, fmt.Errorf("assign agent %s to area manager: %w", agentID, err)
+		}
+	}
+
+	for _, req := range normalized {
+		enabled := true
+		if req.Enabled != nil {
+			enabled = *req.Enabled
+		}
+		if _, err = tx.Exec(`
+			INSERT INTO area_manager_assignments (
+				manager_id, agent_id, inbound_id, inbound_tag, client_email, public_client_name,
+				enabled, created_at, updated_at
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(manager_id, agent_id, inbound_id, inbound_tag, client_email) DO UPDATE SET
+				public_client_name = excluded.public_client_name,
+				enabled = excluded.enabled,
+				updated_at = excluded.updated_at
+		`, managerID, req.AgentID, req.InboundID, req.InboundTag, req.ClientEmail, req.PublicClientName, boolInt(enabled), now, now); err != nil {
+			return nil, fmt.Errorf("create area manager assignment: %w", err)
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit area manager assignments: %w", err)
+	}
+	return s.ListAreaManagerAssignments(managerID)
+}
+
+func (s *SQLiteStore) DeleteAreaManagerAssignment(managerID, assignmentID int64) error {
+	if managerID <= 0 || assignmentID <= 0 {
+		return fmt.Errorf("invalid area manager assignment id")
+	}
+	result, err := s.db.Exec(`DELETE FROM area_manager_assignments WHERE manager_id = ? AND id = ?`, managerID, assignmentID)
+	if err != nil {
+		return fmt.Errorf("delete area manager assignment: %w", err)
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		return fmt.Errorf("area manager assignment not found")
+	}
+	return nil
+}
+
 func (s *SQLiteStore) ListAreaManagerAgentTags(managerID int64) (map[string][]string, error) {
 	result := make(map[string][]string)
 	if managerID <= 0 {
@@ -402,6 +552,34 @@ func (s *SQLiteStore) normalizeAreaManagerAgentIDs(raw []string) ([]string, erro
 	return agentIDs, nil
 }
 
+func (s *SQLiteStore) normalizeAreaManagerAssignmentRequest(req model.AreaManagerAssignmentRequest) (model.AreaManagerAssignmentRequest, error) {
+	req.AgentID = strings.TrimSpace(req.AgentID)
+	req.InboundTag = strings.TrimSpace(req.InboundTag)
+	req.ClientEmail = strings.TrimSpace(req.ClientEmail)
+	req.PublicClientName = strings.TrimSpace(req.PublicClientName)
+	if req.AgentID == "" {
+		return req, fmt.Errorf("agent_id is required")
+	}
+	if req.InboundID <= 0 {
+		return req, fmt.Errorf("inbound_id is required")
+	}
+	if _, found, err := s.GetAgent(req.AgentID); err != nil {
+		return req, err
+	} else if !found {
+		return req, fmt.Errorf("agent not found")
+	}
+	if req.PublicClientName == "" {
+		req.PublicClientName = firstNonEmpty(req.ClientEmail, req.InboundTag, req.AgentID)
+	}
+	if len(req.PublicClientName) > 160 {
+		return req, fmt.Errorf("public client name is too long")
+	}
+	if len(req.ClientEmail) > 320 {
+		return req, fmt.Errorf("client email is too long")
+	}
+	return req, nil
+}
+
 func (s *SQLiteStore) ensureAreaManagerUsernameAvailable(username string, exceptID int64) error {
 	var rootUsername string
 	err := s.db.QueryRow(`SELECT username FROM admin_accounts WHERE id = ?`, adminAccountID).Scan(&rootUsername)
@@ -494,6 +672,22 @@ func scanAreaManager(scanner rowScanner) (model.AreaManagerAdminView, error) {
 	var createdAtText, updatedAtText string
 	if err := scanner.Scan(&item.ID, &item.Username, &item.DisplayName, &enabled, &createdAtText, &updatedAtText); err != nil {
 		return model.AreaManagerAdminView{}, fmt.Errorf("scan area manager: %w", err)
+	}
+	item.Enabled = enabled != 0
+	item.CreatedAt = parseTime(createdAtText)
+	item.UpdatedAt = parseTime(updatedAtText)
+	return item, nil
+}
+
+func scanAreaManagerAssignment(scanner rowScanner) (model.AreaManagerAssignment, error) {
+	var (
+		item          model.AreaManagerAssignment
+		enabled       int
+		createdAtText string
+		updatedAtText string
+	)
+	if err := scanner.Scan(&item.ID, &item.ManagerID, &item.AgentID, &item.InboundID, &item.InboundTag, &item.ClientEmail, &item.PublicClientName, &enabled, &createdAtText, &updatedAtText); err != nil {
+		return model.AreaManagerAssignment{}, fmt.Errorf("scan area manager assignment: %w", err)
 	}
 	item.Enabled = enabled != 0
 	item.CreatedAt = parseTime(createdAtText)

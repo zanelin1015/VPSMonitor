@@ -164,6 +164,19 @@ export interface CustomerAssignment {
   updated_at: string
 }
 
+export interface AreaManagerAssignment {
+  id: number
+  manager_id: number
+  agent_id: string
+  inbound_id: number
+  inbound_tag?: string
+  client_email?: string
+  public_client_name?: string
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
 export interface CustomerAssignmentDraft {
   agent_id: string
   inbound_id: number
@@ -185,6 +198,7 @@ export interface AreaManagerAdminView {
   display_name?: string
   enabled: boolean
   agent_ids?: string[]
+  assignments?: AreaManagerAssignment[]
   customers?: CustomerAdminView[]
   created_at: string
   updated_at: string

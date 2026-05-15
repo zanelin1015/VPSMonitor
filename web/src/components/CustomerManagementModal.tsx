@@ -3,7 +3,7 @@ import { Alert, App as AntdApp, Button, Card, Col, Empty, Input, InputNumber, Mo
 import type { ColumnsType } from 'antd/es/table'
 import { DeleteOutlined, EditOutlined, ExportOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons'
 
-import type { AdminUser, AreaManagerAdminView, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, DashboardAgentView, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
+import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, DashboardAgentView, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
 import { fetchJSON } from '../lib/appHelpers'
 import { REVENUE_CURRENCIES } from '../lib/currency'
 
@@ -39,6 +39,12 @@ interface AreaManagerFormState {
   agent_ids: string[]
 }
 
+interface AreaBatchAssignmentFormState {
+  manager_id: number | null
+  agent_id: string
+  selected_keys: string[]
+}
+
 const emptyCustomerForm: CustomerFormState = {
   username: '',
   password: '',
@@ -65,6 +71,12 @@ const emptyAreaManagerForm: AreaManagerFormState = {
   display_name: '',
   enabled: true,
   agent_ids: [],
+}
+
+const emptyAreaBatchAssignmentForm: AreaBatchAssignmentFormState = {
+  manager_id: null,
+  agent_id: '',
+  selected_keys: [],
 }
 
 function isAreaManagerAdminUser(user: AdminUser | null): boolean {
@@ -114,6 +126,7 @@ export function CustomerManagementModal(props: {
   const [savingCustomer, setSavingCustomer] = useState(false)
   const [savingAssignment, setSavingAssignment] = useState(false)
   const [savingAreaManager, setSavingAreaManager] = useState(false)
+  const [savingAreaBatchAssignment, setSavingAreaBatchAssignment] = useState(false)
   const [selectedCustomerID, setSelectedCustomerID] = useState<number | null>(null)
   const [editingAreaManagerID, setEditingAreaManagerID] = useState<number | null>(null)
   const [editingAssignmentID, setEditingAssignmentID] = useState<number | null>(null)
@@ -122,6 +135,9 @@ export function CustomerManagementModal(props: {
   const [assignmentForm, setAssignmentForm] = useState<AssignmentFormState>(emptyAssignmentForm)
   const [overview, setOverview] = useState<XUIOverview | null>(null)
   const [overviewLoading, setOverviewLoading] = useState(false)
+  const [areaBatchForm, setAreaBatchForm] = useState<AreaBatchAssignmentFormState>(emptyAreaBatchAssignmentForm)
+  const [areaBatchOverview, setAreaBatchOverview] = useState<XUIOverview | null>(null)
+  const [areaBatchOverviewLoading, setAreaBatchOverviewLoading] = useState(false)
   const skipAssignmentResetRef = useRef(false)
 
   const selectedCustomer = customers.find((item) => item.id === selectedCustomerID) || null
@@ -144,6 +160,7 @@ export function CustomerManagementModal(props: {
     }))
     return [...clients, ...nodes]
   }, [overview])
+  const areaBatchClientOptions = useMemo(() => buildAssignmentTargetOptions(areaBatchOverview), [areaBatchOverview])
 
   useEffect(() => {
     if (active) {
@@ -236,6 +253,35 @@ export function CustomerManagementModal(props: {
       cancelled = true
     }
   }, [assignmentForm.agent_id])
+
+  useEffect(() => {
+    if (!areaBatchForm.agent_id) {
+      setAreaBatchOverview(null)
+      return
+    }
+    let cancelled = false
+    setAreaBatchOverviewLoading(true)
+    void fetchJSON<XUIOverview>(`/api/v1/agents/${areaBatchForm.agent_id}/xui/overview?assignment_scope=1`)
+      .then((data) => {
+        if (!cancelled) {
+          setAreaBatchOverview(data)
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setAreaBatchOverview(null)
+          message.warning(error instanceof Error ? error.message : '加载 x-ui 客户端失败')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setAreaBatchOverviewLoading(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [areaBatchForm.agent_id])
 
   const assignmentColumns: ColumnsType<CustomerAssignment> = [
     {
@@ -362,10 +408,12 @@ export function CustomerManagementModal(props: {
       render: (_, record) => {
         const ownedCustomers = record.customers || []
         const assignmentCount = ownedCustomers.reduce((sum, customer) => sum + (customer.assignments?.length || 0), 0)
+        const directCount = record.assignments?.length || 0
         return (
           <Space size={6}>
             <Tag color="geekblue">{ownedCustomers.length} 用户</Tag>
             <Tag color={assignmentCount ? 'cyan' : 'default'}>{assignmentCount} 链路</Tag>
+            <Tag color={directCount ? 'blue' : 'default'}>{directCount} 授权</Tag>
           </Space>
         )
       },
@@ -401,19 +449,57 @@ export function CustomerManagementModal(props: {
     },
   ]
 
+  const areaAssignmentColumns: ColumnsType<AreaManagerAssignment> = [
+    {
+      title: '已授权客户端 / 节点',
+      render: (_, record) => (
+        <div>
+          <Text>{agentName(record.agent_id, agents)}</Text>
+          <div className="muted-line">{record.public_client_name || record.client_email || record.inbound_tag || `#${record.inbound_id}`}</div>
+        </div>
+      ),
+    },
+    {
+      title: '范围',
+      width: 180,
+      render: (_, record) => `${record.inbound_tag || `Inbound #${record.inbound_id}`} / ${record.client_email || '整个节点'}`,
+    },
+    {
+      title: '操作',
+      width: 90,
+      render: (_, record) => (
+        <Popconfirm title="移除该区域授权？" okText="移除" cancelText="取消" onConfirm={() => void deleteAreaManagerAssignment(record.manager_id, record.id)}>
+          <Button size="small" danger icon={<DeleteOutlined />} />
+        </Popconfirm>
+      ),
+    },
+  ]
+
   function renderAreaManagerCustomers(record: AreaManagerAdminView) {
     const ownedCustomers = record.customers || []
-    if (!ownedCustomers.length) {
-      return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="该区域账号暂未创建下属用户" />
+    const directAssignments = record.assignments || []
+    if (!ownedCustomers.length && !directAssignments.length) {
+      return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="该区域账号暂未创建下属用户或授权" />
     }
     return (
-      <Table
-        size="small"
-        rowKey={(customer) => customer.id}
-        columns={areaCustomerColumns}
-        dataSource={ownedCustomers}
-        pagination={false}
-      />
+      <Space direction="vertical" style={{ width: '100%' }}>
+        {directAssignments.length ? (
+          <Table
+            size="small"
+            rowKey={(assignment) => assignment.id}
+            columns={areaAssignmentColumns}
+            dataSource={directAssignments}
+            pagination={false}
+          />
+        ) : null}
+        {ownedCustomers.length ? <Table
+          size="small"
+          rowKey={(customer) => customer.id}
+          columns={areaCustomerColumns}
+          dataSource={ownedCustomers}
+          pagination={false}
+        /> : null}
+      </Space>
     )
   }
 
@@ -507,6 +593,80 @@ export function CustomerManagementModal(props: {
       message.error(error instanceof Error ? error.message : '删除区域账号失败')
     } finally {
       setSavingAreaManager(false)
+    }
+  }
+
+  async function batchAssignAreaManagerTargets() {
+    if (!areaBatchForm.manager_id) {
+      message.warning('请选择区域账号')
+      return
+    }
+    if (!areaBatchForm.agent_id) {
+      message.warning('请选择入口 Client')
+      return
+    }
+    if (!areaBatchForm.selected_keys.length) {
+      message.warning('请选择要批量授权的客户端 / 节点')
+      return
+    }
+    const optionMap = new Map(areaBatchClientOptions.map((option) => [option.value, option]))
+    const assignments = areaBatchForm.selected_keys.flatMap((key) => {
+      const option = optionMap.get(key)
+      if (!option) {
+        return []
+      }
+      if (option.client) {
+        const client = option.client
+        return [{
+          agent_id: areaBatchForm.agent_id,
+          inbound_id: client.inbound_id,
+          inbound_tag: client.inbound_tag || '',
+          client_email: client.email || '',
+          public_client_name: defaultPublicClientName(client, areaBatchForm.agent_id, agents),
+          enabled: true,
+        }]
+      }
+      if (option.node) {
+        const node = option.node
+        return [{
+          agent_id: areaBatchForm.agent_id,
+          inbound_id: node.id,
+          inbound_tag: node.tag || '',
+          client_email: '',
+          public_client_name: defaultPublicNodeName(node, areaBatchForm.agent_id, agents),
+          enabled: true,
+        }]
+      }
+      return []
+    })
+    if (!assignments.length) {
+      message.warning('没有可授权的选择项')
+      return
+    }
+    setSavingAreaBatchAssignment(true)
+    try {
+      await fetchJSON<AreaManagerAssignment[]>(`/api/v1/admin/area-managers/${areaBatchForm.manager_id}/assignments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assignments }),
+      })
+      message.success(`已批量授权 ${assignments.length} 条客户端 / 节点`)
+      setAreaBatchForm((current) => ({ ...current, selected_keys: [] }))
+      await loadAreaManagers()
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '批量授权失败')
+    } finally {
+      setSavingAreaBatchAssignment(false)
+    }
+  }
+
+  async function deleteAreaManagerAssignment(managerID: number, assignmentID: number) {
+    try {
+      await fetchJSON(`/api/v1/admin/area-managers/${managerID}/assignments/${assignmentID}`, { method: 'DELETE' })
+      message.success('区域授权已移除')
+      await loadAreaManagers()
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '移除区域授权失败')
     }
   }
 
@@ -758,6 +918,64 @@ export function CustomerManagementModal(props: {
       <Button style={{ marginTop: 14 }} type="primary" icon={<SaveOutlined />} loading={savingAreaManager} onClick={() => void saveAreaManager()}>
         {editingAreaManagerID ? '保存区域账号' : '新增区域账号'}
       </Button>
+      <Card size="small" style={{ marginTop: 14 }} bordered={false}>
+        <div className="customer-admin-card-head">
+          <div>
+            <Title level={5}>批量授权客户端 / 节点</Title>
+            <Text type="secondary">把某个入口 Client 下的 x-ui 客户端或整个节点授权给区域账号使用。</Text>
+          </div>
+          <Button
+            type="primary"
+            icon={<SaveOutlined />}
+            loading={savingAreaBatchAssignment}
+            onClick={() => void batchAssignAreaManagerTargets()}
+          >
+            批量授权
+          </Button>
+        </div>
+        <Row gutter={[12, 12]}>
+          <Col xs={24} md={6}>
+            <Text type="secondary">区域账号</Text>
+            <Select
+              style={{ width: '100%' }}
+              showSearch
+              placeholder="选择区域账号"
+              value={areaBatchForm.manager_id ?? undefined}
+              options={areaManagers.map((item) => ({ value: item.id, label: `${item.username} · ${item.display_name || item.username}` }))}
+              optionFilterProp="label"
+              onChange={(value) => setAreaBatchForm((current) => ({ ...current, manager_id: value }))}
+            />
+          </Col>
+          <Col xs={24} md={6}>
+            <Text type="secondary">入口 Client</Text>
+            <Select
+              style={{ width: '100%' }}
+              showSearch
+              placeholder="选择 Client"
+              value={areaBatchForm.agent_id || undefined}
+              options={agentOptions}
+              optionFilterProp="label"
+              onChange={(value) => setAreaBatchForm((current) => ({ ...current, agent_id: value, selected_keys: [] }))}
+            />
+          </Col>
+          <Col xs={24} md={12}>
+            <Text type="secondary">客户端 / 节点</Text>
+            <Select
+              mode="multiple"
+              style={{ width: '100%' }}
+              showSearch
+              placeholder="选择要授权给区域账号的 x-ui 客户端或节点"
+              value={areaBatchForm.selected_keys}
+              loading={areaBatchOverviewLoading}
+              disabled={!areaBatchForm.agent_id}
+              options={areaBatchClientOptions.map(({ value, label }) => ({ value, label }))}
+              optionFilterProp="label"
+              maxTagCount="responsive"
+              onChange={(values) => setAreaBatchForm((current) => ({ ...current, selected_keys: values }))}
+            />
+          </Col>
+        </Row>
+      </Card>
       <Table
         style={{ marginTop: 14 }}
         rowKey={(record) => record.id}
@@ -766,7 +984,7 @@ export function CustomerManagementModal(props: {
         pagination={{ pageSize: 5, hideOnSinglePage: true }}
         expandable={{
           expandedRowRender: renderAreaManagerCustomers,
-          rowExpandable: (record) => Boolean(record.customers?.length),
+          rowExpandable: (record) => Boolean(record.customers?.length || record.assignments?.length),
         }}
         locale={{ emptyText: <Empty description="暂无区域账号" /> }}
       />
@@ -1031,6 +1249,22 @@ export function CustomerManagementModal(props: {
 
 function clientKey(client: XUIClientView): string {
   return `client:${client.inbound_id}::${client.email || ''}`
+}
+
+function buildAssignmentTargetOptions(overview: XUIOverview | null) {
+  const clients = (overview?.clients || []).map((client) => ({
+    value: clientKey(client),
+    label: clientLabel(client),
+    client,
+    node: undefined as XUINodeView | undefined,
+  }))
+  const nodes = (overview?.nodes || []).map((node) => ({
+    value: nodeKey(node),
+    label: nodeLabel(node),
+    client: undefined as XUIClientView | undefined,
+    node,
+  }))
+  return [...clients, ...nodes]
 }
 
 function clientLabel(client: XUIClientView): string {

@@ -72,6 +72,23 @@ func (s *SQLiteStore) init() error {
 		);
 		`,
 		`
+		CREATE TABLE IF NOT EXISTS area_manager_assignments (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			manager_id INTEGER NOT NULL,
+			agent_id TEXT NOT NULL,
+			inbound_id INTEGER NOT NULL DEFAULT 0,
+			inbound_tag TEXT NOT NULL DEFAULT '',
+			client_email TEXT NOT NULL DEFAULT '',
+			public_client_name TEXT NOT NULL DEFAULT '',
+			enabled INTEGER NOT NULL DEFAULT 1,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			FOREIGN KEY(manager_id) REFERENCES area_manager_accounts(id) ON DELETE CASCADE,
+			FOREIGN KEY(agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE,
+			UNIQUE(manager_id, agent_id, inbound_id, inbound_tag, client_email)
+		);
+		`,
+		`
 		CREATE TABLE IF NOT EXISTS customer_accounts (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			username TEXT NOT NULL COLLATE NOCASE UNIQUE,
@@ -278,6 +295,8 @@ func (s *SQLiteStore) init() error {
 		`CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires_at ON admin_sessions(expires_at);`,
 		`CREATE INDEX IF NOT EXISTS idx_area_manager_agents_agent ON area_manager_agents(agent_id, manager_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_area_manager_agent_tags_agent ON area_manager_agent_tags(agent_id, manager_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_area_manager_assignments_manager ON area_manager_assignments(manager_id, enabled, id);`,
+		`CREATE INDEX IF NOT EXISTS idx_area_manager_assignments_agent ON area_manager_assignments(agent_id, inbound_id, client_email);`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_accounts_owner ON customer_accounts(owner_type, owner_id, id);`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_sessions_expires_at ON customer_sessions(expires_at);`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_assignments_customer ON customer_assignments(customer_id, enabled, id);`,

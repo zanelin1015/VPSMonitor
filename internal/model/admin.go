@@ -57,15 +57,42 @@ type AreaManagerAccountRequest struct {
 	AgentIDs    []string `json:"agent_ids,omitempty"`
 }
 
+type AreaManagerAssignment struct {
+	ID               int64     `json:"id"`
+	ManagerID        int64     `json:"manager_id"`
+	AgentID          string    `json:"agent_id"`
+	InboundID        int       `json:"inbound_id"`
+	InboundTag       string    `json:"inbound_tag,omitempty"`
+	ClientEmail      string    `json:"client_email,omitempty"`
+	PublicClientName string    `json:"public_client_name,omitempty"`
+	Enabled          bool      `json:"enabled"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+type AreaManagerAssignmentRequest struct {
+	AgentID          string `json:"agent_id"`
+	InboundID        int    `json:"inbound_id"`
+	InboundTag       string `json:"inbound_tag,omitempty"`
+	ClientEmail      string `json:"client_email,omitempty"`
+	PublicClientName string `json:"public_client_name,omitempty"`
+	Enabled          *bool  `json:"enabled,omitempty"`
+}
+
+type AreaManagerAssignmentBatchRequest struct {
+	Assignments []AreaManagerAssignmentRequest `json:"assignments"`
+}
+
 type AreaManagerAdminView struct {
-	ID          int64               `json:"id"`
-	Username    string              `json:"username"`
-	DisplayName string              `json:"display_name,omitempty"`
-	Enabled     bool                `json:"enabled"`
-	AgentIDs    []string            `json:"agent_ids,omitempty"`
-	Customers   []CustomerAdminView `json:"customers,omitempty"`
-	CreatedAt   time.Time           `json:"created_at"`
-	UpdatedAt   time.Time           `json:"updated_at"`
+	ID          int64                   `json:"id"`
+	Username    string                  `json:"username"`
+	DisplayName string                  `json:"display_name,omitempty"`
+	Enabled     bool                    `json:"enabled"`
+	AgentIDs    []string                `json:"agent_ids,omitempty"`
+	Assignments []AreaManagerAssignment `json:"assignments,omitempty"`
+	Customers   []CustomerAdminView     `json:"customers,omitempty"`
+	CreatedAt   time.Time               `json:"created_at"`
+	UpdatedAt   time.Time               `json:"updated_at"`
 }
 
 type ClientInstallInfo struct {
