@@ -84,6 +84,22 @@ func TestRealtimeHubTerminalRelayValidatesAgent(t *testing.T) {
 	}
 }
 
+func TestSanitizeGeoForAreaManagerKeepsOnlyCountry(t *testing.T) {
+	geo := sanitizeGeoForAreaManager(&model.IPGeoView{
+		IP:          "203.0.113.10",
+		CountryCode: "VN",
+		CountryName: "Vietnam",
+		RegionName:  "Ho Chi Minh",
+		City:        "Ho Chi Minh City",
+	})
+	if geo == nil || geo.CountryCode != "VN" || geo.CountryName != "Vietnam" {
+		t.Fatalf("expected country to remain, got %#v", geo)
+	}
+	if geo.IP != "" || geo.RegionName != "" || geo.City != "" {
+		t.Fatalf("expected precise geo fields to be redacted, got %#v", geo)
+	}
+}
+
 func TestAreaManagerRealtimeMetricsAreSanitized(t *testing.T) {
 	app := &App{}
 	user := model.AdminUser{

@@ -878,6 +878,8 @@ function actionKindLabel(kind: string): string {
       return '重启 x-ui / Xray'
     case 'execute_command':
       return '远程命令'
+    case 'update_3xui':
+      return '更新 3x-ui'
     default:
       return kind
   }
@@ -1482,6 +1484,7 @@ function createEmptyManagedConfig(agentID: string, agentName?: string): ManagedA
       db_path: '',
       username: '',
       password: '',
+      api_token: '',
       two_factor_code: '',
       skip_tls_verify: false,
     },

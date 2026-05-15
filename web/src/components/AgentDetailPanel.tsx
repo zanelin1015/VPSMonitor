@@ -96,6 +96,7 @@ export interface AgentDetailPanelProps {
   currentAgentLoading: boolean
   remoteCommandLoading: boolean
   xuiRestartLoading: boolean
+  xuiUpdateLoading: boolean
   onActiveTabChange: (key: string) => void
   onClientSearchChange: (value: string) => void
   onCopyImportURL: (client: XUIClientView) => void
@@ -116,6 +117,7 @@ export interface AgentDetailPanelProps {
   onAuthorizeCustomer: (draft: CustomerAssignmentDraft) => void
   onRefreshCurrentAgent: () => void
   onRestartXUI: () => void
+  onUpdate3XUI: () => void
   onExecuteRemoteCommand: (command: string, shell: string, timeoutSeconds: number) => void
   onRefreshXUIActions: () => void
   onRenewalChange: (patch: Partial<VPSRenewalConfig>) => void
@@ -168,6 +170,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     currentAgentLoading,
     remoteCommandLoading,
     xuiRestartLoading,
+    xuiUpdateLoading,
     onActiveTabChange,
     onClientSearchChange,
     onCopyImportURL,
@@ -188,6 +191,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onAuthorizeCustomer,
     onRefreshCurrentAgent,
     onRestartXUI,
+    onUpdate3XUI,
     onExecuteRemoteCommand,
     onRefreshXUIActions,
     onRenewalChange,
@@ -568,7 +572,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         <div>
           <Text>{record.error || shortJSON(record.result) || shortJSON(record.payload) || '-'}</Text>
           {record.error && shortJSON(record.result) ? <div className="muted-line">{shortJSON(record.result)}</div> : null}
-          {record.kind === 'execute_command' ? (
+          {['execute_command', 'update_3xui'].includes(record.kind) ? (
             <div>
               <Button size="small" type="link" onClick={() => setCommandOutputAction(record)}>
                 查看输出
@@ -669,6 +673,17 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
             {!restrictedView ? <Button loading={remoteCommandLoading} onClick={() => setRemoteCommandOpen(true)}>单次命令</Button> : null}
             {!restrictedView ? (
               <Popconfirm
+                title="更新 3x-ui？"
+                description="将通过在线 Client 执行 x-ui update；失败时回退官方 install.sh 脚本，过程中可能短暂影响 x-ui / Xray。"
+                okText="更新"
+                cancelText="取消"
+                onConfirm={onUpdate3XUI}
+              >
+                <Button loading={xuiUpdateLoading}>更新 3x-ui</Button>
+              </Popconfirm>
+            ) : null}
+            {!restrictedView ? (
+              <Popconfirm
                 title="重启 x-ui / Xray？"
                 description="将通过在线 Client 的 WebSocket 执行 x-ui 服务重启；失败日志会写入操作记录。"
                 okText="重启"
@@ -722,13 +737,24 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
                   <Alert
                     type="warning"
                     showIcon
-                    message="这里现在只负责出站和转发编排"
-                    description="入站节点请直接通过 x-ui 面板手动新增；中心只负责把其它 client 的节点导入为当前 client 的出站，以及给当前 client 下发转发规则。"
+                    message="这里现在通过 WS 实时下发 x-ui 指令"
+                    description="入站节点请直接通过 x-ui 面板手动新增；中心会把其它 client 的节点导入为当前 client 的出站，并通过在线 Client 实时执行和回传结果。Client 不在线时会保留任务等待轮询。"
                   />
                   <Space wrap>
                     <Button type="primary" disabled={!selectedAgentId} onClick={onCreateRoutingAction}>新增操作</Button>
                     {!restrictedView ? <Button danger onClick={openRealtimeTerminal}>实时 TTY</Button> : null}
                     {!restrictedView ? <Button loading={remoteCommandLoading} onClick={() => setRemoteCommandOpen(true)}>单次命令</Button> : null}
+                    {!restrictedView ? (
+                      <Popconfirm
+                        title="更新 3x-ui？"
+                        description="将通过在线 Client 执行 x-ui update；失败时回退官方 install.sh 脚本，过程中可能短暂影响 x-ui / Xray。"
+                        okText="更新"
+                        cancelText="取消"
+                        onConfirm={onUpdate3XUI}
+                      >
+                        <Button loading={xuiUpdateLoading}>更新 3x-ui</Button>
+                      </Popconfirm>
+                    ) : null}
                     <Button icon={<ReloadOutlined />} disabled={!selectedAgentId} loading={xuiActionsLoading} onClick={onRefreshXUIActions}>刷新操作记录</Button>
                   </Space>
                   <Table rowKey={(record) => record.id} columns={xuiActionColumns} dataSource={xuiActions} loading={xuiActionsLoading} pagination={{ pageSize: 8, hideOnSinglePage: true }} scroll={{ x: 820 }} />
@@ -997,7 +1023,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         </Space>
       </Modal>
       <Modal
-        title="远程命令输出"
+        title={commandOutputAction?.kind === 'update_3xui' ? '3x-ui 更新输出' : '远程命令输出'}
         open={Boolean(commandOutputAction)}
         footer={<Button onClick={() => setCommandOutputAction(null)}>关闭</Button>}
         onCancel={() => setCommandOutputAction(null)}
@@ -1081,6 +1107,13 @@ function RemoteTTYTerminal(props: { agentID: string; shell: string; active: bool
         socket.send(JSON.stringify({ ...message, session_id: currentSessionID || message.session_id }))
       }
     }
+    terminal.attachCustomKeyEventHandler((event) => {
+      if (event.type === 'keydown' && event.key === 'Enter') {
+        send({ type: 'input', data: '\n' })
+        return false
+      }
+      return true
+    })
     const dataDisposable = terminal.onData((data) => send({ type: 'input', data }))
     const resizeDisposable = terminal.onResize((size) => send({ type: 'resize', cols: size.cols, rows: size.rows }))
     const resizeWindow = () => {

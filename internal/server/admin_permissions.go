@@ -310,7 +310,7 @@ func sanitizeTopologyLinksForAreaManager(links []model.TopologyLinkView, allowed
 		link.Source.Address = redactEndpointIP(link.Source.Address)
 		link.Source.Target = redactEndpointIP(link.Source.Target)
 		link.Source.TargetIP = ""
-		link.Source.TargetGeo = nil
+		link.Source.TargetGeo = sanitizeGeoForAreaManager(link.Source.TargetGeo)
 		link.Source.ResolvedIPs = nil
 		link.Target.AgentName = areaManagerDisplayName("", agentNames[link.Target.AgentID], link.Target.AgentID)
 		link.Target.AgentTags = cloneStringSlice(tagMap[link.Target.AgentID])
@@ -354,11 +354,21 @@ func sanitizeClientChainsForAreaManager(chains []model.ClientChainView, allowed 
 			step.AgentTags = cloneStringSlice(tagMap[step.AgentID])
 			step.Target = redactEndpointIP(step.Target)
 			step.TargetIP = ""
-			step.TargetGeo = nil
+			step.TargetGeo = sanitizeGeoForAreaManager(step.TargetGeo)
 		}
 		filtered = append(filtered, chain)
 	}
 	return filtered
+}
+
+func sanitizeGeoForAreaManager(geo *model.IPGeoView) *model.IPGeoView {
+	if geo == nil {
+		return nil
+	}
+	return &model.IPGeoView{
+		CountryCode: geo.CountryCode,
+		CountryName: geo.CountryName,
+	}
 }
 
 type areaManagerClientScope struct {

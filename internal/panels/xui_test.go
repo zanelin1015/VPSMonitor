@@ -109,6 +109,41 @@ func TestXUICollect(t *testing.T) {
 	}
 }
 
+func TestXUIClientUsesBearerAPIToken(t *testing.T) {
+	client, err := NewXUIClient(config.XUIConfig{
+		Enabled:  true,
+		BaseURL:  "https://xui.local",
+		APIToken: "api-token",
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewXUIClient: %v", err)
+	}
+	client.client = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Path == "/login" {
+				t.Fatalf("api token auth should not call /login")
+			}
+			if got := req.Header.Get("Authorization"); got != "Bearer api-token" {
+				t.Fatalf("unexpected Authorization header %q", got)
+			}
+			return jsonResponse(t, req, map[string]any{
+				"success": true,
+				"obj": map[string]any{
+					"cpu":  1,
+					"xray": map[string]any{"state": "running"},
+				},
+			}), nil
+		}),
+	}
+	if err := client.ensureLogin(context.Background()); err != nil {
+		t.Fatalf("ensureLogin with api token: %v", err)
+	}
+	if _, err := client.getStatus(context.Background()); err != nil {
+		t.Fatalf("getStatus with api token: %v", err)
+	}
+}
+
 func TestXUICollectFallsBackToXrayTemplateWhenServerConfigIsEmpty(t *testing.T) {
 	client, err := NewXUIClient(config.XUIConfig{
 		Enabled:  true,

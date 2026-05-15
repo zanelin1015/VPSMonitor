@@ -343,6 +343,14 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
             <Input.Password value={managedConfig.xui.password || ''} onChange={(event) => onXUIChange({ password: event.target.value })} />
           </Col>
           <Col xs={24} md={12}>
+            <Text type="secondary">API Token</Text>
+            <Input.Password
+              value={managedConfig.xui.api_token || ''}
+              placeholder="新版 3x-ui：Settings → Security → API Token"
+              onChange={(event) => onXUIChange({ api_token: event.target.value })}
+            />
+          </Col>
+          <Col xs={24} md={12}>
             <Text type="secondary">二步验证码</Text>
             <Input value={managedConfig.xui.two_factor_code || ''} onChange={(event) => onXUIChange({ two_factor_code: event.target.value })} />
           </Col>

@@ -318,8 +318,8 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 				writeError(w, http.StatusForbidden, "area manager can only create routing rule actions")
 				return
 			}
-			if req.Kind == model.XUIActionExecuteCommand && !isRootAdmin(user) {
-				writeError(w, http.StatusForbidden, "only root admin can execute remote commands")
+			if isRootOnlyXUIActionKind(req.Kind) && !isRootAdmin(user) {
+				writeError(w, http.StatusForbidden, "only root admin can create this x-ui action")
 				return
 			}
 			action, err := a.store.CreateXUIAction(agentID, req)
@@ -332,11 +332,26 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 				return
 			}
 			if action.Kind == model.XUIActionRestartXUI {
-				a.realtime.sendAgentControl(agentID, model.AgentControlMessage{
+				if a.realtime.sendAgentControl(agentID, model.AgentControlMessage{
 					Type:     model.AgentControlRestartXUI,
 					ActionID: action.ID,
 					Payload:  action.Payload,
-				})
+				}) {
+					if running, markErr := a.store.MarkXUIActionRunning(agentID, action.ID); markErr == nil {
+						action = running
+					}
+				}
+			} else if realtimeXUIActionAllowed(action.Kind) {
+				if a.realtime.sendAgentControl(agentID, model.AgentControlMessage{
+					Type:     model.AgentControlExecuteXUI,
+					Kind:     action.Kind,
+					ActionID: action.ID,
+					Payload:  action.Payload,
+				}) {
+					if running, markErr := a.store.MarkXUIActionRunning(agentID, action.ID); markErr == nil {
+						action = running
+					}
+				}
 			}
 			writeJSON(w, http.StatusOK, action)
 		default:
@@ -477,12 +492,35 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 func filterRootOnlyXUIActions(actions []model.XUIAction) []model.XUIAction {
 	filtered := make([]model.XUIAction, 0, len(actions))
 	for _, action := range actions {
-		if action.Kind == model.XUIActionExecuteCommand {
+		if isRootOnlyXUIActionKind(action.Kind) {
 			continue
 		}
 		filtered = append(filtered, action)
 	}
 	return filtered
+}
+
+func isRootOnlyXUIActionKind(kind string) bool {
+	switch kind {
+	case model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI:
+		return true
+	default:
+		return false
+	}
+}
+
+func realtimeXUIActionAllowed(kind string) bool {
+	switch kind {
+	case model.XUIActionAddOutbound,
+		model.XUIActionAddRoutingRule,
+		model.XUIActionUpsertRoutingRule,
+		model.XUIActionUpdateClientExpiry,
+		model.XUIActionExecuteCommand,
+		model.XUIActionUpdate3XUI:
+		return true
+	default:
+		return false
+	}
 }
 
 func (a *App) handleHeartbeat(w http.ResponseWriter, r *http.Request, agentID string) {

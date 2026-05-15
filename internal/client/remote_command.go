@@ -16,17 +16,35 @@ import (
 
 const maxRemoteCommandOutputLength = 65536
 
+type remoteCommandOptions struct {
+	DefaultTimeoutSeconds int
+	MaxTimeoutSeconds     int
+}
+
 func executeRemoteCommand(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	return executeRemoteCommandWithOptions(ctx, payload, remoteCommandOptions{
+		DefaultTimeoutSeconds: 120,
+		MaxTimeoutSeconds:     600,
+	})
+}
+
+func executeRemoteCommandWithOptions(ctx context.Context, payload map[string]any, options remoteCommandOptions) (map[string]any, error) {
 	command := strings.TrimSpace(payloadString(payload, "command", ""))
 	if command == "" {
 		return nil, fmt.Errorf("command is required")
 	}
 	timeoutSeconds := remoteCommandPayloadInt(payload["timeout_seconds"])
 	if timeoutSeconds <= 0 {
+		timeoutSeconds = options.DefaultTimeoutSeconds
+	}
+	if timeoutSeconds <= 0 {
 		timeoutSeconds = 120
 	}
-	if timeoutSeconds > 600 {
-		timeoutSeconds = 600
+	if options.MaxTimeoutSeconds <= 0 {
+		options.MaxTimeoutSeconds = 600
+	}
+	if timeoutSeconds > options.MaxTimeoutSeconds {
+		timeoutSeconds = options.MaxTimeoutSeconds
 	}
 	shell := normalizeRemoteShell(payloadString(payload, "shell", ""))
 	name, args, err := remoteShellCommand(shell, command)

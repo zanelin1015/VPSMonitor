@@ -79,57 +79,71 @@ func (a *App) executePendingXUIActions(ctx context.Context, effectiveConfig mode
 		xuiClient, xuiErr = a.xuiClientFor(effectiveConfig.XUI)
 	}
 	for _, action := range actions {
-		result := model.XUIActionResultRequest{Status: model.XUIActionStatusSucceeded}
-		switch action.Kind {
-		case model.XUIActionUpdateClient:
-			output, actionErr := a.startSelfUpdate(action.Payload)
-			if actionErr != nil {
-				result.Status = model.XUIActionStatusFailed
-				result.Error = actionErr.Error()
-			} else {
-				result.Result = output
-			}
-		case model.XUIActionRestartXUI:
-			output, actionErr := restartXUIService(ctx, action.Payload)
-			if actionErr != nil {
-				result.Status = model.XUIActionStatusFailed
-				result.Error = actionErr.Error()
-				result.Result = output
-			} else {
-				result.Result = output
-			}
-		case model.XUIActionExecuteCommand:
-			output, actionErr := executeRemoteCommand(ctx, action.Payload)
-			if actionErr != nil {
-				result.Status = model.XUIActionStatusFailed
-				result.Error = actionErr.Error()
-				result.Result = output
-			} else {
-				result.Result = output
-			}
-		default:
-			if !effectiveConfig.XUI.Enabled {
-				result.Status = model.XUIActionStatusFailed
-				result.Error = "x-ui config is disabled"
-			} else if xuiErr != nil {
-				result.Status = model.XUIActionStatusFailed
-				result.Error = xuiErr.Error()
-			} else {
-				actionCtx, actionCancel := context.WithTimeout(ctx, a.requestTimeout)
-				output, actionErr := xuiClient.ExecuteAction(actionCtx, action)
-				actionCancel()
-				if actionErr != nil {
-					result.Status = model.XUIActionStatusFailed
-					result.Error = actionErr.Error()
-				} else {
-					result.Result = output
-				}
-			}
-		}
+		result := a.executeXUIAction(ctx, effectiveConfig, xuiClient, xuiErr, action)
 		resultCtx, resultCancel := context.WithTimeout(ctx, a.requestTimeout)
 		_ = a.reportXUIActionResult(resultCtx, action.ID, result)
 		resultCancel()
 	}
+}
+
+func (a *App) executeXUIAction(ctx context.Context, effectiveConfig model.ManagedAgentConfig, xuiClient *panels.XUIClient, xuiErr error, action model.XUIAction) model.XUIActionResultRequest {
+	result := model.XUIActionResultRequest{Status: model.XUIActionStatusSucceeded}
+	switch action.Kind {
+	case model.XUIActionUpdateClient:
+		output, actionErr := a.startSelfUpdate(action.Payload)
+		if actionErr != nil {
+			result.Status = model.XUIActionStatusFailed
+			result.Error = actionErr.Error()
+		} else {
+			result.Result = output
+		}
+	case model.XUIActionRestartXUI:
+		output, actionErr := restartXUIService(ctx, action.Payload)
+		if actionErr != nil {
+			result.Status = model.XUIActionStatusFailed
+			result.Error = actionErr.Error()
+			result.Result = output
+		} else {
+			result.Result = output
+		}
+	case model.XUIActionExecuteCommand:
+		output, actionErr := executeRemoteCommand(ctx, action.Payload)
+		if actionErr != nil {
+			result.Status = model.XUIActionStatusFailed
+			result.Error = actionErr.Error()
+			result.Result = output
+		} else {
+			result.Result = output
+		}
+	case model.XUIActionUpdate3XUI:
+		output, actionErr := update3XUI(ctx, action.Payload)
+		if actionErr != nil {
+			result.Status = model.XUIActionStatusFailed
+			result.Error = actionErr.Error()
+			result.Result = output
+		} else {
+			result.Result = output
+		}
+	default:
+		if !effectiveConfig.XUI.Enabled {
+			result.Status = model.XUIActionStatusFailed
+			result.Error = "x-ui config is disabled"
+		} else if xuiErr != nil {
+			result.Status = model.XUIActionStatusFailed
+			result.Error = xuiErr.Error()
+		} else {
+			actionCtx, actionCancel := context.WithTimeout(ctx, a.requestTimeout)
+			output, actionErr := xuiClient.ExecuteAction(actionCtx, action)
+			actionCancel()
+			if actionErr != nil {
+				result.Status = model.XUIActionStatusFailed
+				result.Error = actionErr.Error()
+			} else {
+				result.Result = output
+			}
+		}
+	}
+	return result
 }
 
 func (a *App) startSelfUpdate(payload map[string]any) (map[string]any, error) {

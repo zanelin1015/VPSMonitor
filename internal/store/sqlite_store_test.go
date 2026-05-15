@@ -361,6 +361,7 @@ func TestSQLiteStoreEncryptsXUIPasswordAtRest(t *testing.T) {
 				BaseURL:  "https://127.0.0.1:2053",
 				Username: "admin",
 				Password: "plain-xui-password",
+				APIToken: "plain-xui-token",
 			},
 		},
 	}); err != nil {
@@ -371,7 +372,7 @@ func TestSQLiteStoreEncryptsXUIPasswordAtRest(t *testing.T) {
 	if err := store.db.QueryRow(`SELECT xui_config_json FROM agents WHERE agent_id = ?`, "secret-01").Scan(&storedJSON); err != nil {
 		t.Fatalf("read raw xui config: %v", err)
 	}
-	if strings.Contains(storedJSON, "plain-xui-password") {
+	if strings.Contains(storedJSON, "plain-xui-password") || strings.Contains(storedJSON, "plain-xui-token") {
 		t.Fatalf("expected raw x-ui config to be encrypted, got %s", storedJSON)
 	}
 	if !strings.Contains(storedJSON, encryptedValuePrefix) {
@@ -388,6 +389,9 @@ func TestSQLiteStoreEncryptsXUIPasswordAtRest(t *testing.T) {
 	if cfg.XUI.Password != "plain-xui-password" {
 		t.Fatalf("expected decrypted password, got %q", cfg.XUI.Password)
 	}
+	if cfg.XUI.APIToken != "plain-xui-token" {
+		t.Fatalf("expected decrypted api token, got %q", cfg.XUI.APIToken)
+	}
 }
 
 func TestSQLiteStoreMigratesPlaintextXUIPasswords(t *testing.T) {
@@ -400,7 +404,7 @@ func TestSQLiteStoreMigratesPlaintextXUIPasswords(t *testing.T) {
 	if _, err := legacyStore.RegisterAgent(model.AgentRegisterRequest{
 		AgentID: "legacy-01",
 		SeedConfig: model.ManagedAgentConfig{
-			XUI: config.XUIConfig{Enabled: true, Password: "legacy-plain-password"},
+			XUI: config.XUIConfig{Enabled: true, Password: "legacy-plain-password", APIToken: "legacy-plain-token"},
 		},
 	}); err != nil {
 		t.Fatalf("RegisterAgent legacy: %v", err)
@@ -421,14 +425,14 @@ func TestSQLiteStoreMigratesPlaintextXUIPasswords(t *testing.T) {
 	if err := store.db.QueryRow(`SELECT xui_config_json FROM agents WHERE agent_id = ?`, "legacy-01").Scan(&storedJSON); err != nil {
 		t.Fatalf("read migrated xui config: %v", err)
 	}
-	if strings.Contains(storedJSON, "legacy-plain-password") || !strings.Contains(storedJSON, encryptedValuePrefix) {
+	if strings.Contains(storedJSON, "legacy-plain-password") || strings.Contains(storedJSON, "legacy-plain-token") || !strings.Contains(storedJSON, encryptedValuePrefix) {
 		t.Fatalf("expected migrated encrypted x-ui config, got %s", storedJSON)
 	}
 	cfg, found, err := store.GetAgentConfig("legacy-01")
 	if err != nil {
 		t.Fatalf("GetAgentConfig: %v", err)
 	}
-	if !found || cfg.XUI.Password != "legacy-plain-password" {
+	if !found || cfg.XUI.Password != "legacy-plain-password" || cfg.XUI.APIToken != "legacy-plain-token" {
 		t.Fatalf("expected decrypted migrated password, found=%v cfg=%#v", found, cfg.XUI)
 	}
 }
@@ -533,6 +537,13 @@ func TestSQLiteStoreXUIActionLifecycle(t *testing.T) {
 	}
 	if restartAction.Kind != model.XUIActionRestartXUI || restartAction.Status != model.XUIActionStatusPending {
 		t.Fatalf("unexpected restart action: %#v", restartAction)
+	}
+	runningRestart, err := store.MarkXUIActionRunning("sg-01", restartAction.ID)
+	if err != nil {
+		t.Fatalf("MarkXUIActionRunning restart: %v", err)
+	}
+	if runningRestart.Status != model.XUIActionStatusRunning || runningRestart.ClaimedAt == nil {
+		t.Fatalf("expected running restart action, got %#v", runningRestart)
 	}
 	commandAction, err := store.CreateXUIAction("sg-01", model.XUIActionRequest{
 		Kind: model.XUIActionExecuteCommand,

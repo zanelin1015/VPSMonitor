@@ -1130,6 +1130,10 @@ func (c *XUIClient) login(ctx context.Context) error {
 }
 
 func (c *XUIClient) ensureLogin(ctx context.Context) error {
+	if c.hasAPIToken() {
+		c.authenticated = true
+		return nil
+	}
 	if c.authenticated {
 		return nil
 	}
@@ -1137,6 +1141,10 @@ func (c *XUIClient) ensureLogin(ctx context.Context) error {
 }
 
 func (c *XUIClient) ensureActionSession(ctx context.Context) error {
+	if c.hasAPIToken() {
+		c.authenticated = true
+		return nil
+	}
 	if !c.authenticated {
 		return c.login(ctx)
 	}
@@ -1148,6 +1156,10 @@ func (c *XUIClient) ensureActionSession(ctx context.Context) error {
 		return c.login(ctx)
 	}
 	return nil
+}
+
+func (c *XUIClient) hasAPIToken() bool {
+	return strings.TrimSpace(c.config.APIToken) != ""
 }
 
 func (c *XUIClient) validateSession(ctx context.Context) error {
@@ -1442,6 +1454,9 @@ func (c *XUIClient) getJSONObject(ctx context.Context, path string) (map[string]
 }
 
 func (c *XUIClient) doJSON(req *http.Request, target any) error {
+	if token := strings.TrimSpace(c.config.APIToken); token != "" && req.Header.Get("Authorization") == "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return err

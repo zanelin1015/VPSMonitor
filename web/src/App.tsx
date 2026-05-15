@@ -369,6 +369,7 @@ export default function App() {
   const [agentLogsError, setAgentLogsError] = useState('')
   const [agentRefreshLoading, setAgentRefreshLoading] = useState(false)
   const [xuiRestartLoading, setXUIRestartLoading] = useState(false)
+  const [xuiUpdateLoading, setXUIUpdateLoading] = useState(false)
   const [remoteCommandLoading, setRemoteCommandLoading] = useState(false)
   const [xuiActionModalOpen, setXUIActionModalOpen] = useState(false)
   const [xuiActionSaving, setXUIActionSaving] = useState(false)
@@ -1021,6 +1022,29 @@ export default function App() {
     }
   }
 
+  async function update3XUI(agentID = selectedAgentId) {
+    if (!agentID) {
+      return
+    }
+    setXUIUpdateLoading(true)
+    try {
+      const action = await fetchJSON<XUIAction>(`/api/v1/agents/${agentID}/xui/actions`, {
+        method: 'POST',
+        body: JSON.stringify({ kind: 'update_3xui', payload: { timeout_seconds: 900 } }),
+      })
+      message.success(action.status === 'running' ? '已通过 WS 下发 3x-ui 更新任务，结果会实时回传到操作记录' : '已创建 3x-ui 更新任务，Client 不在线时会等待轮询执行')
+      await loadXUIActions(agentID, { silent: true })
+      scheduleXUIActionResultRefresh(agentID)
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      message.error(error instanceof Error ? error.message : '下发 3x-ui 更新失败')
+    } finally {
+      setXUIUpdateLoading(false)
+    }
+  }
+
   async function executeRemoteCommand(command: string, shell: string, timeoutSeconds: number, agentID = selectedAgentId) {
     if (!agentID) {
       return
@@ -1429,14 +1453,15 @@ export default function App() {
     }
     setXUIActionSaving(true)
     try {
-      await fetchJSON<XUIAction>(`/api/v1/agents/${selectedAgentId}/xui/actions`, {
+      const action = await fetchJSON<XUIAction>(`/api/v1/agents/${selectedAgentId}/xui/actions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ kind: xuiActionKind, payload }),
       })
       setXUIActionModalOpen(false)
-      message.success('x-ui 操作已下发，client 下一次轮询会自动执行')
+      message.success(action.status === 'running' ? 'x-ui 操作已通过 WS 下发，正在等待实时回传结果' : 'x-ui 操作已创建，Client 不在线时会等待轮询执行')
       await loadXUIActions(selectedAgentId)
+      scheduleXUIActionResultRefresh(selectedAgentId)
     } catch (error) {
       if (isUnauthorized(error)) {
         setAdminUser(null)
@@ -1445,6 +1470,14 @@ export default function App() {
     } finally {
       setXUIActionSaving(false)
     }
+  }
+
+  function scheduleXUIActionResultRefresh(agentID: string) {
+    ;[500, 1000, 2000, 4000, 8000, 15000].forEach((delay) => {
+      window.setTimeout(() => {
+        void loadXUIActions(agentID, { silent: true })
+      }, delay)
+    })
   }
 
   async function copyImportURL(client: XUIClientView) {
@@ -1635,6 +1668,7 @@ export default function App() {
   const clientWindowsPowerShellCommand = buildWindowsPowerShellInstallCommand(clientInstallForm)
   const clientWindowsCMDCommand = buildWindowsCMDInstallCommand(clientInstallForm)
   const showWorkbenchDashboard = activeAdminPage === 'dashboard' && !topologyVisible
+  const serverVersionLabel = `V${systemInfo?.version || '-'}`
   return (
     <div className="page-shell admin-page-shell">
       <VisualEffects disabled={isAreaManagerAccount} />
@@ -1734,7 +1768,7 @@ export default function App() {
             <span className="admin-oa-brand-mark">南</span>
             <div>
               <strong>南风VPS监控</strong>
-              <small>管理后台</small>
+              <small>{serverVersionLabel}</small>
             </div>
           </div>
           <nav className="admin-oa-nav" aria-label="管理端导航">
@@ -1791,7 +1825,7 @@ export default function App() {
         <section className="admin-oa-main">
         <header className="hero-panel admin-oa-topbar">
           <div className="admin-oa-titlebar">
-            <div className="eyebrow">管理后台 / 工作台</div>
+            <div className="eyebrow">{serverVersionLabel} / 工作台</div>
             <Title level={1}>{heroTitle}</Title>
             <Paragraph className="hero-copy">
               {isAreaManagerAccount
@@ -2053,6 +2087,13 @@ export default function App() {
                         void restartXUIService(selectedAgentId)
                       }
                     },
+                    canUpdate3XUI: !isAreaManagerAccount && Boolean(selectedAgentId),
+                    xuiUpdateLoading,
+                    onUpdate3XUI: () => {
+                      if (selectedAgentId) {
+                        void update3XUI(selectedAgentId)
+                      }
+                    },
                     searchText: topologySearch,
                     onSearchTextChange: setTopologySearch,
                   })}
@@ -2077,6 +2118,7 @@ export default function App() {
                 currencyOptions={currencyOptions}
                 currentAgentLoading={overviewLoading || configLoading || agentRefreshLoading}
                 xuiRestartLoading={xuiRestartLoading}
+                xuiUpdateLoading={xuiUpdateLoading}
                 remoteCommandLoading={remoteCommandLoading}
                 dashboardView={dashboardView}
                 entryAddressInputText={entryAddressInputText}
@@ -2133,6 +2175,7 @@ export default function App() {
                 onAuthorizeCustomer={openCustomerAuthorization}
                 onRefreshCurrentAgent={() => void requestAgentSnapshot(selectedAgentId)}
                 onRestartXUI={() => void restartXUIService(selectedAgentId)}
+                onUpdate3XUI={() => void update3XUI(selectedAgentId)}
                 onExecuteRemoteCommand={(command, shell, timeoutSeconds) => void executeRemoteCommand(command, shell, timeoutSeconds, selectedAgentId)}
                 onRefreshXUIActions={() => void loadXUIActions()}
                 onRenewalChange={(patch) => updateManagedConfig((current) => ({ ...current, renewal: { ...current.renewal, ...patch } }))}

@@ -168,6 +168,25 @@ func (s *SQLiteStore) ClaimPendingXUIActions(agentID string, limit int) ([]model
 	return actions, nil
 }
 
+func (s *SQLiteStore) MarkXUIActionRunning(agentID string, id int64) (model.XUIAction, error) {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := s.db.Exec(`
+		UPDATE xui_actions
+		SET status = ?, updated_at = ?, claimed_at = ?
+		WHERE agent_id = ? AND id = ? AND status = ?
+	`, model.XUIActionStatusRunning, now, now, agentID, id, model.XUIActionStatusPending); err != nil {
+		return model.XUIAction{}, fmt.Errorf("mark x-ui action running: %w", err)
+	}
+	action, found, err := s.GetXUIAction(agentID, id)
+	if err != nil {
+		return model.XUIAction{}, err
+	}
+	if !found {
+		return model.XUIAction{}, fmt.Errorf("x-ui action not found")
+	}
+	return action, nil
+}
+
 func (s *SQLiteStore) CompleteXUIAction(agentID string, id int64, req model.XUIActionResultRequest) (model.XUIAction, error) {
 	status := req.Status
 	if status == "" {

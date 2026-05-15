@@ -479,12 +479,12 @@ func hasEntryConfig(cfg model.AgentEntryConfig) bool {
 }
 
 func hasXUIConfig(cfg config.XUIConfig) bool {
-	return cfg.Enabled || cfg.BaseURL != "" || cfg.Username != "" || cfg.Password != "" || cfg.TwoFactorCode != "" || cfg.SkipTLSVerify
+	return cfg.Enabled || cfg.BaseURL != "" || cfg.Username != "" || cfg.Password != "" || cfg.APIToken != "" || cfg.TwoFactorCode != "" || cfg.SkipTLSVerify
 }
 
 func isValidXUIActionKind(kind string) bool {
 	switch kind {
-	case model.XUIActionAddOutbound, model.XUIActionAddRoutingRule, model.XUIActionUpsertRoutingRule, model.XUIActionUpdateClientExpiry, model.XUIActionUpdateClient, model.XUIActionRestartXUI, model.XUIActionExecuteCommand:
+	case model.XUIActionAddOutbound, model.XUIActionAddRoutingRule, model.XUIActionUpsertRoutingRule, model.XUIActionUpdateClientExpiry, model.XUIActionUpdateClient, model.XUIActionRestartXUI, model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI:
 		return true
 	default:
 		return false

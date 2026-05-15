@@ -72,6 +72,9 @@ func redactManagedAgentConfig(cfg model.ManagedAgentConfig) model.ManagedAgentCo
 	if cfg.XUI.Password != "" {
 		cfg.XUI.Password = "******"
 	}
+	if cfg.XUI.APIToken != "" {
+		cfg.XUI.APIToken = "******"
+	}
 	if cfg.XUI.TwoFactorCode != "" {
 		cfg.XUI.TwoFactorCode = "******"
 	}

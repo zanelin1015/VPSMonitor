@@ -90,6 +90,7 @@ export interface XUIConfig {
   db_path?: string
   username?: string
   password?: string
+  api_token?: string
   two_factor_code?: string
   skip_tls_verify: boolean
 }

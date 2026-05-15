@@ -49,6 +49,7 @@ type XUIConfig struct {
 	DBPath        string `json:"db_path"`
 	Username      string `json:"username"`
 	Password      string `json:"password"`
+	APIToken      string `json:"api_token"`
 	TwoFactorCode string `json:"two_factor_code"`
 	SkipTLSVerify bool   `json:"skip_tls_verify"`
 }

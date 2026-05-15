@@ -108,6 +108,11 @@ func (s *SQLiteStore) storedXUIConfigJSON(cfg config.XUIConfig) (string, error) 
 		return "", fmt.Errorf("encrypt x-ui password: %w", err)
 	}
 	stored.Password = password
+	apiToken, err := s.secrets.EncryptString(stored.APIToken)
+	if err != nil {
+		return "", fmt.Errorf("encrypt x-ui api token: %w", err)
+	}
+	stored.APIToken = apiToken
 	return mustJSON(stored), nil
 }
 
@@ -117,6 +122,11 @@ func (s *SQLiteStore) decryptXUIConfig(cfg config.XUIConfig) (config.XUIConfig, 
 		return config.XUIConfig{}, err
 	}
 	cfg.Password = password
+	apiToken, err := s.secrets.DecryptString(cfg.APIToken)
+	if err != nil {
+		return config.XUIConfig{}, err
+	}
+	cfg.APIToken = apiToken
 	return cfg, nil
 }
 
@@ -154,7 +164,9 @@ func (s *SQLiteStore) encryptPlaintextXUICredentials() error {
 		if rawJSON == "" || json.Unmarshal([]byte(rawJSON), &cfg) != nil {
 			continue
 		}
-		if cfg.Password == "" || strings.HasPrefix(cfg.Password, encryptedValuePrefix) {
+		passwordNeedsEncryption := cfg.Password != "" && !strings.HasPrefix(cfg.Password, encryptedValuePrefix)
+		tokenNeedsEncryption := cfg.APIToken != "" && !strings.HasPrefix(cfg.APIToken, encryptedValuePrefix)
+		if !passwordNeedsEncryption && !tokenNeedsEncryption {
 			continue
 		}
 		xuiJSON, err := s.storedXUIConfigJSON(cfg)

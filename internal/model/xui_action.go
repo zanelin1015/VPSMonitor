@@ -10,6 +10,7 @@ const (
 	XUIActionUpdateClient       = "update_client"
 	XUIActionRestartXUI         = "restart_xui"
 	XUIActionExecuteCommand     = "execute_command"
+	XUIActionUpdate3XUI         = "update_3xui"
 
 	XUIActionStatusPending   = "pending"
 	XUIActionStatusRunning   = "running"

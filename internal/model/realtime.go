@@ -22,6 +22,7 @@ type DashboardRealtimeMessage struct {
 const (
 	AgentControlCollectNow     = "collect_now"
 	AgentControlRestartXUI     = "restart_xui"
+	AgentControlExecuteXUI     = "execute_xui_action"
 	AgentControlTerminalOpen   = "terminal_open"
 	AgentControlTerminalInput  = "terminal_input"
 	AgentControlTerminalResize = "terminal_resize"
@@ -30,6 +31,7 @@ const (
 
 type AgentControlMessage struct {
 	Type     string         `json:"type"`
+	Kind     string         `json:"kind,omitempty"`
 	ActionID int64          `json:"action_id,omitempty"`
 	Payload  map[string]any `json:"payload,omitempty"`
 }

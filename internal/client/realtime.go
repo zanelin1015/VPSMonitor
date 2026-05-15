@@ -16,6 +16,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"bridge-core/internal/model"
+	"bridge-core/internal/panels"
 	"bridge-core/internal/version"
 )
 
@@ -120,6 +121,10 @@ connected:
 				go a.handleRestartXUIControl(ctx, message)
 				continue
 			}
+			if message.Type == model.AgentControlExecuteXUI {
+				go a.handleExecuteXUIControl(ctx, message)
+				continue
+			}
 			switch message.Type {
 			case model.AgentControlTerminalOpen, model.AgentControlTerminalInput, model.AgentControlTerminalResize, model.AgentControlTerminalClose:
 				terminals.handleControl(ctx, message)
@@ -160,6 +165,40 @@ connected:
 			return ctx.Err()
 		}
 	}
+}
+
+func (a *App) handleExecuteXUIControl(ctx context.Context, message model.AgentControlMessage) {
+	if message.ActionID <= 0 || message.Kind == "" {
+		return
+	}
+	action := model.XUIAction{
+		ID:      message.ActionID,
+		AgentID: a.config.AgentID,
+		Kind:    message.Kind,
+		Payload: message.Payload,
+	}
+
+	effectiveConfig, err := a.loadEffectiveConfig(ctx)
+	var xuiClient *panels.XUIClient
+	var xuiErr error
+	if err == nil && effectiveConfig.XUI.Enabled {
+		xuiClient, xuiErr = a.xuiClientFor(effectiveConfig.XUI)
+	}
+	var result model.XUIActionResultRequest
+	if err != nil {
+		result = model.XUIActionResultRequest{
+			Status: model.XUIActionStatusFailed,
+			Error:  err.Error(),
+		}
+	} else {
+		result = a.executeXUIAction(ctx, effectiveConfig, xuiClient, xuiErr, action)
+	}
+
+	resultCtx, resultCancel := context.WithTimeout(context.Background(), a.requestTimeout)
+	if reportErr := a.reportXUIActionResult(resultCtx, message.ActionID, result); reportErr != nil {
+		log.Printf("report realtime x-ui action result failed: %v", reportErr)
+	}
+	resultCancel()
 }
 
 func (a *App) handleRestartXUIControl(ctx context.Context, message model.AgentControlMessage) {
