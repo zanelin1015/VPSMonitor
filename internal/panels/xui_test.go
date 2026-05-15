@@ -196,7 +196,7 @@ func TestXUICollectFallsBackToXrayTemplateWhenServerConfigIsEmpty(t *testing.T) 
 					"success": true,
 					"obj":     map[string]any{},
 				}), nil
-			case "/panel/api/xray/":
+			case "/panel/xray/", "/panel/api/xray/":
 				return jsonResponse(t, req, map[string]any{
 					"success": true,
 					"obj":     string(wrapperBody),
@@ -282,7 +282,7 @@ func TestXUICollectMergesXrayTemplateWhenServerConfigMissesRoutingRules(t *testi
 						"routing": map[string]any{"rules": []map[string]any{}},
 					},
 				}), nil
-			case "/panel/api/xray/":
+			case "/panel/xray/":
 				return jsonResponse(t, req, map[string]any{
 					"success": true,
 					"obj":     string(wrapperBody),
@@ -371,7 +371,7 @@ func TestXUICollectNormalizesPanelBaseURLBeforeLogin(t *testing.T) {
 					"success": true,
 					"obj":     map[string]any{"outbounds": []map[string]any{}, "routing": map[string]any{"rules": []map[string]any{}}},
 				}), nil
-			case "/secret/panel/api/xray/":
+			case "/secret/panel/xray/":
 				return jsonResponse(t, req, map[string]any{
 					"success": true,
 					"obj":     `{"xraySetting":"{\"outbounds\":[],\"routing\":{\"rules\":[]}}"}`,
@@ -577,7 +577,7 @@ func TestXUICollectLocalDBEnrichesMissingXrayTemplateFromAPI(t *testing.T) {
 					"success": true,
 					"obj":     map[string]any{"outbounds": []map[string]any{}, "routing": map[string]any{"rules": []map[string]any{}}},
 				}), nil
-			case "/secret/panel/api/xray/":
+			case "/secret/panel/xray/":
 				return jsonResponse(t, req, map[string]any{
 					"success": true,
 					"obj":     string(wrapperBody),
@@ -623,7 +623,7 @@ func TestXUIExecuteAddOutbound(t *testing.T) {
 			switch req.URL.Path {
 			case "/login":
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
-			case "/panel/api/xray/":
+			case "/panel/xray/":
 				wrapper, err := json.Marshal(map[string]any{
 					"xraySetting": map[string]any{
 						"log":       map[string]any{"loglevel": "warning"},
@@ -637,7 +637,7 @@ func TestXUIExecuteAddOutbound(t *testing.T) {
 					t.Fatalf("marshal wrapper: %v", err)
 				}
 				return jsonResponse(t, req, map[string]any{"success": true, "obj": string(wrapper)}), nil
-			case "/panel/api/xray/update":
+			case "/panel/xray/update":
 				if err := req.ParseForm(); err != nil {
 					t.Fatalf("ParseForm: %v", err)
 				}
@@ -745,7 +745,7 @@ func TestXUIExecuteAddRoutingRuleForcesRestart(t *testing.T) {
 			switch req.URL.Path {
 			case "/login":
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
-			case "/panel/api/xray/":
+			case "/panel/xray/":
 				wrapper, err := json.Marshal(map[string]any{
 					"xraySetting": map[string]any{
 						"outbounds": []map[string]any{{"tag": "direct", "protocol": "freedom"}},
@@ -756,7 +756,7 @@ func TestXUIExecuteAddRoutingRuleForcesRestart(t *testing.T) {
 					t.Fatalf("marshal wrapper: %v", err)
 				}
 				return jsonResponse(t, req, map[string]any{"success": true, "obj": string(wrapper)}), nil
-			case "/panel/api/xray/update":
+			case "/panel/xray/update":
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "updated"}), nil
 			case "/panel/api/server/restartXrayService":
 				restarted = true
@@ -822,7 +822,7 @@ func TestXUIExecuteRoutingRuleChecksCookieAndReloginsBeforeUpdate(t *testing.T) 
 			case "/login":
 				loginCount++
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
-			case "/panel/api/xray/":
+			case "/panel/xray/":
 				templateCount++
 				wrapper, err := json.Marshal(map[string]any{
 					"xraySetting": map[string]any{
@@ -834,7 +834,7 @@ func TestXUIExecuteRoutingRuleChecksCookieAndReloginsBeforeUpdate(t *testing.T) 
 					t.Fatalf("marshal wrapper: %v", err)
 				}
 				return jsonResponse(t, req, map[string]any{"success": true, "obj": string(wrapper)}), nil
-			case "/panel/api/xray/update":
+			case "/panel/xray/update":
 				updateCount++
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "updated"}), nil
 			case "/panel/api/server/restartXrayService":
@@ -890,7 +890,7 @@ func TestXUIExecuteFallsBackToLocalDBWhenTemplateAPI404(t *testing.T) {
 			switch req.URL.Path {
 			case "/login":
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
-			case "/panel/api/xray/":
+			case "/panel/xray/", "/panel/api/xray/":
 				return &http.Response{
 					StatusCode: http.StatusNotFound,
 					Header:     make(http.Header),
@@ -963,7 +963,7 @@ func TestXUIExecuteFallsBackToLocalDBWhenLoginForbidden(t *testing.T) {
 		Timeout: 5 * time.Second,
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			switch req.URL.Path {
-			case "/login", "/panel/api/xray/":
+			case "/login", "/panel/xray/":
 				return &http.Response{
 					StatusCode: http.StatusForbidden,
 					Header:     make(http.Header),
@@ -1021,7 +1021,7 @@ func TestXUIExecuteUpsertRoutingRuleAddsOutboundAndRuleOnce(t *testing.T) {
 			switch req.URL.Path {
 			case "/login":
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
-			case "/panel/api/xray/":
+			case "/panel/xray/":
 				wrapper, err := json.Marshal(map[string]any{
 					"xraySetting": map[string]any{
 						"outbounds": []map[string]any{{"tag": "direct", "protocol": "freedom"}},
@@ -1032,7 +1032,7 @@ func TestXUIExecuteUpsertRoutingRuleAddsOutboundAndRuleOnce(t *testing.T) {
 					t.Fatalf("marshal wrapper: %v", err)
 				}
 				return jsonResponse(t, req, map[string]any{"success": true, "obj": string(wrapper)}), nil
-			case "/panel/api/xray/update":
+			case "/panel/xray/update":
 				updateCount++
 				if err := req.ParseForm(); err != nil {
 					t.Fatalf("ParseForm: %v", err)
@@ -1199,7 +1199,7 @@ func TestXUIExecuteUpsertRoutingRuleUpdatesExistingRule(t *testing.T) {
 			switch req.URL.Path {
 			case "/login":
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
-			case "/panel/api/xray/":
+			case "/panel/xray/":
 				wrapper, err := json.Marshal(map[string]any{
 					"xraySetting": map[string]any{
 						"outbounds": []map[string]any{{"tag": "direct", "protocol": "freedom"}, {"tag": "relay-us", "protocol": "freedom"}},
@@ -1213,7 +1213,7 @@ func TestXUIExecuteUpsertRoutingRuleUpdatesExistingRule(t *testing.T) {
 					t.Fatalf("marshal wrapper: %v", err)
 				}
 				return jsonResponse(t, req, map[string]any{"success": true, "obj": string(wrapper)}), nil
-			case "/panel/api/xray/update":
+			case "/panel/xray/update":
 				if err := req.ParseForm(); err != nil {
 					t.Fatalf("ParseForm: %v", err)
 				}
@@ -1322,7 +1322,7 @@ func xuiCollectTransport(t *testing.T, loginCount *int, override func(*http.Requ
 					"routing":   map[string]any{"rules": []map[string]any{}},
 				},
 			}), nil
-		case "/panel/api/xray/":
+		case "/panel/xray/":
 			return jsonResponse(t, req, map[string]any{
 				"success": true,
 				"obj":     `{"xraySetting":"{\"outbounds\":[],\"routing\":{\"rules\":[]}}"}`,

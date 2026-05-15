@@ -1230,8 +1230,23 @@ func (c *XUIClient) updateMutableXrayConfig(ctx context.Context, mutableConfig m
 }
 
 func (c *XUIClient) getXrayTemplate(ctx context.Context) (map[string]any, error) {
+	var lastErr error
+	for _, path := range []string{"/panel/xray/", "/panel/api/xray/"} {
+		configJSON, err := c.getXrayTemplateAt(ctx, path)
+		if err == nil {
+			return configJSON, nil
+		}
+		lastErr = err
+		if !isXUIHTTPStatus(err, http.StatusNotFound) {
+			return nil, err
+		}
+	}
+	return nil, lastErr
+}
+
+func (c *XUIClient) getXrayTemplateAt(ctx context.Context, path string) (map[string]any, error) {
 	form := url.Values{}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/panel/api/xray/", strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, fmt.Errorf("build x-ui template request: %w", err)
 	}
@@ -1245,12 +1260,13 @@ func (c *XUIClient) getXrayTemplate(ctx context.Context) (map[string]any, error)
 		return nil, fmt.Errorf("x-ui template request failed: %s", payload.Msg)
 	}
 
-	var wrappedText string
-	if err := json.Unmarshal(payload.Obj, &wrappedText); err != nil {
-		return nil, fmt.Errorf("decode x-ui template wrapper text: %w", err)
-	}
 	var wrapper map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(wrappedText), &wrapper); err != nil {
+	var wrappedText string
+	if err := json.Unmarshal(payload.Obj, &wrappedText); err == nil {
+		if err := json.Unmarshal([]byte(wrappedText), &wrapper); err != nil {
+			return nil, fmt.Errorf("decode x-ui template wrapper: %w", err)
+		}
+	} else if err := json.Unmarshal(payload.Obj, &wrapper); err != nil {
 		return nil, fmt.Errorf("decode x-ui template wrapper: %w", err)
 	}
 
@@ -1270,6 +1286,21 @@ func (c *XUIClient) getXrayTemplate(ctx context.Context) (map[string]any, error)
 }
 
 func (c *XUIClient) updateXrayTemplate(ctx context.Context, configJSON map[string]any) error {
+	var lastErr error
+	for _, path := range []string{"/panel/xray/update", "/panel/api/xray/update"} {
+		err := c.updateXrayTemplateAt(ctx, path, configJSON)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if !isXUIHTTPStatus(err, http.StatusNotFound) {
+			return err
+		}
+	}
+	return lastErr
+}
+
+func (c *XUIClient) updateXrayTemplateAt(ctx context.Context, path string, configJSON map[string]any) error {
 	body, err := json.Marshal(configJSON)
 	if err != nil {
 		return fmt.Errorf("marshal x-ui template config: %w", err)
@@ -1278,7 +1309,7 @@ func (c *XUIClient) updateXrayTemplate(ctx context.Context, configJSON map[strin
 	form.Set("xraySetting", string(body))
 	form.Set("outboundTestUrl", "https://www.google.com/generate_204")
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/panel/api/xray/update", strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, strings.NewReader(form.Encode()))
 	if err != nil {
 		return fmt.Errorf("build x-ui template update request: %w", err)
 	}
@@ -1310,14 +1341,11 @@ func (c *XUIClient) restartIfRequested(ctx context.Context, payload map[string]a
 
 func (c *XUIClient) restartXrayService(ctx context.Context) error {
 	if err := c.postFormAction(ctx, "/panel/api/server/restartXrayService", url.Values{}); err != nil {
-		if isXUIAuthError(err) {
-			if localErr := restartLocalXUIService(ctx); localErr == nil {
-				return nil
-			} else {
-				return fmt.Errorf("%w (local x-ui restart fallback failed: %v)", err, localErr)
-			}
+		localErr := restartLocalXUIService(ctx)
+		if localErr == nil {
+			return nil
 		}
-		return err
+		return fmt.Errorf("%w (local x-ui restart fallback failed: %v)", err, localErr)
 	}
 	return nil
 }
