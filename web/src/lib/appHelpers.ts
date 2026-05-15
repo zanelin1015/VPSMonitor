@@ -178,6 +178,17 @@ function buildDashboardRealtimeURL(): string {
   return url.toString()
 }
 
+function buildAgentTerminalURL(agentID: string, shell: string, cols = 120, rows = 36): string {
+  const url = new URL(`/api/v1/agents/${encodeURIComponent(agentID)}/terminal/ws`, window.location.href)
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+  if (shell) {
+    url.searchParams.set('shell', shell)
+  }
+  url.searchParams.set('cols', String(cols))
+  url.searchParams.set('rows', String(rows))
+  return url.toString()
+}
+
 function mergeRealtimeMetricsIntoAgents<T extends AgentListItem>(agents: T[], metrics: AgentRealtimeMetrics[]): T[] {
   if (!metrics.length) {
     return agents
@@ -865,6 +876,8 @@ function actionKindLabel(kind: string): string {
       return '新增转发 / 路由规则'
     case 'restart_xui':
       return '重启 x-ui / Xray'
+    case 'execute_command':
+      return '远程命令'
     default:
       return kind
   }
@@ -1850,6 +1863,7 @@ export {
   APIError,
   fetchJSON,
   buildDashboardRealtimeURL,
+  buildAgentTerminalURL,
   mergeRealtimeMetricsIntoAgents,
   sortAgentsByOrder,
   mergeRealtimeSummary,

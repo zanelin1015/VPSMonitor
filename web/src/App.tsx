@@ -369,6 +369,7 @@ export default function App() {
   const [agentLogsError, setAgentLogsError] = useState('')
   const [agentRefreshLoading, setAgentRefreshLoading] = useState(false)
   const [xuiRestartLoading, setXUIRestartLoading] = useState(false)
+  const [remoteCommandLoading, setRemoteCommandLoading] = useState(false)
   const [xuiActionModalOpen, setXUIActionModalOpen] = useState(false)
   const [xuiActionSaving, setXUIActionSaving] = useState(false)
   const [xuiActionKind, setXUIActionKind] = useState('upsert_routing_rule')
@@ -430,7 +431,7 @@ export default function App() {
     if (activeAdminPage === 'settings') {
       setActiveAdminPage('dashboard')
     }
-    if (activeTabKey === 'config') {
+    if (['config', 'logs', 'certificates'].includes(activeTabKey)) {
       setActiveTabKey('overview')
     }
   }, [activeAdminPage, activeTabKey, adminUser, canManageSystem])
@@ -1017,6 +1018,37 @@ export default function App() {
       message.error(error instanceof Error ? error.message : '下发 x-ui 重启失败')
     } finally {
       setXUIRestartLoading(false)
+    }
+  }
+
+  async function executeRemoteCommand(command: string, shell: string, timeoutSeconds: number, agentID = selectedAgentId) {
+    if (!agentID) {
+      return
+    }
+    setRemoteCommandLoading(true)
+    try {
+      await fetchJSON<XUIAction>(`/api/v1/agents/${agentID}/xui/actions`, {
+        method: 'POST',
+        body: JSON.stringify({
+          kind: 'execute_command',
+          payload: {
+            command,
+            shell,
+            timeout_seconds: timeoutSeconds,
+          },
+        }),
+      })
+      message.success('命令已下发，Client 会以服务权限执行并回传结果')
+      window.setTimeout(() => {
+        void loadXUIActions(agentID, { silent: true })
+      }, 2500)
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      message.error(error instanceof Error ? error.message : '下发远程命令失败')
+    } finally {
+      setRemoteCommandLoading(false)
     }
   }
 
@@ -2045,6 +2077,7 @@ export default function App() {
                 currencyOptions={currencyOptions}
                 currentAgentLoading={overviewLoading || configLoading || agentRefreshLoading}
                 xuiRestartLoading={xuiRestartLoading}
+                remoteCommandLoading={remoteCommandLoading}
                 dashboardView={dashboardView}
                 entryAddressInputText={entryAddressInputText}
                 filteredAgents={filteredAgents}
@@ -2100,6 +2133,7 @@ export default function App() {
                 onAuthorizeCustomer={openCustomerAuthorization}
                 onRefreshCurrentAgent={() => void requestAgentSnapshot(selectedAgentId)}
                 onRestartXUI={() => void restartXUIService(selectedAgentId)}
+                onExecuteRemoteCommand={(command, shell, timeoutSeconds) => void executeRemoteCommand(command, shell, timeoutSeconds, selectedAgentId)}
                 onRefreshXUIActions={() => void loadXUIActions()}
                 onRenewalChange={(patch) => updateManagedConfig((current) => ({ ...current, renewal: { ...current.renewal, ...patch } }))}
                 onReturnHome={returnHome}

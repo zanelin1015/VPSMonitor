@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -83,6 +84,21 @@ func (a *App) runRealtimeMetricsSession(ctx context.Context, interval time.Durat
 	}
 connected:
 	defer conn.Close()
+	var writeMu sync.Mutex
+	writeJSON := func(value any) error {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		if err := conn.SetWriteDeadline(time.Now().Add(a.requestTimeout)); err != nil {
+			return err
+		}
+		return conn.WriteJSON(value)
+	}
+	terminals := newTerminalManager(a.config.AgentID, func(message model.TerminalMessage) {
+		if err := writeJSON(message); err != nil {
+			log.Printf("send terminal message failed: %v", err)
+		}
+	})
+	defer terminals.closeAll()
 
 	done := make(chan struct{})
 	collectNow := make(chan struct{}, 1)
@@ -102,6 +118,11 @@ connected:
 			}
 			if message.Type == model.AgentControlRestartXUI {
 				go a.handleRestartXUIControl(ctx, message)
+				continue
+			}
+			switch message.Type {
+			case model.AgentControlTerminalOpen, model.AgentControlTerminalInput, model.AgentControlTerminalResize, model.AgentControlTerminalClose:
+				terminals.handleControl(ctx, message)
 			}
 		}
 	}()
@@ -121,10 +142,7 @@ connected:
 			ReportedAt:    time.Now().UTC(),
 			Summary:       sampler.sample(),
 		}
-		if err := conn.SetWriteDeadline(time.Now().Add(a.requestTimeout)); err != nil {
-			return err
-		}
-		if err := conn.WriteJSON(metric); err != nil {
+		if err := writeJSON(metric); err != nil {
 			return fmt.Errorf("send realtime metrics: %w", err)
 		}
 

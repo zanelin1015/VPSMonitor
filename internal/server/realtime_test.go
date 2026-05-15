@@ -63,6 +63,27 @@ func TestRealtimeHubAgentControlReplacesPreviousSession(t *testing.T) {
 	}
 }
 
+func TestRealtimeHubTerminalRelayValidatesAgent(t *testing.T) {
+	hub := newRealtimeHub()
+	session := hub.registerTerminal("agent-1", "tty-1")
+	defer hub.unregisterTerminal("tty-1", session)
+
+	if hub.relayTerminalMessage(model.TerminalMessage{Type: model.TerminalMessageOutput, SessionID: "tty-1", AgentID: "other", Data: "leak"}) {
+		t.Fatal("relay should reject messages from a different agent")
+	}
+	if !hub.relayTerminalMessage(model.TerminalMessage{Type: model.TerminalMessageOutput, SessionID: "tty-1", AgentID: "agent-1", Data: "ok"}) {
+		t.Fatal("relay should accept matching agent messages")
+	}
+	select {
+	case message := <-session.ch:
+		if message.Data != "ok" {
+			t.Fatalf("unexpected terminal relay message: %#v", message)
+		}
+	default:
+		t.Fatal("terminal message was not relayed")
+	}
+}
+
 func TestAreaManagerRealtimeMetricsAreSanitized(t *testing.T) {
 	app := &App{}
 	user := model.AdminUser{

@@ -1,6 +1,10 @@
-import { Alert, Badge, Button, Card, Empty, Input, InputNumber, Popconfirm, Select, Space, Switch, Table, Tabs, Tag, Typography } from 'antd'
+import { useEffect, useRef, useState } from 'react'
+import { Alert, Badge, Button, Card, Empty, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { ReloadOutlined, SettingOutlined } from '@ant-design/icons'
+import { Terminal } from '@xterm/xterm'
+import { FitAddon } from '@xterm/addon-fit'
+import '@xterm/xterm/css/xterm.css'
 
 import type {
   AgentEntryConfig,
@@ -29,6 +33,7 @@ import {
   actionKindLabel,
   actionStatusColor,
   actionStatusLabel,
+  buildAgentTerminalURL,
   dateInputToExpiryMillis,
   defaultClientBilling,
   findClientBilling,
@@ -89,6 +94,7 @@ export interface AgentDetailPanelProps {
   canManageConfig: boolean
   restrictedView?: boolean
   currentAgentLoading: boolean
+  remoteCommandLoading: boolean
   xuiRestartLoading: boolean
   onActiveTabChange: (key: string) => void
   onClientSearchChange: (value: string) => void
@@ -110,6 +116,7 @@ export interface AgentDetailPanelProps {
   onAuthorizeCustomer: (draft: CustomerAssignmentDraft) => void
   onRefreshCurrentAgent: () => void
   onRestartXUI: () => void
+  onExecuteRemoteCommand: (command: string, shell: string, timeoutSeconds: number) => void
   onRefreshXUIActions: () => void
   onRenewalChange: (patch: Partial<VPSRenewalConfig>) => void
   onReturnHome: () => void
@@ -159,6 +166,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     canManageConfig,
     restrictedView = false,
     currentAgentLoading,
+    remoteCommandLoading,
     xuiRestartLoading,
     onActiveTabChange,
     onClientSearchChange,
@@ -180,6 +188,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onAuthorizeCustomer,
     onRefreshCurrentAgent,
     onRestartXUI,
+    onExecuteRemoteCommand,
     onRefreshXUIActions,
     onRenewalChange,
     onReturnHome,
@@ -191,6 +200,33 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onUpdateClientBillingDraft,
     onXUIChange,
   } = props
+  const [remoteCommandOpen, setRemoteCommandOpen] = useState(false)
+  const [remoteCommand, setRemoteCommand] = useState('')
+  const [remoteShell, setRemoteShell] = useState('bash')
+  const [remoteTimeout, setRemoteTimeout] = useState(120)
+  const [commandOutputAction, setCommandOutputAction] = useState<XUIAction | null>(null)
+  const [terminalOpen, setTerminalOpen] = useState(false)
+  const [terminalShell, setTerminalShell] = useState(defaultTerminalShell(selectedAgent.client_os))
+
+  const commandResult = commandOutputAction?.result || {}
+  const commandPayload = commandOutputAction?.payload || {}
+  const commandText = String(commandResult.command || commandPayload.command || '')
+  const stdoutText = String(commandResult.stdout || '')
+  const stderrText = String(commandResult.stderr || commandOutputAction?.error || '')
+
+  function submitRemoteCommand() {
+    const command = remoteCommand.trim()
+    if (!command) {
+      return
+    }
+    onExecuteRemoteCommand(command, remoteShell, remoteTimeout)
+    setRemoteCommandOpen(false)
+  }
+
+  function openRealtimeTerminal() {
+    setTerminalShell(defaultTerminalShell(selectedAgent.client_os))
+    setTerminalOpen(true)
+  }
 
   const nodeColumns: ColumnsType<XUINodeView> = [
     {
@@ -532,6 +568,13 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         <div>
           <Text>{record.error || shortJSON(record.result) || shortJSON(record.payload) || '-'}</Text>
           {record.error && shortJSON(record.result) ? <div className="muted-line">{shortJSON(record.result)}</div> : null}
+          {record.kind === 'execute_command' ? (
+            <div>
+              <Button size="small" type="link" onClick={() => setCommandOutputAction(record)}>
+                查看输出
+              </Button>
+            </div>
+          ) : null}
           <div className="muted-line">创建 {formatDateTime(record.created_at)}{record.completed_at ? ` · 完成 ${formatDateTime(record.completed_at)}` : ''}</div>
         </div>
       ),
@@ -616,12 +659,14 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
           </div>
           <Space wrap>
             <Button onClick={onReturnHome}>返回首页</Button>
-            {selectedAgent.summary.last_collection_err ? (
+            {!restrictedView && selectedAgent.summary.last_collection_err ? (
               <Tag color="orange" style={{ cursor: 'pointer' }} onClick={onOpenLogs}>x-ui 异常</Tag>
             ) : null}
-            <Button onClick={onOpenLogs}>查看日志</Button>
+            {!restrictedView ? <Button onClick={onOpenLogs}>查看日志</Button> : null}
             {!restrictedView ? <Button disabled={!canOpenXUI} onClick={onOpenXUI}>打开 x-ui 面板</Button> : null}
             {!restrictedView ? <Button icon={<ReloadOutlined />} loading={currentAgentLoading} onClick={onRefreshCurrentAgent}>立即获取 Client 信息</Button> : null}
+            {!restrictedView ? <Button danger onClick={openRealtimeTerminal}>实时 TTY</Button> : null}
+            {!restrictedView ? <Button loading={remoteCommandLoading} onClick={() => setRemoteCommandOpen(true)}>单次命令</Button> : null}
             {!restrictedView ? (
               <Popconfirm
                 title="重启 x-ui / Xray？"
@@ -682,13 +727,15 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
                   />
                   <Space wrap>
                     <Button type="primary" disabled={!selectedAgentId} onClick={onCreateRoutingAction}>新增操作</Button>
+                    {!restrictedView ? <Button danger onClick={openRealtimeTerminal}>实时 TTY</Button> : null}
+                    {!restrictedView ? <Button loading={remoteCommandLoading} onClick={() => setRemoteCommandOpen(true)}>单次命令</Button> : null}
                     <Button icon={<ReloadOutlined />} disabled={!selectedAgentId} loading={xuiActionsLoading} onClick={onRefreshXUIActions}>刷新操作记录</Button>
                   </Space>
                   <Table rowKey={(record) => record.id} columns={xuiActionColumns} dataSource={xuiActions} loading={xuiActionsLoading} pagination={{ pageSize: 8, hideOnSinglePage: true }} scroll={{ x: 820 }} />
                 </Space>
               ),
             },
-            {
+            ...(!restrictedView ? [{
               key: 'logs',
               label: `日志 (${agentLogs?.logs.length || 0})`,
               children: (
@@ -719,7 +766,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
               ) : (
                 <Empty description="暂无本机证书数据" />
               ),
-            },
+            }] : []),
             ...(canManageConfig ? [{
               key: 'config',
               label: (
@@ -862,6 +909,231 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
           ]}
         />
       </Card>
+      <Modal
+        title="实时 TTY"
+        open={terminalOpen}
+        footer={null}
+        onCancel={() => setTerminalOpen(false)}
+        width="min(1100px, 96vw)"
+        destroyOnClose
+      >
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Alert
+            type="warning"
+            showIcon
+            message="这是直接连到 Client 服务权限的实时终端"
+            description="Linux 使用 PTY，会以 vpsmonitor-client 服务用户打开交互式 shell；Windows 使用管理员服务权限下的 PowerShell/CMD 管道。请只在可信设备上操作。"
+          />
+          <Space wrap>
+            <Text type="secondary">Shell</Text>
+            <Select
+              style={{ width: 190 }}
+              value={terminalShell}
+              options={[
+                { value: 'bash', label: 'Linux bash' },
+                { value: 'sh', label: 'Linux sh' },
+                { value: 'powershell', label: 'Windows PowerShell' },
+                { value: 'cmd', label: 'Windows CMD' },
+                { value: 'pwsh', label: 'PowerShell Core' },
+              ]}
+              onChange={setTerminalShell}
+            />
+            <Text type="secondary">切换 Shell 会重新建立终端连接</Text>
+          </Space>
+          <RemoteTTYTerminal agentID={selectedAgentId} shell={terminalShell} active={terminalOpen} />
+        </Space>
+      </Modal>
+      <Modal
+        title="后台命令行"
+        open={remoteCommandOpen}
+        okText="下发执行"
+        cancelText="取消"
+        confirmLoading={remoteCommandLoading}
+        okButtonProps={{ danger: true, disabled: !remoteCommand.trim() }}
+        onOk={submitRemoteCommand}
+        onCancel={() => setRemoteCommandOpen(false)}
+        destroyOnClose
+      >
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Alert
+            type="warning"
+            showIcon
+            message="命令会直接通过 Client 执行"
+            description="Linux 通常以 vpsmonitor-client 服务用户执行（安装为 root 时就是 root 权限）；Windows 取决于 Client 服务是否以管理员权限运行。命令和输出会记录在 x-ui 操作记录中。"
+          />
+          <Space wrap>
+            <div>
+              <Text type="secondary">Shell</Text>
+              <Select
+                style={{ width: 170, display: 'block', marginTop: 6 }}
+                value={remoteShell}
+                options={[
+                  { value: 'bash', label: 'Linux bash' },
+                  { value: 'sh', label: 'Linux sh' },
+                  { value: 'powershell', label: 'Windows PowerShell' },
+                  { value: 'cmd', label: 'Windows CMD' },
+                  { value: 'pwsh', label: 'PowerShell Core' },
+                ]}
+                onChange={setRemoteShell}
+              />
+            </div>
+            <div>
+              <Text type="secondary">超时时间（秒）</Text>
+              <InputNumber
+                min={1}
+                max={600}
+                style={{ width: 140, display: 'block', marginTop: 6 }}
+                value={remoteTimeout}
+                onChange={(value) => setRemoteTimeout(Number(value || 120))}
+              />
+            </div>
+          </Space>
+          <Input.TextArea
+            autoSize={{ minRows: 6, maxRows: 12 }}
+            placeholder="例如：systemctl status x-ui --no-pager"
+            value={remoteCommand}
+            onChange={(event) => setRemoteCommand(event.target.value)}
+          />
+        </Space>
+      </Modal>
+      <Modal
+        title="远程命令输出"
+        open={Boolean(commandOutputAction)}
+        footer={<Button onClick={() => setCommandOutputAction(null)}>关闭</Button>}
+        onCancel={() => setCommandOutputAction(null)}
+        width={860}
+      >
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <div>
+            <Text type="secondary">命令</Text>
+            <pre className="command-output-block">{commandText || '-'}</pre>
+          </div>
+          <Space wrap>
+            <Tag color={commandOutputAction?.status === 'succeeded' ? 'success' : 'error'}>{actionStatusLabel(commandOutputAction?.status || '')}</Tag>
+            <Tag>Shell {String(commandResult.shell || commandPayload.shell || '-')}</Tag>
+            <Tag>退出码 {String(commandResult.exit_code ?? '-')}</Tag>
+            <Tag>执行用户 {String(commandResult.run_as || commandResult.uid || '-')}</Tag>
+            <Tag>耗时 {String(commandResult.duration || '-')}</Tag>
+          </Space>
+          <div>
+            <Text type="secondary">STDOUT</Text>
+            <pre className="command-output-block">{stdoutText || '-'}</pre>
+          </div>
+          <div>
+            <Text type="secondary">STDERR / 错误</Text>
+            <pre className="command-output-block">{stderrText || '-'}</pre>
+          </div>
+        </Space>
+      </Modal>
     </>
   )
+}
+
+interface TerminalWSMessage {
+  type: string
+  session_id?: string
+  data?: string
+  error?: string
+  exit_code?: number
+  rows?: number
+  cols?: number
+  shell?: string
+}
+
+function defaultTerminalShell(clientOS?: string): string {
+  return String(clientOS || '').toLowerCase().includes('windows') ? 'powershell' : 'bash'
+}
+
+function RemoteTTYTerminal(props: { agentID: string; shell: string; active: boolean }) {
+  const { agentID, shell, active } = props
+  const containerRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!active || !agentID || !containerRef.current) {
+      return undefined
+    }
+    const terminal = new Terminal({
+      cursorBlink: true,
+      convertEol: true,
+      fontFamily: '"JetBrains Mono", "SFMono-Regular", Consolas, monospace',
+      fontSize: 13,
+      rows: 36,
+      scrollback: 5000,
+      theme: {
+        background: '#07111f',
+        foreground: '#dbeafe',
+        cursor: '#f97316',
+        selectionBackground: '#334155',
+      },
+    })
+    const fitAddon = new FitAddon()
+    terminal.loadAddon(fitAddon)
+    terminal.open(containerRef.current)
+    fitAddon.fit()
+    terminal.focus()
+    terminal.writeln('Connecting to VPSMonitor Client realtime TTY...')
+
+    let closed = false
+    let currentSessionID = ''
+    const socket = new WebSocket(buildAgentTerminalURL(agentID, shell, terminal.cols, terminal.rows))
+    const send = (message: TerminalWSMessage) => {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ ...message, session_id: currentSessionID || message.session_id }))
+      }
+    }
+    const dataDisposable = terminal.onData((data) => send({ type: 'input', data }))
+    const resizeDisposable = terminal.onResize((size) => send({ type: 'resize', cols: size.cols, rows: size.rows }))
+    const resizeWindow = () => {
+      fitAddon.fit()
+      send({ type: 'resize', cols: terminal.cols, rows: terminal.rows })
+    }
+    window.addEventListener('resize', resizeWindow)
+
+    socket.onopen = () => {
+      terminal.writeln('\r\nConnected, waiting for remote shell...')
+    }
+    socket.onmessage = (event) => {
+      const message = JSON.parse(event.data) as TerminalWSMessage
+      if (message.session_id) {
+        currentSessionID = message.session_id
+      }
+      switch (message.type) {
+        case 'terminal_opened':
+          terminal.writeln(`\r\nTTY opened (${message.shell || shell}, ${message.cols || terminal.cols}x${message.rows || terminal.rows})\r\n`)
+          break
+        case 'terminal_output':
+          terminal.write(message.data || '')
+          break
+        case 'terminal_error':
+          terminal.writeln(`\r\n[error] ${message.error || 'unknown error'}\r\n`)
+          break
+        case 'terminal_closed':
+          terminal.writeln(`\r\n[closed] exit=${message.exit_code ?? '-'} ${message.error || ''}\r\n`)
+          break
+        default:
+          break
+      }
+    }
+    socket.onerror = () => {
+      terminal.writeln('\r\n[error] WebSocket connection failed\r\n')
+    }
+    socket.onclose = () => {
+      if (!closed) {
+        terminal.writeln('\r\n[disconnected]\r\n')
+      }
+    }
+
+    window.setTimeout(resizeWindow, 80)
+    return () => {
+      closed = true
+      send({ type: 'close' })
+      window.removeEventListener('resize', resizeWindow)
+      dataDisposable.dispose()
+      resizeDisposable.dispose()
+      socket.close()
+      terminal.dispose()
+    }
+  }, [active, agentID, shell])
+
+  return <div ref={containerRef} className="remote-tty-terminal" />
 }

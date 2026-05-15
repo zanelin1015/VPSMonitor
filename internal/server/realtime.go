@@ -1,9 +1,14 @@
 package server
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +29,7 @@ type realtimeHub struct {
 	metrics       map[string]model.AgentRealtimeMetrics
 	subscribers   map[chan model.AgentRealtimeMetrics]struct{}
 	agentControls map[string]*agentControlSession
+	terminals     map[string]*terminalRelaySession
 }
 
 type agentControlSession struct {
@@ -38,11 +44,26 @@ func (s *agentControlSession) close() {
 	})
 }
 
+type terminalRelaySession struct {
+	agentID   string
+	sessionID string
+	ch        chan model.TerminalMessage
+	done      chan struct{}
+	closeOnce sync.Once
+}
+
+func (s *terminalRelaySession) close() {
+	s.closeOnce.Do(func() {
+		close(s.done)
+	})
+}
+
 func newRealtimeHub() *realtimeHub {
 	return &realtimeHub{
 		metrics:       make(map[string]model.AgentRealtimeMetrics),
 		subscribers:   make(map[chan model.AgentRealtimeMetrics]struct{}),
 		agentControls: make(map[string]*agentControlSession),
+		terminals:     make(map[string]*terminalRelaySession),
 	}
 }
 
@@ -138,7 +159,7 @@ func (h *realtimeHub) applyToAgentItems(items []model.AgentListItem) {
 
 func (h *realtimeHub) registerAgentControl(agentID string) *agentControlSession {
 	session := &agentControlSession{
-		ch:   make(chan model.AgentControlMessage, 8),
+		ch:   make(chan model.AgentControlMessage, 512),
 		done: make(chan struct{}),
 	}
 	h.mu.Lock()
@@ -170,6 +191,51 @@ func (h *realtimeHub) sendAgentControl(agentID string, message model.AgentContro
 	case <-session.done:
 		return false
 	default:
+	}
+	select {
+	case session.ch <- message:
+		return true
+	case <-session.done:
+		return false
+	default:
+		return false
+	}
+}
+
+func (h *realtimeHub) registerTerminal(agentID, sessionID string) *terminalRelaySession {
+	session := &terminalRelaySession{
+		agentID:   agentID,
+		sessionID: sessionID,
+		ch:        make(chan model.TerminalMessage, 128),
+		done:      make(chan struct{}),
+	}
+	h.mu.Lock()
+	if previous := h.terminals[sessionID]; previous != nil {
+		previous.close()
+	}
+	h.terminals[sessionID] = session
+	h.mu.Unlock()
+	return session
+}
+
+func (h *realtimeHub) unregisterTerminal(sessionID string, session *terminalRelaySession) {
+	h.mu.Lock()
+	if current := h.terminals[sessionID]; current == session {
+		delete(h.terminals, sessionID)
+	}
+	h.mu.Unlock()
+	session.close()
+}
+
+func (h *realtimeHub) relayTerminalMessage(message model.TerminalMessage) bool {
+	if message.SessionID == "" {
+		return false
+	}
+	h.mu.RLock()
+	session := h.terminals[message.SessionID]
+	h.mu.RUnlock()
+	if session == nil || (message.AgentID != "" && message.AgentID != session.agentID) {
+		return false
 	}
 	select {
 	case session.ch <- message:
@@ -282,6 +348,134 @@ func (a *App) handleDashboardRealtime(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (a *App) handleAgentTerminalWS(w http.ResponseWriter, r *http.Request, agentID string) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	user, _, ok := a.requireAdmin(w, r)
+	if !ok {
+		return
+	}
+	if !isRootAdmin(user) {
+		writeError(w, http.StatusForbidden, "only root admin can open remote terminal")
+		return
+	}
+	if !a.adminCanAccessAgent(user, agentID) {
+		writeError(w, http.StatusForbidden, "agent is not assigned to this account")
+		return
+	}
+	if _, found, err := a.store.GetAgent(agentID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	} else if !found {
+		writeError(w, http.StatusNotFound, "agent not found")
+		return
+	}
+
+	conn, err := dashboardWSUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	conn.SetReadLimit(64 * 1024)
+
+	sessionID := randomTerminalSessionID()
+	relay := a.realtime.registerTerminal(agentID, sessionID)
+	defer a.realtime.unregisterTerminal(sessionID, relay)
+
+	shell := strings.TrimSpace(r.URL.Query().Get("shell"))
+	cols := queryInt(r, "cols", 120)
+	rows := queryInt(r, "rows", 36)
+	if !a.realtime.sendAgentControl(agentID, model.AgentControlMessage{
+		Type: model.AgentControlTerminalOpen,
+		Payload: map[string]any{
+			"session_id": sessionID,
+			"shell":      shell,
+			"cols":       cols,
+			"rows":       rows,
+		},
+	}) {
+		_ = conn.WriteJSON(model.TerminalMessage{Type: model.TerminalMessageError, SessionID: sessionID, Error: "Client 实时连接不在线，请确认 Client 已更新并保持在线"})
+		return
+	}
+
+	done := make(chan struct{})
+	adminErrors := make(chan model.TerminalMessage, 1)
+	go func() {
+		defer close(done)
+		for {
+			var message model.TerminalMessage
+			if err := conn.ReadJSON(&message); err != nil {
+				return
+			}
+			if message.SessionID == "" {
+				message.SessionID = sessionID
+			}
+			if message.SessionID != sessionID {
+				continue
+			}
+			control := terminalControlFromAdminMessage(message)
+			if control.Type == "" {
+				continue
+			}
+			if !a.realtime.sendAgentControl(agentID, control) {
+				select {
+				case adminErrors <- model.TerminalMessage{Type: model.TerminalMessageError, SessionID: sessionID, Error: "Client 实时连接已断开"}:
+				default:
+				}
+				return
+			}
+		}
+	}()
+
+	pingTicker := time.NewTicker(25 * time.Second)
+	defer pingTicker.Stop()
+	for {
+		select {
+		case message := <-relay.ch:
+			if err := conn.WriteJSON(message); err != nil {
+				return
+			}
+		case message := <-adminErrors:
+			if err := conn.WriteJSON(message); err != nil {
+				return
+			}
+		case <-pingTicker.C:
+			if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(5*time.Second)); err != nil {
+				return
+			}
+		case <-done:
+			a.realtime.sendAgentControl(agentID, model.AgentControlMessage{
+				Type:    model.AgentControlTerminalClose,
+				Payload: map[string]any{"session_id": sessionID},
+			})
+			return
+		case <-r.Context().Done():
+			return
+		case <-relay.done:
+			return
+		}
+	}
+}
+
+func terminalControlFromAdminMessage(message model.TerminalMessage) model.AgentControlMessage {
+	payload := map[string]any{"session_id": message.SessionID}
+	switch message.Type {
+	case "input", model.AgentControlTerminalInput:
+		payload["data"] = message.Data
+		return model.AgentControlMessage{Type: model.AgentControlTerminalInput, Payload: payload}
+	case "resize", model.AgentControlTerminalResize:
+		payload["cols"] = message.Cols
+		payload["rows"] = message.Rows
+		return model.AgentControlMessage{Type: model.AgentControlTerminalResize, Payload: payload}
+	case "close", model.AgentControlTerminalClose:
+		return model.AgentControlMessage{Type: model.AgentControlTerminalClose, Payload: payload}
+	default:
+		return model.AgentControlMessage{}
+	}
+}
+
 func (a *App) handleAgentMetricsWS(w http.ResponseWriter, r *http.Request, agentID string) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -332,9 +526,26 @@ func (a *App) handleAgentMetricsWS(w http.ResponseWriter, r *http.Request, agent
 	}
 
 	for {
-		var metric model.AgentRealtimeMetrics
-		if err := conn.ReadJSON(&metric); err != nil {
+		var raw json.RawMessage
+		if err := conn.ReadJSON(&raw); err != nil {
 			return
+		}
+		var envelope struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(raw, &envelope); err == nil && strings.HasPrefix(envelope.Type, "terminal_") {
+			var message model.TerminalMessage
+			if err := json.Unmarshal(raw, &message); err == nil {
+				if message.AgentID == "" {
+					message.AgentID = agentID
+				}
+				a.realtime.relayTerminalMessage(message)
+			}
+			continue
+		}
+		var metric model.AgentRealtimeMetrics
+		if err := json.Unmarshal(raw, &metric); err != nil {
+			continue
 		}
 		if metric.AgentID == "" {
 			metric.AgentID = agentID
@@ -350,6 +561,22 @@ func (a *App) handleAgentMetricsWS(w http.ResponseWriter, r *http.Request, agent
 		}
 		a.realtime.update(metric)
 	}
+}
+
+func randomTerminalSessionID() string {
+	var bytes [16]byte
+	if _, err := rand.Read(bytes[:]); err == nil {
+		return hex.EncodeToString(bytes[:])
+	}
+	return fmt.Sprintf("%d", time.Now().UnixNano())
+}
+
+func queryInt(r *http.Request, key string, fallback int) int {
+	value, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get(key)))
+	if err != nil || value <= 0 {
+		return fallback
+	}
+	return value
 }
 
 func requestObservedIP(r *http.Request) string {

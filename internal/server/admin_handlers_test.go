@@ -1,6 +1,10 @@
 package server
 
-import "testing"
+import (
+	"testing"
+
+	"bridge-core/internal/model"
+)
 
 func TestNormalizeVersionSupportsComponentTags(t *testing.T) {
 	tests := map[string]string{
@@ -26,5 +30,22 @@ func TestHasClientUpdateAsset(t *testing.T) {
 	}
 	if hasClientUpdateAsset("Other", assets) {
 		t.Fatalf("did not expect mismatched package prefix to be detected")
+	}
+}
+
+func TestFilterRootOnlyXUIActionsHidesRemoteCommands(t *testing.T) {
+	actions := []model.XUIAction{
+		{ID: 1, Kind: model.XUIActionUpsertRoutingRule},
+		{ID: 2, Kind: model.XUIActionExecuteCommand},
+		{ID: 3, Kind: model.XUIActionRestartXUI},
+	}
+	filtered := filterRootOnlyXUIActions(actions)
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 visible actions, got %#v", filtered)
+	}
+	for _, action := range filtered {
+		if action.Kind == model.XUIActionExecuteCommand {
+			t.Fatalf("remote command action leaked to non-root admin: %#v", filtered)
+		}
 	}
 }

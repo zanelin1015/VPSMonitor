@@ -143,6 +143,12 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.handleAgentMetricsWS(w, r, agentID)
+	case "terminal":
+		if len(parts) < 3 || parts[2] != "ws" {
+			writeError(w, http.StatusNotFound, "terminal endpoint not found")
+			return
+		}
+		a.handleAgentTerminalWS(w, r, agentID)
 	case "refresh":
 		a.handleAgentRefresh(w, r, agentID)
 	case "history":
@@ -281,6 +287,9 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 					writeError(w, http.StatusInternalServerError, err.Error())
 					return
 				}
+				if !isRootAdmin(user) {
+					actions = filterRootOnlyXUIActions(actions)
+				}
 				writeJSON(w, http.StatusOK, actions)
 				return
 			}
@@ -307,6 +316,10 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 			}
 			if isAreaManager(user) && !a.areaManagerXUIActionAllowed(req.Kind) {
 				writeError(w, http.StatusForbidden, "area manager can only create routing rule actions")
+				return
+			}
+			if req.Kind == model.XUIActionExecuteCommand && !isRootAdmin(user) {
+				writeError(w, http.StatusForbidden, "only root admin can execute remote commands")
 				return
 			}
 			action, err := a.store.CreateXUIAction(agentID, req)
@@ -459,6 +472,17 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func filterRootOnlyXUIActions(actions []model.XUIAction) []model.XUIAction {
+	filtered := make([]model.XUIAction, 0, len(actions))
+	for _, action := range actions {
+		if action.Kind == model.XUIActionExecuteCommand {
+			continue
+		}
+		filtered = append(filtered, action)
+	}
+	return filtered
 }
 
 func (a *App) handleHeartbeat(w http.ResponseWriter, r *http.Request, agentID string) {

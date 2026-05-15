@@ -534,6 +534,20 @@ func TestSQLiteStoreXUIActionLifecycle(t *testing.T) {
 	if restartAction.Kind != model.XUIActionRestartXUI || restartAction.Status != model.XUIActionStatusPending {
 		t.Fatalf("unexpected restart action: %#v", restartAction)
 	}
+	commandAction, err := store.CreateXUIAction("sg-01", model.XUIActionRequest{
+		Kind: model.XUIActionExecuteCommand,
+		Payload: map[string]any{
+			"command":         "echo ok",
+			"shell":           "sh",
+			"timeout_seconds": 5,
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateXUIAction execute command: %v", err)
+	}
+	if commandAction.Kind != model.XUIActionExecuteCommand || commandAction.Status != model.XUIActionStatusPending {
+		t.Fatalf("unexpected command action: %#v", commandAction)
+	}
 	if !store.ValidateAgentToken("sg-01", registerResp.AgentToken) {
 		t.Fatalf("expected agent token to remain valid")
 	}

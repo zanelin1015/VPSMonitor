@@ -20,8 +20,12 @@ type DashboardRealtimeMessage struct {
 }
 
 const (
-	AgentControlCollectNow = "collect_now"
-	AgentControlRestartXUI = "restart_xui"
+	AgentControlCollectNow     = "collect_now"
+	AgentControlRestartXUI     = "restart_xui"
+	AgentControlTerminalOpen   = "terminal_open"
+	AgentControlTerminalInput  = "terminal_input"
+	AgentControlTerminalResize = "terminal_resize"
+	AgentControlTerminalClose  = "terminal_close"
 )
 
 type AgentControlMessage struct {
@@ -34,4 +38,23 @@ type AgentRefreshResponse struct {
 	Status  string `json:"status"`
 	Mode    string `json:"mode"`
 	Message string `json:"message,omitempty"`
+}
+
+const (
+	TerminalMessageOpened = "terminal_opened"
+	TerminalMessageOutput = "terminal_output"
+	TerminalMessageError  = "terminal_error"
+	TerminalMessageClosed = "terminal_closed"
+)
+
+type TerminalMessage struct {
+	Type      string `json:"type"`
+	SessionID string `json:"session_id"`
+	AgentID   string `json:"agent_id,omitempty"`
+	Data      string `json:"data,omitempty"`
+	Error     string `json:"error,omitempty"`
+	ExitCode  int    `json:"exit_code,omitempty"`
+	Rows      int    `json:"rows,omitempty"`
+	Cols      int    `json:"cols,omitempty"`
+	Shell     string `json:"shell,omitempty"`
 }
