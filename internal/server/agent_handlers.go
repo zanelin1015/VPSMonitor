@@ -203,7 +203,11 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 		if isAreaManager(user) {
 			overview.AgentName = areaManagerDisplayName(cfg.CustomerDisplayName, cfg.AgentName, agentID)
 		}
-		a.sanitizeXUIOverviewForAdmin(user, overview)
+		if isAreaManager(user) && r.URL.Query().Get("assignment_scope") == "1" {
+			a.sanitizeXUIOverviewForAreaAssignment(user, overview)
+		} else {
+			a.sanitizeXUIOverviewForAdmin(user, overview)
+		}
 		writeJSON(w, http.StatusOK, overview)
 	default:
 		writeError(w, http.StatusNotFound, "route not found")

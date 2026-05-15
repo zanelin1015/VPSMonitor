@@ -253,3 +253,41 @@ func TestAreaManagerXUIOverviewFiltersUnassignedClients(t *testing.T) {
 		t.Fatalf("expected node metrics and base URL sanitized, got node=%#v base=%q", overview.Nodes[0], overview.BaseURL)
 	}
 }
+
+func TestAreaManagerAssignmentPickerKeepsAllowedAgentClients(t *testing.T) {
+	app := &App{}
+	overview := &model.XUIOverview{
+		AgentID:           "hk",
+		AgentName:         "HK Internal",
+		BaseURL:           "https://x-ui.example",
+		ClientCount:       2,
+		OnlineClientCount: 1,
+		NodeCount:         1,
+		Nodes: []model.XUINodeView{
+			{ID: 1001, Tag: "HK:20001", ClientCount: 2, OnlineCount: 1, Up: 10, Down: 20, Total: 30, AllTime: 40},
+		},
+		Clients: []model.XUIClientView{
+			{InboundID: 1001, InboundTag: "HK:20001", Email: "assigned@example.com", TotalGB: 100, ExpiryTime: 200, LastOnline: 300},
+			{InboundID: 1001, InboundTag: "HK:20001", Email: "available@example.com", TotalGB: 100, ExpiryTime: 200, LastOnline: 300},
+		},
+	}
+
+	app.sanitizeXUIOverviewForAreaAssignment(model.AdminUser{
+		ID:       10,
+		Role:     model.AdminRoleAreaManager,
+		AgentIDs: []string{"hk"},
+	}, overview)
+
+	if len(overview.Clients) != 2 {
+		t.Fatalf("expected assignment picker to keep all clients on an allowed agent, got %#v", overview.Clients)
+	}
+	if overview.Clients[0].TotalGB != 0 || overview.Clients[1].LastOnline != 0 {
+		t.Fatalf("expected sensitive client limits/timestamps stripped, got %#v", overview.Clients)
+	}
+	if len(overview.Nodes) != 1 || overview.Nodes[0].ClientCount != 0 || overview.Nodes[0].Total != 0 {
+		t.Fatalf("expected node picker metadata without metrics, got %#v", overview.Nodes)
+	}
+	if overview.BaseURL != "" || overview.OnlineClientCount != 0 {
+		t.Fatalf("expected x-ui URL and online count hidden, got base=%q online=%d", overview.BaseURL, overview.OnlineClientCount)
+	}
+}

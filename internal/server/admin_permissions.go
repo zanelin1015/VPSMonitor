@@ -205,6 +205,38 @@ func (a *App) sanitizeXUIOverviewForAdmin(user model.AdminUser, overview *model.
 	}
 }
 
+func (a *App) sanitizeXUIOverviewForAreaAssignment(user model.AdminUser, overview *model.XUIOverview) {
+	if overview == nil || isRootAdmin(user) {
+		return
+	}
+	overview.AgentName = areaManagerDisplayName("", overview.AgentName, overview.AgentID)
+	overview.BaseURL = ""
+	overview.Summary = sanitizeAreaManagerSummary(overview.Summary)
+	for index := range overview.Clients {
+		overview.Clients[index].TotalGB = 0
+		overview.Clients[index].ExpiryTime = 0
+		overview.Clients[index].CreatedAt = 0
+		overview.Clients[index].UpdatedAt = 0
+		overview.Clients[index].LastOnline = 0
+	}
+	overview.ClientCount = len(overview.Clients)
+	overview.OnlineClientCount = 0
+	for index := range overview.Nodes {
+		overview.Nodes[index].ClientCount = 0
+		overview.Nodes[index].OnlineCount = 0
+		overview.Nodes[index].Up = 0
+		overview.Nodes[index].Down = 0
+		overview.Nodes[index].Total = 0
+		overview.Nodes[index].AllTime = 0
+	}
+	overview.NodeCount = len(overview.Nodes)
+	for index := range overview.Outbounds {
+		overview.Outbounds[index].Address = redactEndpointIP(overview.Outbounds[index].Address)
+		overview.Outbounds[index].Target = redactEndpointIP(overview.Outbounds[index].Target)
+		overview.Outbounds[index].SendThrough = ""
+	}
+}
+
 func sanitizeAgentListItemForAreaManager(item model.AgentListItem, tagMap map[string][]string) model.AgentListItem {
 	item.AgentName = areaManagerDisplayName(item.CustomerDisplayName, item.AgentName, item.AgentID)
 	item.Tags = cloneStringSlice(tagMap[item.AgentID])

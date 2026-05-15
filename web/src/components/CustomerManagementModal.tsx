@@ -215,7 +215,7 @@ export function CustomerManagementModal(props: {
     }
     let cancelled = false
     setOverviewLoading(true)
-    void fetchJSON<XUIOverview>(`/api/v1/agents/${assignmentForm.agent_id}/xui/overview`)
+    void fetchJSON<XUIOverview>(`/api/v1/agents/${assignmentForm.agent_id}/xui/overview?assignment_scope=1`)
       .then((data) => {
         if (!cancelled) {
           setOverview(data)
