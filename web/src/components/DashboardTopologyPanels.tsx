@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Empty, Input, Space, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Empty, Input, Popconfirm, Space, Tag, Typography } from 'antd'
 import { ReloadOutlined } from '@ant-design/icons'
 
 import type { ClientChainStep, ClientChainView, DashboardAgentView, GlobalDashboardView, IPGeoView, TopologyLinkView } from '../types'
@@ -95,6 +95,9 @@ export function renderCNFlowPanel(props: {
   canRefreshCurrentNode: boolean
   currentNodeLoading: boolean
   onRefreshCurrentNode: () => void
+  canRestartXUI: boolean
+  xuiRestartLoading: boolean
+  onRestartXUI: () => void
   searchText: string
   onSearchTextChange: (value: string) => void
 }) {
@@ -112,6 +115,9 @@ export function renderCNFlowPanel(props: {
     canRefreshCurrentNode,
     currentNodeLoading,
     onRefreshCurrentNode,
+    canRestartXUI,
+    xuiRestartLoading,
+    onRestartXUI,
     searchText,
     onSearchTextChange,
   } = props
@@ -323,6 +329,17 @@ export function renderCNFlowPanel(props: {
             <Button icon={<ReloadOutlined />} type="primary" disabled={!canRefreshCurrentNode} loading={currentNodeLoading} onClick={onRefreshCurrentNode}>
               立即获取节点信息
             </Button>
+            <Popconfirm
+              title="重启 x-ui / Xray？"
+              description="将通过在线 Client 的 WebSocket 执行 x-ui 服务重启；失败日志会写入操作记录。"
+              okText="重启"
+              cancelText="取消"
+              onConfirm={onRestartXUI}
+            >
+              <Button danger disabled={!canRestartXUI} loading={xuiRestartLoading}>
+                重启 x-ui / Xray
+              </Button>
+            </Popconfirm>
           </Space> : null}
           <Space wrap className="cn-flow-header-meta">
             <Tag color="cyan">链路 {dashboardView.totals.link_count}</Tag>

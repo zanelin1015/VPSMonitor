@@ -2014,6 +2014,13 @@ export default function App() {
                         void requestAgentSnapshot(selectedAgentId)
                       }
                     },
+                    canRestartXUI: !isAreaManagerAccount && Boolean(selectedAgentId),
+                    xuiRestartLoading,
+                    onRestartXUI: () => {
+                      if (selectedAgentId) {
+                        void restartXUIService(selectedAgentId)
+                      }
+                    },
                     searchText: topologySearch,
                     onSearchTextChange: setTopologySearch,
                   })}
