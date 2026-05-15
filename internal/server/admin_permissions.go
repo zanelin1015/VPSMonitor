@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 
 	"bridge-core/internal/config"
@@ -140,13 +141,16 @@ func (a *App) sanitizeDashboardForAdmin(user model.AdminUser, view *model.Global
 	}
 	tagMap, _ := a.store.ListAreaManagerAgentTags(user.ID)
 	allowed := adminAgentSet(user)
+	clientScope := a.areaManagerClientScope(user)
 	agentNames := make(map[string]string, len(view.Agents))
 	for index := range view.Agents {
 		view.Agents[index] = sanitizeDashboardAgentForAreaManager(view.Agents[index], tagMap)
 		agentNames[view.Agents[index].AgentID] = view.Agents[index].AgentName
 	}
 	view.Links = sanitizeTopologyLinksForAreaManager(view.Links, allowed, tagMap, agentNames)
-	view.ClientChains = sanitizeClientChainsForAreaManager(view.ClientChains, allowed, tagMap, agentNames)
+	view.ClientChains = sanitizeClientChainsForAreaManager(view.ClientChains, allowed, tagMap, agentNames, clientScope)
+	view.Links = filterTopologyLinksUsedByChains(view.Links, view.ClientChains)
+	applyAreaManagerClientCounts(view, clientScope)
 	rebuildAreaManagerDashboardStats(view)
 }
 
@@ -157,13 +161,43 @@ func (a *App) sanitizeXUIOverviewForAdmin(user model.AdminUser, overview *model.
 	overview.AgentName = areaManagerDisplayName("", overview.AgentName, overview.AgentID)
 	overview.BaseURL = ""
 	overview.Summary = sanitizeAreaManagerSummary(overview.Summary)
-	for index := range overview.Clients {
-		overview.Clients[index].TotalGB = 0
-		overview.Clients[index].ExpiryTime = 0
-		overview.Clients[index].CreatedAt = 0
-		overview.Clients[index].UpdatedAt = 0
-		overview.Clients[index].LastOnline = 0
+	clientScope := a.areaManagerClientScope(user)
+	filteredClients := make([]model.XUIClientView, 0, len(overview.Clients))
+	for _, client := range overview.Clients {
+		if !clientScope.allowsClient(overview.AgentID, client.InboundID, client.InboundTag, client.Email) {
+			continue
+		}
+		client.TotalGB = 0
+		client.ExpiryTime = 0
+		client.CreatedAt = 0
+		client.UpdatedAt = 0
+		client.LastOnline = 0
+		filteredClients = append(filteredClients, client)
 	}
+	overview.Clients = filteredClients
+	overview.ClientCount = len(filteredClients)
+	overview.OnlineClientCount = 0
+	visibleNodes := make(map[int]struct{})
+	for _, client := range filteredClients {
+		visibleNodes[client.InboundID] = struct{}{}
+	}
+	filteredNodes := make([]model.XUINodeView, 0, len(overview.Nodes))
+	for _, node := range overview.Nodes {
+		if !clientScope.allowsInbound(overview.AgentID, node.ID, node.Tag) {
+			if _, ok := visibleNodes[node.ID]; !ok {
+				continue
+			}
+		}
+		node.ClientCount = 0
+		node.OnlineCount = 0
+		node.Up = 0
+		node.Down = 0
+		node.Total = 0
+		node.AllTime = 0
+		filteredNodes = append(filteredNodes, node)
+	}
+	overview.Nodes = filteredNodes
+	overview.NodeCount = len(filteredNodes)
 	for index := range overview.Outbounds {
 		overview.Outbounds[index].Address = redactEndpointIP(overview.Outbounds[index].Address)
 		overview.Outbounds[index].Target = redactEndpointIP(overview.Outbounds[index].Target)
@@ -258,10 +292,13 @@ func sanitizeTopologyLinksForAreaManager(links []model.TopologyLinkView, allowed
 	return filtered
 }
 
-func sanitizeClientChainsForAreaManager(chains []model.ClientChainView, allowed map[string]struct{}, tagMap map[string][]string, agentNames map[string]string) []model.ClientChainView {
+func sanitizeClientChainsForAreaManager(chains []model.ClientChainView, allowed map[string]struct{}, tagMap map[string][]string, agentNames map[string]string, clientScope areaManagerClientScope) []model.ClientChainView {
 	filtered := make([]model.ClientChainView, 0, len(chains))
 	for _, chain := range chains {
 		if _, ok := allowed[chain.RootAgentID]; !ok {
+			continue
+		}
+		if !clientScope.allowsClient(chain.RootAgentID, clientChainInboundID(chain), chain.RootInboundTag, chain.RootClientEmail) {
 			continue
 		}
 		visible := true
@@ -290,6 +327,170 @@ func sanitizeClientChainsForAreaManager(chains []model.ClientChainView, allowed 
 		filtered = append(filtered, chain)
 	}
 	return filtered
+}
+
+type areaManagerClientScope struct {
+	exactClients map[string]struct{}
+	inbounds     map[string]struct{}
+	agents       map[string]struct{}
+}
+
+func (a *App) areaManagerClientScope(user model.AdminUser) areaManagerClientScope {
+	scope := areaManagerClientScope{
+		exactClients: make(map[string]struct{}),
+		inbounds:     make(map[string]struct{}),
+		agents:       adminAgentSet(user),
+	}
+	if !isAreaManager(user) || user.ID <= 0 {
+		return scope
+	}
+	customers, err := a.store.ListCustomersForOwner(model.AdminRoleAreaManager, user.ID)
+	if err != nil {
+		return scope
+	}
+	for _, customer := range customers {
+		for _, assignment := range customer.Assignments {
+			if !assignment.Enabled {
+				continue
+			}
+			if assignment.AgentID == "" {
+				continue
+			}
+			if assignment.ClientEmail != "" {
+				scope.exactClients[areaClientExactKey(assignment.AgentID, assignment.InboundID, assignment.InboundTag, assignment.ClientEmail)] = struct{}{}
+				if assignment.InboundTag != "" {
+					scope.exactClients[areaClientExactKey(assignment.AgentID, assignment.InboundID, "", assignment.ClientEmail)] = struct{}{}
+				}
+				continue
+			}
+			scope.inbounds[areaClientInboundKey(assignment.AgentID, assignment.InboundID, assignment.InboundTag)] = struct{}{}
+			if assignment.InboundTag != "" {
+				scope.inbounds[areaClientInboundKey(assignment.AgentID, assignment.InboundID, "")] = struct{}{}
+			}
+		}
+	}
+	return scope
+}
+
+func (s areaManagerClientScope) allowsClient(agentID string, inboundID int, inboundTag, email string) bool {
+	if agentID == "" {
+		return false
+	}
+	if _, ok := s.agents[agentID]; !ok {
+		return false
+	}
+	if email == "" {
+		return s.allowsInbound(agentID, inboundID, inboundTag)
+	}
+	if _, ok := s.exactClients[areaClientExactKey(agentID, inboundID, inboundTag, email)]; ok {
+		return true
+	}
+	if inboundTag != "" {
+		if _, ok := s.exactClients[areaClientExactKey(agentID, inboundID, "", email)]; ok {
+			return true
+		}
+	}
+	return s.allowsInbound(agentID, inboundID, inboundTag)
+}
+
+func (s areaManagerClientScope) allowsInbound(agentID string, inboundID int, inboundTag string) bool {
+	if agentID == "" {
+		return false
+	}
+	if _, ok := s.agents[agentID]; !ok {
+		return false
+	}
+	if _, ok := s.inbounds[areaClientInboundKey(agentID, inboundID, inboundTag)]; ok {
+		return true
+	}
+	if inboundTag != "" {
+		if _, ok := s.inbounds[areaClientInboundKey(agentID, inboundID, "")]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func areaClientExactKey(agentID string, inboundID int, inboundTag, email string) string {
+	return strings.Join([]string{
+		strings.TrimSpace(agentID),
+		strconv.Itoa(inboundID),
+		strings.ToLower(strings.TrimSpace(inboundTag)),
+		strings.ToLower(strings.TrimSpace(email)),
+	}, "\x00")
+}
+
+func areaClientInboundKey(agentID string, inboundID int, inboundTag string) string {
+	return strings.Join([]string{
+		strings.TrimSpace(agentID),
+		strconv.Itoa(inboundID),
+		strings.ToLower(strings.TrimSpace(inboundTag)),
+	}, "\x00")
+}
+
+func filterTopologyLinksUsedByChains(links []model.TopologyLinkView, chains []model.ClientChainView) []model.TopologyLinkView {
+	used := make(map[string]struct{})
+	for _, chain := range chains {
+		for _, step := range chain.Steps {
+			if step.StepType != "outbound" || step.AgentID == "" || step.OutboundTag == "" {
+				continue
+			}
+			used[outboundLinkKey(step.AgentID, step.OutboundTag)] = struct{}{}
+		}
+	}
+	filtered := make([]model.TopologyLinkView, 0, len(links))
+	for _, link := range links {
+		if _, ok := used[outboundLinkKey(link.Source.AgentID, link.Source.OutboundTag)]; ok {
+			filtered = append(filtered, link)
+		}
+	}
+	return filtered
+}
+
+func outboundLinkKey(agentID, outboundTag string) string {
+	return strings.TrimSpace(agentID) + "::" + strings.TrimSpace(outboundTag)
+}
+
+func applyAreaManagerClientCounts(view *model.GlobalDashboardView, clientScope areaManagerClientScope) {
+	if view == nil {
+		return
+	}
+	counts := make(map[string]map[string]struct{})
+	nodeCounts := make(map[string]map[string]struct{})
+	for _, chain := range view.ClientChains {
+		inboundID := clientChainInboundID(chain)
+		if !clientScope.allowsClient(chain.RootAgentID, inboundID, chain.RootInboundTag, chain.RootClientEmail) {
+			continue
+		}
+		agentCounts := counts[chain.RootAgentID]
+		if agentCounts == nil {
+			agentCounts = make(map[string]struct{})
+			counts[chain.RootAgentID] = agentCounts
+		}
+		agentCounts[areaClientExactKey(chain.RootAgentID, inboundID, chain.RootInboundTag, chain.RootClientEmail)] = struct{}{}
+		agentNodes := nodeCounts[chain.RootAgentID]
+		if agentNodes == nil {
+			agentNodes = make(map[string]struct{})
+			nodeCounts[chain.RootAgentID] = agentNodes
+		}
+		agentNodes[areaClientInboundKey(chain.RootAgentID, inboundID, chain.RootInboundTag)] = struct{}{}
+	}
+	for index := range view.Agents {
+		view.Agents[index].ClientCount = len(counts[view.Agents[index].AgentID])
+		view.Agents[index].NodeCount = len(nodeCounts[view.Agents[index].AgentID])
+		if view.Agents[index].OnlineClientCount > view.Agents[index].ClientCount {
+			view.Agents[index].OnlineClientCount = view.Agents[index].ClientCount
+		}
+	}
+}
+
+func clientChainInboundID(chain model.ClientChainView) int {
+	parts := strings.Split(chain.Key, "::")
+	if len(parts) < 3 {
+		return 0
+	}
+	value, _ := strconv.Atoi(parts[1])
+	return value
 }
 
 func rebuildAreaManagerDashboardStats(view *model.GlobalDashboardView) {

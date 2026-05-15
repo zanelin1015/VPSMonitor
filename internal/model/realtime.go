@@ -19,10 +19,15 @@ type DashboardRealtimeMessage struct {
 	Metric  *AgentRealtimeMetrics  `json:"metric,omitempty"`
 }
 
-const AgentControlCollectNow = "collect_now"
+const (
+	AgentControlCollectNow = "collect_now"
+	AgentControlRestartXUI = "restart_xui"
+)
 
 type AgentControlMessage struct {
-	Type string `json:"type"`
+	Type     string         `json:"type"`
+	ActionID int64          `json:"action_id,omitempty"`
+	Payload  map[string]any `json:"payload,omitempty"`
 }
 
 type AgentRefreshResponse struct {

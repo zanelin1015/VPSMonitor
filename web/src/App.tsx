@@ -368,6 +368,7 @@ export default function App() {
   const [agentLogsLoading, setAgentLogsLoading] = useState(false)
   const [agentLogsError, setAgentLogsError] = useState('')
   const [agentRefreshLoading, setAgentRefreshLoading] = useState(false)
+  const [xuiRestartLoading, setXUIRestartLoading] = useState(false)
   const [xuiActionModalOpen, setXUIActionModalOpen] = useState(false)
   const [xuiActionSaving, setXUIActionSaving] = useState(false)
   const [xuiActionKind, setXUIActionKind] = useState('upsert_routing_rule')
@@ -993,6 +994,32 @@ export default function App() {
     }
   }
 
+  async function restartXUIService(agentID = selectedAgentId) {
+    if (!agentID) {
+      return
+    }
+    setXUIRestartLoading(true)
+    try {
+      await fetchJSON<XUIAction>(`/api/v1/agents/${agentID}/xui/actions`, {
+        method: 'POST',
+        body: JSON.stringify({ kind: 'restart_xui', payload: { service_name: 'x-ui' } }),
+      })
+      message.success('已创建 x-ui / Xray 重启任务；在线 Client 会通过 WS 立即执行，失败日志会写入操作记录')
+      window.setTimeout(() => {
+        void loadXUIActions(agentID, { silent: true })
+        void loadAgentLogs(agentID, { silent: true })
+        void loadOverview(agentID, { silent: true })
+      }, 2500)
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      message.error(error instanceof Error ? error.message : '下发 x-ui 重启失败')
+    } finally {
+      setXUIRestartLoading(false)
+    }
+  }
+
   async function loadConfigAudits(agentID = selectedAgentId, options: LoadOptions = {}) {
     if (!agentID) {
       setConfigAudits([])
@@ -1433,7 +1460,7 @@ export default function App() {
         setEntryAddressInputText(formatAddressInput(normalized.entry?.addresses))
       }
       if (savedMissingCustomerDisplayName && payload.customer_display_name) {
-        message.warning('Customer 展示名称已保留在当前页面；客户侧显示需要后端服务更新到新版后生效')
+        message.warning('用户展示名称已保留在当前页面；用户侧显示需要后端服务更新到新版后生效')
       } else {
         message.success(`${configSectionLabel(section)}已保存，client 下一次轮询会自动生效`)
       }
@@ -1645,7 +1672,7 @@ export default function App() {
             </button>
             <button type="button" className={activeAdminPage === 'customers' ? 'active' : ''} onClick={() => setActiveAdminPage('customers')}>
               <TeamOutlined />
-              <span>客户</span>
+              <span>用户</span>
             </button>
             {canManageSystem ? <button type="button" className={activeAdminPage === 'settings' ? 'active' : ''} onClick={() => {
               setActiveAdminPage('settings')
@@ -1710,7 +1737,7 @@ export default function App() {
             </button>
             <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'customers' ? ' active' : ''}`} onClick={() => setActiveAdminPage('customers')}>
               <TeamOutlined />
-              <span>客户管理</span>
+              <span>用户管理</span>
               <small>账号与授权</small>
             </button>
             {canManageSystem ? <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'settings' ? ' active' : ''}`} onClick={() => {
@@ -1736,14 +1763,14 @@ export default function App() {
             <Title level={1}>{heroTitle}</Title>
             <Paragraph className="hero-copy">
               {isAreaManagerAccount
-                ? '管理已授权 Client、客户账号、区域标签与可见拓扑链路。'
-                : '统一管理 Client、x-ui 托管配置、客户账号、财务月览与跨 Client 拓扑联动。'}
+                ? '管理已授权 Client、用户账号、区域标签与可见拓扑链路。'
+                : '统一管理 Client、x-ui 托管配置、用户账号、财务月览与跨 Client 拓扑联动。'}
             </Paragraph>
           </div>
           <div className="hero-actions hero-actions-column">
             <Button icon={<ReloadOutlined />} loading={agentsLoading} onClick={() => void loadAgents()}>刷新</Button>
             {canManageSystem ? <Button icon={<DeploymentUnitOutlined />} onClick={() => void openClientInstallModal()}>安装 Client</Button> : null}
-            <Button icon={<TeamOutlined />} onClick={() => setActiveAdminPage('customers')}>客户</Button>
+            <Button icon={<TeamOutlined />} onClick={() => setActiveAdminPage('customers')}>用户</Button>
             <PersonalCenterDropdown
               adminUser={adminUser}
               systemInfo={systemInfo}
@@ -2010,6 +2037,7 @@ export default function App() {
                 configSavingSection={configSavingSection}
                 currencyOptions={currencyOptions}
                 currentAgentLoading={overviewLoading || configLoading || agentRefreshLoading}
+                xuiRestartLoading={xuiRestartLoading}
                 dashboardView={dashboardView}
                 entryAddressInputText={entryAddressInputText}
                 filteredAgents={filteredAgents}
@@ -2064,6 +2092,7 @@ export default function App() {
                 }}
                 onAuthorizeCustomer={openCustomerAuthorization}
                 onRefreshCurrentAgent={() => void requestAgentSnapshot(selectedAgentId)}
+                onRestartXUI={() => void restartXUIService(selectedAgentId)}
                 onRefreshXUIActions={() => void loadXUIActions()}
                 onRenewalChange={(patch) => updateManagedConfig((current) => ({ ...current, renewal: { ...current.renewal, ...patch } }))}
                 onReturnHome={returnHome}

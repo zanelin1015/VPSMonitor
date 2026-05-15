@@ -239,7 +239,7 @@ export function CustomerManagementModal(props: {
 
   const assignmentColumns: ColumnsType<CustomerAssignment> = [
     {
-      title: '客户可见名称',
+      title: '用户可见名称',
       dataIndex: 'public_client_name',
       width: 180,
       render: (value?: string) => <Text strong>{value || '-'}</Text>,
@@ -255,7 +255,7 @@ export function CustomerManagementModal(props: {
       ),
     },
     {
-      title: '客户备注',
+      title: '用户备注',
       dataIndex: 'remark',
       ellipsis: true,
       render: (value?: string) => value || '-',
@@ -523,11 +523,11 @@ export function CustomerManagementModal(props: {
 
   async function saveCustomer() {
     if (!customerForm.username.trim()) {
-      message.warning('请填写客户用户名')
+      message.warning('请填写用户用户名')
       return
     }
     if (!selectedCustomerID && customerForm.password.length < 8) {
-      message.warning('新客户密码至少 8 位')
+      message.warning('新用户密码至少 8 位')
       return
     }
     setSavingCustomer(true)
@@ -544,7 +544,7 @@ export function CustomerManagementModal(props: {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         })
-        message.success('客户已更新')
+        message.success('用户已更新')
       } else {
         const created = await fetchJSON<CustomerAdminView>('/api/v1/admin/customers', {
           method: 'POST',
@@ -552,7 +552,7 @@ export function CustomerManagementModal(props: {
           body: JSON.stringify(payload),
         })
         setSelectedCustomerID(created.id)
-        message.success('客户已创建')
+        message.success('用户已创建')
       }
       setCustomerForm((current) => ({ ...current, password: '' }))
       await loadCustomers()
@@ -560,7 +560,7 @@ export function CustomerManagementModal(props: {
         await loadAreaManagers()
       }
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '保存客户失败')
+      message.error(error instanceof Error ? error.message : '保存用户失败')
     } finally {
       setSavingCustomer(false)
     }
@@ -575,13 +575,13 @@ export function CustomerManagementModal(props: {
       await fetchJSON(`/api/v1/admin/customers/${selectedCustomerID}`, { method: 'DELETE' })
       setSelectedCustomerID(null)
       setCustomerForm(emptyCustomerForm)
-      message.success('客户已删除')
+      message.success('用户已删除')
       await loadCustomers()
       if (canManageAreaManagers) {
         await loadAreaManagers()
       }
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '删除客户失败')
+      message.error(error instanceof Error ? error.message : '删除用户失败')
     } finally {
       setSavingCustomer(false)
     }
@@ -589,7 +589,7 @@ export function CustomerManagementModal(props: {
 
   async function saveAssignment() {
     if (!selectedCustomerID) {
-      message.warning('请先选择客户')
+      message.warning('请先选择用户')
       return
     }
     if (!assignmentForm.agent_id || !assignmentForm.inbound_id) {
@@ -719,7 +719,7 @@ export function CustomerManagementModal(props: {
         type="info"
         showIcon
         message="区域账号权限"
-        description="区域账号只能查看被分配的 Client，能下发 x-ui 转发规则，并且只能管理自己创建的普通客户；Admin 可见全部客户与区域账号。展开区域账号可直接查看其下属用户与链路。"
+        description="区域账号只能查看被分配的 Client，能下发 x-ui 转发规则，并且只能管理自己创建的普通用户；Admin 可见全部用户与区域账号。展开区域账号可直接查看其下属用户与链路。"
       />
       <Row gutter={[12, 12]}>
         <Col xs={24} md={5}>
@@ -778,7 +778,7 @@ export function CustomerManagementModal(props: {
       <Col xs={24} md={7} lg={6} xl={5}>
         <Card className="customer-admin-card" bordered={false}>
           <div className="customer-admin-card-head">
-            <Title level={5}>客户列表</Title>
+            <Title level={5}>用户列表</Title>
             <Space>
               <Button size="small" icon={<ReloadOutlined />} onClick={() => void loadCustomers()} />
               <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => {
@@ -790,7 +790,7 @@ export function CustomerManagementModal(props: {
             </Space>
           </div>
           <Space direction="vertical" style={{ width: '100%' }}>
-            {!customers.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无客户" /> : null}
+            {!customers.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无用户" /> : null}
             {customers.map((customer) => (
               <button
                 key={customer.id}
@@ -813,12 +813,12 @@ export function CustomerManagementModal(props: {
         <Card className="customer-admin-card" bordered={false}>
           <div className="customer-admin-card-head">
             <div>
-              <Title level={5}>{selectedCustomerID ? '编辑客户' : '新建客户'}</Title>
+              <Title level={5}>{selectedCustomerID ? '编辑用户' : '新建用户'}</Title>
               <Text type="secondary">普通用户只在创建它的区域账号和 Admin 下可见。</Text>
             </div>
             {selectedCustomerID ? (
-              <Popconfirm title="删除该客户及其全部分配？" okText="删除" cancelText="取消" onConfirm={() => void deleteCustomer()}>
-                <Button danger icon={<DeleteOutlined />}>删除客户</Button>
+              <Popconfirm title="删除该用户及其全部分配？" okText="删除" cancelText="取消" onConfirm={() => void deleteCustomer()}>
+                <Button danger icon={<DeleteOutlined />}>删除用户</Button>
               </Popconfirm>
             ) : null}
           </div>
@@ -828,7 +828,7 @@ export function CustomerManagementModal(props: {
               <Input value={customerForm.username} onChange={(event) => setCustomerForm((current) => ({ ...current, username: event.target.value }))} />
             </Col>
             <Col xs={24} md={8}>
-              <Text type="secondary">客户显示名</Text>
+              <Text type="secondary">用户显示名</Text>
               <Input value={customerForm.display_name} onChange={(event) => setCustomerForm((current) => ({ ...current, display_name: event.target.value }))} />
             </Col>
             <Col xs={24} md={8}>
@@ -843,16 +843,16 @@ export function CustomerManagementModal(props: {
               </div>
             </Col>
             <Col xs={24} md={16}>
-              <Text type="secondary">客户入口地址</Text>
+              <Text type="secondary">用户入口地址</Text>
               <Input value={`${window.location.origin}/customer`} readOnly />
             </Col>
           </Row>
           <Space style={{ marginTop: 14 }}>
             <Button type="primary" icon={<SaveOutlined />} loading={savingCustomer} onClick={() => void saveCustomer()}>
-              保存客户
+              保存用户
             </Button>
             {selectedCustomerID ? (
-              <Button onClick={() => setActiveManagementTab('assignments')}>管理该客户链路</Button>
+              <Button onClick={() => setActiveManagementTab('assignments')}>管理该用户链路</Button>
             ) : null}
           </Space>
         </Card>
@@ -865,22 +865,22 @@ export function CustomerManagementModal(props: {
       <Card className="customer-admin-card" bordered={false}>
         <div className="customer-admin-card-head">
           <div>
-            <Title level={5}>选择客户</Title>
+            <Title level={5}>选择用户</Title>
             <Text type="secondary">先选中普通用户，再维护它可见的客户端 / 节点链路。</Text>
           </div>
           <Space>
-            <Button icon={<ReloadOutlined />} onClick={() => void loadCustomers()}>刷新客户</Button>
+            <Button icon={<ReloadOutlined />} onClick={() => void loadCustomers()}>刷新用户</Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => {
               setSelectedCustomerID(null)
               setCustomerForm(emptyCustomerForm)
               setActiveManagementTab('customers')
-            }}>新建客户</Button>
+            }}>新建用户</Button>
           </Space>
         </div>
         <Select
           style={{ width: '100%' }}
           showSearch
-          placeholder="选择要分配链路的客户"
+          placeholder="选择要分配链路的用户"
           value={selectedCustomerID ?? undefined}
           options={customerSelectOptions}
           optionFilterProp="label"
@@ -892,14 +892,14 @@ export function CustomerManagementModal(props: {
         <div className="customer-admin-card-head">
           <div>
             <Title level={5}>客户端 / 节点分配</Title>
-            <Text type="secondary">当前客户：{selectedCustomer ? selectedCustomer.display_name || selectedCustomer.username : '未选择'}</Text>
+            <Text type="secondary">当前用户：{selectedCustomer ? selectedCustomer.display_name || selectedCustomer.username : '未选择'}</Text>
           </div>
           <Button onClick={() => {
             setEditingAssignmentID(null)
             setAssignmentForm(emptyAssignmentForm)
           }}>清空表单</Button>
         </div>
-        {!selectedCustomerID ? <Alert type="info" showIcon message="先选择或新建客户，再分配链路。" /> : null}
+        {!selectedCustomerID ? <Alert type="info" showIcon message="先选择或新建用户，再分配链路。" /> : null}
         <Row gutter={[12, 12]}>
           <Col xs={24} md={8}>
             <Text type="secondary">入口 Client</Text>
@@ -928,7 +928,7 @@ export function CustomerManagementModal(props: {
             />
           </Col>
           <Col xs={24} md={6}>
-            <Text type="secondary">客户可见名称</Text>
+            <Text type="secondary">用户可见名称</Text>
             <Input value={assignmentForm.public_client_name} onChange={(event) => setAssignmentForm((current) => ({ ...current, public_client_name: event.target.value }))} />
           </Col>
           {canViewFinance ? <Col xs={24} md={4}>
@@ -992,7 +992,7 @@ export function CustomerManagementModal(props: {
 
   const managementTabs = [
     ...(canManageAreaManagers && areaManagersPanel ? [{ key: 'area', label: '区域账号', children: areaManagersPanel }] : []),
-    { key: 'customers', label: '客户账号', children: customersPanel },
+    { key: 'customers', label: '用户账号', children: customersPanel },
     { key: 'assignments', label: '链路分配', children: assignmentsPanel },
   ]
 
@@ -1012,8 +1012,8 @@ export function CustomerManagementModal(props: {
       <div id="customer-management-panel" className="customer-admin-page">
         <div className="admin-content-title">
           <div>
-            <Title level={3}>客户管理</Title>
-            <Text type="secondary">管理客户账号、客户可见名称，以及分配给客户的 Client / 节点链路。</Text>
+            <Title level={3}>用户管理</Title>
+            <Text type="secondary">管理用户账号、用户可见名称，以及分配给用户的 Client / 节点链路。</Text>
           </div>
           <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadCustomers()}>刷新</Button>
         </div>
@@ -1023,7 +1023,7 @@ export function CustomerManagementModal(props: {
   }
 
   return (
-    <Modal title="人员管理 / 客户链路分配" open={open} onCancel={onClose} footer={null} width={1160} destroyOnClose>
+    <Modal title="人员管理 / 用户链路分配" open={open} onCancel={onClose} footer={null} width={1160} destroyOnClose>
       {content}
     </Modal>
   )

@@ -264,7 +264,7 @@ func buildCustomerLinkView(
 
 	chain, ok := findCustomerChain(assignment, chainMap)
 	if !ok {
-		link.UnresolvedReason = "当前最新上报中没有找到该客户链路"
+		link.UnresolvedReason = "当前最新上报中没有找到该用户链路"
 		link.Summary = entryName + " 暂无链路数据"
 		return link
 	}

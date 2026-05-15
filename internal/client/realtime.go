@@ -98,6 +98,10 @@ connected:
 				case collectNow <- struct{}{}:
 				default:
 				}
+				continue
+			}
+			if message.Type == model.AgentControlRestartXUI {
+				go a.handleRestartXUIControl(ctx, message)
 			}
 		}
 	}()
@@ -138,6 +142,30 @@ connected:
 			return ctx.Err()
 		}
 	}
+}
+
+func (a *App) handleRestartXUIControl(ctx context.Context, message model.AgentControlMessage) {
+	if message.ActionID <= 0 {
+		return
+	}
+	actionCtx, actionCancel := context.WithTimeout(ctx, 60*time.Second)
+	output, err := restartXUIService(actionCtx, message.Payload)
+	actionCancel()
+
+	result := model.XUIActionResultRequest{
+		Status: model.XUIActionStatusSucceeded,
+		Result: output,
+	}
+	if err != nil {
+		result.Status = model.XUIActionStatusFailed
+		result.Error = err.Error()
+	}
+
+	resultCtx, resultCancel := context.WithTimeout(context.Background(), a.requestTimeout)
+	if reportErr := a.reportXUIActionResult(resultCtx, message.ActionID, result); reportErr != nil {
+		log.Printf("report x-ui restart result failed: %v", reportErr)
+	}
+	resultCancel()
 }
 
 func (a *App) websocketEndpoint(path string) (string, error) {

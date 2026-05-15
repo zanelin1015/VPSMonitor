@@ -314,6 +314,13 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 				writeError(w, status, err.Error())
 				return
 			}
+			if action.Kind == model.XUIActionRestartXUI {
+				a.realtime.sendAgentControl(agentID, model.AgentControlMessage{
+					Type:     model.AgentControlRestartXUI,
+					ActionID: action.ID,
+					Payload:  action.Payload,
+				})
+			}
 			writeJSON(w, http.StatusOK, action)
 		default:
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")

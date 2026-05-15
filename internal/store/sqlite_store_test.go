@@ -501,6 +501,16 @@ func TestSQLiteStoreXUIActionLifecycle(t *testing.T) {
 	if completed.Result["outbound_tag"] != "relay-sg" {
 		t.Fatalf("unexpected action result: %#v", completed.Result)
 	}
+	restartAction, err := store.CreateXUIAction("sg-01", model.XUIActionRequest{
+		Kind:    model.XUIActionRestartXUI,
+		Payload: map[string]any{"service_name": "x-ui"},
+	})
+	if err != nil {
+		t.Fatalf("CreateXUIAction restart: %v", err)
+	}
+	if restartAction.Kind != model.XUIActionRestartXUI || restartAction.Status != model.XUIActionStatusPending {
+		t.Fatalf("unexpected restart action: %#v", restartAction)
+	}
 	if !store.ValidateAgentToken("sg-01", registerResp.AgentToken) {
 		t.Fatalf("expected agent token to remain valid")
 	}

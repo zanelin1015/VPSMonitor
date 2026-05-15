@@ -1136,7 +1136,7 @@ export function OverviewSummaryCard(props: {
                     },
                     {
                       key: 'revenue-customer',
-                      label: `收入 · 客户 ${customerRevenueRows.length}`,
+                      label: `收入 · 用户 ${customerRevenueRows.length}`,
                       children: (
                         <Table
                           size="small"
@@ -1201,8 +1201,8 @@ function buildCustomerRevenueRows(revenueRows: MonthlyFinanceRevenueDetail[], cu
       const key = 'unassigned'
       const current = groups.get(key) || {
         key,
-        label: '未分配客户',
-        detail: '收费已设置，但没有匹配的客户分配',
+        label: '未分配用户',
+        detail: '收费已设置，但没有匹配的用户分配',
         clients: [],
         count: 0,
         monthlyAmount: 0,

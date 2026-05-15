@@ -1,4 +1,4 @@
-import { Alert, Badge, Button, Card, Empty, Input, InputNumber, Select, Space, Switch, Table, Tabs, Tag, Typography } from 'antd'
+import { Alert, Badge, Button, Card, Empty, Input, InputNumber, Popconfirm, Select, Space, Switch, Table, Tabs, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { ReloadOutlined, SettingOutlined } from '@ant-design/icons'
 
@@ -89,6 +89,7 @@ export interface AgentDetailPanelProps {
   canManageConfig: boolean
   restrictedView?: boolean
   currentAgentLoading: boolean
+  xuiRestartLoading: boolean
   onActiveTabChange: (key: string) => void
   onClientSearchChange: (value: string) => void
   onCopyImportURL: (client: XUIClientView) => void
@@ -108,6 +109,7 @@ export interface AgentDetailPanelProps {
   onOpenXUI: () => void
   onAuthorizeCustomer: (draft: CustomerAssignmentDraft) => void
   onRefreshCurrentAgent: () => void
+  onRestartXUI: () => void
   onRefreshXUIActions: () => void
   onRenewalChange: (patch: Partial<VPSRenewalConfig>) => void
   onReturnHome: () => void
@@ -157,6 +159,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     canManageConfig,
     restrictedView = false,
     currentAgentLoading,
+    xuiRestartLoading,
     onActiveTabChange,
     onClientSearchChange,
     onCopyImportURL,
@@ -176,6 +179,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onOpenXUI,
     onAuthorizeCustomer,
     onRefreshCurrentAgent,
+    onRestartXUI,
     onRefreshXUIActions,
     onRenewalChange,
     onReturnHome,
@@ -231,7 +235,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       render: (_, record) => formatBytes(record.all_time || record.total || 0),
     },
     {
-      title: '客户授权',
+      title: '用户授权',
       key: 'customer',
       width: 120,
       render: (_, record) => (
@@ -244,7 +248,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
             public_client_name: [selectedAgent.customer_display_name || selectedAgent.agent_name || selectedAgent.agent_id, record.remark || record.tag || `Inbound #${record.id}`].filter(Boolean).join(' - '),
           })}
         >
-          授权给客户
+          授权给用户
         </Button>
       ),
     },
@@ -429,7 +433,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       ),
     },
     {
-      title: '客户授权',
+      title: '用户授权',
       key: 'customer',
       width: 120,
       render: (_, record) => (
@@ -443,7 +447,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
             public_client_name: [selectedAgent.customer_display_name || selectedAgent.agent_name || selectedAgent.agent_id, record.email || record.comment || record.inbound_tag || `Inbound #${record.inbound_id}`].filter(Boolean).join(' - '),
           })}
         >
-          授权给客户
+          授权给用户
         </Button>
       ),
     },
@@ -527,6 +531,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       render: (_, record) => (
         <div>
           <Text>{record.error || shortJSON(record.result) || shortJSON(record.payload) || '-'}</Text>
+          {record.error && shortJSON(record.result) ? <div className="muted-line">{shortJSON(record.result)}</div> : null}
           <div className="muted-line">创建 {formatDateTime(record.created_at)}{record.completed_at ? ` · 完成 ${formatDateTime(record.completed_at)}` : ''}</div>
         </div>
       ),
@@ -617,6 +622,17 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
             <Button onClick={onOpenLogs}>查看日志</Button>
             {!restrictedView ? <Button disabled={!canOpenXUI} onClick={onOpenXUI}>打开 x-ui 面板</Button> : null}
             {!restrictedView ? <Button icon={<ReloadOutlined />} loading={currentAgentLoading} onClick={onRefreshCurrentAgent}>立即获取 Client 信息</Button> : null}
+            {!restrictedView ? (
+              <Popconfirm
+                title="重启 x-ui / Xray？"
+                description="将通过在线 Client 的 WebSocket 执行 x-ui 服务重启；失败日志会写入操作记录。"
+                okText="重启"
+                cancelText="取消"
+                onConfirm={onRestartXUI}
+              >
+                <Button danger loading={xuiRestartLoading}>重启 x-ui / Xray</Button>
+              </Popconfirm>
+            ) : null}
           </Space>
         </div>
         {restrictedView ? (

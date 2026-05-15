@@ -89,6 +89,15 @@ func (a *App) executePendingXUIActions(ctx context.Context, effectiveConfig mode
 			} else {
 				result.Result = output
 			}
+		case model.XUIActionRestartXUI:
+			output, actionErr := restartXUIService(ctx, action.Payload)
+			if actionErr != nil {
+				result.Status = model.XUIActionStatusFailed
+				result.Error = actionErr.Error()
+				result.Result = output
+			} else {
+				result.Result = output
+			}
 		default:
 			if !effectiveConfig.XUI.Enabled {
 				result.Status = model.XUIActionStatusFailed

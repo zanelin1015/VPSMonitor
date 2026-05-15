@@ -863,6 +863,8 @@ function actionKindLabel(kind: string): string {
       return '从内部导入出站'
     case 'add_routing_rule':
       return '新增转发 / 路由规则'
+    case 'restart_xui':
+      return '重启 x-ui / Xray'
     default:
       return kind
   }
@@ -914,7 +916,7 @@ function summarizeConfigAudit(item: ConfigAuditLog): string {
     changes.push('名称')
   }
   if (before.customer_display_name !== after.customer_display_name) {
-    changes.push('Customer 展示名称')
+    changes.push('用户展示名称')
   }
   if (JSON.stringify(before.tags || []) !== JSON.stringify(after.tags || [])) {
     changes.push('标签')

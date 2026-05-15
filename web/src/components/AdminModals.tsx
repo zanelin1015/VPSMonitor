@@ -394,7 +394,7 @@ export function FrontendSettingsPanel(props: {
       <div className="admin-content-title">
         <div>
           <Typography.Title level={3}>系统设置</Typography.Title>
-          <Text type="secondary">配置管理员后台自定义样式；客户账号样式仍在客户看板里单独配置。</Text>
+          <Text type="secondary">配置管理员后台自定义样式；用户账号样式仍在用户看板里单独配置。</Text>
         </div>
         <Button type="primary" loading={saving} onClick={onSave}>保存并应用</Button>
       </div>
@@ -404,7 +404,7 @@ export function FrontendSettingsPanel(props: {
             type="info"
             showIcon
             message="只影响管理员后台"
-            description="客户账号不会继承这里的样式；每个客户账号请在客户页“页面样式”里单独保存。背景图可以用 window.CustomBackgroundImage = '图片地址'。"
+            description="用户账号不会继承这里的样式；每个用户账号请在用户页“页面样式”里单独保存。背景图可以用 window.CustomBackgroundImage = '图片地址'。"
           />
           <div>
             <Text strong>自定义代码（样式和脚本）</Text>

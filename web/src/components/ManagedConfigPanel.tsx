@@ -157,10 +157,10 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
             <Input value={managedConfig.agent_name || ''} onChange={(event) => onAgentNameChange(event.target.value)} />
           </Col>
           <Col xs={24} md={6}>
-            <Text type="secondary">Customer 展示名称</Text>
+            <Text type="secondary">用户展示名称</Text>
             <Input
               value={managedConfig.customer_display_name || ''}
-              placeholder="客户页面只显示这个名称"
+              placeholder="用户页面只显示这个名称"
               onChange={(event) => onCustomerDisplayNameChange(event.target.value)}
             />
           </Col>
