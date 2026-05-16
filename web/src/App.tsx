@@ -16,6 +16,7 @@ import {
   CloudServerOutlined,
   DashboardOutlined,
   DeploymentUnitOutlined,
+  DownloadOutlined,
   ReloadOutlined,
   SettingOutlined,
   TeamOutlined,
@@ -424,6 +425,12 @@ export default function App() {
       void loadUpdateLatestInfo()
     }
   }, [adminUser, updateModalOpen])
+
+  useEffect(() => {
+    if (adminUser && canManageSystem) {
+      void loadUpdateLatestInfo({ silent: true })
+    }
+  }, [adminUser, canManageSystem])
 
   useEffect(() => {
     if (!adminUser || canManageSystem) {
@@ -1303,9 +1310,12 @@ export default function App() {
   }
 
 
-  async function loadUpdateLatestInfo() {
-    setUpdateLatestLoading(true)
-    setUpdateLatestError('')
+  async function loadUpdateLatestInfo(options: LoadOptions = {}) {
+    const silent = Boolean(options.silent)
+    if (!silent) {
+      setUpdateLatestLoading(true)
+      setUpdateLatestError('')
+    }
     try {
       const data = await fetchJSON<UpdateLatestInfo>('/api/v1/admin/updates/latest')
       setUpdateLatestInfo(data)
@@ -1313,9 +1323,13 @@ export default function App() {
       if (isUnauthorized(error)) {
         setAdminUser(null)
       }
-      setUpdateLatestError(error instanceof Error ? error.message : '获取最新版本失败')
+      if (!silent) {
+        setUpdateLatestError(error instanceof Error ? error.message : '获取最新版本失败')
+      }
     } finally {
-      setUpdateLatestLoading(false)
+      if (!silent) {
+        setUpdateLatestLoading(false)
+      }
     }
   }
 
@@ -1669,6 +1683,16 @@ export default function App() {
   const clientWindowsCMDCommand = buildWindowsCMDInstallCommand(clientInstallForm)
   const showWorkbenchDashboard = activeAdminPage === 'dashboard' && !topologyVisible
   const serverVersionLabel = `V${systemInfo?.version || '-'}`
+  const hasSystemUpdate = canManageSystem && Boolean(updateLatestInfo?.server_update_available || Number(updateLatestInfo?.client_update_available_count || 0) > 0)
+  const systemUpdateTitle = updateLatestInfo
+    ? `发现更新：Server ${updateLatestInfo.server_update_available ? `v${updateLatestInfo.latest_server_version || updateLatestInfo.latest_version}` : '已最新'} · Client ${Number(updateLatestInfo.client_update_available_count || 0)} 台`
+    : '检查更新'
+  const updateBadge = hasSystemUpdate ? (
+    <button type="button" className="admin-update-badge" title={systemUpdateTitle} onClick={() => setUpdateModalOpen(true)}>
+      <DownloadOutlined />
+      <span>{Number(updateLatestInfo?.client_update_available_count || 0) > 0 ? updateLatestInfo?.client_update_available_count : '!'}</span>
+    </button>
+  ) : null
   return (
     <div className="page-shell admin-page-shell">
       <VisualEffects disabled={isAreaManagerAccount} />
@@ -1681,7 +1705,10 @@ export default function App() {
               <span className="admin-oa-brand-mark">南</span>
               <div>
                 <strong>南风VPS监控</strong>
-                <small>在线 {onlineAgentCount}/{scopedAgentCount} · v{systemInfo?.version || '-'}</small>
+                <small>
+                  在线 {onlineAgentCount}/{scopedAgentCount} · v{systemInfo?.version || '-'}
+                  {updateBadge}
+                </small>
               </div>
             </div>
             <PersonalCenterDropdown
@@ -1768,7 +1795,10 @@ export default function App() {
             <span className="admin-oa-brand-mark">南</span>
             <div>
               <strong>南风VPS监控</strong>
-              <small>{serverVersionLabel}</small>
+              <small>
+                {serverVersionLabel}
+                {updateBadge}
+              </small>
             </div>
           </div>
           <nav className="admin-oa-nav" aria-label="管理端导航">
@@ -1818,7 +1848,10 @@ export default function App() {
           <div className="admin-oa-sider-foot">
             <span>在线 Client</span>
             <strong>{onlineAgentCount}/{scopedAgentCount}</strong>
-            <small>Server v{systemInfo?.version || '-'}</small>
+            <small>
+              Server v{systemInfo?.version || '-'}
+              {updateBadge}
+            </small>
           </div>
         </aside>
 
