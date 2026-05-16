@@ -57,6 +57,7 @@ type VPSSummary struct {
 
 type XUISnapshot struct {
 	BaseURL         string                `json:"base_url"`
+	AppVersion      string                `json:"app_version,omitempty"`
 	CollectedAt     time.Time             `json:"collected_at"`
 	Error           string                `json:"error,omitempty"`
 	ServerStatus    XUIServerStatus       `json:"server_status"`

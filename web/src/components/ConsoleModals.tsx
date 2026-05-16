@@ -108,6 +108,7 @@ export interface ConsoleModalsProps {
   onTelegramBotEditIDChange: Dispatch<SetStateAction<number | null>>
   onTestTelegramBot: (id: number) => void
   onUpdateAllClients: () => void
+  onUpdateAll3XUI: () => void
   onUpdateFrontendSettingsFormChange: Dispatch<SetStateAction<FrontendSettingsForm>>
   onUpdateOutboundActionForm: Dispatch<SetStateAction<XUIOutboundActionForm>>
   onUpdateRoutingActionForm: Dispatch<SetStateAction<XUIRoutingActionForm>>
@@ -186,6 +187,7 @@ export function ConsoleModals(props: ConsoleModalsProps) {
     onTelegramBotEditIDChange,
     onTestTelegramBot,
     onUpdateAllClients,
+    onUpdateAll3XUI,
     onUpdateFrontendSettingsFormChange,
     onUpdateOutboundActionForm,
     onUpdateRoutingActionForm,
@@ -206,6 +208,7 @@ export function ConsoleModals(props: ConsoleModalsProps) {
         onRefreshLatest={onRefreshLatestUpdate}
         onUpdateServer={onUpdateServer}
         onUpdateClients={onUpdateAllClients}
+        onUpdate3XUI={onUpdateAll3XUI}
       />
 
       <ClientInstallModal

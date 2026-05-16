@@ -336,14 +336,14 @@ export function renderCNFlowPanel(props: {
               立即获取节点信息
             </Button>
             <Popconfirm
-              title="更新 3x-ui？"
-              description="将通过在线 Client 执行 x-ui update；失败时回退官方 install.sh 脚本，过程中可能短暂影响 x-ui / Xray。"
-              okText="更新"
+              title="升级 3x-ui？"
+              description="将通过在线 Client 执行 3x-ui 官方 update.sh 升级脚本，过程中可能短暂影响 x-ui / Xray。"
+              okText="升级"
               cancelText="取消"
               onConfirm={onUpdate3XUI}
             >
               <Button disabled={!canUpdate3XUI} loading={xuiUpdateLoading}>
-                更新 3x-ui
+                升级 3x-ui
               </Button>
             </Popconfirm>
             <Popconfirm

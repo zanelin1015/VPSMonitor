@@ -74,7 +74,7 @@ export function PersonalCenterDropdown(props: {
     ...(canManageSystem ? [{ key: 'telegram', icon: <BellOutlined />, label: 'TG 告警机器人' }] : []),
     { key: 'customers', icon: <TeamOutlined />, label: '人员管理' },
     ...(canManageSystem ? [{ key: 'frontend', icon: <SettingOutlined />, label: '前端样式自定义' }] : []),
-    ...(canManageSystem ? [{ key: 'updates', icon: <SettingOutlined />, label: '在线更新' }] : []),
+    ...(canManageSystem ? [{ key: 'updates', icon: <SettingOutlined />, label: '在线升级' }] : []),
     { type: 'divider' },
     { key: 'logout', danger: true, icon: <LogoutOutlined />, label: '退出登录' },
   ]
@@ -595,29 +595,33 @@ export function SystemUpdateModal(props: {
   onRefreshLatest: () => void
   onUpdateServer: () => void
   onUpdateClients: () => void
+  onUpdate3XUI: () => void
 }) {
-  const { open, loading, latestLoading, latestInfo, latestError, systemInfo, onClose, onRefreshLatest, onUpdateServer, onUpdateClients } = props
+  const { open, loading, latestLoading, latestInfo, latestError, systemInfo, onClose, onRefreshLatest, onUpdateServer, onUpdateClients, onUpdate3XUI } = props
   const serverUpdateAvailable = Boolean(latestInfo?.server_update_available)
   const clientUpdateCount = Number(latestInfo?.client_update_available_count || 0)
+  const xuiUpdateCount = Number(latestInfo?.xui_update_available_count || 0)
   const latestServerVersion = latestInfo?.latest_server_version || latestInfo?.latest_version || '-'
   const latestClientVersion = latestInfo?.latest_client_version || latestInfo?.latest_version || '-'
+  const latest3XUIVersion = latestInfo?.latest_3xui_version || '-'
 
   return (
-    <Modal title="在线更新" open={open} onCancel={onClose} footer={null} width={760}>
+    <Modal title="在线升级" open={open} onCancel={onClose} footer={null} width={760}>
       <Spin spinning={latestLoading}>
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Alert
           type="info"
           showIcon
           message="配置会保留"
-          description="在线更新会复用现有 install.sh / install.ps1。server 会保留 server.json、数据库和 data；client 会保留 client.json。更新完成后服务会自动重启。"
+          description="在线升级会复用现有 install.sh / install.ps1。server 会保留 server.json、数据库和 data；client 会保留 client.json。升级完成后服务会自动重启。"
         />
         {latestError ? <Alert type="error" showIcon message="获取最新版本失败" description={latestError} /> : null}
+        {latestInfo?.latest_3xui_error ? <Alert type="warning" showIcon message="获取 3x-ui 最新版本失败" description={latestInfo.latest_3xui_error} /> : null}
         {latestInfo ? (
           <Alert
-            type={serverUpdateAvailable || clientUpdateCount > 0 ? 'success' : 'info'}
+            type={serverUpdateAvailable || clientUpdateCount > 0 || xuiUpdateCount > 0 ? 'success' : 'info'}
             showIcon
-            message={`最新版本：Server v${latestServerVersion} · Client v${latestClientVersion}`}
+            message={`最新版本：Server v${latestServerVersion} · Client v${latestClientVersion} · 3x-ui v${latest3XUIVersion}`}
             description={`当前 Server：v${latestInfo.current_server_version || systemInfo?.version || '-'}${systemInfo?.git_commit ? ` · 构建提交：${systemInfo.git_commit}` : ''}`}
           />
         ) : null}
@@ -625,11 +629,15 @@ export function SystemUpdateModal(props: {
           <div className="update-status-grid">
             <div className="update-status-card">
               <Text type="secondary">Server</Text>
-              <Tag color={serverUpdateAvailable ? 'blue' : 'default'}>{serverUpdateAvailable ? `可更新到 v${latestServerVersion}` : '已是最新'}</Tag>
+              <Tag color={serverUpdateAvailable ? 'blue' : 'default'}>{serverUpdateAvailable ? `可升级到 v${latestServerVersion}` : '已是最新'}</Tag>
             </div>
             <div className="update-status-card">
-              <Text type="secondary">Client 可更新</Text>
+              <Text type="secondary">Client 可升级</Text>
               <Tag color={clientUpdateCount ? 'blue' : 'default'}>{clientUpdateCount ? `${clientUpdateCount} 台到 v${latestClientVersion}` : '0 台'}</Tag>
+            </div>
+            <div className="update-status-card">
+              <Text type="secondary">3x-ui 可升级</Text>
+              <Tag color={xuiUpdateCount ? 'blue' : 'default'}>{xuiUpdateCount ? `${xuiUpdateCount} 台到 v${latest3XUIVersion}` : '0 台'}</Tag>
             </div>
             <div className="update-status-card">
               <Text type="secondary">已识别系统</Text>
@@ -641,20 +649,27 @@ export function SystemUpdateModal(props: {
                 {latestInfo.unknown_client_count + latestInfo.unsupported_client_count} 台
               </Tag>
             </div>
+            <div className="update-status-card">
+              <Text type="secondary">3x-ui 未识别</Text>
+              <Tag color={latestInfo.unknown_xui_count || latestInfo.unsupported_xui_count ? 'orange' : 'default'}>
+                {latestInfo.unknown_xui_count + latestInfo.unsupported_xui_count} 台
+              </Tag>
+            </div>
           </div>
         ) : null}
         <Alert
           type="warning"
           showIcon
           message="先上传 GitHub Release"
-          description="请先把最新的 server/client 包上传到 GitHub Release，否则在线更新会下载到旧包。"
+          description="请先把最新的 server/client 包上传到 GitHub Release，否则在线升级会下载到旧包。"
         />
         <Space wrap>
           <Button onClick={onRefreshLatest} loading={latestLoading}>检查最新版本</Button>
-          <Button type="primary" disabled={!serverUpdateAvailable} loading={loading} onClick={onUpdateServer}>更新当前 Server</Button>
-          <Button disabled={clientUpdateCount <= 0} loading={loading} onClick={onUpdateClients}>下发更新到可更新 Client</Button>
+          <Button type="primary" disabled={!serverUpdateAvailable} loading={loading} onClick={onUpdateServer}>升级当前 Server</Button>
+          <Button disabled={clientUpdateCount <= 0} loading={loading} onClick={onUpdateClients}>下发升级到可升级 Client</Button>
+          <Button disabled={xuiUpdateCount <= 0} loading={loading} onClick={onUpdate3XUI}>批量升级 3x-ui</Button>
         </Space>
-        <Text type="secondary">Client 更新前会先确认上报的系统和架构，只给存在对应 Release 包且版本落后的 client 下发任务。</Text>
+        <Text type="secondary">Client 升级前会确认系统和架构；3x-ui 会先检测 GitHub 最新版本，再只给已上报 3x-ui 版本且版本落后的 Linux client 下发任务。</Text>
         </Space>
       </Spin>
     </Modal>

@@ -16,7 +16,6 @@ import {
   CloudServerOutlined,
   DashboardOutlined,
   DeploymentUnitOutlined,
-  DownloadOutlined,
   ReloadOutlined,
   SettingOutlined,
   TeamOutlined,
@@ -1039,14 +1038,14 @@ export default function App() {
         method: 'POST',
         body: JSON.stringify({ kind: 'update_3xui', payload: { timeout_seconds: 900 } }),
       })
-      message.success(action.status === 'running' ? '已通过 WS 下发 3x-ui 更新任务，结果会实时回传到操作记录' : '已创建 3x-ui 更新任务，Client 不在线时会等待轮询执行')
+      message.success(action.status === 'running' ? '已通过 WS 下发 3x-ui 升级任务，结果会实时回传到操作记录' : '已创建 3x-ui 升级任务，Client 不在线时会等待轮询执行')
       await loadXUIActions(agentID, { silent: true })
       scheduleXUIActionResultRefresh(agentID)
     } catch (error) {
       if (isUnauthorized(error)) {
         setAdminUser(null)
       }
-      message.error(error instanceof Error ? error.message : '下发 3x-ui 更新失败')
+      message.error(error instanceof Error ? error.message : '下发 3x-ui 升级失败')
     } finally {
       setXUIUpdateLoading(false)
     }
@@ -1345,13 +1344,13 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ version: updateLatestInfo.latest_server_tag || updateLatestInfo.latest_server_version || updateLatestInfo.latest_tag || updateLatestInfo.latest_version }),
       })
-      message.success('Server 更新已启动，服务会自动重启')
+      message.success('Server 升级已启动，服务会自动重启')
       await loadUpdateLatestInfo()
     } catch (error) {
       if (isUnauthorized(error)) {
         setAdminUser(null)
       }
-      message.error(error instanceof Error ? error.message : '启动 Server 更新失败')
+      message.error(error instanceof Error ? error.message : '启动 Server 升级失败')
     } finally {
       setUpdateLoading(false)
     }
@@ -1359,7 +1358,7 @@ export default function App() {
 
   async function updateAllClientsOnline() {
     if (!updateLatestInfo?.client_update_available_count) {
-      message.info('没有需要更新的 Client')
+      message.info('没有需要升级的 Client')
       return
     }
     setUpdateLoading(true)
@@ -1369,13 +1368,40 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ version: updateLatestInfo.latest_client_tag || updateLatestInfo.latest_client_version || updateLatestInfo.latest_tag || updateLatestInfo.latest_version }),
       })
-      message.success(`已下发 Client 更新任务：${result.count || 0} 台，跳过 ${result.skipped || 0} 台`)
+      message.success(`已下发 Client 升级任务：${result.count || 0} 台，跳过 ${result.skipped || 0} 台`)
       await loadUpdateLatestInfo()
     } catch (error) {
       if (isUnauthorized(error)) {
         setAdminUser(null)
       }
-      message.error(error instanceof Error ? error.message : '下发 Client 更新失败')
+      message.error(error instanceof Error ? error.message : '下发 Client 升级失败')
+    } finally {
+      setUpdateLoading(false)
+    }
+  }
+
+  async function updateAll3XUIOnline() {
+    setUpdateLoading(true)
+    try {
+      const latest = await fetchJSON<UpdateLatestInfo>('/api/v1/admin/updates/latest')
+      setUpdateLatestInfo(latest)
+      const updateCount = Number(latest.xui_update_available_count || 0)
+      if (updateCount <= 0) {
+        message.info(latest.latest_3xui_error ? `暂时无法检测 3x-ui 最新版本：${latest.latest_3xui_error}` : '没有需要升级的 3x-ui')
+        return
+      }
+      const result = await fetchJSON<UpdateResponse>('/api/v1/admin/updates/3xui', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version: latest.latest_3xui_tag || latest.latest_3xui_version }),
+      })
+      message.success(`已下发 3x-ui 升级任务：${result.count || 0} 台，跳过 ${result.skipped || 0} 台`)
+      await loadUpdateLatestInfo()
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      message.error(error instanceof Error ? error.message : '下发 3x-ui 升级失败')
     } finally {
       setUpdateLoading(false)
     }
@@ -1683,16 +1709,6 @@ export default function App() {
   const clientWindowsCMDCommand = buildWindowsCMDInstallCommand(clientInstallForm)
   const showWorkbenchDashboard = activeAdminPage === 'dashboard' && !topologyVisible
   const serverVersionLabel = `V${systemInfo?.version || '-'}`
-  const hasSystemUpdate = canManageSystem && Boolean(updateLatestInfo?.server_update_available || Number(updateLatestInfo?.client_update_available_count || 0) > 0)
-  const systemUpdateTitle = updateLatestInfo
-    ? `发现更新：Server ${updateLatestInfo.server_update_available ? `v${updateLatestInfo.latest_server_version || updateLatestInfo.latest_version}` : '已最新'} · Client ${Number(updateLatestInfo.client_update_available_count || 0)} 台`
-    : '检查更新'
-  const updateBadge = hasSystemUpdate ? (
-    <button type="button" className="admin-update-badge" title={systemUpdateTitle} onClick={() => setUpdateModalOpen(true)}>
-      <DownloadOutlined />
-      <span>{Number(updateLatestInfo?.client_update_available_count || 0) > 0 ? updateLatestInfo?.client_update_available_count : '!'}</span>
-    </button>
-  ) : null
   return (
     <div className="page-shell admin-page-shell">
       <VisualEffects disabled={isAreaManagerAccount} />
@@ -1707,7 +1723,6 @@ export default function App() {
                 <strong>南风VPS监控</strong>
                 <small>
                   在线 {onlineAgentCount}/{scopedAgentCount} · v{systemInfo?.version || '-'}
-                  {updateBadge}
                 </small>
               </div>
             </div>
@@ -1795,10 +1810,7 @@ export default function App() {
             <span className="admin-oa-brand-mark">南</span>
             <div>
               <strong>南风VPS监控</strong>
-              <small>
-                {serverVersionLabel}
-                {updateBadge}
-              </small>
+              <small>{serverVersionLabel}</small>
             </div>
           </div>
           <nav className="admin-oa-nav" aria-label="管理端导航">
@@ -1842,15 +1854,14 @@ export default function App() {
             }}>
               <SettingOutlined />
               <span>系统设置</span>
-              <small>样式与更新</small>
+              <small>样式与升级</small>
             </button> : null}
           </nav>
           <div className="admin-oa-sider-foot">
             <span>在线 Client</span>
             <strong>{onlineAgentCount}/{scopedAgentCount}</strong>
-            <small>
-              Server v{systemInfo?.version || '-'}
-              {updateBadge}
+            <small className="admin-oa-sider-version-row">
+              <span>Server v{systemInfo?.version || '-'}</span>
             </small>
           </div>
         </aside>
@@ -1983,6 +1994,7 @@ export default function App() {
           onTelegramBotEditIDChange={setEditingTelegramBotId}
           onTestTelegramBot={(id) => void testTelegramBot(id)}
           onUpdateAllClients={() => void updateAllClientsOnline()}
+          onUpdateAll3XUI={() => void updateAll3XUIOnline()}
           onUpdateFrontendSettingsFormChange={setFrontendSettingsForm}
           onUpdateOutboundActionForm={setOutboundActionForm}
           onUpdateRoutingActionForm={setRoutingActionForm}

@@ -147,6 +147,7 @@ func normalizeXUIBaseURL(raw string) string {
 func (c *XUIClient) Collect(ctx context.Context) *model.XUISnapshot {
 	snapshot := &model.XUISnapshot{
 		BaseURL:     c.baseURL,
+		AppVersion:  detectLocal3XUIVersion(ctx),
 		CollectedAt: time.Now().UTC(),
 	}
 
@@ -1386,6 +1387,58 @@ func restartLocalXUIService(ctx context.Context) error {
 func commandAvailable(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil
+}
+
+func detectLocal3XUIVersion(ctx context.Context) string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	candidates := [][]string{}
+	if commandAvailable("x-ui") {
+		candidates = append(candidates, []string{"x-ui", "version"})
+	}
+	for _, path := range []string{"/usr/local/x-ui/x-ui", "/usr/bin/x-ui"} {
+		if _, err := os.Stat(path); err == nil {
+			candidates = append(candidates, []string{path, "version"})
+		}
+	}
+	for _, command := range candidates {
+		runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		output, err := exec.CommandContext(runCtx, command[0], command[1:]...).CombinedOutput()
+		cancel()
+		if err == nil && runCtx.Err() == nil {
+			if version := extractLocalSemver(string(output)); version != "" {
+				return version
+			}
+		}
+	}
+	return ""
+}
+
+func extractLocalSemver(value string) string {
+	for start := 0; start < len(value); start++ {
+		if value[start] < '0' || value[start] > '9' {
+			continue
+		}
+		end := start
+		dots := 0
+		for end < len(value) {
+			ch := value[end]
+			if ch == '.' {
+				dots++
+				end++
+				continue
+			}
+			if ch < '0' || ch > '9' {
+				break
+			}
+			end++
+		}
+		if dots == 2 {
+			return value[start:end]
+		}
+	}
+	return ""
 }
 
 func (c *XUIClient) getStatus(ctx context.Context) (model.XUIServerStatus, error) {

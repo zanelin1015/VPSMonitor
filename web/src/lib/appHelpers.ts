@@ -879,7 +879,7 @@ function actionKindLabel(kind: string): string {
     case 'execute_command':
       return '远程命令'
     case 'update_3xui':
-      return '更新 3x-ui'
+      return '升级 3x-ui'
     default:
       return kind
   }

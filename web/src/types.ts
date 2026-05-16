@@ -268,15 +268,23 @@ export interface UpdateLatestInfo {
   latest_server_tag?: string
   latest_client_version?: string
   latest_client_tag?: string
+  latest_3xui_version?: string
+  latest_3xui_tag?: string
+  latest_3xui_error?: string
   server_update_available: boolean
   client_update_available_count: number
+  xui_update_available_count: number
   supported_client_count: number
   unknown_client_count: number
   unsupported_client_count: number
+  supported_xui_count: number
+  unknown_xui_count: number
+  unsupported_xui_count: number
   assets?: string[]
   server_assets?: string[]
   client_assets?: string[]
   agent_status?: UpdateAgentStatus[]
+  xui_agent_status?: UpdateAgentStatus[]
   fetched_at: string
 }
 

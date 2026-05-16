@@ -167,15 +167,23 @@ type UpdateLatestInfo struct {
 	LatestServerTag            string              `json:"latest_server_tag,omitempty"`
 	LatestClientVersion        string              `json:"latest_client_version,omitempty"`
 	LatestClientTag            string              `json:"latest_client_tag,omitempty"`
+	Latest3XUIVersion          string              `json:"latest_3xui_version,omitempty"`
+	Latest3XUITag              string              `json:"latest_3xui_tag,omitempty"`
+	Latest3XUIError            string              `json:"latest_3xui_error,omitempty"`
 	ServerUpdateAvailable      bool                `json:"server_update_available"`
 	ClientUpdateAvailableCount int                 `json:"client_update_available_count"`
+	XUIUpdateAvailableCount    int                 `json:"xui_update_available_count"`
 	SupportedClientCount       int                 `json:"supported_client_count"`
 	UnknownClientCount         int                 `json:"unknown_client_count"`
 	UnsupportedClientCount     int                 `json:"unsupported_client_count"`
+	SupportedXUICount          int                 `json:"supported_xui_count"`
+	UnknownXUICount            int                 `json:"unknown_xui_count"`
+	UnsupportedXUICount        int                 `json:"unsupported_xui_count"`
 	Assets                     []string            `json:"assets,omitempty"`
 	ServerAssets               []string            `json:"server_assets,omitempty"`
 	ClientAssets               []string            `json:"client_assets,omitempty"`
 	AgentStatus                []UpdateAgentStatus `json:"agent_status,omitempty"`
+	XUIAgentStatus             []UpdateAgentStatus `json:"xui_agent_status,omitempty"`
 	FetchedAt                  time.Time           `json:"fetched_at"`
 }
 

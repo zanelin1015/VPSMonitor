@@ -673,13 +673,13 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
             {!restrictedView ? <Button loading={remoteCommandLoading} onClick={() => setRemoteCommandOpen(true)}>单次命令</Button> : null}
             {!restrictedView ? (
               <Popconfirm
-                title="更新 3x-ui？"
-                description="将通过在线 Client 执行 x-ui update；失败时回退官方 install.sh 脚本，过程中可能短暂影响 x-ui / Xray。"
-                okText="更新"
+                title="升级 3x-ui？"
+                description="将通过在线 Client 执行 3x-ui 官方 update.sh 升级脚本，过程中可能短暂影响 x-ui / Xray。"
+                okText="升级"
                 cancelText="取消"
                 onConfirm={onUpdate3XUI}
               >
-                <Button loading={xuiUpdateLoading}>更新 3x-ui</Button>
+                <Button loading={xuiUpdateLoading}>升级 3x-ui</Button>
               </Popconfirm>
             ) : null}
             {!restrictedView ? (
@@ -746,13 +746,13 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
                     {!restrictedView ? <Button loading={remoteCommandLoading} onClick={() => setRemoteCommandOpen(true)}>单次命令</Button> : null}
                     {!restrictedView ? (
                       <Popconfirm
-                        title="更新 3x-ui？"
-                        description="将通过在线 Client 执行 x-ui update；失败时回退官方 install.sh 脚本，过程中可能短暂影响 x-ui / Xray。"
-                        okText="更新"
+                        title="升级 3x-ui？"
+                        description="将通过在线 Client 执行 3x-ui 官方 update.sh 升级脚本，过程中可能短暂影响 x-ui / Xray。"
+                        okText="升级"
                         cancelText="取消"
                         onConfirm={onUpdate3XUI}
                       >
-                        <Button loading={xuiUpdateLoading}>更新 3x-ui</Button>
+                        <Button loading={xuiUpdateLoading}>升级 3x-ui</Button>
                       </Popconfirm>
                     ) : null}
                     <Button icon={<ReloadOutlined />} disabled={!selectedAgentId} loading={xuiActionsLoading} onClick={onRefreshXUIActions}>刷新操作记录</Button>
@@ -1023,7 +1023,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         </Space>
       </Modal>
       <Modal
-        title={commandOutputAction?.kind === 'update_3xui' ? '3x-ui 更新输出' : '远程命令输出'}
+        title={commandOutputAction?.kind === 'update_3xui' ? '3x-ui 升级输出' : '远程命令输出'}
         open={Boolean(commandOutputAction)}
         footer={<Button onClick={() => setCommandOutputAction(null)}>关闭</Button>}
         onCancel={() => setCommandOutputAction(null)}
@@ -1108,8 +1108,8 @@ function RemoteTTYTerminal(props: { agentID: string; shell: string; active: bool
       }
     }
     terminal.attachCustomKeyEventHandler((event) => {
-      if (event.type === 'keydown' && event.key === 'Enter') {
-        send({ type: 'input', data: '\n' })
+      if (event.type === 'keydown' && (event.key === 'Enter' || event.code === 'Enter' || event.code === 'NumpadEnter')) {
+        send({ type: 'input', data: '\r' })
         return false
       }
       return true
