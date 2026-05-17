@@ -370,6 +370,7 @@ export default function App() {
   const [agentRefreshLoading, setAgentRefreshLoading] = useState(false)
   const [xuiRestartLoading, setXUIRestartLoading] = useState(false)
   const [xuiUpdateLoading, setXUIUpdateLoading] = useState(false)
+  const [xuiClientDeleteLoadingKey, setXUIClientDeleteLoadingKey] = useState('')
   const [remoteCommandLoading, setRemoteCommandLoading] = useState(false)
   const [xuiActionModalOpen, setXUIActionModalOpen] = useState(false)
   const [xuiActionSaving, setXUIActionSaving] = useState(false)
@@ -1048,6 +1049,46 @@ export default function App() {
       message.error(error instanceof Error ? error.message : '下发 3x-ui 升级失败')
     } finally {
       setXUIUpdateLoading(false)
+    }
+  }
+
+  function xuiClientActionKey(record: XUIClientView): string {
+    return [record.inbound_id, record.inbound_tag || '', record.email || '', record.auth_uuid || record.auth_password || ''].join(':')
+  }
+
+  async function deleteXUIClient(record: XUIClientView, agentID = selectedAgentId) {
+    if (!agentID) {
+      return
+    }
+    const key = xuiClientActionKey(record)
+    setXUIClientDeleteLoadingKey(key)
+    try {
+      const action = await fetchJSON<XUIAction>(`/api/v1/agents/${agentID}/xui/actions`, {
+        method: 'POST',
+        body: JSON.stringify({
+          kind: 'delete_client',
+          payload: {
+            inbound_id: record.inbound_id,
+            inbound_tag: record.inbound_tag || '',
+            email: record.email || '',
+            client_id: record.auth_uuid || record.auth_password || '',
+          },
+        }),
+      })
+      message.success(action.status === 'running' ? '已通过 WS 下发删除 Client 任务，结果会回传到操作记录' : '已创建删除 Client 任务，Client 不在线时会等待轮询执行')
+      await loadXUIActions(agentID, { silent: true })
+      scheduleXUIActionResultRefresh(agentID)
+      window.setTimeout(() => {
+        void loadOverview(agentID, { silent: true })
+        void loadAgents({ silent: true })
+      }, 2500)
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      message.error(error instanceof Error ? error.message : '删除 Client 失败')
+    } finally {
+      setXUIClientDeleteLoadingKey('')
     }
   }
 
@@ -2185,6 +2226,7 @@ export default function App() {
                 tagSaving={tagSaving}
                 xuiActions={xuiActions}
                 xuiActionsLoading={xuiActionsLoading}
+                xuiClientDeleteLoadingKey={xuiClientDeleteLoadingKey}
                 onActiveTabChange={setActiveTabKey}
                 onClientSearchChange={setClientSearch}
                 onCopyImportURL={(client) => void copyImportURL(client)}
@@ -2218,6 +2260,7 @@ export default function App() {
                   }
                 }}
                 onAuthorizeCustomer={openCustomerAuthorization}
+                onDeleteXUIClient={(client) => void deleteXUIClient(client, selectedAgentId)}
                 onRefreshCurrentAgent={() => void requestAgentSnapshot(selectedAgentId)}
                 onRestartXUI={() => void restartXUIService(selectedAgentId)}
                 onUpdate3XUI={() => void update3XUI(selectedAgentId)}

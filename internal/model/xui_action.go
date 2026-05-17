@@ -7,6 +7,7 @@ const (
 	XUIActionAddRoutingRule     = "add_routing_rule"
 	XUIActionUpsertRoutingRule  = "upsert_routing_rule"
 	XUIActionUpdateClientExpiry = "update_client_expiry"
+	XUIActionDeleteClient       = "delete_client"
 	XUIActionUpdateClient       = "update_client"
 	XUIActionRestartXUI         = "restart_xui"
 	XUIActionExecuteCommand     = "execute_command"

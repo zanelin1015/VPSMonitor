@@ -515,6 +515,7 @@ func realtimeXUIActionAllowed(kind string) bool {
 		model.XUIActionAddRoutingRule,
 		model.XUIActionUpsertRoutingRule,
 		model.XUIActionUpdateClientExpiry,
+		model.XUIActionDeleteClient,
 		model.XUIActionExecuteCommand,
 		model.XUIActionUpdate3XUI:
 		return true

@@ -90,6 +90,7 @@ export interface AgentDetailPanelProps {
   tagSaving: boolean
   xuiActions: XUIAction[]
   xuiActionsLoading: boolean
+  xuiClientDeleteLoadingKey: string
   canOpenXUI: boolean
   canManageConfig: boolean
   restrictedView?: boolean
@@ -115,6 +116,7 @@ export interface AgentDetailPanelProps {
   onOpenLogs: () => void
   onOpenXUI: () => void
   onAuthorizeCustomer: (draft: CustomerAssignmentDraft) => void
+  onDeleteXUIClient: (client: XUIClientView) => void
   onRefreshCurrentAgent: () => void
   onRestartXUI: () => void
   onUpdate3XUI: () => void
@@ -164,6 +166,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     tagSaving,
     xuiActions,
     xuiActionsLoading,
+    xuiClientDeleteLoadingKey,
     canOpenXUI,
     canManageConfig,
     restrictedView = false,
@@ -189,6 +192,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onOpenLogs,
     onOpenXUI,
     onAuthorizeCustomer,
+    onDeleteXUIClient,
     onRefreshCurrentAgent,
     onRestartXUI,
     onUpdate3XUI,
@@ -208,6 +212,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const [remoteCommand, setRemoteCommand] = useState('')
   const [remoteShell, setRemoteShell] = useState('bash')
   const [remoteTimeout, setRemoteTimeout] = useState(120)
+  const xuiClientActionKey = (record: XUIClientView) => [record.inbound_id, record.inbound_tag || '', record.email || '', record.auth_uuid || record.auth_password || ''].join(':')
   const [commandOutputAction, setCommandOutputAction] = useState<XUIAction | null>(null)
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [terminalShell, setTerminalShell] = useState(defaultTerminalShell(selectedAgent.client_os))
@@ -492,6 +497,30 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       ),
     },
     {
+      title: '操作',
+      key: 'actions',
+      width: 110,
+      render: (_, record) => (
+        <Popconfirm
+          title="删除这个 Client？"
+          description={`将从 x-ui 入站 ${record.inbound_remark || record.inbound_tag || record.inbound_id} 删除 ${record.email || '该客户端'}，删除后会重启 Xray。`}
+          okText="删除"
+          cancelText="取消"
+          okButtonProps={{ danger: true }}
+          onConfirm={() => onDeleteXUIClient(record)}
+        >
+          <Button
+            size="small"
+            danger
+            disabled={!canManageConfig}
+            loading={xuiClientDeleteLoadingKey === xuiClientActionKey(record)}
+          >
+            删除
+          </Button>
+        </Popconfirm>
+      ),
+    },
+    {
       title: '路由指向',
       key: 'route',
       width: 280,
@@ -499,7 +528,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     },
   ]
   const visibleClientColumns = restrictedView
-    ? clientColumns.filter((column) => !['protocol', 'status', 'billing', 'expiry', 'last_online', 'route'].includes(String(column.key || '')))
+    ? clientColumns.filter((column) => !['protocol', 'status', 'billing', 'expiry', 'last_online', 'actions', 'route'].includes(String(column.key || '')))
     : clientColumns
 
   const routingColumns: ColumnsType<XUIRoutingRuleView> = [

@@ -234,7 +234,43 @@ func (s *SQLiteStore) CompleteXUIAction(agentID string, id int64, req model.XUIA
 			return model.XUIAction{}, err
 		}
 	}
+	if status == model.XUIActionStatusSucceeded && action.Kind == model.XUIActionDeleteClient {
+		if err := s.applyXUIClientDeleteConfig(agentID, action.Payload); err != nil {
+			return model.XUIAction{}, err
+		}
+	}
 	return action, nil
+}
+
+func (s *SQLiteStore) applyXUIClientDeleteConfig(agentID string, payload map[string]any) error {
+	record, found, err := s.GetAgent(agentID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("agent not found")
+	}
+	inboundID := int(numberFromPayload(payload["inbound_id"]))
+	inboundTag := stringFromPayload(payload["inbound_tag"])
+	email := stringFromPayload(payload["email"])
+	if email == "" {
+		return nil
+	}
+	next := record.Config.Renewal.ClientBillings[:0]
+	removed := false
+	for _, billing := range record.Config.Renewal.ClientBillings {
+		if billing.InboundID == inboundID && billing.InboundTag == inboundTag && billing.Email == email {
+			removed = true
+			continue
+		}
+		next = append(next, billing)
+	}
+	if !removed {
+		return nil
+	}
+	record.Config.Renewal.ClientBillings = next
+	_, err = s.UpdateAgentConfigWithActor(agentID, record.Config, "system:xui-client-delete")
+	return err
 }
 
 func (s *SQLiteStore) applyXUIClientExpiryConfig(agentID string, payload map[string]any) error {

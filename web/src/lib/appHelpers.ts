@@ -880,6 +880,8 @@ function actionKindLabel(kind: string): string {
       return '远程命令'
     case 'update_3xui':
       return '升级 3x-ui'
+    case 'delete_client':
+      return '删除 Client'
     default:
       return kind
   }
