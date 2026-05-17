@@ -202,6 +202,22 @@ func (h *realtimeHub) sendAgentControl(agentID string, message model.AgentContro
 	}
 }
 
+func (h *realtimeHub) removeAgent(agentID string) {
+	h.mu.Lock()
+	delete(h.metrics, agentID)
+	if session := h.agentControls[agentID]; session != nil {
+		session.close()
+		delete(h.agentControls, agentID)
+	}
+	for sessionID, terminal := range h.terminals {
+		if terminal.agentID == agentID {
+			terminal.close()
+			delete(h.terminals, sessionID)
+		}
+	}
+	h.mu.Unlock()
+}
+
 func (h *realtimeHub) registerTerminal(agentID, sessionID string) *terminalRelaySession {
 	session := &terminalRelaySession{
 		agentID:   agentID,

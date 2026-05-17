@@ -368,6 +368,7 @@ export default function App() {
   const [agentLogsLoading, setAgentLogsLoading] = useState(false)
   const [agentLogsError, setAgentLogsError] = useState('')
   const [agentRefreshLoading, setAgentRefreshLoading] = useState(false)
+  const [agentDeleteLoading, setAgentDeleteLoading] = useState(false)
   const [xuiRestartLoading, setXUIRestartLoading] = useState(false)
   const [xuiUpdateLoading, setXUIUpdateLoading] = useState(false)
   const [xuiClientDeleteLoadingKey, setXUIClientDeleteLoadingKey] = useState('')
@@ -1000,6 +1001,34 @@ export default function App() {
       message.error(error instanceof Error ? error.message : '通知 Client 采集失败')
     } finally {
       setAgentRefreshLoading(false)
+    }
+  }
+
+  async function deleteAgent(agentID = selectedAgentId) {
+    if (!agentID) {
+      return
+    }
+    const targetName = agents.find((item) => item.agent_id === agentID)?.agent_name || agentID
+    setAgentDeleteLoading(true)
+    try {
+      await fetchJSON<{ status: string; agent_id: string }>(`/api/v1/agents/${encodeURIComponent(agentID)}`, {
+        method: 'DELETE',
+      })
+      customerDisplayNameCacheRef.current = Object.fromEntries(
+        Object.entries(customerDisplayNameCacheRef.current).filter(([key]) => key !== agentID),
+      )
+      if (selectedAgentId === agentID) {
+        returnHome()
+      }
+      message.success(`已删除 Client / VPS：${targetName}`)
+      await loadAgents({ silent: true })
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      message.error(error instanceof Error ? error.message : '删除 Client / VPS 失败')
+    } finally {
+      setAgentDeleteLoading(false)
     }
   }
 
@@ -2227,6 +2256,7 @@ export default function App() {
                 xuiActions={xuiActions}
                 xuiActionsLoading={xuiActionsLoading}
                 xuiClientDeleteLoadingKey={xuiClientDeleteLoadingKey}
+                agentDeleteLoading={agentDeleteLoading}
                 onActiveTabChange={setActiveTabKey}
                 onClientSearchChange={setClientSearch}
                 onCopyImportURL={(client) => void copyImportURL(client)}
@@ -2260,6 +2290,7 @@ export default function App() {
                   }
                 }}
                 onAuthorizeCustomer={openCustomerAuthorization}
+                onDeleteCurrentAgent={() => void deleteAgent(selectedAgentId)}
                 onDeleteXUIClient={(client) => void deleteXUIClient(client, selectedAgentId)}
                 onRefreshCurrentAgent={() => void requestAgentSnapshot(selectedAgentId)}
                 onRestartXUI={() => void restartXUIService(selectedAgentId)}

@@ -122,6 +122,10 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 	agentID := parts[0]
 
 	if len(parts) == 1 {
+		if r.Method == http.MethodDelete {
+			a.handleDeleteAgent(w, r, agentID)
+			return
+		}
 		if r.Method != http.MethodGet {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
@@ -218,6 +222,24 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusNotFound, "route not found")
 	}
+}
+
+func (a *App) handleDeleteAgent(w http.ResponseWriter, r *http.Request, agentID string) {
+	user, _, ok := a.requireRootAdmin(w, r)
+	if !ok {
+		return
+	}
+	_ = user
+	if err := a.store.DeleteAgent(agentID); err != nil {
+		if err.Error() == "agent not found" {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	a.realtime.removeAgent(agentID)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted", "agent_id": agentID})
 }
 
 func (a *App) handleAgentRefresh(w http.ResponseWriter, r *http.Request, agentID string) {

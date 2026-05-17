@@ -91,6 +91,7 @@ export interface AgentDetailPanelProps {
   xuiActions: XUIAction[]
   xuiActionsLoading: boolean
   xuiClientDeleteLoadingKey: string
+  agentDeleteLoading: boolean
   canOpenXUI: boolean
   canManageConfig: boolean
   restrictedView?: boolean
@@ -116,6 +117,7 @@ export interface AgentDetailPanelProps {
   onOpenLogs: () => void
   onOpenXUI: () => void
   onAuthorizeCustomer: (draft: CustomerAssignmentDraft) => void
+  onDeleteCurrentAgent: () => void
   onDeleteXUIClient: (client: XUIClientView) => void
   onRefreshCurrentAgent: () => void
   onRestartXUI: () => void
@@ -167,6 +169,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     xuiActions,
     xuiActionsLoading,
     xuiClientDeleteLoadingKey,
+    agentDeleteLoading,
     canOpenXUI,
     canManageConfig,
     restrictedView = false,
@@ -192,6 +195,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onOpenLogs,
     onOpenXUI,
     onAuthorizeCustomer,
+    onDeleteCurrentAgent,
     onDeleteXUIClient,
     onRefreshCurrentAgent,
     onRestartXUI,
@@ -720,6 +724,18 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
                 onConfirm={onRestartXUI}
               >
                 <Button danger loading={xuiRestartLoading}>重启 x-ui / Xray</Button>
+              </Popconfirm>
+            ) : null}
+            {!restrictedView && canManageConfig ? (
+              <Popconfirm
+                title="删除这个 VPS / Client？"
+                description="会从后台移除该 VPS 的配置、快照、授权和操作记录；不会卸载远端 VPS 上的 Client 服务，远端服务仍运行时可能会重新注册。"
+                okText="删除"
+                cancelText="取消"
+                okButtonProps={{ danger: true }}
+                onConfirm={onDeleteCurrentAgent}
+              >
+                <Button danger loading={agentDeleteLoading}>删除 VPS</Button>
               </Popconfirm>
             ) : null}
           </Space>

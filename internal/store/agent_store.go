@@ -342,6 +342,53 @@ func (s *SQLiteStore) ValidateAgentToken(agentID, token string) bool {
 	return storedToken != "" && storedToken == token
 }
 
+func (s *SQLiteStore) DeleteAgent(agentID string) error {
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return fmt.Errorf("agent_id is required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin delete agent: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	tables := []string{
+		"xui_actions",
+		"config_audit_logs",
+		"snapshots",
+		"latest_snapshots",
+		"customer_assignments",
+		"area_manager_assignments",
+		"area_manager_agent_tags",
+		"area_manager_agents",
+	}
+	for _, table := range tables {
+		if _, err = tx.Exec(`DELETE FROM `+table+` WHERE agent_id = ?`, agentID); err != nil {
+			return fmt.Errorf("delete %s for agent %s: %w", table, agentID, err)
+		}
+	}
+	result, err := tx.Exec(`DELETE FROM agents WHERE agent_id = ?`, agentID)
+	if err != nil {
+		return fmt.Errorf("delete agent %s: %w", agentID, err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read delete agent count: %w", err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("agent not found")
+	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("commit delete agent: %w", err)
+	}
+	return nil
+}
+
 func (s *SQLiteStore) nextAgentSortOrder() (int, error) {
 	return nextAgentSortOrderQuery(s.db)
 }
