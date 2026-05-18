@@ -222,6 +222,14 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const [terminalShell, setTerminalShell] = useState(defaultTerminalShell(selectedAgent.client_os))
   const [terminalFontSize, setTerminalFontSize] = useState(13)
   const [terminalExpanded, setTerminalExpanded] = useState(false)
+  const currentAgentLinks = filteredTagLinks.filter((link) => link.source.agent_id === selectedAgentId || link.target.agent_id === selectedAgentId)
+  const currentAgentTagSet = new Set(selectedAgent.tags || [])
+  const currentAgentDashboardView = dashboardView
+    ? {
+        ...dashboardView,
+        tags: dashboardView.tags.filter((tag) => currentAgentTagSet.has(tag.tag)),
+      }
+    : null
 
   const commandResult = commandOutputAction?.result || {}
   const commandPayload = commandOutputAction?.payload || {}
@@ -777,12 +785,13 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
           items={[
             {
               key: 'overview',
-              label: `总览 (${filteredAgents.length})`,
+              label: `总览 (${selectedAgentId ? 1 : 0})`,
               children: renderGlobalOverviewPanel({
-                dashboardView,
+                dashboardView: currentAgentDashboardView,
                 selectedTag,
-                links: filteredTagLinks,
+                links: currentAgentLinks,
                 onSelectTag: (value) => onSelectTag(value),
+                scopeAgentName: selectedAgent.agent_name || selectedAgent.agent_id,
               }),
             },
             {

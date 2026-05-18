@@ -11,26 +11,28 @@ export function renderGlobalOverviewPanel(props: {
   selectedTag: string
   links: TopologyLinkView[]
   onSelectTag: (value: string) => void
+  scopeAgentName?: string
 }) {
-  const { dashboardView, selectedTag, links, onSelectTag } = props
+  const { dashboardView, selectedTag, links, onSelectTag, scopeAgentName } = props
 
   if (!dashboardView) {
     return <Empty description="暂无总览数据" />
   }
+  const scoped = Boolean(scopeAgentName)
 
   return (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
       <Alert
         type="info"
         showIcon
-        message="链路明细"
-        description={`这里保留标签分组、已自动匹配链路和客户端转发链明细。页面会每 ${Math.floor(DASHBOARD_AUTO_REFRESH_MS / 1000)} 秒自动刷新一次统计与匹配结果。`}
+        message={scoped ? `${scopeAgentName} 链路明细` : '链路明细'}
+        description={scoped ? `这里只显示当前选中 Client 相关的标签和已匹配链路。页面会每 ${Math.floor(DASHBOARD_AUTO_REFRESH_MS / 1000)} 秒自动刷新一次统计与匹配结果。` : `这里保留标签分组、已自动匹配链路和客户端转发链明细。页面会每 ${Math.floor(DASHBOARD_AUTO_REFRESH_MS / 1000)} 秒自动刷新一次统计与匹配结果。`}
       />
 
       <Card className="config-section-card" bordered={false}>
         <Space wrap>
           <Tag color={!selectedTag ? 'blue' : 'default'} className="tag-filter-chip" onClick={() => onSelectTag('')}>
-            全部
+            {scoped ? '当前 Client' : '全部'}
           </Tag>
           {dashboardView.tags.map((tag) => (
             <Tag
@@ -46,7 +48,7 @@ export function renderGlobalOverviewPanel(props: {
       </Card>
 
       <Card className="config-section-card" bordered={false}>
-        <Title level={4}>跨 Client 已匹配链路</Title>
+        <Title level={4}>{scoped ? '当前 Client 已匹配链路' : '跨 Client 已匹配链路'}</Title>
         {links.length ? (
           <div className="topology-link-list">
             {links.map((link) => (
