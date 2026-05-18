@@ -220,6 +220,8 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const [commandOutputAction, setCommandOutputAction] = useState<XUIAction | null>(null)
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [terminalShell, setTerminalShell] = useState(defaultTerminalShell(selectedAgent.client_os))
+  const [terminalFontSize, setTerminalFontSize] = useState(13)
+  const [terminalExpanded, setTerminalExpanded] = useState(false)
 
   const commandResult = commandOutputAction?.result || {}
   const commandPayload = commandOutputAction?.payload || {}
@@ -239,6 +241,15 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   function openRealtimeTerminal() {
     setTerminalShell(defaultTerminalShell(selectedAgent.client_os))
     setTerminalOpen(true)
+  }
+
+  function zoomTerminal(delta: number) {
+    setTerminalFontSize((value) => Math.min(22, Math.max(10, value + delta)))
+  }
+
+  function resetTerminalZoom() {
+    setTerminalFontSize(13)
+    setTerminalExpanded(false)
   }
 
   const nodeColumns: ColumnsType<XUINodeView> = [
@@ -985,7 +996,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         open={terminalOpen}
         footer={null}
         onCancel={() => setTerminalOpen(false)}
-        width="min(1100px, 96vw)"
+        width={terminalExpanded ? 'min(1500px, 98vw)' : 'min(1100px, 96vw)'}
         destroyOnClose
       >
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -1010,8 +1021,23 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
               onChange={setTerminalShell}
             />
             <Text type="secondary">切换 Shell 会重新建立终端连接</Text>
+            <Space.Compact>
+              <Button onClick={() => zoomTerminal(-1)} disabled={terminalFontSize <= 10}>
+                缩小
+              </Button>
+              <Button disabled>{terminalFontSize}px</Button>
+              <Button onClick={() => zoomTerminal(1)} disabled={terminalFontSize >= 22}>
+                放大
+              </Button>
+            </Space.Compact>
+            <Button onClick={resetTerminalZoom} disabled={terminalFontSize === 13 && !terminalExpanded}>
+              重置缩放
+            </Button>
+            <Button onClick={() => setTerminalExpanded((value) => !value)}>
+              {terminalExpanded ? '普通窗口' : '放大窗口'}
+            </Button>
           </Space>
-          <RemoteTTYTerminal agentID={selectedAgentId} shell={terminalShell} active={terminalOpen} />
+          <RemoteTTYTerminal agentID={selectedAgentId} shell={terminalShell} active={terminalOpen} fontSize={terminalFontSize} expanded={terminalExpanded} />
         </Space>
       </Modal>
       <Modal
@@ -1115,9 +1141,26 @@ function defaultTerminalShell(clientOS?: string): string {
   return String(clientOS || '').toLowerCase().includes('windows') ? 'powershell' : 'bash'
 }
 
-function RemoteTTYTerminal(props: { agentID: string; shell: string; active: boolean }) {
-  const { agentID, shell, active } = props
+function RemoteTTYTerminal(props: { agentID: string; shell: string; active: boolean; fontSize: number; expanded: boolean }) {
+  const { agentID, shell, active, fontSize, expanded } = props
   const containerRef = useRef<HTMLDivElement | null>(null)
+  const terminalRef = useRef<Terminal | null>(null)
+  const fitAddonRef = useRef<FitAddon | null>(null)
+  const sendRef = useRef<(message: TerminalWSMessage) => void>(() => undefined)
+
+  useEffect(() => {
+    const terminal = terminalRef.current
+    const fitAddon = fitAddonRef.current
+    if (!active || !terminal || !fitAddon) {
+      return
+    }
+    terminal.options.fontSize = fontSize
+    window.setTimeout(() => {
+      fitAddon.fit()
+      sendRef.current({ type: 'resize', cols: terminal.cols, rows: terminal.rows })
+      terminal.focus()
+    }, 0)
+  }, [active, expanded, fontSize])
 
   useEffect(() => {
     if (!active || !agentID || !containerRef.current) {
@@ -1127,7 +1170,7 @@ function RemoteTTYTerminal(props: { agentID: string; shell: string; active: bool
       cursorBlink: true,
       convertEol: true,
       fontFamily: '"JetBrains Mono", "SFMono-Regular", Consolas, monospace',
-      fontSize: 13,
+      fontSize,
       rows: 36,
       scrollback: 5000,
       theme: {
@@ -1138,6 +1181,8 @@ function RemoteTTYTerminal(props: { agentID: string; shell: string; active: bool
       },
     })
     const fitAddon = new FitAddon()
+    terminalRef.current = terminal
+    fitAddonRef.current = fitAddon
     terminal.loadAddon(fitAddon)
     terminal.open(containerRef.current)
     fitAddon.fit()
@@ -1152,6 +1197,7 @@ function RemoteTTYTerminal(props: { agentID: string; shell: string; active: bool
         socket.send(JSON.stringify({ ...message, session_id: currentSessionID || message.session_id }))
       }
     }
+    sendRef.current = send
     const dataDisposable = terminal.onData((data) => send({ type: 'input', data: normalizeTerminalInput(data, shell) }))
     const resizeDisposable = terminal.onResize((size) => send({ type: 'resize', cols: size.cols, rows: size.rows }))
     const resizeWindow = () => {
@@ -1203,10 +1249,13 @@ function RemoteTTYTerminal(props: { agentID: string; shell: string; active: bool
       resizeDisposable.dispose()
       socket.close()
       terminal.dispose()
+      terminalRef.current = null
+      fitAddonRef.current = null
+      sendRef.current = () => undefined
     }
   }, [active, agentID, shell])
 
-  return <div ref={containerRef} className="remote-tty-terminal" />
+  return <div ref={containerRef} className={`remote-tty-terminal${expanded ? ' remote-tty-terminal-expanded' : ''}`} />
 }
 
 function normalizeTerminalInput(data: string, shell: string): string {
