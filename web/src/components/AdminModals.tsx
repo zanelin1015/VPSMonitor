@@ -596,11 +596,15 @@ export function SystemUpdateModal(props: {
   onUpdateServer: () => void
   onUpdateClients: () => void
   onUpdate3XUI: () => void
+  force3XUIUpdate: boolean
+  onForce3XUIUpdateChange: (value: boolean) => void
 }) {
-  const { open, loading, latestLoading, latestInfo, latestError, systemInfo, onClose, onRefreshLatest, onUpdateServer, onUpdateClients, onUpdate3XUI } = props
+  const { open, loading, latestLoading, latestInfo, latestError, systemInfo, onClose, onRefreshLatest, onUpdateServer, onUpdateClients, onUpdate3XUI, force3XUIUpdate, onForce3XUIUpdateChange } = props
   const serverUpdateAvailable = Boolean(latestInfo?.server_update_available)
   const clientUpdateCount = Number(latestInfo?.client_update_available_count || 0)
   const xuiUpdateCount = Number(latestInfo?.xui_update_available_count || 0)
+  const xuiUnknownCount = Number(latestInfo?.unknown_xui_count || 0)
+  const canSubmit3XUIUpdate = force3XUIUpdate || xuiUpdateCount > 0 || xuiUnknownCount > 0
   const latestServerVersion = latestInfo?.latest_server_version || latestInfo?.latest_version || '-'
   const latestClientVersion = latestInfo?.latest_client_version || latestInfo?.latest_version || '-'
   const latest3XUIVersion = latestInfo?.latest_3xui_version || '-'
@@ -667,9 +671,13 @@ export function SystemUpdateModal(props: {
           <Button onClick={onRefreshLatest} loading={latestLoading}>检查最新版本</Button>
           <Button type="primary" disabled={!serverUpdateAvailable} loading={loading} onClick={onUpdateServer}>升级当前 Server</Button>
           <Button disabled={clientUpdateCount <= 0} loading={loading} onClick={onUpdateClients}>下发升级到可升级 Client</Button>
-          <Button disabled={xuiUpdateCount <= 0} loading={loading} onClick={onUpdate3XUI}>批量升级 3x-ui</Button>
+          <Button disabled={!canSubmit3XUIUpdate} loading={loading} onClick={onUpdate3XUI}>{force3XUIUpdate ? '强制批量升级 3x-ui' : '批量升级 3x-ui'}</Button>
+          <Space size={8}>
+            <Switch checked={force3XUIUpdate} onChange={onForce3XUIUpdateChange} />
+            <Text type="secondary">强制升级 3x-ui</Text>
+          </Space>
         </Space>
-        <Text type="secondary">Client 升级前会确认系统和架构；3x-ui 会先检测 GitHub 最新版本，再只给已上报 3x-ui 版本且版本落后的 Linux client 下发任务。</Text>
+        <Text type="secondary">Client 升级前会确认系统和架构；3x-ui 点击升级时会重新检测 GitHub 最新版本，任务执行时 Client 会再次读取本机 3x-ui 版本并比较；开启强制升级后不比较版本，直接执行官方 update.sh。</Text>
         </Space>
       </Spin>
     </Modal>

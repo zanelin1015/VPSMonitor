@@ -147,6 +147,7 @@ type UpdateRequest struct {
 	PSScriptURL   string   `json:"ps_script_url,omitempty"`
 	ServiceName   string   `json:"service_name,omitempty"`
 	AgentIDs      []string `json:"agent_ids,omitempty"`
+	Force         bool     `json:"force,omitempty"`
 }
 
 type UpdateResponse struct {

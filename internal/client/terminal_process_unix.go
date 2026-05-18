@@ -93,6 +93,9 @@ func (p *terminalProcess) wait(onExit func(int, error)) {
 }
 
 func (p *terminalProcess) write(data []byte) error {
+	if string(data) == "\r" {
+		data = []byte("\n")
+	}
 	_, err := p.ptmx.Write(data)
 	return err
 }

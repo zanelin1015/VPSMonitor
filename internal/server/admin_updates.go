@@ -293,10 +293,11 @@ func (a *App) create3XUIUpdateActions(req model.UpdateRequest) (model.UpdateResp
 		}
 	}
 	latest, err := fetchLatest3XUIRelease()
-	if err != nil {
+	if err != nil && !req.Force {
 		return model.UpdateResponse{}, err
 	}
-	statuses := a.build3XUIUpdateStatuses(agents, latest.Version)
+	targetVersion := firstNonEmptyString(req.Version, latest.Version)
+	statuses := a.build3XUIUpdateStatuses(agents, targetVersion)
 	count := 0
 	skipped := 0
 	for _, status := range statuses {
@@ -305,14 +306,15 @@ func (a *App) create3XUIUpdateActions(req model.UpdateRequest) (model.UpdateResp
 				continue
 			}
 		}
-		if !status.UpdateAvailable {
+		if !shouldCreate3XUIUpdateAction(status, req.Force) {
 			skipped++
 			continue
 		}
 		payload := map[string]any{
 			"timeout_seconds": 900,
-			"target_version":  latest.Version,
+			"target_version":  targetVersion,
 			"target_tag":      latest.Tag,
+			"force":           req.Force,
 		}
 		if _, err := a.store.CreateXUIAction(status.AgentID, model.XUIActionRequest{Kind: model.XUIActionUpdate3XUI, Payload: payload}); err != nil {
 			return model.UpdateResponse{}, err
@@ -325,6 +327,13 @@ func (a *App) create3XUIUpdateActions(req model.UpdateRequest) (model.UpdateResp
 		Skipped:     skipped,
 		AgentStatus: statuses,
 	}, nil
+}
+
+func shouldCreate3XUIUpdateAction(status model.UpdateAgentStatus, force bool) bool {
+	if force {
+		return status.Supported
+	}
+	return status.UpdateAvailable || (status.Supported && status.Version == "")
 }
 
 func (a *App) populate3XUIUpdateInfo(info *model.UpdateLatestInfo, agents []model.AgentRecord) {
@@ -390,6 +399,7 @@ func build3XUIUpdateAgentStatus(agent model.AgentRecord, snapshot model.AgentSna
 		status.Reason = "3x-ui official updater only supports linux"
 		return status
 	}
+	status.Supported = true
 	if version == "" {
 		status.Reason = "3x-ui version has not been reported yet"
 		return status
@@ -398,7 +408,6 @@ func build3XUIUpdateAgentStatus(agent model.AgentRecord, snapshot model.AgentSna
 		status.Reason = "latest 3x-ui version unavailable"
 		return status
 	}
-	status.Supported = true
 	if !isVersionNewer(latestVersion, version) {
 		status.Reason = "3x-ui is already up to date"
 		return status

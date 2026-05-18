@@ -207,6 +207,13 @@ func payloadString(payload map[string]any, key string, fallback string) string {
 	return fallback
 }
 
+func payloadBool(payload map[string]any, key string, fallback bool) bool {
+	if value, ok := payload[key].(bool); ok {
+		return value
+	}
+	return fallback
+}
+
 func (a *App) collect(ctx context.Context, effectiveConfig model.ManagedAgentConfig) model.AgentSnapshot {
 	snapshot := model.AgentSnapshot{
 		AgentID:       a.config.AgentID,

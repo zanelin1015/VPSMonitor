@@ -15,11 +15,13 @@ const threeXUIUpdateScriptURL = "https://raw.githubusercontent.com/MHSanaei/3x-u
 
 func update3XUI(ctx context.Context, payload map[string]any) (map[string]any, error) {
 	targetVersion := normalize3XUIVersion(payloadString(payload, "target_version", ""))
+	force := payloadBool(payload, "force", false)
 	currentVersion := detectLocal3XUIVersion(ctx)
 	baseResult := map[string]any{
 		"action":          "update_3xui",
 		"current_version": currentVersion,
 		"target_version":  targetVersion,
+		"force":           force,
 	}
 	if runtime.GOOS == "windows" {
 		result := map[string]any{
@@ -39,7 +41,7 @@ func update3XUI(ctx context.Context, payload map[string]any) (map[string]any, er
 		copyMap(result, baseResult)
 		return result, fmt.Errorf("bash is required to run the official 3x-ui updater")
 	}
-	if targetVersion != "" && currentVersion != "" && !semverNewer(targetVersion, currentVersion) {
+	if !force && targetVersion != "" && currentVersion != "" && !semverNewer(targetVersion, currentVersion) {
 		baseResult["status"] = "skipped"
 		baseResult["reason"] = "3x-ui is already up to date"
 		baseResult["completed_at"] = time.Now().UTC().Format(time.RFC3339Nano)

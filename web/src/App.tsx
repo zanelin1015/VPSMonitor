@@ -356,6 +356,7 @@ export default function App() {
   const [updateLatestLoading, setUpdateLatestLoading] = useState(false)
   const [updateLatestInfo, setUpdateLatestInfo] = useState<UpdateLatestInfo | null>(null)
   const [updateLatestError, setUpdateLatestError] = useState('')
+  const [force3XUIUpdate, setForce3XUIUpdate] = useState(false)
   const [reloadToken, setReloadToken] = useState(0)
   const [activeTabKey, setActiveTabKey] = useState('overview')
   const [topologyVisible, setTopologyVisible] = useState(false)
@@ -1450,22 +1451,31 @@ export default function App() {
     }
   }
 
-  async function updateAll3XUIOnline() {
+  async function updateAll3XUIOnline(force = force3XUIUpdate) {
     setUpdateLoading(true)
     try {
-      const latest = await fetchJSON<UpdateLatestInfo>('/api/v1/admin/updates/latest')
-      setUpdateLatestInfo(latest)
-      const updateCount = Number(latest.xui_update_available_count || 0)
-      if (updateCount <= 0) {
-        message.info(latest.latest_3xui_error ? `暂时无法检测 3x-ui 最新版本：${latest.latest_3xui_error}` : '没有需要升级的 3x-ui')
+      let latest: UpdateLatestInfo | null = null
+      try {
+        latest = await fetchJSON<UpdateLatestInfo>('/api/v1/admin/updates/latest')
+        setUpdateLatestInfo(latest)
+      } catch (error) {
+        if (!force) {
+          throw error
+        }
+        message.warning('检查最新版本失败，将按强制升级模式直接下发 3x-ui update.sh')
+      }
+      const updateCount = Number(latest?.xui_update_available_count || 0)
+      const unknownCount = Number(latest?.unknown_xui_count || 0)
+      if (!force && updateCount <= 0 && unknownCount <= 0) {
+        message.info(latest?.latest_3xui_error ? `暂时无法检测 3x-ui 最新版本：${latest.latest_3xui_error}` : '没有需要升级的 3x-ui')
         return
       }
       const result = await fetchJSON<UpdateResponse>('/api/v1/admin/updates/3xui', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ version: latest.latest_3xui_tag || latest.latest_3xui_version }),
+        body: JSON.stringify({ version: latest?.latest_3xui_tag || latest?.latest_3xui_version || '', force }),
       })
-      message.success(`已下发 3x-ui 升级任务：${result.count || 0} 台，跳过 ${result.skipped || 0} 台`)
+      message.success(`${force ? '已强制下发' : '已下发'} 3x-ui 升级任务：${result.count || 0} 台，跳过 ${result.skipped || 0} 台`)
       await loadUpdateLatestInfo()
     } catch (error) {
       if (isUnauthorized(error)) {
@@ -2030,6 +2040,7 @@ export default function App() {
           updateLatestLoading={updateLatestLoading}
           updateLoading={updateLoading}
           updateModalOpen={updateModalOpen}
+          force3XUIUpdate={force3XUIUpdate}
           xuiActionKind={xuiActionKind}
           xuiActionModalOpen={xuiActionModalOpen}
           xuiActionSaving={xuiActionSaving}
@@ -2064,7 +2075,8 @@ export default function App() {
           onTelegramBotEditIDChange={setEditingTelegramBotId}
           onTestTelegramBot={(id) => void testTelegramBot(id)}
           onUpdateAllClients={() => void updateAllClientsOnline()}
-          onUpdateAll3XUI={() => void updateAll3XUIOnline()}
+          onUpdateAll3XUI={() => void updateAll3XUIOnline(force3XUIUpdate)}
+          onForce3XUIUpdateChange={setForce3XUIUpdate}
           onUpdateFrontendSettingsFormChange={setFrontendSettingsForm}
           onUpdateOutboundActionForm={setOutboundActionForm}
           onUpdateRoutingActionForm={setRoutingActionForm}

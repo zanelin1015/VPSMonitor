@@ -1152,14 +1152,7 @@ function RemoteTTYTerminal(props: { agentID: string; shell: string; active: bool
         socket.send(JSON.stringify({ ...message, session_id: currentSessionID || message.session_id }))
       }
     }
-    terminal.attachCustomKeyEventHandler((event) => {
-      if (event.type === 'keydown' && (event.key === 'Enter' || event.code === 'Enter' || event.code === 'NumpadEnter')) {
-        send({ type: 'input', data: '\r' })
-        return false
-      }
-      return true
-    })
-    const dataDisposable = terminal.onData((data) => send({ type: 'input', data }))
+    const dataDisposable = terminal.onData((data) => send({ type: 'input', data: normalizeTerminalInput(data, shell) }))
     const resizeDisposable = terminal.onResize((size) => send({ type: 'resize', cols: size.cols, rows: size.rows }))
     const resizeWindow = () => {
       fitAddon.fit()
@@ -1214,4 +1207,12 @@ function RemoteTTYTerminal(props: { agentID: string; shell: string; active: bool
   }, [active, agentID, shell])
 
   return <div ref={containerRef} className="remote-tty-terminal" />
+}
+
+function normalizeTerminalInput(data: string, shell: string): string {
+  if (data !== '\r') {
+    return data
+  }
+  const normalizedShell = String(shell || '').toLowerCase()
+  return normalizedShell === 'powershell' || normalizedShell === 'pwsh' || normalizedShell === 'cmd' ? '\r\n' : '\n'
 }

@@ -70,6 +70,14 @@ export function renderRoutingActionForm(props: {
       protocols: rule.protocol || [],
     })
   }
+  const ruleOptions = [
+    { value: 0, label: '新增转发规则', search: '新增 转发 规则 add new create' },
+    ...rules.map((rule) => ({
+      value: rule.index,
+      label: `修改 #${rule.index} · ${rule.summary || rule.outbound_tag || rule.balancer_tag || '未命名规则'}`,
+      search: routingRuleSearchText(rule),
+    })),
+  ]
 
   return (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -79,15 +87,13 @@ export function renderRoutingActionForm(props: {
           <Col xs={24} md={12}>
             <Text type="secondary">操作</Text>
             <Select
+              showSearch
               style={{ width: '100%' }}
               value={form.rule_index || 0}
-              options={[
-                { value: 0, label: '新增转发规则' },
-                ...rules.map((rule) => ({
-                  value: rule.index,
-                  label: `修改 #${rule.index} · ${rule.summary || rule.outbound_tag || rule.balancer_tag || '未命名规则'}`,
-                })),
-              ]}
+              options={ruleOptions}
+              optionFilterProp="search"
+              filterOption={filterSelectOption}
+              placeholder="输入编号 / 用户 / 出站 / 域名搜索规则"
               onChange={(value) => applyRule(Number(value) || null)}
             />
           </Col>
@@ -117,6 +123,7 @@ export function renderRoutingActionForm(props: {
                 style={{ width: '100%' }}
                 value={form.outbound_tag || undefined}
                 options={outbounds.filter((item) => item.tag).map((item) => ({ value: item.tag as string, label: item.tag as string }))}
+                filterOption={filterSelectOption}
                 onChange={(value) => update({ outbound_tag: value || '', balancer_tag: '' })}
               />
             </Col>
@@ -130,6 +137,7 @@ export function renderRoutingActionForm(props: {
                 style={{ width: '100%' }}
                 value={form.balancer_tag || undefined}
                 options={balancers.filter((item) => item.tag).map((item) => ({ value: item.tag as string, label: item.tag as string }))}
+                filterOption={filterSelectOption}
                 onChange={(value) => update({ balancer_tag: value || '', outbound_tag: value ? '' : form.outbound_tag })}
               />
             </Col>
@@ -163,12 +171,15 @@ export function renderRoutingActionForm(props: {
             <Text type="secondary">匹配入站</Text>
             <Select
               mode="multiple"
+              showSearch
               style={{ width: '100%' }}
               value={form.inbound_tags}
               options={inbounds.map((inbound) => ({
                 value: inbound.tag || String(inbound.id),
                 label: `${inbound.remark || inbound.tag || inbound.id} · ${inbound.tag || '-'}`,
+                search: [inbound.id, inbound.tag, inbound.remark, inbound.protocol, inbound.port].filter(Boolean).join(' '),
               }))}
+              filterOption={filterSelectOption}
               onChange={(value) => update({ inbound_tags: value })}
             />
           </Col>
@@ -176,12 +187,15 @@ export function renderRoutingActionForm(props: {
             <Text type="secondary">匹配用户</Text>
             <Select
               mode="multiple"
+              showSearch
               style={{ width: '100%' }}
               value={form.users}
               options={clients.filter((client) => client.email).map((client) => ({
                 value: client.email as string,
                 label: `${client.email as string} · ${client.inbound_remark || client.inbound_tag || '-'}`,
+                search: [client.email, client.comment, client.inbound_remark, client.inbound_tag, client.protocol].filter(Boolean).join(' '),
               }))}
+              filterOption={filterSelectOption}
               onChange={(value) => update({ users: value })}
             />
           </Col>
@@ -209,12 +223,14 @@ export function renderRoutingActionForm(props: {
             <Text type="secondary">网络协议</Text>
             <Select
               mode="multiple"
+              showSearch
               style={{ width: '100%' }}
               value={form.networks}
               options={[
                 { value: 'tcp', label: 'tcp' },
                 { value: 'udp', label: 'udp' },
               ]}
+              filterOption={filterSelectOption}
               onChange={(value) => update({ networks: value })}
             />
           </Col>
@@ -222,6 +238,7 @@ export function renderRoutingActionForm(props: {
             <Text type="secondary">协议类型</Text>
             <Select
               mode="multiple"
+              showSearch
               style={{ width: '100%' }}
               value={form.protocols}
               options={[
@@ -229,6 +246,7 @@ export function renderRoutingActionForm(props: {
                 { value: 'http', label: 'http' },
                 { value: 'tls', label: 'tls' },
               ]}
+              filterOption={filterSelectOption}
               onChange={(value) => update({ protocols: value })}
             />
           </Col>
@@ -236,4 +254,36 @@ export function renderRoutingActionForm(props: {
       </Card>
     </Space>
   )
+}
+
+function routingRuleSearchText(rule: XUIRoutingRuleView): string {
+  return [
+    `#${rule.index}`,
+    `rule ${rule.index}`,
+    rule.summary,
+    rule.outbound_tag,
+    rule.balancer_tag,
+    ...(rule.inbound_tags || []),
+    ...(rule.users || []),
+    ...(rule.domain || []),
+    ...(rule.ip || []),
+    ...(rule.port || []),
+    ...(rule.source_port || []),
+    ...(rule.source_ip || []),
+    ...(rule.network || []),
+    ...(rule.protocol || []),
+    ...(rule.vless_route || []),
+  ].filter(Boolean).join(' ')
+}
+
+function filterSelectOption(input: string, option?: { label?: unknown; value?: unknown; search?: unknown }): boolean {
+  const needle = normalizeSearchText(input)
+  if (!needle) {
+    return true
+  }
+  return normalizeSearchText([option?.label, option?.value, option?.search].filter(Boolean).join(' ')).includes(needle)
+}
+
+function normalizeSearchText(value: unknown): string {
+  return String(value || '').trim().toLowerCase()
 }
