@@ -81,6 +81,38 @@ download_file() {
   fi
 }
 
+available_kb() {
+  df -Pk "$1" 2>/dev/null | awk 'NR == 2 { print $4 }'
+}
+
+make_temp_dir() {
+  local min_kb="${VPSMONITOR_MIN_TMP_KB:-65536}"
+  local candidates=()
+  [[ -n "${VPSMONITOR_TMP_DIR:-}" ]] && candidates+=("$VPSMONITOR_TMP_DIR")
+  [[ -n "${TMPDIR:-}" ]] && candidates+=("$TMPDIR")
+  candidates+=("/var/tmp" "/tmp" "${prefix%/}/.install-tmp")
+
+  local base available
+  for base in "${candidates[@]}"; do
+    [[ -n "$base" ]] || continue
+    if ! mkdir -p "$base" 2>/dev/null; then
+      continue
+    fi
+    [[ -w "$base" ]] || continue
+    available="$(available_kb "$base")"
+    if [[ -n "$available" && "$available" =~ ^[0-9]+$ && "$available" -lt "$min_kb" ]]; then
+      warn "Skipping temporary directory $base: only ${available}KB available, need at least ${min_kb}KB." >&2
+      continue
+    fi
+    if tmp_dir="$(TMPDIR="$base" mktemp -d 2>/dev/null)"; then
+      echo "$tmp_dir"
+      return 0
+    fi
+  done
+
+  die "No writable temporary directory with enough free space. Free /tmp space or set VPSMONITOR_TMP_DIR=/path/with/space and retry."
+}
+
 random_token() {
   local length="${1:-32}"
   if command -v openssl >/dev/null 2>&1; then
@@ -263,7 +295,7 @@ fetch_bundle() {
     return
   fi
 
-  tmp_dir="${tmp_dir:-$(mktemp -d)}"
+  tmp_dir="${tmp_dir:-$(make_temp_dir)}"
   local package_path="$tmp_dir/${package_prefix}-${component}.tar.gz"
   local url
   url="$(package_url "$component" "$arch")"
@@ -586,6 +618,7 @@ Environment overrides:
   VPSMONITOR_REPO=zanelin1015/VPSMonitor
   VPSMONITOR_VERSION=latest
   VPSMONITOR_PACKAGE_PREFIX=VPSMonitor
+  VPSMONITOR_TMP_DIR=/var/tmp
   VPSMONITOR_USE_LOCAL_BUNDLE=true
   VPSMONITOR_BASE_URL=https://example.com/downloads
   VPSMONITOR_SERVER_PACKAGE_URL=https://example.com/VPSMonitor-server-linux-amd64.tar.gz
