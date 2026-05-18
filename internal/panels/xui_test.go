@@ -1584,6 +1584,16 @@ func TestXUIExecuteDeleteClientFallsBackToInboundUpdate(t *testing.T) {
 	}
 }
 
+func TestLocalXUIRestartSuccessOutput(t *testing.T) {
+	output := "The OS release is: debian \x1b[0;32m[INF] x-ui and xray Restarted successfully \x1b[0m"
+	if !isLocalXUIRestartSuccessOutput(output) {
+		t.Fatalf("expected success output to be recognized")
+	}
+	if isLocalXUIRestartSuccessOutput("x-ui restart failed") {
+		t.Fatalf("did not expect failed output to be recognized")
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {

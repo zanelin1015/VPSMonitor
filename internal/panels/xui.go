@@ -1646,15 +1646,47 @@ func restartLocalXUIService(ctx context.Context) error {
 		runCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		output, err := exec.CommandContext(runCtx, command[0], command[1:]...).CombinedOutput()
 		cancel()
+		outputText := string(output)
 		if err == nil && runCtx.Err() == nil {
+			return nil
+		}
+		if isLocalXUIRestartSuccessOutput(outputText) {
 			return nil
 		}
 		if runCtx.Err() != nil {
 			err = runCtx.Err()
 		}
-		errs = append(errs, fmt.Sprintf("%s: %v: %s", strings.Join(command, " "), err, strings.TrimSpace(string(output))))
+		errs = append(errs, fmt.Sprintf("%s: %v: %s", strings.Join(command, " "), err, strings.TrimSpace(outputText)))
 	}
 	return errors.New(strings.Join(errs, "; "))
+}
+
+func isLocalXUIRestartSuccessOutput(output string) bool {
+	normalized := strings.ToLower(stripANSIEscape(output))
+	return strings.Contains(normalized, "restarted successfully") ||
+		strings.Contains(normalized, "restart successfully") ||
+		strings.Contains(normalized, "restart successful")
+}
+
+func stripANSIEscape(value string) string {
+	var builder strings.Builder
+	builder.Grow(len(value))
+	inEscape := false
+	for i := 0; i < len(value); i++ {
+		char := value[i]
+		if inEscape {
+			if (char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') {
+				inEscape = false
+			}
+			continue
+		}
+		if char == 0x1b {
+			inEscape = true
+			continue
+		}
+		builder.WriteByte(char)
+	}
+	return builder.String()
 }
 
 func commandAvailable(name string) bool {

@@ -132,7 +132,7 @@ func (a *App) executeXUIAction(ctx context.Context, effectiveConfig model.Manage
 			result.Status = model.XUIActionStatusFailed
 			result.Error = xuiErr.Error()
 		} else {
-			actionCtx, actionCancel := context.WithTimeout(ctx, a.requestTimeout)
+			actionCtx, actionCancel := context.WithTimeout(ctx, a.xuiActionTimeout(action.Kind))
 			output, actionErr := xuiClient.ExecuteAction(actionCtx, action)
 			actionCancel()
 			if actionErr != nil {
@@ -144,6 +144,21 @@ func (a *App) executeXUIAction(ctx context.Context, effectiveConfig model.Manage
 		}
 	}
 	return result
+}
+
+func (a *App) xuiActionTimeout(kind string) time.Duration {
+	timeout := a.requestTimeout
+	switch kind {
+	case model.XUIActionAddOutbound,
+		model.XUIActionAddRoutingRule,
+		model.XUIActionUpsertRoutingRule,
+		model.XUIActionUpdateClientExpiry,
+		model.XUIActionDeleteClient:
+		if timeout < 90*time.Second {
+			timeout = 90 * time.Second
+		}
+	}
+	return timeout
 }
 
 func (a *App) startSelfUpdate(payload map[string]any) (map[string]any, error) {
