@@ -53,8 +53,12 @@ func (m *terminalManager) handleControl(ctx context.Context, message model.Agent
 			Cols:      remoteCommandPayloadInt(message.Payload["cols"]),
 		})
 	case model.AgentControlTerminalInput:
+		data := terminalPayloadRawString(message.Payload, "data")
+		if data == "" {
+			return
+		}
 		m.withSession(sessionID, func(session runningTerminal) {
-			if err := session.write([]byte(payloadString(message.Payload, "data", ""))); err != nil {
+			if err := session.write([]byte(data)); err != nil {
 				m.sendError(sessionID, err)
 			}
 		})
@@ -69,6 +73,13 @@ func (m *terminalManager) handleControl(ctx context.Context, message model.Agent
 	case model.AgentControlTerminalClose:
 		m.close(sessionID)
 	}
+}
+
+func terminalPayloadRawString(payload map[string]any, key string) string {
+	if value, ok := payload[key].(string); ok {
+		return value
+	}
+	return ""
 }
 
 func (m *terminalManager) open(ctx context.Context, opts terminalOptions) {
