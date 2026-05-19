@@ -150,6 +150,7 @@ func (a *App) xuiActionTimeout(kind string) time.Duration {
 	timeout := a.requestTimeout
 	switch kind {
 	case model.XUIActionAddOutbound,
+		model.XUIActionAddClient,
 		model.XUIActionAddRoutingRule,
 		model.XUIActionUpsertRoutingRule,
 		model.XUIActionUpdateClientExpiry,

@@ -73,6 +73,7 @@ import type {
   ConfigSectionKey,
   FrontendSettingsForm,
   TelegramBotForm,
+  XUIAddClientActionForm,
   XUIOutboundActionForm,
   XUIRoutingActionForm,
 } from './lib/appHelpers'
@@ -101,6 +102,7 @@ import {
   configSectionLabel,
   configSignature,
   createEmptyManagedConfig,
+  defaultAddClientActionForm,
   defaultClientBilling,
   defaultClientInstallCommandForm,
   defaultFrontendSettingsForm,
@@ -377,6 +379,7 @@ export default function App() {
   const [xuiActionModalOpen, setXUIActionModalOpen] = useState(false)
   const [xuiActionSaving, setXUIActionSaving] = useState(false)
   const [xuiActionKind, setXUIActionKind] = useState('upsert_routing_rule')
+  const [addClientActionForm, setAddClientActionForm] = useState<XUIAddClientActionForm>(() => defaultAddClientActionForm())
   const [outboundActionForm, setOutboundActionForm] = useState<XUIOutboundActionForm>(() => defaultOutboundActionForm())
   const [routingActionForm, setRoutingActionForm] = useState<XUIRoutingActionForm>(() => defaultRoutingActionForm())
   const [outboundSourceOverview, setOutboundSourceOverview] = useState<XUIOverview | null>(null)
@@ -1564,6 +1567,7 @@ export default function App() {
     let payload: Record<string, unknown>
     try {
       payload = buildXUIActionPayload(xuiActionKind, {
+        addClient: addClientActionForm,
         outbound: outboundActionForm,
         routing: routingActionForm,
       })
@@ -2044,6 +2048,7 @@ export default function App() {
           xuiActionKind={xuiActionKind}
           xuiActionModalOpen={xuiActionModalOpen}
           xuiActionSaving={xuiActionSaving}
+          addClientActionForm={addClientActionForm}
           onAccountFormChange={setAccountForm}
           onClientInstallCommandKindChange={setClientInstallCommandKind}
           onClientInstallFormChange={setClientInstallForm}
@@ -2078,6 +2083,7 @@ export default function App() {
           onUpdateAll3XUI={() => void updateAll3XUIOnline(force3XUIUpdate)}
           onForce3XUIUpdateChange={setForce3XUIUpdate}
           onUpdateFrontendSettingsFormChange={setFrontendSettingsForm}
+          onUpdateAddClientActionForm={setAddClientActionForm}
           onUpdateOutboundActionForm={setOutboundActionForm}
           onUpdateRoutingActionForm={setRoutingActionForm}
           onUpdateServer={() => void updateServerOnline()}
@@ -2274,8 +2280,20 @@ export default function App() {
                 onCopyImportURL={(client) => void copyImportURL(client)}
                 onCreateRoutingAction={() => {
                   setXUIActionKind('upsert_routing_rule')
+                  setAddClientActionForm(defaultAddClientActionForm())
                   setOutboundActionForm(defaultOutboundActionForm())
                   setRoutingActionForm(defaultRoutingActionForm())
+                  setXUIActionModalOpen(true)
+                }}
+                onCreateNodeClientAction={(node) => {
+                  setXUIActionKind('add_client')
+                  setAddClientActionForm({
+                    ...defaultAddClientActionForm(),
+                    inbound_id: node.id,
+                    inbound_tag: node.tag || '',
+                    inbound_name: node.remark || node.tag || `Inbound #${node.id}`,
+                    protocol: node.protocol || 'vless',
+                  })
                   setXUIActionModalOpen(true)
                 }}
                 onCreateTag={() => void createTagOption()}

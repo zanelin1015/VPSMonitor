@@ -18,13 +18,14 @@ import type {
   ClientInstallCommandKind,
   FrontendSettingsForm,
   TelegramBotForm,
+  XUIAddClientActionForm,
   XUIOutboundActionForm,
   XUIRoutingActionForm,
 } from '../lib/appHelpers'
 import { XUI_ACTION_KINDS, clientInstallCommandByKind, defaultTelegramBotForm } from '../lib/appHelpers'
 import { ClientInstallCommandBox } from './ClientInstallCommandBox'
 import { TelegramBotPanel } from './TelegramBotPanel'
-import { renderOutboundActionForm, renderRoutingActionForm } from './XUIActionForms'
+import { renderAddClientActionForm, renderOutboundActionForm, renderRoutingActionForm } from './XUIActionForms'
 
 const { Text } = Typography
 
@@ -468,6 +469,7 @@ export function XUIActionModal(props: {
   open: boolean
   saving: boolean
   actionKind: string
+  addClientForm: XUIAddClientActionForm
   outboundForm: XUIOutboundActionForm
   routingForm: XUIRoutingActionForm
   agents: AgentListItem[]
@@ -478,6 +480,7 @@ export function XUIActionModal(props: {
   onClose: () => void
   onSubmit: () => void
   onActionKindChange: (kind: string) => void
+  onAddClientFormChange: (form: XUIAddClientActionForm) => void
   onOutboundFormChange: (form: XUIOutboundActionForm) => void
   onRoutingFormChange: (form: XUIRoutingActionForm) => void
 }) {
@@ -485,6 +488,7 @@ export function XUIActionModal(props: {
     open,
     saving,
     actionKind,
+    addClientForm,
     outboundForm,
     routingForm,
     agents,
@@ -495,6 +499,7 @@ export function XUIActionModal(props: {
     onClose,
     onSubmit,
     onActionKindChange,
+    onAddClientFormChange,
     onOutboundFormChange,
     onRoutingFormChange,
   } = props
@@ -506,12 +511,19 @@ export function XUIActionModal(props: {
           type="info"
           showIcon
           message="执行方式"
-          description="server 只保存任务；client 下一次轮询领取后，使用已托管的 x-ui 账号密码调用 3x-ui API 执行。这里仅允许把内部 Client 节点导入为出站，再配置转发规则。"
+          description="server 只保存任务；client 下一次轮询领取后，使用已托管的 x-ui 账号密码调用 3x-ui API 执行。支持在节点下新增客户端、导入内部 Client 出站，以及配置转发规则。"
         />
         <div>
           <Text type="secondary">操作类型</Text>
           <Select style={{ width: '100%' }} value={actionKind} options={XUI_ACTION_KINDS} onChange={onActionKindChange} />
         </div>
+        {actionKind === 'add_client'
+          ? renderAddClientActionForm({
+              form: addClientForm,
+              inbounds: currentOverview?.nodes || [],
+              onChange: onAddClientFormChange,
+            })
+          : null}
         {actionKind === 'add_outbound'
           ? renderOutboundActionForm({
               form: outboundForm,

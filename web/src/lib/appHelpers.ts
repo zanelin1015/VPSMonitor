@@ -25,6 +25,7 @@ import { clampMetricPercent, formatMem, formatPercent } from './traffic'
 
 export const DASHBOARD_AUTO_REFRESH_MS = 20_000
 export const XUI_ACTION_KINDS = [
+  { value: 'add_client', label: '节点下新增客户端' },
   { value: 'upsert_routing_rule', label: '新增 / 修改转发规则' },
 ]
 
@@ -123,6 +124,15 @@ export interface XUIRoutingActionForm {
   source_ports: string
   networks: string[]
   protocols: string[]
+  restart: boolean
+}
+
+export interface XUIAddClientActionForm {
+  inbound_id: number
+  inbound_tag: string
+  inbound_name: string
+  protocol: string
+  client: XUIInboundClientForm
   restart: boolean
 }
 
@@ -350,6 +360,17 @@ function defaultRoutingActionForm(): XUIRoutingActionForm {
   }
 }
 
+function defaultAddClientActionForm(): XUIAddClientActionForm {
+  return {
+    inbound_id: 0,
+    inbound_tag: '',
+    inbound_name: '',
+    protocol: 'vless',
+    client: defaultInboundClientForm(),
+    restart: true,
+  }
+}
+
 function defaultTelegramBotForm(): TelegramBotForm {
   return {
     name: '',
@@ -456,11 +477,14 @@ function powerShellQuote(value: string): string {
 function buildXUIActionPayload(
   kind: string,
   forms: {
+    addClient: XUIAddClientActionForm
     outbound: XUIOutboundActionForm
     routing: XUIRoutingActionForm
   },
 ): Record<string, unknown> {
   switch (kind) {
+    case 'add_client':
+      return buildAddClientActionPayload(forms.addClient)
     case 'upsert_routing_rule':
       return buildUpsertRoutingActionPayload(forms.routing, forms.outbound)
     case 'add_routing_rule':
@@ -468,6 +492,25 @@ function buildXUIActionPayload(
     case 'add_outbound':
     default:
       return buildOutboundActionPayload(forms.outbound)
+  }
+}
+
+function buildAddClientActionPayload(form: XUIAddClientActionForm): Record<string, unknown> {
+  if (!form.inbound_id && !form.inbound_tag.trim()) {
+    throw new Error('请选择要新增客户端的节点')
+  }
+  const protocol = normalizeOutboundProtocol(form.protocol || 'vless')
+  const client = buildInboundClientPayload(form.client, protocol, 0)
+  const email = String(client.email || '').trim()
+  if (!email) {
+    throw new Error('客户端邮箱 / 标识不能为空')
+  }
+  return {
+    inbound_id: form.inbound_id,
+    inbound_tag: form.inbound_tag.trim(),
+    protocol,
+    client,
+    restart: form.restart,
   }
 }
 
@@ -870,6 +913,8 @@ function actionKindLabel(kind: string): string {
   switch (kind) {
     case 'upsert_routing_rule':
       return '新增 / 修改转发规则'
+    case 'add_client':
+      return '节点下新增客户端'
     case 'add_outbound':
       return '从内部导入出站'
     case 'add_routing_rule':
@@ -1878,6 +1923,7 @@ export {
   defaultInboundActionForm,
   defaultOutboundActionForm,
   defaultRoutingActionForm,
+  defaultAddClientActionForm,
   defaultTelegramBotForm,
   defaultClientInstallCommandForm,
   normalizeClientInstallCommandForm,
@@ -1891,6 +1937,7 @@ export {
   shellQuote,
   powerShellQuote,
   buildXUIActionPayload,
+  buildAddClientActionPayload,
   buildInboundActionPayload,
   buildInboundClientPayload,
   buildOutboundActionPayload,

@@ -534,6 +534,7 @@ func isRootOnlyXUIActionKind(kind string) bool {
 func realtimeXUIActionAllowed(kind string) bool {
 	switch kind {
 	case model.XUIActionAddOutbound,
+		model.XUIActionAddClient,
 		model.XUIActionAddRoutingRule,
 		model.XUIActionUpsertRoutingRule,
 		model.XUIActionUpdateClientExpiry,

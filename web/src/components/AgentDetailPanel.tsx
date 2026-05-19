@@ -103,6 +103,7 @@ export interface AgentDetailPanelProps {
   onClientSearchChange: (value: string) => void
   onCopyImportURL: (client: XUIClientView) => void
   onCreateRoutingAction: () => void
+  onCreateNodeClientAction: (node: XUINodeView) => void
   onCreateTag: () => void
   onEntryAddressesTextChange: (value: string) => void
   onEntryChange: (patch: Partial<AgentEntryConfig>) => void
@@ -181,6 +182,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onClientSearchChange,
     onCopyImportURL,
     onCreateRoutingAction,
+    onCreateNodeClientAction,
     onCreateTag,
     onEntryAddressesTextChange,
     onEntryChange,
@@ -287,8 +289,15 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     {
       title: '客户端',
       dataIndex: 'client_count',
-      width: 100,
-      render: (value?: number) => value ?? 0,
+      width: 150,
+      render: (value: number | undefined, record) => (
+        <Space wrap size={[6, 6]}>
+          <Tag>{value ?? 0}</Tag>
+          <Button size="small" type="link" disabled={!canManageConfig} onClick={() => onCreateNodeClientAction(record)}>
+            新增客户端
+          </Button>
+        </Space>
+      ),
     },
     {
       title: '近 5 分钟在线',

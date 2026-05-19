@@ -16,6 +16,7 @@ import type {
   ClientInstallCommandKind,
   FrontendSettingsForm,
   TelegramBotForm,
+  XUIAddClientActionForm,
   XUIOutboundActionForm,
   XUIRoutingActionForm,
 } from '../lib/appHelpers'
@@ -60,6 +61,7 @@ export interface ConsoleModalsProps {
   frontendSettingsModalOpen: boolean
   frontendSettingsSaving: boolean
   importURLClient: XUIClientView | null
+  addClientActionForm: XUIAddClientActionForm
   outboundActionForm: XUIOutboundActionForm
   outboundSourceLoading: boolean
   outboundSourceOverview: XUIOverview | null
@@ -112,6 +114,7 @@ export interface ConsoleModalsProps {
   onUpdateAll3XUI: () => void
   onForce3XUIUpdateChange: Dispatch<SetStateAction<boolean>>
   onUpdateFrontendSettingsFormChange: Dispatch<SetStateAction<FrontendSettingsForm>>
+  onUpdateAddClientActionForm: Dispatch<SetStateAction<XUIAddClientActionForm>>
   onUpdateOutboundActionForm: Dispatch<SetStateAction<XUIOutboundActionForm>>
   onUpdateRoutingActionForm: Dispatch<SetStateAction<XUIRoutingActionForm>>
   onUpdateServer: () => void
@@ -141,6 +144,7 @@ export function ConsoleModals(props: ConsoleModalsProps) {
     frontendSettingsModalOpen,
     frontendSettingsSaving,
     importURLClient,
+    addClientActionForm,
     outboundActionForm,
     outboundSourceLoading,
     outboundSourceOverview,
@@ -193,6 +197,7 @@ export function ConsoleModals(props: ConsoleModalsProps) {
     onUpdateAll3XUI,
     onForce3XUIUpdateChange,
     onUpdateFrontendSettingsFormChange,
+    onUpdateAddClientActionForm,
     onUpdateOutboundActionForm,
     onUpdateRoutingActionForm,
     onUpdateServer,
@@ -283,6 +288,7 @@ export function ConsoleModals(props: ConsoleModalsProps) {
         open={xuiActionModalOpen}
         saving={xuiActionSaving}
         actionKind={xuiActionKind}
+        addClientForm={addClientActionForm}
         outboundForm={outboundActionForm}
         routingForm={routingActionForm}
         agents={agents}
@@ -293,6 +299,7 @@ export function ConsoleModals(props: ConsoleModalsProps) {
         onClose={onCloseXUIActionModal}
         onSubmit={onSubmitXUIAction}
         onActionKindChange={onXUIActionKindChange}
+        onAddClientFormChange={onUpdateAddClientActionForm}
         onOutboundFormChange={onUpdateOutboundActionForm}
         onRoutingFormChange={onUpdateRoutingActionForm}
       />

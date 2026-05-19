@@ -3,6 +3,7 @@ package panels
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"database/sql"
 	"encoding/json"
@@ -292,6 +293,8 @@ func actionCanUseLocalXrayFallback(kind string) bool {
 
 func (c *XUIClient) executeActionAuthenticated(ctx context.Context, action model.XUIAction) (map[string]any, error) {
 	switch action.Kind {
+	case model.XUIActionAddClient:
+		return c.addClient(ctx, action.Payload)
 	case model.XUIActionAddOutbound:
 		return c.addOutbound(ctx, action.Payload)
 	case model.XUIActionAddRoutingRule:
@@ -328,6 +331,85 @@ func (c *XUIClient) addInbound(ctx context.Context, payload map[string]any, loca
 		response["certificate"] = resolvedCertificate
 	}
 	return response, nil
+}
+
+func (c *XUIClient) addClient(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	inboundID := intValue(payload["inbound_id"])
+	inboundTag := strings.TrimSpace(stringFromMap(payload, "inbound_tag"))
+	client, err := payloadObject(payload, "client")
+	if err != nil {
+		return nil, err
+	}
+	email := strings.TrimSpace(stringFromMap(client, "email"))
+	if inboundID <= 0 && inboundTag == "" {
+		return nil, fmt.Errorf("inbound_id or inbound_tag is required")
+	}
+	if email == "" {
+		return nil, fmt.Errorf("client.email is required")
+	}
+
+	inbounds, err := c.getJSONList(ctx, "/panel/api/inbounds/list")
+	if err != nil {
+		return nil, err
+	}
+	var inbound map[string]any
+	for _, item := range inbounds {
+		if inboundID > 0 && intValue(item["id"]) == inboundID {
+			inbound = item
+			break
+		}
+		if inboundTag != "" && stringValue(item["tag"]) == inboundTag {
+			inbound = item
+			break
+		}
+	}
+	if inbound == nil {
+		return nil, fmt.Errorf("inbound not found for new client %s", email)
+	}
+
+	settings, settingsText, err := decodeInboundSettings(inbound["settings"])
+	if err != nil {
+		return nil, err
+	}
+	clients := objectSlice(settings["clients"])
+	for _, existing := range clients {
+		if strings.EqualFold(strings.TrimSpace(stringValue(existing["email"])), email) {
+			return nil, fmt.Errorf("client already exists in inbound: %s", email)
+		}
+	}
+	normalizeInboundClient(client, stringValue(inbound["protocol"]))
+	inboundID = intValue(inbound["id"])
+
+	clientSettings, _ := json.Marshal(map[string]any{"clients": []map[string]any{client}})
+	if result, err := c.postJSON(ctx, "/panel/api/inbounds/addClient", map[string]any{
+		"id":       inboundID,
+		"settings": string(clientSettings),
+	}); err == nil {
+		if err := c.restartXrayService(ctx); err != nil {
+			return nil, err
+		}
+		return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": true}, nil
+	}
+
+	clients = append(clients, client)
+	settings["clients"] = clients
+	body, err := json.Marshal(settings)
+	if err != nil {
+		return nil, fmt.Errorf("marshal inbound settings: %w", err)
+	}
+	if settingsText {
+		inbound["settings"] = string(body)
+	} else {
+		inbound["settings"] = settings
+	}
+	result, err := c.postJSON(ctx, fmt.Sprintf("/panel/api/inbounds/update/%d", inboundID), inbound)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.restartXrayService(ctx); err != nil {
+		return nil, err
+	}
+	return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": true}, nil
 }
 
 func (c *XUIClient) addOutbound(ctx context.Context, payload map[string]any) (map[string]any, error) {
@@ -843,6 +925,50 @@ func clientMatchesDeletePayload(client map[string]any, email string, clientID st
 		}
 	}
 	return false
+}
+
+func normalizeInboundClient(client map[string]any, protocol string) {
+	if _, ok := client["enable"]; !ok {
+		client["enable"] = true
+	}
+	if strings.TrimSpace(stringValue(client["subId"])) == "" {
+		client["subId"] = randomHexString(8)
+	}
+	if strings.EqualFold(protocol, "trojan") {
+		if strings.TrimSpace(stringValue(client["password"])) == "" {
+			client["password"] = randomHexString(16)
+		}
+		return
+	}
+	if id := strings.TrimSpace(stringValue(client["id"])); id == "" || id == "00000000-0000-0000-0000-000000000001" || id == "00000000-0000-0000-0000-000000000000" {
+		client["id"] = randomUUIDString()
+	}
+}
+
+func clientPrimaryID(client map[string]any) string {
+	return firstNonEmptyString(
+		stringValue(client["id"]),
+		stringValue(client["password"]),
+		stringValue(client["email"]),
+	)
+}
+
+func randomUUIDString() string {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	buf[6] = (buf[6] & 0x0f) | 0x40
+	buf[8] = (buf[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", buf[0:4], buf[4:6], buf[6:8], buf[8:10], buf[10:16])
+}
+
+func randomHexString(size int) string {
+	buf := make([]byte, size)
+	if _, err := rand.Read(buf); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return fmt.Sprintf("%x", buf)
 }
 
 func firstNonEmptyString(values ...string) string {

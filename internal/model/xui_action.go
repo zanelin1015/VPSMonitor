@@ -4,6 +4,7 @@ import "time"
 
 const (
 	XUIActionAddOutbound        = "add_outbound"
+	XUIActionAddClient          = "add_client"
 	XUIActionAddRoutingRule     = "add_routing_rule"
 	XUIActionUpsertRoutingRule  = "upsert_routing_rule"
 	XUIActionUpdateClientExpiry = "update_client_expiry"

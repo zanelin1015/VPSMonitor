@@ -1516,6 +1516,160 @@ func TestXUIExecuteDeleteClientUsesDeleteAPI(t *testing.T) {
 	}
 }
 
+func TestXUIExecuteAddClientUsesAddClientAPI(t *testing.T) {
+	client, err := NewXUIClient(config.XUIConfig{
+		Enabled:  true,
+		BaseURL:  "https://xui.local",
+		Username: "admin",
+		Password: "pass",
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewXUIClient: %v", err)
+	}
+
+	addCalled := false
+	restartCalled := false
+	client.client = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/login":
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
+			case "/panel/api/inbounds/list":
+				return jsonResponse(t, req, map[string]any{
+					"success": true,
+					"obj": []map[string]any{{
+						"id":       7,
+						"tag":      "in-a",
+						"protocol": "vless",
+						"settings": `{"clients":[{"id":"uuid-1","email":"alice@example.com"}]}`,
+					}},
+				}), nil
+			case "/panel/api/inbounds/addClient":
+				addCalled = true
+				var body map[string]any
+				if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+					t.Fatalf("decode add client body: %v", err)
+				}
+				if int(body["id"].(float64)) != 7 {
+					t.Fatalf("expected inbound id 7, got %#v", body["id"])
+				}
+				settingsText, ok := body["settings"].(string)
+				if !ok {
+					t.Fatalf("expected settings string, got %#v", body["settings"])
+				}
+				var settings map[string]any
+				if err := json.Unmarshal([]byte(settingsText), &settings); err != nil {
+					t.Fatalf("decode settings: %v", err)
+				}
+				clients := settings["clients"].([]any)
+				added := clients[0].(map[string]any)
+				if added["email"] != "bob@example.com" || added["id"] == "" {
+					t.Fatalf("unexpected added client: %#v", added)
+				}
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "added"}), nil
+			case "/panel/api/server/restartXrayService":
+				restartCalled = true
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "restarted"}), nil
+			default:
+				t.Fatalf("unexpected path: %s", req.URL.Path)
+				return nil, nil
+			}
+		}),
+	}
+
+	result, err := client.ExecuteAction(context.Background(), model.XUIAction{
+		Kind: model.XUIActionAddClient,
+		Payload: map[string]any{
+			"inbound_id": 7,
+			"client": map[string]any{
+				"email":  "bob@example.com",
+				"enable": true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteAction: %v", err)
+	}
+	if result["email"] != "bob@example.com" || result["restarted"] != true {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+	if !addCalled || !restartCalled {
+		t.Fatalf("expected add client API and restart to be called, add=%v restart=%v", addCalled, restartCalled)
+	}
+}
+
+func TestXUIExecuteAddClientFallsBackToInboundUpdate(t *testing.T) {
+	client, err := NewXUIClient(config.XUIConfig{
+		Enabled:  true,
+		BaseURL:  "https://xui.local",
+		Username: "admin",
+		Password: "pass",
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewXUIClient: %v", err)
+	}
+
+	var updatedInbound map[string]any
+	client.client = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/login":
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
+			case "/panel/api/inbounds/list":
+				return jsonResponse(t, req, map[string]any{
+					"success": true,
+					"obj": []map[string]any{{
+						"id":       7,
+						"tag":      "in-a",
+						"protocol": "vless",
+						"settings": `{"clients":[{"id":"uuid-1","email":"alice@example.com"}]}`,
+					}},
+				}), nil
+			case "/panel/api/inbounds/addClient":
+				return jsonResponse(t, req, map[string]any{"success": false, "msg": "add api unavailable"}), nil
+			case "/panel/api/inbounds/update/7":
+				if err := json.NewDecoder(req.Body).Decode(&updatedInbound); err != nil {
+					t.Fatalf("decode update body: %v", err)
+				}
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "updated"}), nil
+			case "/panel/api/server/restartXrayService":
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "restarted"}), nil
+			default:
+				t.Fatalf("unexpected path: %s", req.URL.Path)
+				return nil, nil
+			}
+		}),
+	}
+
+	_, err = client.ExecuteAction(context.Background(), model.XUIAction{
+		Kind: model.XUIActionAddClient,
+		Payload: map[string]any{
+			"inbound_id": 7,
+			"client": map[string]any{
+				"email":  "bob@example.com",
+				"enable": true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteAction: %v", err)
+	}
+	settingsText, ok := updatedInbound["settings"].(string)
+	if !ok {
+		t.Fatalf("expected settings string update, got %#v", updatedInbound["settings"])
+	}
+	var settings map[string]any
+	if err := json.Unmarshal([]byte(settingsText), &settings); err != nil {
+		t.Fatalf("decode updated settings: %v", err)
+	}
+	clients := settings["clients"].([]any)
+	if len(clients) != 2 || clients[1].(map[string]any)["email"] != "bob@example.com" {
+		t.Fatalf("expected bob to be appended, got %#v", clients)
+	}
+}
+
 func TestXUIExecuteDeleteClientFallsBackToInboundUpdate(t *testing.T) {
 	client, err := NewXUIClient(config.XUIConfig{
 		Enabled:  true,
