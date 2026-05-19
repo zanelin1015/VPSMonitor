@@ -147,6 +147,34 @@ html[data-theme='dark'] .customer-hero {
   color: var(--text-muted);
 }
 
+.customer-link-billing-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.customer-link-billing-item {
+  min-width: 156px;
+  padding: 10px 12px;
+  border: 1px solid rgba(37, 99, 235, 0.14);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(20, 184, 166, 0.08));
+}
+
+.customer-link-billing-item span,
+.customer-link-billing-item small {
+  display: block;
+  color: var(--text-muted);
+}
+
+.customer-link-billing-item strong {
+  display: block;
+  margin: 2px 0;
+  color: var(--text-main);
+  font-size: 18px;
+}
+
 .customer-chain-line {
   display: flex;
   align-items: center;

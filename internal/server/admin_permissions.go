@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net"
 	"net/http"
 	"net/netip"
@@ -673,13 +674,86 @@ func (a *App) customerVisibleToAdmin(user model.AdminUser, customerID int64) (bo
 	return a.store.CustomerOwnedBy(customerID, model.AdminRoleAreaManager, user.ID)
 }
 
-func (a *App) areaManagerXUIActionAllowed(kind string) bool {
-	switch strings.TrimSpace(kind) {
+func (a *App) areaManagerXUIActionAllowed(user model.AdminUser, agentID string, req model.XUIActionRequest) bool {
+	if !a.adminCanAccessAgent(user, agentID) {
+		return false
+	}
+	switch strings.TrimSpace(req.Kind) {
 	case model.XUIActionAddRoutingRule, model.XUIActionUpsertRoutingRule:
 		return true
+	case model.XUIActionAddClient:
+		return a.areaManagerAddClientPayloadAllowed(user, agentID, req.Payload)
+	case model.XUIActionDeleteClient:
+		return a.areaManagerDeleteClientPayloadAllowed(user, agentID, req.Payload)
 	default:
 		return false
 	}
+}
+
+func (a *App) areaManagerAddClientPayloadAllowed(user model.AdminUser, agentID string, payload map[string]any) bool {
+	if payload == nil {
+		return false
+	}
+	inboundID := intFromAny(payload["inbound_id"])
+	inboundTag := strings.TrimSpace(stringFromAny(payload["inbound_tag"]))
+	if inboundID <= 0 && inboundTag == "" {
+		return false
+	}
+	client, ok := payload["client"].(map[string]any)
+	if !ok || client == nil {
+		return false
+	}
+	if strings.TrimSpace(stringFromAny(client["email"])) == "" {
+		return false
+	}
+	return a.areaManagerClientScope(user).allowsInbound(agentID, inboundID, inboundTag)
+}
+
+func (a *App) areaManagerDeleteClientPayloadAllowed(user model.AdminUser, agentID string, payload map[string]any) bool {
+	if payload == nil {
+		return false
+	}
+	inboundID := intFromAny(payload["inbound_id"])
+	inboundTag := strings.TrimSpace(stringFromAny(payload["inbound_tag"]))
+	if inboundID <= 0 && inboundTag == "" {
+		return false
+	}
+	email := strings.TrimSpace(stringFromAny(payload["email"]))
+	clientID := strings.TrimSpace(firstNonEmptyString(
+		stringFromAny(payload["client_id"]),
+		stringFromAny(payload["client_uuid"]),
+		stringFromAny(payload["auth_uuid"]),
+	))
+	if email == "" && clientID == "" {
+		return false
+	}
+	if email != "" {
+		return a.areaManagerClientScope(user).allowsClient(agentID, inboundID, inboundTag, email)
+	}
+	return a.areaManagerClientScope(user).allowsInbound(agentID, inboundID, inboundTag)
+}
+
+func intFromAny(value any) int {
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case float64:
+		return int(typed)
+	case json.Number:
+		number, _ := typed.Int64()
+		return int(number)
+	default:
+		return 0
+	}
+}
+
+func stringFromAny(value any) string {
+	if text, ok := value.(string); ok {
+		return text
+	}
+	return ""
 }
 
 func adminAgentSet(user model.AdminUser) map[string]struct{} {

@@ -331,6 +331,7 @@ export function CustomerPortal() {
             {(overview?.links || []).map((link) => {
               const effectiveName = customerLinkDisplayName(link, remarkDrafts[link.assignment_id])
               const effectiveImportURL = customerLinkImportURL(link, remarkDrafts[link.assignment_id])
+              const billingItems = customerLinkBillingItems(link)
               return (
               <Card key={link.assignment_id} bordered={false} className="surface-card customer-link-card">
                 <div className="customer-link-head">
@@ -372,6 +373,17 @@ export function CustomerPortal() {
                       )}
                     </div>
                     <Paragraph className="customer-link-summary">{link.summary}</Paragraph>
+                    {billingItems.length ? (
+                      <div className="customer-link-billing-row">
+                        {billingItems.map((item) => (
+                          <div key={item.key} className="customer-link-billing-item">
+                            <span>{item.title}</span>
+                            <strong>{item.value}</strong>
+                            {item.note ? <small>{item.note}</small> : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                   <Space wrap>
                     {link.exit_country_code || link.exit_country_name ? <Tag color="blue">出口 {countryFlag(link.exit_country_code)} {link.exit_country_code || link.exit_country_name}</Tag> : null}
@@ -542,6 +554,64 @@ function topologyNodeIcon(role: string) {
 function customerLinkDisplayName(link: CustomerLinkView, draft?: string): string {
   const draftName = (draft || '').trim()
   return draftName || link.remark || link.entry_client_name || link.client_email || '用户链路'
+}
+
+function customerLinkBillingItems(link: CustomerLinkView): Array<{ key: string; title: string; value: string; note?: string }> {
+  const items: Array<{ key: string; title: string; value: string; note?: string }> = []
+  if (Number(link.revenue_amount || 0) > 0) {
+    items.push({
+      key: 'revenue',
+      title: '费用',
+      value: formatCustomerMoney(Number(link.revenue_amount || 0), link.revenue_currency || 'CNY'),
+      note: cycleLabel(link.revenue_cycle),
+    })
+  }
+  if (Number(link.expire_time || 0) > 0) {
+    items.push({
+      key: 'expiry',
+      title: '过期时间',
+      value: formatCustomerExpiryTime(Number(link.expire_time || 0)),
+      note: link.expire_auto_renew ? `自动续期 · ${cycleLabel(link.expire_cycle)}` : cycleLabel(link.expire_cycle),
+    })
+  }
+  return items
+}
+
+function formatCustomerMoney(amount: number, currency: string): string {
+  const normalizedCurrency = currency || 'CNY'
+  if (normalizedCurrency === 'USDT') {
+    return `USDT ${amount.toFixed(amount >= 100 ? 0 : 2)}`
+  }
+  try {
+    return new Intl.NumberFormat('zh-CN', {
+      style: 'currency',
+      currency: normalizedCurrency,
+      maximumFractionDigits: amount >= 100 ? 0 : 2,
+    }).format(amount)
+  } catch {
+    return `${normalizedCurrency} ${amount.toFixed(amount >= 100 ? 0 : 2)}`
+  }
+}
+
+function formatCustomerExpiryTime(value: number): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(value))
+}
+
+function cycleLabel(cycle?: string): string {
+  switch (cycle) {
+    case 'quarter':
+      return '每季'
+    case 'year':
+      return '每年'
+    case 'month':
+      return '每月'
+    default:
+      return ''
+  }
 }
 
 function customerLinkImportURL(link: CustomerLinkView, draft?: string): string {

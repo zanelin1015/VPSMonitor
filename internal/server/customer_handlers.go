@@ -260,6 +260,22 @@ func buildCustomerLinkView(
 	if clientRef, ok := clientMap[customerAssignmentKey(assignment.AgentID, assignment.InboundID, assignment.ClientEmail)]; ok {
 		link.ImportURL = clientRef.Client.ImportURL
 		link.ClientRemark = firstNonEmptyString(clientRef.Client.Comment, clientRef.Client.SubID)
+		if clientRef.Client.ExpiryTime > 0 {
+			link.ExpireTime = clientRef.Client.ExpiryTime
+		}
+	}
+	if billing, ok := customerBillingForAssignment(assignment, agentMap); ok {
+		if billing.RevenueAmount > 0 {
+			amount := billing.RevenueAmount
+			link.RevenueAmount = &amount
+			link.RevenueCurrency = firstNonEmptyString(billing.RevenueCurrency, "CNY")
+			link.RevenueCycle = firstNonEmptyString(billing.RevenueCycle, "month")
+		}
+		if billing.ExpireTime > 0 {
+			link.ExpireTime = billing.ExpireTime
+			link.ExpireCycle = billing.ExpireCycle
+			link.ExpireAutoRenew = billing.ExpireAutoRenew
+		}
 	}
 
 	chain, ok := findCustomerChain(assignment, chainMap)
@@ -297,6 +313,27 @@ func buildCustomerLinkView(
 		link.UnresolvedReason = chain.UnresolvedReason
 	}
 	return link
+}
+
+func customerBillingForAssignment(assignment model.CustomerAssignment, agentMap map[string]model.DashboardAgentView) (model.XUIClientBillingConfig, bool) {
+	if assignment.AgentID == "" || agentMap == nil {
+		return model.XUIClientBillingConfig{}, false
+	}
+	agent, ok := agentMap[assignment.AgentID]
+	if !ok {
+		return model.XUIClientBillingConfig{}, false
+	}
+	exactKey := customerBillingKey(assignment.InboundID, assignment.InboundTag, assignment.ClientEmail)
+	emailKey := customerBillingEmailKey(assignment.InboundID, assignment.ClientEmail)
+	for _, billing := range agent.Renewal.ClientBillings {
+		if customerBillingKey(billing.InboundID, billing.InboundTag, billing.Email) == exactKey {
+			return billing, true
+		}
+		if emailKey != "" && customerBillingEmailKey(billing.InboundID, billing.Email) == emailKey {
+			return billing, true
+		}
+	}
+	return model.XUIClientBillingConfig{}, false
 }
 
 func customerRelayNames(chain model.ClientChainView, rootAgentID string, agentMap map[string]model.DashboardAgentView) []string {

@@ -112,6 +112,7 @@ export interface XUIOutboundActionForm {
 
 export interface XUIRoutingActionForm {
   rule_index: number | null
+  previous_outbound_tag: string
   target_mode: 'existing_outbound' | 'registered_client'
   outbound_tag: string
   balancer_tag: string
@@ -150,6 +151,12 @@ export interface ClientInstallCommandForm {
   poll_interval: string
   request_timeout_seconds: number
   server_skip_tls_verify: boolean
+  xui_auto_install: boolean
+  xui_username: string
+  xui_password: string
+  xui_panel_port: number
+  xui_web_path: string
+  xui_install_script_url: string
 }
 
 export interface FrontendSettingsForm {
@@ -344,6 +351,7 @@ function defaultOutboundActionForm(): XUIOutboundActionForm {
 function defaultRoutingActionForm(): XUIRoutingActionForm {
   return {
     rule_index: null,
+    previous_outbound_tag: '',
     target_mode: 'existing_outbound',
     outbound_tag: '',
     balancer_tag: '',
@@ -388,6 +396,12 @@ function defaultClientInstallCommandForm(): ClientInstallCommandForm {
     poll_interval: '30s',
     request_timeout_seconds: 15,
     server_skip_tls_verify: false,
+    xui_auto_install: false,
+    xui_username: 'admin',
+    xui_password: '',
+    xui_panel_port: 2053,
+    xui_web_path: '/xui/',
+    xui_install_script_url: 'https://raw.githubusercontent.com/MHSanaei/3x-ui/master/install.sh',
   }
 }
 
@@ -399,6 +413,12 @@ function normalizeClientInstallCommandForm(info: ClientInstallInfo): ClientInsta
     poll_interval: info.poll_interval || '30s',
     request_timeout_seconds: Number(info.request_timeout_seconds || 15),
     server_skip_tls_verify: Boolean(info.server_skip_tls_verify),
+    xui_auto_install: Boolean(info.xui_auto_install),
+    xui_username: info.xui_username || 'admin',
+    xui_password: info.xui_password || '',
+    xui_panel_port: Number(info.xui_panel_port || 2053),
+    xui_web_path: info.xui_web_path || '/xui/',
+    xui_install_script_url: info.xui_install_script_url || defaultClientInstallCommandForm().xui_install_script_url,
   }
 }
 
@@ -522,6 +542,9 @@ function buildUpsertRoutingActionPayload(form: XUIRoutingActionForm, outboundFor
   if (form.target_mode === 'registered_client') {
     const outboundPayload = buildOutboundActionPayload(outboundForm)
     payload.outbound = outboundPayload.outbound
+    if (form.previous_outbound_tag.trim()) {
+      payload.previous_outbound_tag = form.previous_outbound_tag.trim()
+    }
     const outboundTag = String((outboundPayload.outbound as Record<string, unknown>)?.tag || '')
     if (!outboundTag) {
       throw new Error('未能生成内部 Client 出站标签')
@@ -1078,6 +1101,25 @@ function normalizeEntryConfig(config?: AgentEntryConfig): AgentEntryConfig {
       protocol: normalizeEntryProtocol(mapping.protocol),
       note: mapping.note || '',
     })),
+    network_policy: normalizeNetworkPolicyConfig(config?.network_policy),
+  }
+}
+
+function normalizeNetworkPolicyConfig(config?: AgentEntryConfig['network_policy']): NonNullable<AgentEntryConfig['network_policy']> {
+  return {
+    enabled: Boolean(config?.enabled),
+    interface: (config?.interface || '').trim(),
+    firewall_backend: ['ufw', 'iptables', 'none'].includes(String(config?.firewall_backend || '')) ? config?.firewall_backend : 'auto',
+    rate_limit_backend: ['tc', 'none'].includes(String(config?.rate_limit_backend || '')) ? config?.rate_limit_backend : 'auto',
+    rules: (config?.rules || []).map((rule, index) => ({
+      id: rule.id || `${rule.protocol || 'tcp'}-${rule.port || 0}-${index}`,
+      name: rule.name || '',
+      enabled: rule.enabled !== false,
+      port: Math.max(0, Number(rule.port || 0)),
+      protocol: rule.protocol === 'udp' || rule.protocol === 'both' ? rule.protocol : 'tcp',
+      rate_limit_mbps: Math.max(0, Number(rule.rate_limit_mbps || 0)),
+      whitelist_ips: parseAddressInput((rule.whitelist_ips || []).join('\n')),
+    })),
   }
 }
 
@@ -1130,6 +1172,7 @@ function buildSectionSavePayload(base: ManagedAgentConfig, draft: ManagedAgentCo
       addresses: [...(base.entry?.addresses || [])],
       import_domain: base.entry?.import_domain || '',
       mappings: (base.entry?.mappings || []).map((mapping) => ({ ...mapping })),
+      network_policy: normalizeNetworkPolicyConfig(base.entry?.network_policy),
     },
     xui: { ...base.xui },
   }
@@ -1151,6 +1194,7 @@ function buildSectionSavePayload(base: ManagedAgentConfig, draft: ManagedAgentCo
         addresses: [...(draft.entry?.addresses || [])],
         import_domain: draft.entry?.import_domain || '',
         mappings: (draft.entry?.mappings || []).map((mapping) => ({ ...mapping })),
+        network_policy: normalizeNetworkPolicyConfig(draft.entry?.network_policy),
       }
       break
   }
@@ -1180,6 +1224,7 @@ function mergeSavedSectionIntoDraft(draft: ManagedAgentConfig, saved: ManagedAge
         addresses: [...(saved.entry?.addresses || [])],
         import_domain: saved.entry?.import_domain || '',
         mappings: (saved.entry?.mappings || []).map((mapping) => ({ ...mapping })),
+        network_policy: normalizeNetworkPolicyConfig(saved.entry?.network_policy),
       }
       break
   }
@@ -1524,6 +1569,13 @@ function createEmptyManagedConfig(agentID: string, agentName?: string): ManagedA
       addresses: [],
       import_domain: '',
       mappings: [],
+      network_policy: {
+        enabled: false,
+        interface: '',
+        firewall_backend: 'auto',
+        rate_limit_backend: 'auto',
+        rules: [],
+      },
     },
     xui: {
       enabled: false,

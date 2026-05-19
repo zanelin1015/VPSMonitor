@@ -822,12 +822,21 @@ func TestSQLiteStoreClientInstallSettings(t *testing.T) {
 		PollInterval:          "45s",
 		RequestTimeoutSeconds: 20,
 		ServerSkipTLSVerify:   true,
+		XUIAutoInstall:        true,
+		XUIUsername:           " admin ",
+		XUIPassword:           " secret ",
+		XUIPanelPort:          2053,
+		XUIWebPath:            " xui ",
+		XUIInstallScriptURL:   " https://example.com/3x-ui.sh ",
 	})
 	if err != nil {
 		t.Fatalf("SaveClientInstallSettings: %v", err)
 	}
 	if saved.ServerURL != "https://panel.example.com" || saved.InstallScriptURL != "https://example.com/install.sh" {
 		t.Fatalf("settings were not normalized: %#v", saved)
+	}
+	if saved.XUIUsername != "admin" || saved.XUIPassword != "secret" || saved.XUIWebPath != "/xui/" {
+		t.Fatalf("x-ui bootstrap settings were not normalized: %#v", saved)
 	}
 
 	loaded, found, err := store.GetClientInstallSettings()
@@ -839,6 +848,52 @@ func TestSQLiteStoreClientInstallSettings(t *testing.T) {
 	}
 	if loaded != saved {
 		t.Fatalf("unexpected loaded settings: got %#v want %#v", loaded, saved)
+	}
+}
+
+func TestSQLiteStoreClientInstallSettingsEncryptsXUIPassword(t *testing.T) {
+	dir := t.TempDir()
+	cipher, err := LoadOrCreateCredentialCipher(filepath.Join(dir, "credential.key"))
+	if err != nil {
+		t.Fatalf("LoadOrCreateCredentialCipher: %v", err)
+	}
+	store, err := NewSQLiteStore(filepath.Join(dir, "bridge.db"), WithCredentialCipher(cipher))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+
+	saved, err := store.SaveClientInstallSettings(model.ClientInstallSettingsRequest{
+		ServerURL:             "https://panel.example.com",
+		InstallScriptURL:      "https://example.com/install.sh",
+		PollInterval:          "30s",
+		RequestTimeoutSeconds: 15,
+		XUIAutoInstall:        true,
+		XUIUsername:           "admin",
+		XUIPassword:           "bootstrap-secret",
+		XUIPanelPort:          2053,
+	})
+	if err != nil {
+		t.Fatalf("SaveClientInstallSettings: %v", err)
+	}
+	if saved.XUIPassword != "bootstrap-secret" {
+		t.Fatalf("expected saved response to keep plaintext password, got %q", saved.XUIPassword)
+	}
+
+	var raw string
+	if err := store.db.QueryRow(`SELECT value_json FROM app_settings WHERE key = ?`, clientInstallSettingsKey).Scan(&raw); err != nil {
+		t.Fatalf("query raw client install settings: %v", err)
+	}
+	if strings.Contains(raw, "bootstrap-secret") || !strings.Contains(raw, encryptedValuePrefix) {
+		t.Fatalf("expected raw client install password to be encrypted, got %s", raw)
+	}
+
+	loaded, found, err := store.GetClientInstallSettings()
+	if err != nil {
+		t.Fatalf("GetClientInstallSettings: %v", err)
+	}
+	if !found || loaded.XUIPassword != "bootstrap-secret" {
+		t.Fatalf("expected decrypted password, found=%v settings=%#v", found, loaded)
 	}
 }
 

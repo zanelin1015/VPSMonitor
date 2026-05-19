@@ -372,6 +372,7 @@ func hasRenewalConfig(cfg model.VPSRenewalConfig) bool {
 func normalizeEntryConfig(cfg model.AgentEntryConfig) model.AgentEntryConfig {
 	cfg.Addresses = normalizeEntryAddresses(cfg.Addresses)
 	cfg.ImportDomain = normalizeEntryImportDomain(cfg.ImportDomain)
+	cfg.NetworkPolicy = normalizeNetworkPolicyConfig(cfg.NetworkPolicy)
 	mappings := make([]model.AgentEntryMapping, 0, len(cfg.Mappings))
 	seen := make(map[string]struct{}, len(cfg.Mappings))
 	for _, mapping := range cfg.Mappings {
@@ -475,7 +476,98 @@ func normalizeEntryProtocol(protocol string) string {
 
 func hasEntryConfig(cfg model.AgentEntryConfig) bool {
 	cfg = normalizeEntryConfig(cfg)
-	return len(cfg.Addresses) > 0 || cfg.ImportDomain != "" || len(cfg.Mappings) > 0
+	return len(cfg.Addresses) > 0 || cfg.ImportDomain != "" || len(cfg.Mappings) > 0 || hasNetworkPolicyConfig(cfg.NetworkPolicy)
+}
+
+func normalizeNetworkPolicyConfig(cfg model.NetworkPolicyConfig) model.NetworkPolicyConfig {
+	cfg.Interface = strings.TrimSpace(cfg.Interface)
+	switch strings.ToLower(strings.TrimSpace(cfg.FirewallBackend)) {
+	case "ufw", "iptables", "none":
+		cfg.FirewallBackend = strings.ToLower(strings.TrimSpace(cfg.FirewallBackend))
+	default:
+		cfg.FirewallBackend = "auto"
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.RateLimitBackend)) {
+	case "tc", "none":
+		cfg.RateLimitBackend = strings.ToLower(strings.TrimSpace(cfg.RateLimitBackend))
+	default:
+		cfg.RateLimitBackend = "auto"
+	}
+	rules := make([]model.NetworkPortPolicyRule, 0, len(cfg.Rules))
+	seen := make(map[string]struct{}, len(cfg.Rules))
+	for _, rule := range cfg.Rules {
+		rule.ID = strings.TrimSpace(rule.ID)
+		rule.Name = strings.TrimSpace(rule.Name)
+		rule.Protocol = normalizeNetworkPolicyProtocol(rule.Protocol)
+		if rule.Port <= 0 || rule.Port > 65535 {
+			continue
+		}
+		if rule.RateLimitMbps < 0 {
+			rule.RateLimitMbps = 0
+		}
+		rule.WhitelistIPs = normalizeNetworkPolicyIPs(rule.WhitelistIPs)
+		if !rule.Enabled && rule.RateLimitMbps <= 0 && len(rule.WhitelistIPs) == 0 {
+			continue
+		}
+		if rule.ID == "" {
+			rule.ID = fmt.Sprintf("%s-%d-%s", rule.Protocol, rule.Port, strings.ToLower(strings.ReplaceAll(rule.Name, " ", "-")))
+		}
+		key := fmt.Sprintf("%s:%d:%s", strings.ToLower(rule.ID), rule.Port, rule.Protocol)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		rules = append(rules, rule)
+	}
+	sort.Slice(rules, func(i, j int) bool {
+		if rules[i].Port != rules[j].Port {
+			return rules[i].Port < rules[j].Port
+		}
+		return rules[i].Protocol < rules[j].Protocol
+	})
+	cfg.Rules = rules
+	if !cfg.Enabled && len(rules) == 0 {
+		cfg.Interface = ""
+		cfg.FirewallBackend = ""
+		cfg.RateLimitBackend = ""
+	}
+	return cfg
+}
+
+func normalizeNetworkPolicyProtocol(protocol string) string {
+	switch strings.ToLower(strings.TrimSpace(protocol)) {
+	case "udp":
+		return "udp"
+	case "both", "all", "tcp+udp":
+		return "both"
+	default:
+		return "tcp"
+	}
+}
+
+func normalizeNetworkPolicyIPs(items []string) []string {
+	seen := make(map[string]struct{}, len(items))
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if _, ok := seen[strings.ToLower(item)]; ok {
+			continue
+		}
+		seen[strings.ToLower(item)] = struct{}{}
+		result = append(result, item)
+	}
+	return result
+}
+
+func hasNetworkPolicyConfig(cfg model.NetworkPolicyConfig) bool {
+	cfg = normalizeNetworkPolicyConfig(cfg)
+	if !cfg.Enabled {
+		return false
+	}
+	return len(cfg.Rules) > 0 || cfg.Interface != "" || cfg.FirewallBackend != "" || cfg.RateLimitBackend != ""
 }
 
 func hasXUIConfig(cfg config.XUIConfig) bool {

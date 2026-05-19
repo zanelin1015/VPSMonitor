@@ -93,6 +93,10 @@ export interface XUIConfig {
   api_token?: string
   two_factor_code?: string
   skip_tls_verify: boolean
+  auto_install?: boolean
+  install_script_url?: string
+  panel_port?: number
+  web_path?: string
 }
 
 export interface ManagedAgentConfig {
@@ -110,6 +114,7 @@ export interface AgentEntryConfig {
   addresses?: string[]
   import_domain?: string
   mappings?: AgentEntryMapping[]
+  network_policy?: NetworkPolicyConfig
 }
 
 export interface AgentEntryMapping {
@@ -118,6 +123,24 @@ export interface AgentEntryMapping {
   internal_port?: number
   protocol?: 'vless' | 'vmess' | 'http' | 'socks' | ''
   note?: string
+}
+
+export interface NetworkPolicyConfig {
+  enabled?: boolean
+  interface?: string
+  firewall_backend?: 'auto' | 'ufw' | 'iptables' | 'none' | string
+  rate_limit_backend?: 'auto' | 'tc' | 'none' | string
+  rules?: NetworkPortPolicyRule[]
+}
+
+export interface NetworkPortPolicyRule {
+  id?: string
+  name?: string
+  enabled?: boolean
+  port?: number
+  protocol?: 'tcp' | 'udp' | 'both' | string
+  rate_limit_mbps?: number
+  whitelist_ips?: string[]
 }
 
 export interface AdminUser {
@@ -227,6 +250,12 @@ export interface CustomerLinkView {
   exit_ip?: string
   resolved: boolean
   unresolved_reason?: string
+  revenue_amount?: number
+  revenue_currency?: 'CNY' | 'USDT' | string
+  revenue_cycle?: 'month' | 'quarter' | 'year' | string
+  expire_time?: number
+  expire_cycle?: 'month' | 'quarter' | 'year' | string
+  expire_auto_renew?: boolean
   steps: CustomerLinkStep[]
   updated_at: string
 }
@@ -314,6 +343,12 @@ export interface ClientInstallInfo {
   poll_interval: string
   request_timeout_seconds: number
   server_skip_tls_verify: boolean
+  xui_auto_install?: boolean
+  xui_username?: string
+  xui_password?: string
+  xui_panel_port?: number
+  xui_web_path?: string
+  xui_install_script_url?: string
 }
 
 export interface TagSettingsResponse {

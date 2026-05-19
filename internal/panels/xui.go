@@ -430,9 +430,22 @@ func (c *XUIClient) addOutbound(ctx context.Context, payload map[string]any) (ma
 		return nil, err
 	}
 	configJSON := mutableConfig.config
-	outboundResult, err := upsertOutboundInConfig(configJSON, outbound)
+	previousTag := firstNonEmptyString(
+		stringFromMap(payload, "previous_outbound_tag"),
+		stringFromMap(payload, "old_outbound_tag"),
+	)
+	removedPrevious := false
+	renamingOutbound := previousTag != "" && tag != "" && previousTag != tag
+	if renamingOutbound {
+		removedPrevious = removeOutboundByTag(configJSON, previousTag)
+	}
+	outboundResult, err := upsertOutboundInConfig(configJSON, outbound, !renamingOutbound)
 	if err != nil {
 		return nil, err
+	}
+	if previousTag != "" && outboundResult.Tag != "" && previousTag != outboundResult.Tag {
+		outboundResult.RemovedPrevious = removedPrevious || removeOutboundByTag(configJSON, previousTag)
+		outboundResult.RoutingRefsUpdated = replaceRoutingOutboundTag(configJSON, previousTag, outboundResult.Tag)
 	}
 
 	if err := c.updateMutableXrayConfig(ctx, mutableConfig); err != nil {
@@ -446,6 +459,8 @@ func (c *XUIClient) addOutbound(ctx context.Context, payload map[string]any) (ma
 		"outbound_added":   outboundResult.Added,
 		"outbound_updated": outboundResult.Updated,
 		"outbound_reused":  outboundResult.Reused,
+		"outbound_removed": outboundResult.RemovedPrevious,
+		"routing_refs":     outboundResult.RoutingRefsUpdated,
 		"restarted":        true,
 	}, nil
 }
@@ -518,12 +533,25 @@ func (c *XUIClient) upsertRoutingRule(ctx context.Context, payload map[string]an
 			return nil, fmt.Errorf("outbound must be an object")
 		}
 		requestedTag := stringFromMap(outbound, "tag")
-		outboundResult, err = upsertOutboundInConfig(configJSON, outbound)
+		previousTag := firstNonEmptyString(
+			stringFromMap(payload, "previous_outbound_tag"),
+			stringFromMap(payload, "old_outbound_tag"),
+		)
+		removedPrevious := false
+		renamingOutbound := previousTag != "" && requestedTag != "" && previousTag != requestedTag
+		if renamingOutbound {
+			removedPrevious = removeOutboundByTag(configJSON, previousTag)
+		}
+		outboundResult, err = upsertOutboundInConfig(configJSON, outbound, !renamingOutbound)
 		if err != nil {
 			return nil, err
 		}
 		if requestedTag != "" && outboundResult.Tag != "" && stringFromMap(rule, "outboundTag") == requestedTag {
 			rule["outboundTag"] = outboundResult.Tag
+		}
+		if previousTag != "" && outboundResult.Tag != "" && previousTag != outboundResult.Tag {
+			outboundResult.RemovedPrevious = removedPrevious || removeOutboundByTag(configJSON, previousTag)
+			outboundResult.RoutingRefsUpdated = replaceRoutingOutboundTag(configJSON, previousTag, outboundResult.Tag)
 		}
 	}
 	if outboundTag := stringFromMap(rule, "outboundTag"); outboundTag != "" {
@@ -575,18 +603,22 @@ func (c *XUIClient) upsertRoutingRule(ctx context.Context, payload map[string]an
 		"outbound_added":   outboundResult.Added,
 		"outbound_updated": outboundResult.Updated,
 		"outbound_reused":  outboundResult.Reused,
+		"outbound_removed": outboundResult.RemovedPrevious,
+		"routing_refs":     outboundResult.RoutingRefsUpdated,
 		"restarted":        true,
 	}, nil
 }
 
 type outboundUpsertResult struct {
-	Tag     string
-	Added   bool
-	Updated bool
-	Reused  bool
+	Tag                string
+	Added              bool
+	Updated            bool
+	Reused             bool
+	RoutingRefsUpdated int
+	RemovedPrevious    bool
 }
 
-func upsertOutboundInConfig(configJSON map[string]any, outbound map[string]any) (outboundUpsertResult, error) {
+func upsertOutboundInConfig(configJSON map[string]any, outbound map[string]any, reuseEquivalent ...bool) (outboundUpsertResult, error) {
 	normalizeOutboundForXUI(outbound)
 	tag := stringFromMap(outbound, "tag")
 	if tag == "" {
@@ -604,15 +636,42 @@ func upsertOutboundInConfig(configJSON map[string]any, outbound map[string]any) 
 			return outboundUpsertResult{Tag: tag, Updated: true}, nil
 		}
 	}
-	if existingIndex := findEquivalentOutbound(outbounds, outbound); existingIndex >= 0 {
-		existingTag := stringFromMap(outbounds[existingIndex], "tag")
-		if existingTag == "" {
-			existingTag = tag
+	allowEquivalentReuse := true
+	if len(reuseEquivalent) > 0 {
+		allowEquivalentReuse = reuseEquivalent[0]
+	}
+	if allowEquivalentReuse {
+		if existingIndex := findEquivalentOutbound(outbounds, outbound); existingIndex >= 0 {
+			existingTag := stringFromMap(outbounds[existingIndex], "tag")
+			if existingTag == "" {
+				existingTag = tag
+			}
+			return outboundUpsertResult{Tag: existingTag, Reused: true}, nil
 		}
-		return outboundUpsertResult{Tag: existingTag, Reused: true}, nil
 	}
 	configJSON["outbounds"] = append(outbounds, outbound)
 	return outboundUpsertResult{Tag: tag, Added: true}, nil
+}
+
+func removeOutboundByTag(configJSON map[string]any, tag string) bool {
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return false
+	}
+	outbounds := objectSlice(configJSON["outbounds"])
+	filtered := make([]map[string]any, 0, len(outbounds))
+	removed := false
+	for _, outbound := range outbounds {
+		if strings.TrimSpace(stringFromMap(outbound, "tag")) == tag {
+			removed = true
+			continue
+		}
+		filtered = append(filtered, outbound)
+	}
+	if removed {
+		configJSON["outbounds"] = filtered
+	}
+	return removed
 }
 
 func findEquivalentOutbound(outbounds []map[string]any, outbound map[string]any) int {
@@ -736,10 +795,150 @@ func normalizeXUIConfigValue(value any) any {
 	}
 }
 
+func replaceRoutingOutboundTag(configJSON map[string]any, oldTag string, newTag string) int {
+	oldTag = strings.TrimSpace(oldTag)
+	newTag = strings.TrimSpace(newTag)
+	if oldTag == "" || newTag == "" || oldTag == newTag {
+		return 0
+	}
+	routing := objectMap(configJSON["routing"])
+	rules := objectSlice(routing["rules"])
+	updated := 0
+	for _, rule := range rules {
+		if strings.TrimSpace(stringFromMap(rule, "outboundTag")) == oldTag {
+			rule["outboundTag"] = newTag
+			updated++
+		}
+	}
+	if updated > 0 {
+		routing["rules"] = rules
+		configJSON["routing"] = routing
+	}
+	return updated
+}
+
+func replaceRoutingUser(configJSON map[string]any, oldEmail string, newEmail string) int {
+	oldEmail = strings.TrimSpace(oldEmail)
+	newEmail = strings.TrimSpace(newEmail)
+	if oldEmail == "" || newEmail == "" || oldEmail == newEmail {
+		return 0
+	}
+	routing := objectMap(configJSON["routing"])
+	rules := objectSlice(routing["rules"])
+	updated := 0
+	for _, rule := range rules {
+		users := stringListValue(rule["user"])
+		if len(users) == 0 {
+			continue
+		}
+		changed := false
+		for index, user := range users {
+			if strings.TrimSpace(user) == oldEmail {
+				users[index] = newEmail
+				changed = true
+			}
+		}
+		if changed {
+			rule["user"] = users
+			updated++
+		}
+	}
+	if updated > 0 {
+		routing["rules"] = rules
+		configJSON["routing"] = routing
+	}
+	return updated
+}
+
+func removeRoutingUser(configJSON map[string]any, email string) int {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return 0
+	}
+	routing := objectMap(configJSON["routing"])
+	rules := objectSlice(routing["rules"])
+	if len(rules) == 0 {
+		return 0
+	}
+	filtered := make([]map[string]any, 0, len(rules))
+	updated := 0
+	for _, rule := range rules {
+		users := stringListValue(rule["user"])
+		if len(users) == 0 {
+			filtered = append(filtered, rule)
+			continue
+		}
+		remaining := make([]string, 0, len(users))
+		removed := false
+		for _, user := range users {
+			if strings.TrimSpace(user) == email {
+				removed = true
+				continue
+			}
+			remaining = append(remaining, user)
+		}
+		if !removed {
+			filtered = append(filtered, rule)
+			continue
+		}
+		updated++
+		if len(remaining) > 0 {
+			rule["user"] = remaining
+			filtered = append(filtered, rule)
+			continue
+		}
+		delete(rule, "user")
+		if routingRuleHasMatcher(rule) {
+			filtered = append(filtered, rule)
+		}
+	}
+	if updated > 0 {
+		routing["rules"] = filtered
+		configJSON["routing"] = routing
+	}
+	return updated
+}
+
+func routingRuleHasMatcher(rule map[string]any) bool {
+	for _, key := range []string{"inboundTag", "domain", "ip", "port", "sourcePort", "sourceIP", "network", "protocol"} {
+		if len(stringListValue(rule[key])) > 0 || strings.TrimSpace(stringValue(rule[key])) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func stringListValue(raw any) []string {
+	switch value := raw.(type) {
+	case []string:
+		return append([]string(nil), value...)
+	case []any:
+		result := make([]string, 0, len(value))
+		for _, item := range value {
+			if text := strings.TrimSpace(stringValue(item)); text != "" {
+				result = append(result, text)
+			}
+		}
+		return result
+	case string:
+		if strings.TrimSpace(value) == "" {
+			return nil
+		}
+		return []string{strings.TrimSpace(value)}
+	default:
+		return nil
+	}
+}
+
 func (c *XUIClient) updateClientExpiry(ctx context.Context, payload map[string]any) (map[string]any, error) {
 	inboundID := intValue(payload["inbound_id"])
 	inboundTag := strings.TrimSpace(stringFromMap(payload, "inbound_tag"))
 	email := strings.TrimSpace(stringFromMap(payload, "email"))
+	previousEmail := firstNonEmptyString(
+		stringFromMap(payload, "previous_email"),
+		stringFromMap(payload, "old_email"),
+	)
+	lookupEmail := firstNonEmptyString(previousEmail, email)
 	expiryTime := int64Value(payload["expiry_time"])
 	if inboundID <= 0 && inboundTag == "" {
 		return nil, fmt.Errorf("inbound_id or inbound_tag is required")
@@ -777,8 +976,11 @@ func (c *XUIClient) updateClientExpiry(ctx context.Context, payload map[string]a
 	clients := objectSlice(settings["clients"])
 	var updatedClient map[string]any
 	for _, client := range clients {
-		if strings.TrimSpace(stringValue(client["email"])) == email {
+		if strings.TrimSpace(stringValue(client["email"])) == lookupEmail {
 			client["expiryTime"] = expiryTime
+			if previousEmail != "" && previousEmail != email {
+				client["email"] = email
+			}
 			updatedClient = client
 			break
 		}
@@ -794,10 +996,14 @@ func (c *XUIClient) updateClientExpiry(ctx context.Context, payload map[string]a
 			"id":       inboundID,
 			"settings": string(clientSettings),
 		}); err == nil {
+			routingRefsUpdated, err := c.replaceRoutingUserReferences(ctx, previousEmail, email)
+			if err != nil {
+				return nil, err
+			}
 			if err := c.restartXrayService(ctx); err != nil {
 				return nil, err
 			}
-			return map[string]any{"message": result.Msg, "email": email, "expiry_time": expiryTime, "restarted": true}, nil
+			return map[string]any{"message": result.Msg, "email": email, "expiry_time": expiryTime, "routing_refs": routingRefsUpdated, "restarted": true}, nil
 		}
 	}
 
@@ -815,10 +1021,14 @@ func (c *XUIClient) updateClientExpiry(ctx context.Context, payload map[string]a
 	if err != nil {
 		return nil, err
 	}
+	routingRefsUpdated, err := c.replaceRoutingUserReferences(ctx, previousEmail, email)
+	if err != nil {
+		return nil, err
+	}
 	if err := c.restartXrayService(ctx); err != nil {
 		return nil, err
 	}
-	return map[string]any{"message": result.Msg, "email": email, "expiry_time": expiryTime, "restarted": true}, nil
+	return map[string]any{"message": result.Msg, "email": email, "expiry_time": expiryTime, "routing_refs": routingRefsUpdated, "restarted": true}, nil
 }
 
 func (c *XUIClient) deleteClient(ctx context.Context, payload map[string]any) (map[string]any, error) {
@@ -866,6 +1076,9 @@ func (c *XUIClient) deleteClient(ctx context.Context, payload map[string]any) (m
 	for index, client := range clients {
 		if clientMatchesDeletePayload(client, email, clientID) {
 			removedIndex = index
+			if email == "" {
+				email = strings.TrimSpace(stringValue(client["email"]))
+			}
 			if removedClientID == "" {
 				removedClientID = firstNonEmptyString(
 					stringValue(client["id"]),
@@ -881,13 +1094,17 @@ func (c *XUIClient) deleteClient(ctx context.Context, payload map[string]any) (m
 	}
 
 	inboundID = intValue(inbound["id"])
+	routingRefsUpdated, err := c.removeRoutingUserReferences(ctx, email)
+	if err != nil {
+		return nil, err
+	}
 	if removedClientID != "" {
 		path := fmt.Sprintf("/panel/api/inbounds/%d/delClient/%s", inboundID, url.PathEscape(removedClientID))
 		if result, err := c.postJSON(ctx, path, map[string]any{}); err == nil {
 			if err := c.restartXrayService(ctx); err != nil {
 				return nil, err
 			}
-			return map[string]any{"message": result.Msg, "email": email, "client_id": removedClientID, "inbound_id": inboundID, "restarted": true}, nil
+			return map[string]any{"message": result.Msg, "email": email, "client_id": removedClientID, "inbound_id": inboundID, "routing_refs": routingRefsUpdated, "restarted": true}, nil
 		}
 	}
 
@@ -909,7 +1126,43 @@ func (c *XUIClient) deleteClient(ctx context.Context, payload map[string]any) (m
 	if err := c.restartXrayService(ctx); err != nil {
 		return nil, err
 	}
-	return map[string]any{"message": result.Msg, "email": email, "client_id": removedClientID, "inbound_id": inboundID, "restarted": true}, nil
+	return map[string]any{"message": result.Msg, "email": email, "client_id": removedClientID, "inbound_id": inboundID, "routing_refs": routingRefsUpdated, "restarted": true}, nil
+}
+
+func (c *XUIClient) removeRoutingUserReferences(ctx context.Context, email string) (int, error) {
+	if strings.TrimSpace(email) == "" {
+		return 0, nil
+	}
+	mutableConfig, err := c.getMutableXrayConfig(ctx)
+	if err != nil {
+		return 0, err
+	}
+	updated := removeRoutingUser(mutableConfig.config, email)
+	if updated == 0 {
+		return 0, nil
+	}
+	if err := c.updateMutableXrayConfig(ctx, mutableConfig); err != nil {
+		return 0, err
+	}
+	return updated, nil
+}
+
+func (c *XUIClient) replaceRoutingUserReferences(ctx context.Context, oldEmail string, newEmail string) (int, error) {
+	if strings.TrimSpace(oldEmail) == "" || strings.TrimSpace(newEmail) == "" || strings.TrimSpace(oldEmail) == strings.TrimSpace(newEmail) {
+		return 0, nil
+	}
+	mutableConfig, err := c.getMutableXrayConfig(ctx)
+	if err != nil {
+		return 0, err
+	}
+	updated := replaceRoutingUser(mutableConfig.config, oldEmail, newEmail)
+	if updated == 0 {
+		return 0, nil
+	}
+	if err := c.updateMutableXrayConfig(ctx, mutableConfig); err != nil {
+		return 0, err
+	}
+	return updated, nil
 }
 
 func clientMatchesDeletePayload(client map[string]any, email string, clientID string) bool {

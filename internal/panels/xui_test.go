@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"testing"
 	"time"
@@ -1456,6 +1457,93 @@ func TestXUIExecuteUpsertRoutingRuleDeduplicatesAndMovesExistingRuleFirst(t *tes
 	}
 }
 
+func TestXUIExecuteUpsertRoutingRuleRenamesOutboundReferences(t *testing.T) {
+	client, err := NewXUIClient(config.XUIConfig{
+		Enabled:  true,
+		BaseURL:  "https://xui.local",
+		Username: "admin",
+		Password: "pass",
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewXUIClient: %v", err)
+	}
+
+	var updatedConfig map[string]any
+	client.client = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/login":
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
+			case "/panel/xray/":
+				wrapper, err := json.Marshal(map[string]any{
+					"xraySetting": map[string]any{
+						"outbounds": []map[string]any{
+							{"tag": "relay-old", "protocol": "freedom"},
+							{"tag": "direct", "protocol": "freedom"},
+						},
+						"routing": map[string]any{"rules": []map[string]any{
+							{"type": "field", "user": []string{"Akko"}, "outboundTag": "relay-old"},
+							{"type": "field", "inboundTag": []string{"in-a"}, "outboundTag": "relay-old"},
+						}},
+					},
+				})
+				if err != nil {
+					t.Fatalf("marshal wrapper: %v", err)
+				}
+				return jsonResponse(t, req, map[string]any{"success": true, "obj": string(wrapper)}), nil
+			case "/panel/xray/update":
+				if err := req.ParseForm(); err != nil {
+					t.Fatalf("ParseForm: %v", err)
+				}
+				if err := json.Unmarshal([]byte(req.Form.Get("xraySetting")), &updatedConfig); err != nil {
+					t.Fatalf("decode updated xraySetting: %v", err)
+				}
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "updated"}), nil
+			case "/panel/api/server/restartXrayService":
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "restarted"}), nil
+			default:
+				t.Fatalf("unexpected path: %s", req.URL.Path)
+				return nil, nil
+			}
+		}),
+	}
+
+	result, err := client.ExecuteAction(context.Background(), model.XUIAction{
+		Kind: model.XUIActionUpsertRoutingRule,
+		Payload: map[string]any{
+			"previous_outbound_tag": "relay-old",
+			"outbound": map[string]any{
+				"tag":      "relay-new",
+				"protocol": "freedom",
+			},
+			"rule": map[string]any{
+				"type":        "field",
+				"user":        []string{"Akko"},
+				"outboundTag": "relay-new",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteAction: %v", err)
+	}
+	if result["routing_refs"] != 2 || result["outbound_removed"] != true {
+		t.Fatalf("expected outbound references to be rewritten, got %#v", result)
+	}
+	outbounds := updatedConfig["outbounds"].([]any)
+	for _, item := range outbounds {
+		if item.(map[string]any)["tag"] == "relay-old" {
+			t.Fatalf("expected old outbound to be removed, got %#v", outbounds)
+		}
+	}
+	rules := updatedConfig["routing"].(map[string]any)["rules"].([]any)
+	for _, item := range rules {
+		if item.(map[string]any)["outboundTag"] != "relay-new" {
+			t.Fatalf("expected routing rule to point to relay-new, got %#v", rules)
+		}
+	}
+}
+
 func TestXUIExecuteDeleteClientUsesDeleteAPI(t *testing.T) {
 	client, err := NewXUIClient(config.XUIConfig{
 		Enabled:  true,
@@ -1468,6 +1556,7 @@ func TestXUIExecuteDeleteClientUsesDeleteAPI(t *testing.T) {
 	}
 
 	deleteCalled := false
+	routingUpdateCalled := false
 	restartCalled := false
 	client.client = &http.Client{
 		Timeout: 5 * time.Second,
@@ -1484,6 +1573,33 @@ func TestXUIExecuteDeleteClientUsesDeleteAPI(t *testing.T) {
 						"settings": `{"clients":[{"id":"uuid-1","email":"alice@example.com"},{"id":"uuid-2","email":"bob@example.com"}]}`,
 					}},
 				}), nil
+			case "/panel/xray/":
+				wrapper, err := json.Marshal(map[string]any{
+					"xraySetting": map[string]any{
+						"outbounds": []map[string]any{{"tag": "relay", "protocol": "freedom"}},
+						"routing": map[string]any{"rules": []map[string]any{
+							{"type": "field", "user": []string{"alice@example.com", "bob@example.com"}, "outboundTag": "relay"},
+						}},
+					},
+				})
+				if err != nil {
+					t.Fatalf("marshal wrapper: %v", err)
+				}
+				return jsonResponse(t, req, map[string]any{"success": true, "obj": string(wrapper)}), nil
+			case "/panel/xray/update":
+				routingUpdateCalled = true
+				form, _ := io.ReadAll(req.Body)
+				values, _ := url.ParseQuery(string(form))
+				var updated map[string]any
+				if err := json.Unmarshal([]byte(values.Get("xraySetting")), &updated); err != nil {
+					t.Fatalf("decode updated xray setting: %v", err)
+				}
+				rules := updated["routing"].(map[string]any)["rules"].([]any)
+				users := rules[0].(map[string]any)["user"].([]any)
+				if len(users) != 1 || users[0] != "bob@example.com" {
+					t.Fatalf("expected alice to be removed from routing users, got %#v", users)
+				}
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "updated"}), nil
 			case "/panel/api/inbounds/7/delClient/uuid-1":
 				deleteCalled = true
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "deleted"}), nil
@@ -1511,8 +1627,8 @@ func TestXUIExecuteDeleteClientUsesDeleteAPI(t *testing.T) {
 	if result["client_id"] != "uuid-1" || result["restarted"] != true {
 		t.Fatalf("unexpected result: %#v", result)
 	}
-	if !deleteCalled || !restartCalled {
-		t.Fatalf("expected delete API and restart to be called, delete=%v restart=%v", deleteCalled, restartCalled)
+	if !deleteCalled || !routingUpdateCalled || !restartCalled {
+		t.Fatalf("expected delete API, routing update, and restart to be called, delete=%v routing=%v restart=%v", deleteCalled, routingUpdateCalled, restartCalled)
 	}
 }
 
@@ -1697,6 +1813,17 @@ func TestXUIExecuteDeleteClientFallsBackToInboundUpdate(t *testing.T) {
 						"settings": `{"clients":[{"id":"uuid-1","email":"alice@example.com"},{"id":"uuid-2","email":"bob@example.com"}]}`,
 					}},
 				}), nil
+			case "/panel/xray/":
+				wrapper, err := json.Marshal(map[string]any{
+					"xraySetting": map[string]any{
+						"outbounds": []map[string]any{},
+						"routing":   map[string]any{"rules": []map[string]any{}},
+					},
+				})
+				if err != nil {
+					t.Fatalf("marshal wrapper: %v", err)
+				}
+				return jsonResponse(t, req, map[string]any{"success": true, "obj": string(wrapper)}), nil
 			case "/panel/api/inbounds/7/delClient/uuid-1":
 				return jsonResponse(t, req, map[string]any{"success": false, "msg": "delete api unavailable"}), nil
 			case "/panel/api/inbounds/update/7":

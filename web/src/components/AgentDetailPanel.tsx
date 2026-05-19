@@ -293,7 +293,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       render: (value: number | undefined, record) => (
         <Space wrap size={[6, 6]}>
           <Tag>{value ?? 0}</Tag>
-          <Button size="small" type="link" disabled={!canManageConfig} onClick={() => onCreateNodeClientAction(record)}>
+          <Button size="small" type="link" disabled={!canManageConfig && !restrictedView} onClick={() => onCreateNodeClientAction(record)}>
             新增客户端
           </Button>
         </Space>
@@ -544,7 +544,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
           <Button
             size="small"
             danger
-            disabled={!canManageConfig}
+            disabled={!canManageConfig && !restrictedView}
             loading={xuiClientDeleteLoadingKey === xuiClientActionKey(record)}
           >
             删除
@@ -560,7 +560,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     },
   ]
   const visibleClientColumns = restrictedView
-    ? clientColumns.filter((column) => !['protocol', 'status', 'billing', 'expiry', 'last_online', 'actions', 'route'].includes(String(column.key || '')))
+    ? clientColumns.filter((column) => !['protocol', 'status', 'billing', 'expiry', 'last_online', 'route'].includes(String(column.key || '')))
     : clientColumns
 
   const routingColumns: ColumnsType<XUIRoutingRuleView> = [
@@ -932,7 +932,12 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
               label: `客户端 (${overview?.clients.length || 0})`,
               children: overview ? (
                 <Space direction="vertical" style={{ width: '100%' }} size="middle">
-                  <Input.Search allowClear placeholder="按邮箱、备注、节点标签筛选客户端" value={clientSearch} onChange={(event) => onClientSearchChange(event.target.value)} />
+                  <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
+                    <Input.Search allowClear style={{ minWidth: 280, flex: 1 }} placeholder="按邮箱、备注、节点标签筛选客户端" value={clientSearch} onChange={(event) => onClientSearchChange(event.target.value)} />
+                    <Button type="primary" disabled={!overview.nodes.length || (!canManageConfig && !restrictedView)} onClick={() => onCreateNodeClientAction(overview.nodes[0])}>
+                      新增客户端
+                    </Button>
+                  </Space>
                   <Table rowKey={(record) => `${record.inbound_tag}-${record.email}`} columns={visibleClientColumns} dataSource={filteredClients} pagination={{ pageSize: 12, hideOnSinglePage: true }} scroll={{ x: restrictedView ? 980 : 1780 }} />
                 </Space>
               ) : (

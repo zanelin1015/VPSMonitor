@@ -45,17 +45,18 @@ export function renderRoutingActionForm(props: {
   }
   const applyRule = (ruleIndex: number | null) => {
     if (!ruleIndex) {
-      update({ rule_index: null })
+      update({ rule_index: null, previous_outbound_tag: '' })
       return
     }
     const rule = rules.find((item) => item.index === ruleIndex)
     if (!rule) {
-      update({ rule_index: ruleIndex })
+      update({ rule_index: ruleIndex, previous_outbound_tag: '' })
       return
     }
     onChange({
       ...form,
       rule_index: rule.index,
+      previous_outbound_tag: rule.outbound_tag || '',
       target_mode: 'existing_outbound',
       outbound_tag: rule.outbound_tag || '',
       balancer_tag: rule.balancer_tag || '',

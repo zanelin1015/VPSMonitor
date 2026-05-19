@@ -102,6 +102,12 @@ type ClientInstallInfo struct {
 	PollInterval          string `json:"poll_interval"`
 	RequestTimeoutSeconds int    `json:"request_timeout_seconds"`
 	ServerSkipTLSVerify   bool   `json:"server_skip_tls_verify"`
+	XUIAutoInstall        bool   `json:"xui_auto_install"`
+	XUIUsername           string `json:"xui_username,omitempty"`
+	XUIPassword           string `json:"xui_password,omitempty"`
+	XUIPanelPort          int    `json:"xui_panel_port,omitempty"`
+	XUIWebPath            string `json:"xui_web_path,omitempty"`
+	XUIInstallScriptURL   string `json:"xui_install_script_url,omitempty"`
 }
 
 type ClientInstallSettingsRequest struct {
@@ -110,6 +116,12 @@ type ClientInstallSettingsRequest struct {
 	PollInterval          string `json:"poll_interval"`
 	RequestTimeoutSeconds int    `json:"request_timeout_seconds"`
 	ServerSkipTLSVerify   bool   `json:"server_skip_tls_verify"`
+	XUIAutoInstall        bool   `json:"xui_auto_install"`
+	XUIUsername           string `json:"xui_username,omitempty"`
+	XUIPassword           string `json:"xui_password,omitempty"`
+	XUIPanelPort          int    `json:"xui_panel_port,omitempty"`
+	XUIWebPath            string `json:"xui_web_path,omitempty"`
+	XUIInstallScriptURL   string `json:"xui_install_script_url,omitempty"`
 }
 
 type ExchangeRatesResponse struct {

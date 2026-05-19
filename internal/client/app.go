@@ -24,18 +24,20 @@ import (
 )
 
 type App struct {
-	config         config.ClientConfig
-	httpClient     *http.Client
-	requestTimeout time.Duration
-	mu             sync.RWMutex
-	agentToken     string
-	certificates   []model.XUILocalCertificate
-	certsScannedAt time.Time
-	xuiClient      *panels.XUIClient
-	xuiClientKey   string
-	observedIP     string
-	observedIPAt   time.Time
-	runOnceMu      sync.Mutex
+	config                 config.ClientConfig
+	httpClient             *http.Client
+	requestTimeout         time.Duration
+	mu                     sync.RWMutex
+	agentToken             string
+	certificates           []model.XUILocalCertificate
+	certsScannedAt         time.Time
+	xuiClient              *panels.XUIClient
+	xuiClientKey           string
+	observedIP             string
+	observedIPAt           time.Time
+	runOnceMu              sync.Mutex
+	networkPolicySignature string
+	xuiBootstrapSignature  string
 }
 
 func New(cfg config.ClientConfig) (*App, error) {
@@ -61,7 +63,9 @@ func (a *App) RunOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	a.ensureXUIBootstrapIfNeeded(ctx, effectiveConfig.XUI)
 	a.executePendingXUIActions(ctx, effectiveConfig)
+	a.applyNetworkPolicyIfNeeded(ctx, effectiveConfig.Entry.NetworkPolicy)
 	snapshot := a.collect(ctx, effectiveConfig)
 	return a.pushSnapshot(ctx, snapshot)
 }

@@ -96,3 +96,55 @@ func TestBuildCustomerLinkViewUsesCustomerDisplayNames(t *testing.T) {
 		t.Fatalf("expected customer-only step labels, got %#v", link.Steps)
 	}
 }
+
+func TestBuildCustomerLinkViewIncludesBillingAndExpiry(t *testing.T) {
+	assignment := model.CustomerAssignment{
+		ID:          7,
+		AgentID:     "entry",
+		InboundID:   1001,
+		InboundTag:  "vless-in",
+		ClientEmail: "alice@example.com",
+	}
+	chainMap := map[string]model.ClientChainView{
+		customerAssignmentKey("entry", 1001, "alice@example.com"): {
+			RootAgentID:      "entry",
+			RootClientEmail:  "alice@example.com",
+			RootInboundTag:   "vless-in",
+			MatchedLinkCount: 1,
+			Steps:            []model.ClientChainStep{{StepType: "client", AgentID: "entry", Label: "alice@example.com"}},
+		},
+	}
+	clientMap := map[string]customerClientRef{
+		customerAssignmentKey("entry", 1001, "alice@example.com"): {
+			Client: model.XUIClientView{InboundID: 1001, InboundTag: "vless-in", Email: "alice@example.com", ExpiryTime: 1760000000000},
+		},
+	}
+	agentMap := map[string]model.DashboardAgentView{
+		"entry": {
+			AgentID: "entry",
+			Renewal: model.VPSRenewalConfig{
+				ClientBillings: []model.XUIClientBillingConfig{
+					{
+						InboundID:       1001,
+						InboundTag:      "vless-in",
+						Email:           "alice@example.com",
+						RevenueAmount:   88.5,
+						RevenueCurrency: "USDT",
+						RevenueCycle:    "quarter",
+						ExpireTime:      1770000000000,
+						ExpireCycle:     "year",
+						ExpireAutoRenew: true,
+					},
+				},
+			},
+		},
+	}
+
+	link := buildCustomerLinkView(assignment, chainMap, clientMap, agentMap)
+	if link.RevenueAmount == nil || *link.RevenueAmount != 88.5 || link.RevenueCurrency != "USDT" || link.RevenueCycle != "quarter" {
+		t.Fatalf("expected billing revenue on customer link, got %#v", link)
+	}
+	if link.ExpireTime != 1770000000000 || link.ExpireCycle != "year" || !link.ExpireAutoRenew {
+		t.Fatalf("expected billing expiry to override client expiry, got %#v", link)
+	}
+}

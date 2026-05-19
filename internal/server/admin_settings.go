@@ -212,13 +212,25 @@ func (a *App) clientInstallInfo(r *http.Request, settings model.ClientInstallSet
 		PollInterval:          pollInterval,
 		RequestTimeoutSeconds: requestTimeoutSeconds,
 		ServerSkipTLSVerify:   settings.ServerSkipTLSVerify,
+		XUIAutoInstall:        settings.XUIAutoInstall,
+		XUIUsername:           settings.XUIUsername,
+		XUIPassword:           settings.XUIPassword,
+		XUIPanelPort:          settings.XUIPanelPort,
+		XUIWebPath:            settings.XUIWebPath,
+		XUIInstallScriptURL:   firstNonEmptyString(settings.XUIInstallScriptURL, defaultXUIInstallScriptURL),
 	}
 }
+
+const defaultXUIInstallScriptURL = "https://raw.githubusercontent.com/MHSanaei/3x-ui/master/install.sh"
 
 func validateClientInstallSettings(req model.ClientInstallSettingsRequest) (model.ClientInstallSettingsRequest, error) {
 	req.ServerURL = strings.TrimSpace(req.ServerURL)
 	req.InstallScriptURL = strings.TrimSpace(req.InstallScriptURL)
 	req.PollInterval = strings.TrimSpace(req.PollInterval)
+	req.XUIUsername = strings.TrimSpace(req.XUIUsername)
+	req.XUIPassword = strings.TrimSpace(req.XUIPassword)
+	req.XUIInstallScriptURL = strings.TrimSpace(req.XUIInstallScriptURL)
+	req.XUIWebPath = normalizeXUIWebPath(req.XUIWebPath)
 	if req.ServerURL == "" {
 		return req, fmt.Errorf("server url is required")
 	}
@@ -240,7 +252,36 @@ func validateClientInstallSettings(req model.ClientInstallSettingsRequest) (mode
 	if req.RequestTimeoutSeconds <= 0 {
 		req.RequestTimeoutSeconds = 15
 	}
+	if req.XUIAutoInstall {
+		if req.XUIUsername == "" {
+			return req, fmt.Errorf("x-ui username is required")
+		}
+		if req.XUIPassword == "" {
+			return req, fmt.Errorf("x-ui password is required")
+		}
+		if req.XUIPanelPort <= 0 || req.XUIPanelPort > 65535 {
+			return req, fmt.Errorf("x-ui panel port must be 1-65535")
+		}
+		if req.XUIInstallScriptURL == "" {
+			req.XUIInstallScriptURL = defaultXUIInstallScriptURL
+		}
+		if err := validateHTTPURL(req.XUIInstallScriptURL, "x-ui install script url"); err != nil {
+			return req, err
+		}
+	}
 	return req, nil
+}
+
+func normalizeXUIWebPath(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	value = "/" + strings.Trim(value, "/")
+	if value == "/" {
+		return ""
+	}
+	return value + "/"
 }
 
 func validateHTTPURL(value, label string) error {

@@ -48,9 +48,10 @@ type XUIClientBillingConfig struct {
 }
 
 type AgentEntryConfig struct {
-	Addresses    []string            `json:"addresses,omitempty"`
-	ImportDomain string              `json:"import_domain,omitempty"`
-	Mappings     []AgentEntryMapping `json:"mappings,omitempty"`
+	Addresses     []string            `json:"addresses,omitempty"`
+	ImportDomain  string              `json:"import_domain,omitempty"`
+	Mappings      []AgentEntryMapping `json:"mappings,omitempty"`
+	NetworkPolicy NetworkPolicyConfig `json:"network_policy,omitempty"`
 }
 
 type AgentEntryMapping struct {
@@ -59,6 +60,24 @@ type AgentEntryMapping struct {
 	InternalPort int    `json:"internal_port,omitempty"`
 	Protocol     string `json:"protocol,omitempty"`
 	Note         string `json:"note,omitempty"`
+}
+
+type NetworkPolicyConfig struct {
+	Enabled          bool                    `json:"enabled,omitempty"`
+	Interface        string                  `json:"interface,omitempty"`
+	FirewallBackend  string                  `json:"firewall_backend,omitempty"`
+	RateLimitBackend string                  `json:"rate_limit_backend,omitempty"`
+	Rules            []NetworkPortPolicyRule `json:"rules,omitempty"`
+}
+
+type NetworkPortPolicyRule struct {
+	ID            string   `json:"id,omitempty"`
+	Name          string   `json:"name,omitempty"`
+	Enabled       bool     `json:"enabled,omitempty"`
+	Port          int      `json:"port,omitempty"`
+	Protocol      string   `json:"protocol,omitempty"`
+	RateLimitMbps float64  `json:"rate_limit_mbps,omitempty"`
+	WhitelistIPs  []string `json:"whitelist_ips,omitempty"`
 }
 
 type AgentRegisterRequest struct {

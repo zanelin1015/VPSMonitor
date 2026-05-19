@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"bridge-core/internal/config"
 	"bridge-core/internal/dashboard"
 	"bridge-core/internal/model"
 )
@@ -37,6 +38,7 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if req.SeedConfig.AgentName == "" {
 		req.SeedConfig.AgentName = req.AgentName
 	}
+	a.applyDefaultXUIBootstrap(&req)
 
 	result, err := a.store.RegisterAgent(req)
 	if err != nil {
@@ -44,6 +46,30 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (a *App) applyDefaultXUIBootstrap(req *model.AgentRegisterRequest) {
+	settings, found, err := a.store.GetClientInstallSettings()
+	if err != nil || !found || !settings.XUIAutoInstall || registerSeedHasXUIConfig(req.SeedConfig.XUI) {
+		return
+	}
+	panelPort := settings.XUIPanelPort
+	if panelPort <= 0 {
+		return
+	}
+	webPath := normalizeXUIWebPath(settings.XUIWebPath)
+	req.SeedConfig.XUI.Enabled = true
+	req.SeedConfig.XUI.BaseURL = fmt.Sprintf("http://127.0.0.1:%d%s", panelPort, webPath)
+	req.SeedConfig.XUI.Username = settings.XUIUsername
+	req.SeedConfig.XUI.Password = settings.XUIPassword
+	req.SeedConfig.XUI.AutoInstall = true
+	req.SeedConfig.XUI.InstallScriptURL = firstNonEmptyString(settings.XUIInstallScriptURL, defaultXUIInstallScriptURL)
+	req.SeedConfig.XUI.PanelPort = panelPort
+	req.SeedConfig.XUI.WebPath = webPath
+}
+
+func registerSeedHasXUIConfig(cfg config.XUIConfig) bool {
+	return cfg.Enabled || cfg.BaseURL != "" || cfg.Username != "" || cfg.Password != "" || cfg.APIToken != "" || cfg.TwoFactorCode != "" || cfg.SkipTLSVerify || cfg.AutoInstall
 }
 
 func (a *App) handleAgents(w http.ResponseWriter, r *http.Request) {
@@ -336,8 +362,8 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 				writeError(w, http.StatusBadRequest, fmt.Sprintf("decode x-ui action: %v", err))
 				return
 			}
-			if isAreaManager(user) && !a.areaManagerXUIActionAllowed(req.Kind) {
-				writeError(w, http.StatusForbidden, "area manager can only create routing rule actions")
+			if isAreaManager(user) && !a.areaManagerXUIActionAllowed(user, agentID, req) {
+				writeError(w, http.StatusForbidden, "area manager can only create routing rule actions or add/delete clients under assigned nodes")
 				return
 			}
 			if isRootOnlyXUIActionKind(req.Kind) && !isRootAdmin(user) {

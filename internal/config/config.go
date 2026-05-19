@@ -44,14 +44,18 @@ type ClientConfig struct {
 }
 
 type XUIConfig struct {
-	Enabled       bool   `json:"enabled"`
-	BaseURL       string `json:"base_url"`
-	DBPath        string `json:"db_path"`
-	Username      string `json:"username"`
-	Password      string `json:"password"`
-	APIToken      string `json:"api_token"`
-	TwoFactorCode string `json:"two_factor_code"`
-	SkipTLSVerify bool   `json:"skip_tls_verify"`
+	Enabled          bool   `json:"enabled"`
+	BaseURL          string `json:"base_url"`
+	DBPath           string `json:"db_path"`
+	Username         string `json:"username"`
+	Password         string `json:"password"`
+	APIToken         string `json:"api_token"`
+	TwoFactorCode    string `json:"two_factor_code"`
+	SkipTLSVerify    bool   `json:"skip_tls_verify"`
+	AutoInstall      bool   `json:"auto_install,omitempty"`
+	InstallScriptURL string `json:"install_script_url,omitempty"`
+	PanelPort        int    `json:"panel_port,omitempty"`
+	WebPath          string `json:"web_path,omitempty"`
 }
 
 type NezhaConfig struct {

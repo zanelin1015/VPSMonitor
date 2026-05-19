@@ -102,6 +102,12 @@ type CustomerLinkView struct {
 	ExitIP           string             `json:"exit_ip,omitempty"`
 	Resolved         bool               `json:"resolved"`
 	UnresolvedReason string             `json:"unresolved_reason,omitempty"`
+	RevenueAmount    *float64           `json:"revenue_amount,omitempty"`
+	RevenueCurrency  string             `json:"revenue_currency,omitempty"`
+	RevenueCycle     string             `json:"revenue_cycle,omitempty"`
+	ExpireTime       int64              `json:"expire_time,omitempty"`
+	ExpireCycle      string             `json:"expire_cycle,omitempty"`
+	ExpireAutoRenew  bool               `json:"expire_auto_renew,omitempty"`
 	Steps            []CustomerLinkStep `json:"steps"`
 	UpdatedAt        time.Time          `json:"updated_at"`
 }

@@ -1,7 +1,7 @@
 import { Alert, AutoComplete, Button, Card, Col, Empty, Input, InputNumber, List, Row, Select, Space, Spin, Switch, Typography } from 'antd'
 import { DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 
-import type { AgentEntryConfig, AgentEntryMapping, AgentListItem, ConfigAuditLog, ManagedAgentConfig, VPSRenewalConfig, XUIConfig, XUILocalCertificate } from '../types'
+import type { AgentEntryConfig, AgentEntryMapping, AgentListItem, ConfigAuditLog, ManagedAgentConfig, NetworkPortPolicyRule, VPSRenewalConfig, XUIConfig, XUILocalCertificate } from '../types'
 import { DEFAULT_COST_CURRENCY, type CurrencyCode } from '../lib/currency'
 import { bytesToGB, gbToBytes } from '../lib/traffic'
 import type { ConfigSectionKey } from '../lib/appHelpers'
@@ -84,7 +84,9 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
     addresses: managedConfig.entry?.addresses || [],
     import_domain: managedConfig.entry?.import_domain || '',
     mappings: managedConfig.entry?.mappings || [],
+    network_policy: managedConfig.entry?.network_policy || { enabled: false, interface: '', firewall_backend: 'auto', rate_limit_backend: 'auto', rules: [] },
   }
+  const networkPolicy = entryConfig.network_policy || { enabled: false, interface: '', firewall_backend: 'auto', rate_limit_backend: 'auto', rules: [] }
   const domainOptions = buildCertificateDomainOptions(certificates)
   const defaultImportDomain = domainOptions.find((option) => !option.value.startsWith('*.'))?.value || ''
   const updateEntryMapping = (index: number, patch: Partial<AgentEntryMapping>) => {
@@ -107,6 +109,25 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
   }
   const removeEntryMapping = (index: number) => {
     onEntryChange({ mappings: (entryConfig.mappings || []).filter((_, currentIndex) => currentIndex !== index) })
+  }
+  const updateNetworkPolicy = (patch: Partial<NonNullable<AgentEntryConfig['network_policy']>>) => {
+    onEntryChange({ network_policy: { ...networkPolicy, ...patch } })
+  }
+  const updateNetworkPolicyRule = (index: number, patch: Partial<NetworkPortPolicyRule>) => {
+    const rules = (networkPolicy.rules || []).map((rule, currentIndex) => (currentIndex === index ? { ...rule, ...patch } : rule))
+    updateNetworkPolicy({ rules })
+  }
+  const addNetworkPolicyRule = () => {
+    updateNetworkPolicy({
+      enabled: true,
+      rules: [
+        ...(networkPolicy.rules || []),
+        { id: `rule-${Date.now()}`, enabled: true, name: '', port: 443, protocol: 'tcp', rate_limit_mbps: 0, whitelist_ips: [] },
+      ],
+    })
+  }
+  const removeNetworkPolicyRule = (index: number) => {
+    updateNetworkPolicy({ rules: (networkPolicy.rules || []).filter((_, currentIndex) => currentIndex !== index) })
   }
   const sectionSaving = Boolean(configSavingSection)
   const sectionSaveButton = (section: ConfigSectionKey, label: string) => (
@@ -456,6 +477,120 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
             <Empty description="暂无端口映射；如果连接 IP 与出口 IP 不同，建议添加一条 NAT 映射" />
           )}
         </Space>
+      </Card>
+
+      <Card className="config-section-card" bordered={false}>
+        <div className="section-title-row">
+          <Title level={4}>端口限速 / IP 白名单</Title>
+          <Space wrap>
+            <Button size="small" icon={<PlusOutlined />} onClick={addNetworkPolicyRule}>
+              添加端口规则
+            </Button>
+            {sectionSaveButton('entry', '保存端口策略')}
+          </Space>
+        </div>
+        <Alert
+          type="warning"
+          showIcon
+          className="compact-alert"
+          message="由 Client 在 VPS 本机执行"
+          description="IP 白名单会优先在 Debian/Ubuntu 使用 ufw，其他系统自动回退 iptables；端口限速使用 Linux tc，对服务端出方向按源端口限速。启用前请确认防火墙不会锁死 SSH。"
+        />
+        <Row gutter={[16, 16]}>
+          <Col xs={24} md={6}>
+            <div className="switch-row">
+              <span>启用端口策略</span>
+              <Switch checked={Boolean(networkPolicy.enabled)} onChange={(checked) => updateNetworkPolicy({ enabled: checked })} />
+            </div>
+          </Col>
+          <Col xs={24} md={6}>
+            <Text type="secondary">网卡</Text>
+            <Input value={networkPolicy.interface || ''} placeholder="留空自动识别，例如 eth0" onChange={(event) => updateNetworkPolicy({ interface: event.target.value })} />
+          </Col>
+          <Col xs={24} md={6}>
+            <Text type="secondary">白名单后端</Text>
+            <Select
+              style={{ width: '100%' }}
+              value={networkPolicy.firewall_backend || 'auto'}
+              options={[
+                { value: 'auto', label: '自动：ufw/iptables' },
+                { value: 'ufw', label: 'ufw' },
+                { value: 'iptables', label: 'iptables' },
+                { value: 'none', label: '不处理白名单' },
+              ]}
+              onChange={(value) => updateNetworkPolicy({ firewall_backend: value })}
+            />
+          </Col>
+          <Col xs={24} md={6}>
+            <Text type="secondary">限速后端</Text>
+            <Select
+              style={{ width: '100%' }}
+              value={networkPolicy.rate_limit_backend || 'auto'}
+              options={[
+                { value: 'auto', label: '自动：tc' },
+                { value: 'tc', label: 'tc' },
+                { value: 'none', label: '不处理限速' },
+              ]}
+              onChange={(value) => updateNetworkPolicy({ rate_limit_backend: value })}
+            />
+          </Col>
+          <Col xs={24}>
+            <List
+              locale={{ emptyText: '暂无端口策略' }}
+              dataSource={networkPolicy.rules || []}
+              renderItem={(rule, index) => (
+                <List.Item
+                  actions={[
+                    <Button key="delete" size="small" danger icon={<DeleteOutlined />} onClick={() => removeNetworkPolicyRule(index)}>
+                      删除
+                    </Button>,
+                  ]}
+                >
+                  <Row gutter={[12, 12]} style={{ width: '100%' }}>
+                    <Col xs={24} md={4}>
+                      <Text type="secondary">启用</Text>
+                      <Switch checked={rule.enabled !== false} onChange={(checked) => updateNetworkPolicyRule(index, { enabled: checked })} />
+                    </Col>
+                    <Col xs={24} md={5}>
+                      <Text type="secondary">名称</Text>
+                      <Input value={rule.name || ''} placeholder="例如 HK 入站" onChange={(event) => updateNetworkPolicyRule(index, { name: event.target.value })} />
+                    </Col>
+                    <Col xs={12} md={4}>
+                      <Text type="secondary">端口</Text>
+                      <InputNumber style={{ width: '100%' }} min={1} max={65535} precision={0} value={rule.port || 0} onChange={(value) => updateNetworkPolicyRule(index, { port: Number(value || 0) })} />
+                    </Col>
+                    <Col xs={12} md={4}>
+                      <Text type="secondary">协议</Text>
+                      <Select
+                        style={{ width: '100%' }}
+                        value={rule.protocol || 'tcp'}
+                        options={[
+                          { value: 'tcp', label: 'TCP' },
+                          { value: 'udp', label: 'UDP' },
+                          { value: 'both', label: 'TCP + UDP' },
+                        ]}
+                        onChange={(value) => updateNetworkPolicyRule(index, { protocol: value })}
+                      />
+                    </Col>
+                    <Col xs={24} md={7}>
+                      <Text type="secondary">限速 Mbps（0 不限速）</Text>
+                      <InputNumber style={{ width: '100%' }} min={0} precision={2} value={rule.rate_limit_mbps || 0} onChange={(value) => updateNetworkPolicyRule(index, { rate_limit_mbps: Number(value || 0) })} />
+                    </Col>
+                    <Col xs={24}>
+                      <Text type="secondary">IP 白名单 / CIDR（一行一个；为空不限制）</Text>
+                      <Input.TextArea
+                        value={(rule.whitelist_ips || []).join('\n')}
+                        autoSize={{ minRows: 2, maxRows: 5 }}
+                        placeholder={'1.2.3.4\n10.0.0.0/24'}
+                        onChange={(event) => updateNetworkPolicyRule(index, { whitelist_ips: event.target.value.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean) })}
+                      />
+                    </Col>
+                  </Row>
+                </List.Item>
+              )}
+            />
+          </Col>
+        </Row>
       </Card>
 
       <Card className="config-section-card" bordered={false}>

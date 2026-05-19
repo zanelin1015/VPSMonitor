@@ -3,6 +3,7 @@ package store
 import (
 	"crypto/aes"
 	gocipher "crypto/cipher"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"strings"
 
 	"bridge-core/internal/config"
+	"bridge-core/internal/model"
 )
 
 const (
@@ -140,6 +142,9 @@ func (s *SQLiteStore) encryptPlaintextCredentials() error {
 	if err := s.encryptPlaintextTelegramTokens(); err != nil {
 		return err
 	}
+	if err := s.encryptPlaintextClientInstallSettings(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -220,6 +225,36 @@ func (s *SQLiteStore) encryptPlaintextTelegramTokens() error {
 		if _, err := s.db.Exec(`UPDATE telegram_bots SET bot_token = ? WHERE id = ?`, item.token, item.id); err != nil {
 			return fmt.Errorf("encrypt stored telegram token %d: %w", item.id, err)
 		}
+	}
+	return nil
+}
+
+func (s *SQLiteStore) encryptPlaintextClientInstallSettings() error {
+	var raw string
+	err := s.db.QueryRow(`SELECT value_json FROM app_settings WHERE key = ?`, clientInstallSettingsKey).Scan(&raw)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("query client install settings credentials: %w", err)
+	}
+	var settings model.ClientInstallSettingsRequest
+	if raw == "" || json.Unmarshal([]byte(raw), &settings) != nil {
+		return nil
+	}
+	if settings.XUIPassword == "" || strings.HasPrefix(settings.XUIPassword, encryptedValuePrefix) {
+		return nil
+	}
+	stored, err := s.encryptClientInstallSettings(settings)
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(stored)
+	if err != nil {
+		return fmt.Errorf("encode client install settings credentials: %w", err)
+	}
+	if _, err := s.db.Exec(`UPDATE app_settings SET value_json = ? WHERE key = ?`, string(data), clientInstallSettingsKey); err != nil {
+		return fmt.Errorf("encrypt client install settings credentials: %w", err)
 	}
 	return nil
 }
