@@ -34,6 +34,17 @@ func TestRealtimeHubAgentControlLifecycle(t *testing.T) {
 	}
 }
 
+func TestIsUsableObservedIPRejectsLocalAddresses(t *testing.T) {
+	for _, value := range []string{"127.0.0.1", "::1", "10.0.0.1", "192.168.1.2", "0.0.0.0", ""} {
+		if isUsableObservedIP(value) {
+			t.Fatalf("expected %q to be unusable", value)
+		}
+	}
+	if !isUsableObservedIP("47.239.135.242") {
+		t.Fatal("expected public observed IP to be usable")
+	}
+}
+
 func TestRealtimeHubAgentControlReplacesPreviousSession(t *testing.T) {
 	hub := newRealtimeHub()
 	first := hub.registerAgentControl("agent-1")
@@ -119,6 +130,7 @@ func TestAreaManagerRealtimeMetricsAreSanitized(t *testing.T) {
 			Summary: model.VPSSummary{
 				Hostname:        "secret-host",
 				ObservedIP:      "203.0.113.10",
+				ServerSeenIP:    "198.51.100.20",
 				PublicIPv4:      "203.0.113.11",
 				CPU:             42,
 				MemUsed:         512,
@@ -146,7 +158,7 @@ func TestAreaManagerRealtimeMetricsAreSanitized(t *testing.T) {
 	if got.AgentName != "" || got.ClientVersion != "" || got.ClientOS != "" || got.ClientArch != "" || got.SystemVersion != "" {
 		t.Fatalf("expected client identity/runtime fields to be stripped, got %#v", got)
 	}
-	if got.Summary.Hostname != "" || got.Summary.ObservedIP != "" || got.Summary.PublicIPv4 != "" || got.Summary.CPU != 0 || got.Summary.MemTotal != 0 {
+	if got.Summary.Hostname != "" || got.Summary.ObservedIP != "" || got.Summary.ServerSeenIP != "" || got.Summary.PublicIPv4 != "" || got.Summary.CPU != 0 || got.Summary.MemTotal != 0 {
 		t.Fatalf("expected host/system metrics to be stripped, got %#v", got.Summary)
 	}
 	if got.Summary.NetTrafficSent != 100 || got.Summary.NetTrafficRecv != 200 || got.Summary.NetTrafficTotal != 300 || got.Summary.NetIOUp != 10 || got.Summary.NetIODown != 20 {

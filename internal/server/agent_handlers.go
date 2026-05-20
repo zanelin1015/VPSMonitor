@@ -593,8 +593,8 @@ func (a *App) handleHeartbeat(w http.ResponseWriter, r *http.Request, agentID st
 		writeError(w, http.StatusBadRequest, "agent id mismatch")
 		return
 	}
-	if snapshot.Summary.ObservedIP == "" {
-		snapshot.Summary.ObservedIP = requestObservedIP(r)
+	if serverSeenIP := requestObservedIP(r); isUsableObservedIP(serverSeenIP) {
+		snapshot.Summary.ServerSeenIP = serverSeenIP
 	}
 	if snapshot.AgentName == "" {
 		agent, found, err := a.store.GetAgent(agentID)

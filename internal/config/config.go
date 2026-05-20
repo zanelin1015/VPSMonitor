@@ -1,10 +1,16 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -33,6 +39,7 @@ type ServerAgentAuth struct {
 
 type ClientConfig struct {
 	AgentID               string   `json:"agent_id"`
+	AgentIDGenerated      bool     `json:"-"`
 	AgentName             string   `json:"agent_name"`
 	Tags                  []string `json:"tags"`
 	AgentToken            string   `json:"agent_token"`
@@ -109,7 +116,12 @@ func LoadClientConfig(path string) (ClientConfig, time.Duration, error) {
 		cfg.RequestTimeoutSeconds = 15
 	}
 	if strings.TrimSpace(cfg.AgentID) == "" {
-		cfg.AgentID = defaultClientAgentID()
+		if value := sanitizeClientAgentID(os.Getenv("VPSMONITOR_AGENT_ID")); value != "" {
+			cfg.AgentID = value
+		} else {
+			cfg.AgentID = defaultClientAgentID()
+			cfg.AgentIDGenerated = true
+		}
 	}
 	if cfg.PollInterval == "" {
 		cfg.PollInterval = "30s"
@@ -124,15 +136,59 @@ func LoadClientConfig(path string) (ClientConfig, time.Duration, error) {
 	return cfg, d, nil
 }
 
+func PersistClientAgentIDIfMissing(path string, agentID string) error {
+	agentID = sanitizeClientAgentID(agentID)
+	if agentID == "" {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+	var payload map[string]any
+	raw := strings.TrimPrefix(string(data), "\ufeff")
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return fmt.Errorf("unmarshal %s: %w", path, err)
+	}
+	if existing, _ := payload["agent_id"].(string); strings.TrimSpace(existing) != "" {
+		return nil
+	}
+	payload["agent_id"] = agentID
+	updated, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal %s: %w", path, err)
+	}
+	updated = append(updated, '\n')
+	mode := os.FileMode(0o600)
+	if info, statErr := os.Stat(path); statErr == nil {
+		mode = info.Mode().Perm()
+	}
+	if err := os.WriteFile(path, updated, mode); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
+}
+
 func defaultClientAgentID() string {
 	hostname, err := os.Hostname()
 	if err != nil || strings.TrimSpace(hostname) == "" {
-		return "bridge-client"
+		hostname = "bridge-client"
 	}
-	hostname = strings.ToLower(strings.TrimSpace(hostname))
+	base := sanitizeClientAgentID(hostname)
+	if base == "" {
+		base = "bridge-client"
+	}
+	if fingerprint := clientMachineFingerprint(); fingerprint != "" {
+		return trimClientAgentID(base + "-" + shortClientHash(fingerprint))
+	}
+	return base
+}
+
+func sanitizeClientAgentID(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
 	var builder strings.Builder
 	lastDash := false
-	for _, r := range hostname {
+	for _, r := range value {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {
 			builder.WriteRune(r)
 			lastDash = false
@@ -143,11 +199,84 @@ func defaultClientAgentID() string {
 			lastDash = true
 		}
 	}
-	value := strings.Trim(builder.String(), "-")
-	if value == "" {
-		return "bridge-client"
+	value = strings.Trim(builder.String(), "-")
+	return trimClientAgentID(value)
+}
+
+func trimClientAgentID(value string) string {
+	const maxAgentIDLength = 80
+	if len(value) <= maxAgentIDLength {
+		return value
+	}
+	return strings.Trim(value[:maxAgentIDLength], "-")
+}
+
+func shortClientHash(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])[:10]
+}
+
+func clientMachineFingerprint() string {
+	for _, path := range []string{
+		"/etc/machine-id",
+		"/var/lib/dbus/machine-id",
+		"/sys/class/dmi/id/product_uuid",
+	} {
+		if value := readMachineIDFile(path); value != "" {
+			return path + ":" + value
+		}
+	}
+	if runtime.GOOS == "windows" {
+		if value := windowsMachineGuid(); value != "" {
+			return "windows-machine-guid:" + value
+		}
+	}
+	if values := hardwareMACs(); len(values) > 0 {
+		return "mac:" + strings.Join(values, ",")
+	}
+	return ""
+}
+
+func readMachineIDFile(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	value := strings.TrimSpace(string(data))
+	if value == "" || strings.EqualFold(value, "none") {
+		return ""
 	}
 	return value
+}
+
+func windowsMachineGuid() string {
+	output, err := exec.Command("reg", "query", `HKLM\SOFTWARE\Microsoft\Cryptography`, "/v", "MachineGuid").Output()
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(output), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 3 && strings.EqualFold(fields[0], "MachineGuid") {
+			return fields[len(fields)-1]
+		}
+	}
+	return ""
+}
+
+func hardwareMACs() []string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	values := make([]string, 0, len(ifaces))
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagLoopback != 0 || len(iface.HardwareAddr) == 0 {
+			continue
+		}
+		values = append(values, strings.ToLower(iface.HardwareAddr.String()))
+	}
+	sort.Strings(values)
+	return values
 }
 
 func loadJSON(path string, target any) error {

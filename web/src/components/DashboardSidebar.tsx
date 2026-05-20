@@ -1463,6 +1463,7 @@ function AgentRailItem(props: {
   const showStatusText = statusLevel !== 'ok'
   const displaySortOrder = item.sort_order || index + 1
   const addressText = item.summary.observed_ip || item.summary.public_ipv4 || item.summary.hostname || item.agent_id
+  const serverSeenIP = differentServerSeenIP(item.summary.server_seen_ip, addressText) ? item.summary.server_seen_ip : ''
   const countryCode = agentCountryCode(item)
   const locationText = formatAgentLocation(item, countryCode)
   const tags = (item.tags || []).length ? item.tags || [] : ['未分组']
@@ -1492,6 +1493,7 @@ function AgentRailItem(props: {
           {!restrictedView ? <div className="agent-meta agent-compact-location">
             <span>{addressText}</span>
             {locationText ? <span title={locationText}>· {locationText}</span> : null}
+            {serverSeenIP ? <span title="Server 看到的 Client 连接来源，可能是入口转发机">· 连接来源 {serverSeenIP}</span> : null}
           </div> : null}
           <div className="agent-compact-tags">
             <AgentRailTags item={item} tags={compactTags} restrictedView={restrictedView} />
@@ -1522,6 +1524,7 @@ function AgentRailItem(props: {
               {!restrictedView ? <div className="agent-meta agent-location agent-list-location">
                 <span>{addressText}</span>
                 {locationText ? <span>· {locationText}</span> : null}
+                {serverSeenIP ? <span title="Server 看到的 Client 连接来源，可能是入口转发机">· 连接来源 {serverSeenIP}</span> : null}
               </div> : null}
               <div className="agent-meta agent-footer-line agent-list-footer">{footerText}</div>
             </div>
@@ -1553,6 +1556,7 @@ function AgentRailItem(props: {
             {!restrictedView ? <div className="agent-meta agent-location">
               <span>{addressText}</span>
               {locationText ? <span>· {locationText}</span> : null}
+              {serverSeenIP ? <span title="Server 看到的 Client 连接来源，可能是入口转发机">· 连接来源 {serverSeenIP}</span> : null}
             </div> : null}
             <AgentRailTags item={item} tags={tags} restrictedView={restrictedView} />
             {!restrictedView ? <AgentRailRuntime item={item} /> : null}
@@ -1568,6 +1572,12 @@ function AgentRailItem(props: {
       </button>
     </List.Item>
   )
+}
+
+function differentServerSeenIP(serverSeenIP?: string, displayAddress?: string) {
+  const source = (serverSeenIP || '').trim()
+  const display = (displayAddress || '').trim()
+  return source && source !== display ? source : ''
 }
 
 function AgentRailHeader(props: {

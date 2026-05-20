@@ -258,6 +258,7 @@ function mergeRealtimeSummary(current: VPSSummary, realtime: VPSSummary): VPSSum
     ...current,
     hostname: realtime.hostname || current.hostname,
     observed_ip: realtime.observed_ip || current.observed_ip,
+    server_seen_ip: realtime.server_seen_ip || current.server_seen_ip,
     public_ipv4: realtime.public_ipv4 || current.public_ipv4,
     public_ipv6: realtime.public_ipv6 || current.public_ipv6,
     cpu: realtime.cpu ?? current.cpu,

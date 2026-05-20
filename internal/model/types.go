@@ -37,6 +37,7 @@ type AgentLogsResponse struct {
 type VPSSummary struct {
 	Hostname          string  `json:"hostname,omitempty"`
 	ObservedIP        string  `json:"observed_ip,omitempty"`
+	ServerSeenIP      string  `json:"server_seen_ip,omitempty"`
 	PublicIPv4        string  `json:"public_ipv4,omitempty"`
 	PublicIPv6        string  `json:"public_ipv6,omitempty"`
 	CPU               float64 `json:"cpu,omitempty"`

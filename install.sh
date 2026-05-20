@@ -133,6 +133,30 @@ json_bool() {
   esac
 }
 
+sanitize_agent_id() {
+  local value
+  value="$(lower "$1" | sed 's/[^a-z0-9._-]/-/g; s/-\{2,\}/-/g; s/^-//; s/-$//')"
+  if [[ -z "$value" ]]; then
+    value="bridge-client"
+  fi
+  printf '%s' "$value" | cut -c 1-80 | sed 's/-$//'
+}
+
+default_client_agent_id() {
+  local host suffix
+  host="$(hostname 2>/dev/null || echo bridge-client)"
+  host="$(sanitize_agent_id "$host")"
+  suffix="$(random_token 8)"
+  echo "${host}-${suffix}"
+}
+
+read_json_string_field() {
+  local file="$1"
+  local key="$2"
+  [[ -f "$file" ]] || return 0
+  sed -nE 's/^[[:space:]]*"'"$key"'"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' "$file" | head -n 1
+}
+
 prompt_default() {
   local __var="$1"
   local label="$2"
@@ -349,16 +373,18 @@ EOF
 write_client_config() {
   local config_path="$1"
   local server_url="$2"
-  local registration_token="$3"
-  local skip_tls_verify="$4"
-  local poll_interval="$5"
-  local request_timeout="$6"
+  local agent_id="$3"
+  local registration_token="$4"
+  local skip_tls_verify="$5"
+  local poll_interval="$6"
+  local request_timeout="$7"
 
   mkdir -p "$(dirname "$config_path")"
   (
     umask 077
     cat >"$config_path" <<EOF
 {
+  "agent_id": "$(json_escape "$agent_id")",
   "registration_token": "$(json_escape "$registration_token")",
   "agent_token": "",
   "server_url": "$(json_escape "$server_url")",
@@ -560,10 +586,21 @@ install_client() {
   install_dir="$(absolute_path "$install_dir")"
   local config_path="$install_dir/config/client.json"
   local server_url="${VPSMONITOR_SERVER_URL:-http://SERVER_IP:8090}"
+  local agent_id="${VPSMONITOR_AGENT_ID:-}"
+  local existing_agent_id=""
   local registration_token="${VPSMONITOR_REGISTRATION_TOKEN:-}"
   local skip_tls_verify="${VPSMONITOR_SERVER_SKIP_TLS_VERIFY:-n}"
   local poll_interval="${VPSMONITOR_POLL_INTERVAL:-30s}"
   local request_timeout="${VPSMONITOR_REQUEST_TIMEOUT_SECONDS:-15}"
+  existing_agent_id="$(read_json_string_field "$config_path" "agent_id")"
+  if [[ -z "$agent_id" && -n "$existing_agent_id" ]]; then
+    agent_id="$existing_agent_id"
+  fi
+  if [[ -z "$agent_id" ]]; then
+    agent_id="$(default_client_agent_id)"
+  else
+    agent_id="$(sanitize_agent_id "$agent_id")"
+  fi
 
   if [[ -f "$config_path" ]]; then
     warn "Existing client config found: $config_path"
@@ -574,10 +611,12 @@ install_client() {
       if [[ -z "$registration_token" ]]; then
         prompt_required registration_token "Client registration token"
       fi
+      prompt_default agent_id "Client ID" "$agent_id"
+      agent_id="$(sanitize_agent_id "$agent_id")"
       prompt_default skip_tls_verify "Skip server TLS verification? y/N" "$skip_tls_verify"
       prompt_default poll_interval "Poll interval" "$poll_interval"
       prompt_default request_timeout "Request timeout seconds" "$request_timeout"
-      write_client_config "$config_path" "$server_url" "$registration_token" "$skip_tls_verify" "$poll_interval" "$request_timeout"
+      write_client_config "$config_path" "$server_url" "$agent_id" "$registration_token" "$skip_tls_verify" "$poll_interval" "$request_timeout"
     fi
   else
     info "Client config"
@@ -588,10 +627,12 @@ install_client() {
       fi
       prompt_required registration_token "Client registration token"
     fi
+    prompt_default agent_id "Client ID" "$agent_id"
+    agent_id="$(sanitize_agent_id "$agent_id")"
     prompt_default skip_tls_verify "Skip server TLS verification? y/N" "$skip_tls_verify"
     prompt_default poll_interval "Poll interval" "$poll_interval"
     prompt_default request_timeout "Request timeout seconds" "$request_timeout"
-    write_client_config "$config_path" "$server_url" "$registration_token" "$skip_tls_verify" "$poll_interval" "$request_timeout"
+    write_client_config "$config_path" "$server_url" "$agent_id" "$registration_token" "$skip_tls_verify" "$poll_interval" "$request_timeout"
   fi
 
   mkdir -p "$install_dir"
@@ -605,6 +646,9 @@ install_client() {
   ok "bridge-client installed."
   echo "  Service: $service_name"
   echo "  Config:  $config_path"
+  local final_agent_id
+  final_agent_id="$(read_json_string_field "$config_path" "agent_id")"
+  [[ -n "$final_agent_id" ]] && echo "  Client ID: $final_agent_id"
   echo "  Status:  $(service_status_hint "$service_name")"
   echo "  Logs:    $(service_logs_hint "$service_name")"
 }

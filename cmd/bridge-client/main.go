@@ -80,6 +80,11 @@ func loadClientApp(configPath string) (config.ClientConfig, time.Duration, *clie
 	if err != nil {
 		return cfg, 0, nil, err
 	}
+	if cfg.AgentIDGenerated {
+		if err := config.PersistClientAgentIDIfMissing(configPath, cfg.AgentID); err != nil {
+			log.Printf("persist generated agent_id failed: %v", err)
+		}
+	}
 	app, err := client.New(cfg)
 	if err != nil {
 		return cfg, 0, nil, err

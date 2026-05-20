@@ -280,6 +280,9 @@ func mergeRealtimeSummary(target *model.VPSSummary, source model.VPSSummary) {
 	if source.ObservedIP != "" {
 		target.ObservedIP = source.ObservedIP
 	}
+	if source.ServerSeenIP != "" {
+		target.ServerSeenIP = source.ServerSeenIP
+	}
 	if source.PublicIPv4 != "" {
 		target.PublicIPv4 = source.PublicIPv4
 	}
@@ -512,7 +515,7 @@ func (a *App) handleAgentMetricsWS(w http.ResponseWriter, r *http.Request, agent
 	}
 	defer conn.Close()
 	conn.SetReadLimit(32 * 1024)
-	observedIP := requestObservedIP(r)
+	serverSeenIP := requestObservedIP(r)
 	controlSession := a.realtime.registerAgentControl(agentID)
 	defer a.realtime.unregisterAgentControl(agentID, controlSession)
 
@@ -572,8 +575,8 @@ func (a *App) handleAgentMetricsWS(w http.ResponseWriter, r *http.Request, agent
 		if metric.AgentName == "" && found {
 			metric.AgentName = agent.AgentName
 		}
-		if metric.Summary.ObservedIP == "" {
-			metric.Summary.ObservedIP = observedIP
+		if isUsableObservedIP(serverSeenIP) {
+			metric.Summary.ServerSeenIP = serverSeenIP
 		}
 		a.realtime.update(metric)
 	}
@@ -619,6 +622,14 @@ func requestObservedIP(r *http.Request) string {
 		return ip.String()
 	}
 	return r.RemoteAddr
+}
+
+func isUsableObservedIP(value string) bool {
+	ip := net.ParseIP(strings.TrimSpace(value))
+	if ip == nil {
+		return false
+	}
+	return !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsUnspecified()
 }
 
 var dashboardWSUpgrader = websocket.Upgrader{

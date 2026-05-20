@@ -1,6 +1,7 @@
 export interface VPSSummary {
   hostname?: string
   observed_ip?: string
+  server_seen_ip?: string
   public_ipv4?: string
   public_ipv6?: string
   cpu?: number

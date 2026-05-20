@@ -71,9 +71,36 @@ function Get-PackageUrl([string]$Arch) {
   return "https://github.com/$Repo/releases/download/$Version/$packageName"
 }
 
-function Write-ClientConfig([string]$Path, [string]$ServerUrl, [string]$RegistrationToken, [bool]$SkipTlsVerify, [string]$PollInterval, [int]$RequestTimeoutSeconds) {
+function Convert-AgentID([string]$Value) {
+  $normalized = ($Value.Trim().ToLowerInvariant() -replace "[^a-z0-9._-]", "-") -replace "-{2,}", "-"
+  $normalized = $normalized.Trim("-")
+  if ([string]::IsNullOrWhiteSpace($normalized)) { $normalized = "bridge-client" }
+  if ($normalized.Length -gt 80) { $normalized = $normalized.Substring(0, 80).Trim("-") }
+  return $normalized
+}
+
+function New-DefaultAgentID {
+  $hostName = if ($env:COMPUTERNAME) { $env:COMPUTERNAME } else { "bridge-client" }
+  $suffix = [guid]::NewGuid().ToString("N").Substring(0, 8)
+  return "$(Convert-AgentID $hostName)-$suffix"
+}
+
+function Read-ExistingAgentID([string]$Path) {
+  if (-not (Test-Path $Path)) { return "" }
+  try {
+    $payload = Get-Content -Raw -Path $Path | ConvertFrom-Json
+    if ($payload.agent_id) { return [string]$payload.agent_id }
+  }
+  catch {
+    return ""
+  }
+  return ""
+}
+
+function Write-ClientConfig([string]$Path, [string]$ServerUrl, [string]$AgentID, [string]$RegistrationToken, [bool]$SkipTlsVerify, [string]$PollInterval, [int]$RequestTimeoutSeconds) {
   New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Path) | Out-Null
   $payload = [ordered]@{
+    agent_id = $AgentID
     registration_token = $RegistrationToken
     agent_token = ""
     server_url = $ServerUrl
@@ -194,6 +221,10 @@ Write-Host "  Install: $InstallDir"
 Write-Host "  Service: $ServiceName"
 
 $ServerUrl = if ($env:VPSMONITOR_SERVER_URL) { $env:VPSMONITOR_SERVER_URL } else { "http://SERVER_IP:8090" }
+$AgentID = if ($env:VPSMONITOR_AGENT_ID) { Convert-AgentID $env:VPSMONITOR_AGENT_ID } else { "" }
+$ExistingAgentID = Read-ExistingAgentID $ConfigPath
+if ([string]::IsNullOrWhiteSpace($AgentID) -and -not [string]::IsNullOrWhiteSpace($ExistingAgentID)) { $AgentID = Convert-AgentID $ExistingAgentID }
+if ([string]::IsNullOrWhiteSpace($AgentID)) { $AgentID = New-DefaultAgentID }
 $RegistrationToken = if ($env:VPSMONITOR_REGISTRATION_TOKEN) { $env:VPSMONITOR_REGISTRATION_TOKEN } else { "" }
 $SkipTlsVerifyRaw = if ($env:VPSMONITOR_SERVER_SKIP_TLS_VERIFY) { $env:VPSMONITOR_SERVER_SKIP_TLS_VERIFY } else { "false" }
 $PollInterval = if ($env:VPSMONITOR_POLL_INTERVAL) { $env:VPSMONITOR_POLL_INTERVAL } else { "30s" }
@@ -207,11 +238,12 @@ if ((Test-Path $ConfigPath) -and -not $ForceConfig) {
 if (-not (Test-Path $ConfigPath) -or $ForceConfig) {
   $ServerUrl = Read-Default "Server URL" $ServerUrl
   if ([string]::IsNullOrWhiteSpace($RegistrationToken)) { $RegistrationToken = Read-Required "Client registration token" }
+  $AgentID = Convert-AgentID (Read-Default "Client ID" $AgentID)
   $SkipTlsVerifyRaw = Read-Default "Skip server TLS verification? true/false" $SkipTlsVerifyRaw
   $PollInterval = Read-Default "Poll interval" $PollInterval
   $RequestTimeout = [int](Read-Default "Request timeout seconds" ([string]$RequestTimeout))
   $SkipTlsVerify = @("1", "true", "yes", "y", "on") -contains $SkipTlsVerifyRaw.ToLowerInvariant()
-  Write-ClientConfig $ConfigPath $ServerUrl $RegistrationToken $SkipTlsVerify $PollInterval $RequestTimeout
+  Write-ClientConfig $ConfigPath $ServerUrl $AgentID $RegistrationToken $SkipTlsVerify $PollInterval $RequestTimeout
 }
 
 $TempDir = Join-Path $env:TEMP ("vpsmonitor-" + [guid]::NewGuid().ToString("N"))
@@ -238,5 +270,7 @@ Install-ClientService $BinaryPath $ConfigPath
 Write-Ok "VPSMonitor client installed."
 Write-Host "  Service: $ServiceName"
 Write-Host "  Config:  $ConfigPath"
+$FinalAgentID = Read-ExistingAgentID $ConfigPath
+if (-not [string]::IsNullOrWhiteSpace($FinalAgentID)) { Write-Host "  Client ID: $FinalAgentID" }
 Write-Host "  Status:  Get-Service $ServiceName"
 Write-Host "  Logs:    Event Viewer or sc.exe query $ServiceName"
