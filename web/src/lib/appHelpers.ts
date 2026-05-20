@@ -1125,7 +1125,7 @@ function normalizeRealmForwardConfig(config?: RealmForwardConfig): RealmForwardC
       target_agent_id: rule.target_agent_id || '',
       target_address: rule.target_address || '',
       target_port: Math.max(0, Number(rule.target_port || 0)),
-      network: rule.network === 'udp' || rule.network === 'both' ? rule.network : 'tcp',
+      network: 'both',
       note: rule.note || '',
     })),
   }

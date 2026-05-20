@@ -543,14 +543,7 @@ func normalizeRealmForwardConfig(cfg model.RealmForwardConfig) model.RealmForwar
 }
 
 func normalizeRealmForwardNetwork(network string) string {
-	switch strings.ToLower(strings.TrimSpace(network)) {
-	case "udp":
-		return "udp"
-	case "both", "tcp+udp", "all":
-		return "both"
-	default:
-		return "tcp"
-	}
+	return "both"
 }
 
 func sanitizeRealmForwardID(value string) string {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -55,11 +56,12 @@ func TestRenderRealmConfigIncludesTCPAndUDPForward(t *testing.T) {
 	for _, want := range []string{
 		"[log]",
 		`level = "debug"`,
+		"[network]",
+		"no_tcp = false",
+		"use_udp = true",
 		"[[endpoints]]",
 		`listen = "0.0.0.0:8443"`,
 		`remote = "hk.example.com:443"`,
-		"[endpoints.network]",
-		"use_udp = true",
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("expected %q in:\n%s", want, rendered)
@@ -71,6 +73,10 @@ func TestParseRealmConfigRules(t *testing.T) {
 	rules, err := parseRealmConfigRules(`
 [log]
 level = "info"
+
+[network]
+no_tcp = false
+use_udp = true
 
 [[endpoints]]
 listen = "0.0.0.0:2443"
@@ -89,11 +95,64 @@ no_tcp = true
 	if len(rules) != 2 {
 		t.Fatalf("expected 2 rules, got %#v", rules)
 	}
-	if rules[0].ListenAddress != "0.0.0.0" || rules[0].ListenPort != 2443 || rules[0].TargetAddress != "hk.example.com" || rules[0].TargetPort != 443 || rules[0].Network != "tcp" {
+	if rules[0].ListenAddress != "0.0.0.0" || rules[0].ListenPort != 2443 || rules[0].TargetAddress != "hk.example.com" || rules[0].TargetPort != 443 || rules[0].Network != "both" {
 		t.Fatalf("unexpected first rule: %#v", rules[0])
 	}
 	if rules[1].ListenAddress != "::" || rules[1].ListenPort != 5300 || rules[1].Network != "udp" {
 		t.Fatalf("unexpected udp rule: %#v", rules[1])
+	}
+}
+
+func TestActiveRealmForwardRulesForcesTCPAndUDP(t *testing.T) {
+	rules := activeRealmForwardRules([]model.RealmForwardRule{{
+		Enabled:       true,
+		ListenAddress: "0.0.0.0",
+		ListenPort:    20002,
+		TargetAddress: "47.239.135.242",
+		TargetPort:    20002,
+		Network:       "tcp",
+	}})
+	if len(rules) != 1 || rules[0].Network != "both" {
+		t.Fatalf("expected TCP+UDP realm rule, got %#v", rules)
+	}
+}
+
+func TestRealmForwardConfigFileMatchesDetectsNonBothConfig(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("realm config file enforcement only runs on linux")
+	}
+	path := filepath.Join(t.TempDir(), "realm.toml")
+	cfg := model.RealmForwardConfig{
+		Enabled:    true,
+		Backend:    "realm",
+		ConfigPath: path,
+		Rules: []model.RealmForwardRule{{
+			Enabled:       true,
+			ListenAddress: "0.0.0.0",
+			ListenPort:    20002,
+			TargetAddress: "47.239.135.242",
+			TargetPort:    20002,
+			Network:       "tcp",
+		}},
+	}
+	if err := os.WriteFile(path, []byte(`
+[log]
+level = "info"
+
+[[endpoints]]
+listen = "0.0.0.0:20002"
+remote = "47.239.135.242:20002"
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if realmForwardConfigFileMatches(normalizeClientRealmForwardConfig(cfg)) {
+		t.Fatal("expected TCP-only realm config to require rewrite")
+	}
+	if err := os.WriteFile(path, []byte(renderRealmConfig(cfg)), 0o644); err != nil {
+		t.Fatalf("WriteFile rendered: %v", err)
+	}
+	if !realmForwardConfigFileMatches(normalizeClientRealmForwardConfig(cfg)) {
+		t.Fatal("expected rendered TCP+UDP realm config to match")
 	}
 }
 

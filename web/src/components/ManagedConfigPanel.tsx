@@ -158,7 +158,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
           target_agent_id: '',
           target_address: '',
           target_port: 443,
-          network: 'tcp',
+          network: 'both',
           note: '',
         },
       ],
@@ -751,10 +751,8 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
                       <Text type="secondary">协议</Text>
                       <Select
                         style={{ width: '100%' }}
-                        value={rule.network || 'tcp'}
+                        value="both"
                         options={[
-                          { value: 'tcp', label: 'TCP' },
-                          { value: 'udp', label: 'UDP' },
                           { value: 'both', label: 'TCP + UDP' },
                         ]}
                         onChange={(value) => updatePortForwardRule(index, { network: value })}

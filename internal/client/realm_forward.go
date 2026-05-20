@@ -31,8 +31,9 @@ func (a *App) applyRealmForwardingIfNeeded(ctx context.Context, cfg model.RealmF
 	if a.realmForwardSignature == "" && isEmptyClientRealmForwardConfig(cfg) {
 		return
 	}
+	cfg = normalizeClientRealmForwardConfig(cfg)
 	signature := realmForwardSignature(cfg)
-	if signature == a.realmForwardSignature {
+	if signature == a.realmForwardSignature && realmForwardConfigFileMatches(cfg) {
 		return
 	}
 	realmCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -42,6 +43,26 @@ func (a *App) applyRealmForwardingIfNeeded(ctx context.Context, cfg model.RealmF
 		return
 	}
 	a.realmForwardSignature = signature
+}
+
+func realmForwardConfigFileMatches(cfg model.RealmForwardConfig) bool {
+	if runtime.GOOS != "linux" {
+		return true
+	}
+	if !cfg.Enabled || strings.EqualFold(cfg.Backend, "none") || len(activeRealmForwardRules(cfg.Rules)) == 0 {
+		return true
+	}
+	configPath := firstNonEmpty(cfg.ConfigPath, defaultRealmConfigPath)
+	body, err := os.ReadFile(configPath)
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(body)) == strings.TrimSpace(renderRealmConfig(cfg))
+}
+
+func hasManagedClientRealmForwardRules(cfg model.RealmForwardConfig) bool {
+	cfg = normalizeClientRealmForwardConfig(cfg)
+	return cfg.Enabled && strings.EqualFold(cfg.Backend, "realm") && len(cfg.Rules) > 0
 }
 
 func isEmptyClientRealmForwardConfig(cfg model.RealmForwardConfig) bool {
@@ -339,12 +360,14 @@ func parseRealmConfigRules(raw string) ([]model.RealmForwardRule, error) {
 	type parsedEndpoint struct {
 		listen string
 		remote string
-		useUDP bool
-		noTCP  bool
+		useUDP *bool
+		noTCP  *bool
 	}
 	var endpoints []parsedEndpoint
 	current := -1
-	inEndpointNetwork := false
+	section := ""
+	globalUseUDP := false
+	globalNoTCP := false
 	scanner := bufio.NewScanner(strings.NewReader(raw))
 	for scanner.Scan() {
 		line := strings.TrimSpace(stripRealmTOMLComment(scanner.Text()))
@@ -355,28 +378,43 @@ func parseRealmConfigRules(raw string) ([]model.RealmForwardRule, error) {
 		case "[[endpoints]]":
 			endpoints = append(endpoints, parsedEndpoint{})
 			current = len(endpoints) - 1
-			inEndpointNetwork = false
+			section = "endpoint"
 			continue
 		case "[endpoints.network]":
-			inEndpointNetwork = true
+			section = "endpoint_network"
+			continue
+		case "[network]":
+			section = "global_network"
 			continue
 		}
 		if strings.HasPrefix(line, "[") {
-			inEndpointNetwork = false
+			section = ""
 			continue
 		}
-		if current < 0 || !strings.Contains(line, "=") {
+		if !strings.Contains(line, "=") {
 			continue
 		}
 		key, value, _ := strings.Cut(line, "=")
 		key = strings.TrimSpace(key)
 		value = strings.TrimSpace(value)
-		if inEndpointNetwork {
+		if section == "global_network" {
 			switch key {
 			case "use_udp":
-				endpoints[current].useUDP = parseRealmBool(value)
+				globalUseUDP = parseRealmBool(value)
 			case "no_tcp":
-				endpoints[current].noTCP = parseRealmBool(value)
+				globalNoTCP = parseRealmBool(value)
+			}
+			continue
+		}
+		if current < 0 {
+			continue
+		}
+		if section == "endpoint_network" {
+			switch key {
+			case "use_udp":
+				endpoints[current].useUDP = boolPtr(parseRealmBool(value))
+			case "no_tcp":
+				endpoints[current].noTCP = boolPtr(parseRealmBool(value))
 			}
 			continue
 		}
@@ -400,6 +438,14 @@ func parseRealmConfigRules(raw string) ([]model.RealmForwardRule, error) {
 		if !ok {
 			continue
 		}
+		useUDP := globalUseUDP
+		if endpoint.useUDP != nil {
+			useUDP = *endpoint.useUDP
+		}
+		noTCP := globalNoTCP
+		if endpoint.noTCP != nil {
+			noTCP = *endpoint.noTCP
+		}
 		rules = append(rules, model.RealmForwardRule{
 			ID:            fmt.Sprintf("auto-realm-%d-%d-%d", listenPort, remotePort, index),
 			Name:          fmt.Sprintf("realm %d -> %s:%d", listenPort, remoteHost, remotePort),
@@ -408,13 +454,17 @@ func parseRealmConfigRules(raw string) ([]model.RealmForwardRule, error) {
 			ListenPort:    listenPort,
 			TargetAddress: remoteHost,
 			TargetPort:    remotePort,
-			Network:       parsedRealmNetwork(endpoint.useUDP, endpoint.noTCP),
+			Network:       parsedRealmNetwork(useUDP, noTCP),
 		})
 	}
 	if len(rules) == 0 && strings.Contains(raw, "[[endpoints]]") {
 		return nil, errors.New("realm config contains endpoints but no valid listen/remote pairs were parsed")
 	}
 	return rules, nil
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }
 
 func stripRealmTOMLComment(line string) string {
@@ -519,7 +569,7 @@ func activeRealmForwardRules(items []model.RealmForwardRule) []model.RealmForwar
 		if rule.TargetAddress == "" {
 			continue
 		}
-		rule.Network = clientRealmForwardNetwork(rule.Network)
+		rule.Network = "both"
 		rules = append(rules, rule)
 	}
 	sort.Slice(rules, func(i, j int) bool {
@@ -532,14 +582,7 @@ func activeRealmForwardRules(items []model.RealmForwardRule) []model.RealmForwar
 }
 
 func clientRealmForwardNetwork(network string) string {
-	switch strings.ToLower(strings.TrimSpace(network)) {
-	case "udp":
-		return "udp"
-	case "both", "tcp+udp", "all":
-		return "both"
-	default:
-		return "tcp"
-	}
+	return "both"
 }
 
 func resolveRealmBinary(configured string, runner commandRunner) (string, error) {
@@ -566,21 +609,14 @@ func renderRealmConfig(cfg model.RealmForwardConfig) string {
 	builder.WriteString("[log]\n")
 	builder.WriteString("level = ")
 	builder.WriteString(quoteTOML(level))
-	builder.WriteString("\n\n")
+	builder.WriteString("\n\n[network]\nno_tcp = false\nuse_udp = true\n\n")
 	for _, rule := range activeRealmForwardRules(cfg.Rules) {
 		builder.WriteString("[[endpoints]]\n")
 		builder.WriteString("listen = ")
 		builder.WriteString(quoteTOML(net.JoinHostPort(rule.ListenAddress, strconv.Itoa(rule.ListenPort))))
 		builder.WriteString("\nremote = ")
 		builder.WriteString(quoteTOML(net.JoinHostPort(rule.TargetAddress, strconv.Itoa(rule.TargetPort))))
-		builder.WriteString("\n")
-		switch clientRealmForwardNetwork(rule.Network) {
-		case "udp":
-			builder.WriteString("[endpoints.network]\nuse_udp = true\nno_tcp = true\n")
-		case "both":
-			builder.WriteString("[endpoints.network]\nuse_udp = true\n")
-		}
-		builder.WriteString("\n")
+		builder.WriteString("\n\n")
 	}
 	return builder.String()
 }

@@ -75,6 +75,9 @@ func (a *App) RunOnce(ctx context.Context) error {
 }
 
 func mergeLocalRealmConfigIntoEntry(entry model.AgentEntryConfig) model.AgentEntryConfig {
+	if hasManagedClientRealmForwardRules(entry.PortForwarding) {
+		return entry
+	}
 	return realmconfig.MergeSnapshotIntoEntry(entry, collectRealmSnapshot(entry.PortForwarding))
 }
 
