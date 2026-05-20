@@ -373,6 +373,7 @@ func normalizeEntryConfig(cfg model.AgentEntryConfig) model.AgentEntryConfig {
 	cfg.Addresses = normalizeEntryAddresses(cfg.Addresses)
 	cfg.ImportDomain = normalizeEntryImportDomain(cfg.ImportDomain)
 	cfg.NetworkPolicy = normalizeNetworkPolicyConfig(cfg.NetworkPolicy)
+	cfg.PortForwarding = normalizeRealmForwardConfig(cfg.PortForwarding)
 	mappings := make([]model.AgentEntryMapping, 0, len(cfg.Mappings))
 	seen := make(map[string]struct{}, len(cfg.Mappings))
 	for _, mapping := range cfg.Mappings {
@@ -476,7 +477,98 @@ func normalizeEntryProtocol(protocol string) string {
 
 func hasEntryConfig(cfg model.AgentEntryConfig) bool {
 	cfg = normalizeEntryConfig(cfg)
-	return len(cfg.Addresses) > 0 || cfg.ImportDomain != "" || len(cfg.Mappings) > 0 || hasNetworkPolicyConfig(cfg.NetworkPolicy)
+	return len(cfg.Addresses) > 0 || cfg.ImportDomain != "" || len(cfg.Mappings) > 0 || hasNetworkPolicyConfig(cfg.NetworkPolicy) || hasRealmForwardConfig(cfg.PortForwarding)
+}
+
+func normalizeRealmForwardConfig(cfg model.RealmForwardConfig) model.RealmForwardConfig {
+	switch strings.ToLower(strings.TrimSpace(cfg.Backend)) {
+	case "realm", "none":
+		cfg.Backend = strings.ToLower(strings.TrimSpace(cfg.Backend))
+	default:
+		cfg.Backend = "realm"
+	}
+	cfg.BinaryPath = strings.TrimSpace(cfg.BinaryPath)
+	cfg.ConfigPath = strings.TrimSpace(cfg.ConfigPath)
+	cfg.ServiceName = strings.TrimSpace(cfg.ServiceName)
+	switch strings.ToLower(strings.TrimSpace(cfg.LogLevel)) {
+	case "trace", "debug", "warn", "error":
+		cfg.LogLevel = strings.ToLower(strings.TrimSpace(cfg.LogLevel))
+	default:
+		cfg.LogLevel = "info"
+	}
+	rules := make([]model.RealmForwardRule, 0, len(cfg.Rules))
+	seen := make(map[string]struct{}, len(cfg.Rules))
+	for _, rule := range cfg.Rules {
+		rule.ID = strings.TrimSpace(rule.ID)
+		rule.Name = strings.TrimSpace(rule.Name)
+		rule.ListenAddress = strings.TrimSpace(rule.ListenAddress)
+		rule.TargetAgentID = strings.TrimSpace(rule.TargetAgentID)
+		rule.TargetAddress = strings.TrimSpace(rule.TargetAddress)
+		rule.Network = normalizeRealmForwardNetwork(rule.Network)
+		rule.Note = strings.TrimSpace(rule.Note)
+		if rule.ListenPort <= 0 || rule.ListenPort > 65535 || rule.TargetPort <= 0 || rule.TargetPort > 65535 {
+			continue
+		}
+		if rule.TargetAddress == "" && rule.TargetAgentID == "" {
+			continue
+		}
+		if rule.ListenAddress == "" {
+			rule.ListenAddress = "0.0.0.0"
+		}
+		if rule.ID == "" {
+			rule.ID = fmt.Sprintf("%s-%d-%d-%s", sanitizeRealmForwardID(rule.Name), rule.ListenPort, rule.TargetPort, rule.Network)
+		}
+		key := fmt.Sprintf("%s:%s:%d:%s:%d:%s", strings.ToLower(rule.ID), strings.ToLower(rule.ListenAddress), rule.ListenPort, strings.ToLower(rule.TargetAddress), rule.TargetPort, rule.Network)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		rules = append(rules, rule)
+	}
+	sort.Slice(rules, func(i, j int) bool {
+		if rules[i].ListenPort != rules[j].ListenPort {
+			return rules[i].ListenPort < rules[j].ListenPort
+		}
+		return strings.ToLower(rules[i].Name) < strings.ToLower(rules[j].Name)
+	})
+	cfg.Rules = rules
+	if !cfg.Enabled && len(rules) == 0 {
+		cfg.Backend = ""
+		cfg.BinaryPath = ""
+		cfg.ConfigPath = ""
+		cfg.ServiceName = ""
+		cfg.LogLevel = ""
+	}
+	return cfg
+}
+
+func normalizeRealmForwardNetwork(network string) string {
+	switch strings.ToLower(strings.TrimSpace(network)) {
+	case "udp":
+		return "udp"
+	case "both", "tcp+udp", "all":
+		return "both"
+	default:
+		return "tcp"
+	}
+}
+
+func sanitizeRealmForwardID(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
+			return r
+		}
+		if r == ' ' || r == '.' || r == ':' || r == '/' {
+			return '-'
+		}
+		return -1
+	}, value)
+	value = strings.Trim(value, "-_")
+	if value == "" {
+		return "realm"
+	}
+	return value
 }
 
 func normalizeNetworkPolicyConfig(cfg model.NetworkPolicyConfig) model.NetworkPolicyConfig {
@@ -568,6 +660,14 @@ func hasNetworkPolicyConfig(cfg model.NetworkPolicyConfig) bool {
 		return false
 	}
 	return len(cfg.Rules) > 0 || cfg.Interface != "" || cfg.FirewallBackend != "" || cfg.RateLimitBackend != ""
+}
+
+func hasRealmForwardConfig(cfg model.RealmForwardConfig) bool {
+	cfg = normalizeRealmForwardConfig(cfg)
+	if !cfg.Enabled {
+		return false
+	}
+	return len(cfg.Rules) > 0 || cfg.BinaryPath != "" || cfg.ConfigPath != "" || cfg.ServiceName != ""
 }
 
 func hasXUIConfig(cfg config.XUIConfig) bool {

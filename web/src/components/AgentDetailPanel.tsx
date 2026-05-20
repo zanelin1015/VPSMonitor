@@ -877,6 +877,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
               ),
               children: renderManagedConfigPanel({
                 selectedAgent,
+                agents: dashboardView?.agents || filteredAgents,
                 managedConfig,
                 certificates: overview?.certificates || [],
                 configLoading,

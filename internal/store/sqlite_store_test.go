@@ -897,6 +897,40 @@ func TestSQLiteStoreClientInstallSettingsEncryptsXUIPassword(t *testing.T) {
 	}
 }
 
+func TestRegisterAgentBackfillsAutoInstallXUIDBPath(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "bridge.db")
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+
+	if _, err := store.RegisterAgent(model.AgentRegisterRequest{AgentID: "auto-xui-01", AgentName: "Auto XUI"}); err != nil {
+		t.Fatalf("RegisterAgent initial: %v", err)
+	}
+	if _, err := store.UpdateAgentConfig("auto-xui-01", model.ManagedAgentConfig{
+		AgentID:   "auto-xui-01",
+		AgentName: "Auto XUI",
+		XUI: config.XUIConfig{
+			Enabled:     true,
+			AutoInstall: true,
+			BaseURL:     "http://127.0.0.1:2053/xui/",
+			Username:    "admin",
+			Password:    "secret",
+		},
+	}); err != nil {
+		t.Fatalf("UpdateAgentConfig: %v", err)
+	}
+
+	resp, err := store.RegisterAgent(model.AgentRegisterRequest{AgentID: "auto-xui-01", AgentName: "Auto XUI"})
+	if err != nil {
+		t.Fatalf("RegisterAgent existing: %v", err)
+	}
+	if resp.Config.XUI.DBPath != config.DefaultXUIDBPath {
+		t.Fatalf("expected x-ui db path backfill, got %#v", resp.Config.XUI)
+	}
+}
+
 func TestSQLiteStoreCustomerAccountsAssignmentsAndSessions(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "bridge.db")
 	store, err := NewSQLiteStore(dbPath)

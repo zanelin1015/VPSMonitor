@@ -60,6 +60,7 @@ func (a *App) applyDefaultXUIBootstrap(req *model.AgentRegisterRequest) {
 	webPath := normalizeXUIWebPath(settings.XUIWebPath)
 	req.SeedConfig.XUI.Enabled = true
 	req.SeedConfig.XUI.BaseURL = fmt.Sprintf("http://127.0.0.1:%d%s", panelPort, webPath)
+	req.SeedConfig.XUI.DBPath = config.DefaultXUIDBPath
 	req.SeedConfig.XUI.Username = settings.XUIUsername
 	req.SeedConfig.XUI.Password = settings.XUIPassword
 	req.SeedConfig.XUI.AutoInstall = true
@@ -485,6 +486,7 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 			writeError(w, http.StatusNotFound, "agent not found")
 			return
 		}
+		cfg = a.hydrateRealmForwardTargets(cfg)
 		if user, _, ok := a.currentAdmin(r); ok {
 			cfg = a.sanitizeManagedConfigForAdmin(user, cfg)
 		}

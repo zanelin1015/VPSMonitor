@@ -1,5 +1,5 @@
 .customer-page-shell .customer-shell {
-  width: min(1420px, calc(100vw - 32px));
+  width: min(1720px, calc(100vw - 32px));
   margin: 0 auto;
   padding: 26px 0 42px;
 }
@@ -40,9 +40,15 @@ html[data-theme='dark'] .customer-hero {
   background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(15, 23, 42, 0.76));
 }
 
+.customer-policy-alert {
+  border-color: rgba(37, 99, 235, 0.18);
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(20, 184, 166, 0.06));
+}
+
 .customer-board-layout {
   display: grid;
-  grid-template-columns: 270px minmax(0, 1fr);
+  grid-template-columns: 250px minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
@@ -105,14 +111,26 @@ html[data-theme='dark'] .customer-hero {
 }
 
 .customer-link-head {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(320px, auto) minmax(240px, auto);
   gap: 18px;
   align-items: flex-start;
 }
 
 .customer-link-head h3.ant-typography {
   margin: 0;
+}
+
+.customer-link-main {
+  min-width: 0;
+}
+
+.customer-link-exit-tags {
+  grid-column: 3;
+  justify-self: end;
+  justify-content: flex-end;
+  min-width: 240px;
+  text-align: right;
 }
 
 .customer-link-title-row {
@@ -145,6 +163,35 @@ html[data-theme='dark'] .customer-hero {
 .customer-link-summary {
   margin: 0 !important;
   color: var(--text-muted);
+}
+
+.customer-link-meta-row {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  min-height: 34px;
+  padding-top: 2px;
+}
+
+.customer-link-meta-item {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(14, 165, 233, 0.08));
+  color: var(--text-main);
+  font-size: 14px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.customer-link-meta-expiry {
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.09), rgba(20, 184, 166, 0.08));
 }
 
 .customer-link-billing-row {
@@ -292,7 +339,7 @@ html[data-theme='dark'] .customer-admin-list-item {
 
 .customer-link-visual-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 210px;
+  grid-template-columns: minmax(0, 1fr) 190px;
   gap: 16px;
   align-items: stretch;
 }
@@ -338,11 +385,14 @@ html[data-theme='dark'] .customer-topology-canvas {
 
 .customer-topology-node {
   position: relative;
-  min-width: 188px;
-  max-width: 240px;
-  min-height: 104px;
+  flex: 0 0 220px;
+  width: 220px;
+  min-width: 220px;
+  max-width: 220px;
+  height: 138px;
   display: flex;
   flex-direction: column;
+  align-items: center;
   justify-content: center;
   gap: 8px;
   padding: 16px 18px;
@@ -368,6 +418,7 @@ html[data-theme='dark'] .customer-topology-node {
 .customer-topology-node-icon {
   position: relative;
   z-index: 1;
+  align-self: center;
   width: fit-content;
   padding: 3px 9px;
   border-radius: 999px;
@@ -386,11 +437,17 @@ html[data-theme='dark'] .customer-topology-node {
 .customer-topology-node-label {
   position: relative;
   z-index: 1;
+  width: 100%;
   color: var(--text-main);
   font-size: 17px;
   font-weight: 900;
   line-height: 1.25;
-  word-break: break-word;
+  text-align: center;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .customer-topology-node-meta {
@@ -399,6 +456,9 @@ html[data-theme='dark'] .customer-topology-node {
   color: var(--text-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .customer-topology-node-relay {
@@ -660,13 +720,25 @@ html[data-theme='dark'] .customer-qr-button {
   }
 
   .customer-link-head {
-    flex-direction: column;
+    grid-template-columns: 1fr;
     gap: 10px;
   }
 
   .customer-link-head > .ant-space {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .customer-link-exit-tags {
+    grid-column: auto;
+    justify-self: start;
+    min-width: 0;
+    text-align: left;
+  }
+
+  .customer-link-meta-row {
+    grid-column: auto;
+    width: 100%;
   }
 
   .customer-link-title-row {

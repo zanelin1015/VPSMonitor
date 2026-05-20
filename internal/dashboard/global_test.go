@@ -150,6 +150,45 @@ func TestBuildGlobalDashboardMatchesCrossClientTopology(t *testing.T) {
 	}
 }
 
+func TestBuildGlobalDashboardMergesRealmSnapshotIntoAgentEntry(t *testing.T) {
+	now := time.Now().UTC()
+	agents := []model.AgentRecord{{
+		AgentID:      "gz",
+		AgentName:    "Guangzhou",
+		RegisteredAt: now,
+		UpdatedAt:    now,
+		Config: model.ManagedAgentConfig{
+			Entry: model.AgentEntryConfig{Addresses: []string{"gz.example.com"}},
+		},
+	}}
+	snapshots := []model.AgentSnapshot{{
+		AgentID:    "gz",
+		AgentName:  "Guangzhou",
+		ReportedAt: now,
+		Realm: &model.RealmSnapshot{
+			ConfigPath:  "/etc/realm/config.toml",
+			CollectedAt: now,
+			Rules: []model.RealmForwardRule{{
+				Enabled:       true,
+				ListenAddress: "0.0.0.0",
+				ListenPort:    2443,
+				TargetAddress: "hk.example.com",
+				TargetPort:    443,
+				Network:       "tcp",
+			}},
+		},
+	}}
+
+	view := BuildGlobalDashboard(agents, snapshots)
+	if len(view.Agents) != 1 || len(view.Agents[0].Entry.PortForwarding.Rules) != 1 {
+		t.Fatalf("expected realm snapshot rule on dashboard agent, got %#v", view.Agents)
+	}
+	rule := view.Agents[0].Entry.PortForwarding.Rules[0]
+	if !view.Agents[0].Entry.PortForwarding.Enabled || rule.ListenPort != 2443 || rule.TargetAddress != "hk.example.com" {
+		t.Fatalf("unexpected merged realm config: %#v", view.Agents[0].Entry.PortForwarding)
+	}
+}
+
 func TestBuildGlobalDashboardMatchesDirectIPOutbound(t *testing.T) {
 	now := time.Now().UTC()
 	agents := []model.AgentRecord{

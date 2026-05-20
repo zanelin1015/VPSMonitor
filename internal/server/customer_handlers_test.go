@@ -1,6 +1,7 @@
 package server
 
 import (
+	"net/url"
 	"testing"
 
 	"bridge-core/internal/model"
@@ -146,5 +147,69 @@ func TestBuildCustomerLinkViewIncludesBillingAndExpiry(t *testing.T) {
 	}
 	if link.ExpireTime != 1770000000000 || link.ExpireCycle != "year" || !link.ExpireAutoRenew {
 		t.Fatalf("expected billing expiry to override client expiry, got %#v", link)
+	}
+}
+
+func TestBuildCustomerLinkViewRewritesImportURLToRealmEntry(t *testing.T) {
+	assignment := model.CustomerAssignment{
+		ID:          7,
+		AgentID:     "hk",
+		InboundID:   1001,
+		InboundTag:  "hk-vless",
+		ClientEmail: "alice@example.com",
+	}
+	chainMap := map[string]model.ClientChainView{
+		customerAssignmentKey("hk", 1001, "alice@example.com"): {
+			RootAgentID:     "hk",
+			RootClientEmail: "alice@example.com",
+			RootInboundTag:  "hk-vless",
+			Steps: []model.ClientChainStep{
+				{StepType: "client", AgentID: "hk", Label: "alice@example.com"},
+				{StepType: "inbound", AgentID: "hk", Label: "HK VLESS", Protocol: "vless", Port: 443},
+				{StepType: "outbound", AgentID: "hk", Label: "to-third", Port: 8443},
+			},
+		},
+	}
+	clientMap := map[string]customerClientRef{
+		customerAssignmentKey("hk", 1001, "alice@example.com"): {
+			Client: model.XUIClientView{
+				InboundID:  1001,
+				InboundTag: "hk-vless",
+				Email:      "alice@example.com",
+				ImportURL:  "vless://11111111-1111-1111-1111-111111111111@hk.example.com:443?encryption=none&security=tls&type=tcp&sni=hk.example.com#HK",
+			},
+		},
+	}
+	agentMap := map[string]model.DashboardAgentView{
+		"gz": {
+			AgentID: "gz",
+			Entry: model.AgentEntryConfig{
+				Addresses: []string{"gz.example.com"},
+				PortForwarding: model.RealmForwardConfig{Rules: []model.RealmForwardRule{{
+					Enabled:       true,
+					ListenAddress: "0.0.0.0",
+					ListenPort:    2443,
+					TargetAgentID: "hk",
+					TargetPort:    443,
+					Network:       "tcp",
+				}}},
+			},
+		},
+		"hk": {
+			AgentID: "hk",
+			Entry:   model.AgentEntryConfig{Addresses: []string{"hk.example.com"}},
+		},
+	}
+
+	link := buildCustomerLinkView(assignment, chainMap, clientMap, agentMap)
+	parsed, err := url.Parse(link.ImportURL)
+	if err != nil {
+		t.Fatalf("parse import url: %v", err)
+	}
+	if parsed.Host != "gz.example.com:2443" {
+		t.Fatalf("expected Guangzhou entry host, got %q from %q", parsed.Host, link.ImportURL)
+	}
+	if parsed.Query().Get("sni") != "hk.example.com" {
+		t.Fatalf("expected HK-produced stream parameters to stay unchanged, got %q", link.ImportURL)
 	}
 }

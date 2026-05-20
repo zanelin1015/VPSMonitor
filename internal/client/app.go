@@ -38,6 +38,7 @@ type App struct {
 	runOnceMu              sync.Mutex
 	networkPolicySignature string
 	xuiBootstrapSignature  string
+	realmForwardSignature  string
 }
 
 func New(cfg config.ClientConfig) (*App, error) {
@@ -66,6 +67,7 @@ func (a *App) RunOnce(ctx context.Context) error {
 	a.ensureXUIBootstrapIfNeeded(ctx, effectiveConfig.XUI)
 	a.executePendingXUIActions(ctx, effectiveConfig)
 	a.applyNetworkPolicyIfNeeded(ctx, effectiveConfig.Entry.NetworkPolicy)
+	a.applyRealmForwardingIfNeeded(ctx, effectiveConfig.Entry.PortForwarding)
 	snapshot := a.collect(ctx, effectiveConfig)
 	return a.pushSnapshot(ctx, snapshot)
 }
@@ -254,6 +256,7 @@ func (a *App) collect(ctx context.Context, effectiveConfig model.ManagedAgentCon
 			}
 		}
 	}
+	snapshot.Realm = collectRealmSnapshot(effectiveConfig.Entry.PortForwarding)
 
 	snapshot.Summary = buildSummary(snapshot)
 	if outboundIP := a.detectOutboundIP(ctx); outboundIP != "" {

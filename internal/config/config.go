@@ -43,6 +43,8 @@ type ClientConfig struct {
 	RequestTimeoutSeconds int      `json:"request_timeout_seconds"`
 }
 
+const DefaultXUIDBPath = "/etc/x-ui/x-ui.db"
+
 type XUIConfig struct {
 	Enabled          bool   `json:"enabled"`
 	BaseURL          string `json:"base_url"`

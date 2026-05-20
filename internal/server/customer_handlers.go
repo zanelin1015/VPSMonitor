@@ -1,9 +1,12 @@
 package server
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -218,7 +221,8 @@ func (a *App) customerOverview(user model.CustomerUser) (model.CustomerOverviewR
 }
 
 type customerClientRef struct {
-	Client model.XUIClientView
+	Client            model.XUIClientView
+	TemplateImportURL string
 }
 
 func buildCustomerClientMap(snapshots []model.AgentSnapshot, agents []model.AgentRecord) map[string]customerClientRef {
@@ -232,9 +236,31 @@ func buildCustomerClientMap(snapshots []model.AgentSnapshot, agents []model.Agen
 		if overview == nil {
 			continue
 		}
+		templateImportURLs := customerTemplateImportURLs(snapshot)
 		for _, client := range overview.Clients {
-			result[customerAssignmentKey(snapshot.AgentID, client.InboundID, client.Email)] = customerClientRef{Client: client}
+			key := customerAssignmentKey(snapshot.AgentID, client.InboundID, client.Email)
+			result[key] = customerClientRef{
+				Client:            client,
+				TemplateImportURL: templateImportURLs[key],
+			}
 		}
+	}
+	return result
+}
+
+func customerTemplateImportURLs(snapshot model.AgentSnapshot) map[string]string {
+	overview := dashboard.BuildXUIOverviewWithOptions(snapshot, dashboard.XUIOverviewOptions{
+		Entry: model.AgentEntryConfig{ImportDomain: "vpsmonitor.local"},
+	})
+	result := make(map[string]string)
+	if overview == nil {
+		return result
+	}
+	for _, client := range overview.Clients {
+		if client.ImportURL == "" {
+			continue
+		}
+		result[customerAssignmentKey(snapshot.AgentID, client.InboundID, client.Email)] = client.ImportURL
 	}
 	return result
 }
@@ -257,7 +283,9 @@ func buildCustomerLinkView(
 			{Role: "entry", Label: entryName},
 		},
 	}
-	if clientRef, ok := clientMap[customerAssignmentKey(assignment.AgentID, assignment.InboundID, assignment.ClientEmail)]; ok {
+	var clientRef customerClientRef
+	if ref, ok := clientMap[customerAssignmentKey(assignment.AgentID, assignment.InboundID, assignment.ClientEmail)]; ok {
+		clientRef = ref
 		link.ImportURL = clientRef.Client.ImportURL
 		link.ClientRemark = firstNonEmptyString(clientRef.Client.Comment, clientRef.Client.SubID)
 		if clientRef.Client.ExpiryTime > 0 {
@@ -285,6 +313,12 @@ func buildCustomerLinkView(
 		return link
 	}
 	link.Resolved = true
+	if publicEntry, ok := customerRealmPublicEntry(assignment, chain, agentMap); ok {
+		sourceURL := firstNonEmptyString(link.ImportURL, clientRef.TemplateImportURL)
+		if rewritten := rewriteCustomerImportURL(sourceURL, publicEntry.Host, publicEntry.Port); rewritten != "" {
+			link.ImportURL = rewritten
+		}
+	}
 	if link.ClientRemark == "" {
 		link.ClientRemark = chain.RootClientRemark
 	}
@@ -313,6 +347,173 @@ func buildCustomerLinkView(
 		link.UnresolvedReason = chain.UnresolvedReason
 	}
 	return link
+}
+
+type customerPublicEntry struct {
+	Host string
+	Port int
+}
+
+func customerRealmPublicEntry(assignment model.CustomerAssignment, chain model.ClientChainView, agentMap map[string]model.DashboardAgentView) (customerPublicEntry, bool) {
+	if assignment.AgentID == "" || agentMap == nil {
+		return customerPublicEntry{}, false
+	}
+	targetAgent, ok := agentMap[assignment.AgentID]
+	if !ok {
+		return customerPublicEntry{}, false
+	}
+	inboundPort := customerChainRootInboundPort(assignment, chain)
+	targetAddresses := customerAgentAddressSet(targetAgent)
+	for _, sourceAgent := range agentMap {
+		if sourceAgent.AgentID == "" || sourceAgent.AgentID == assignment.AgentID {
+			continue
+		}
+		for _, rule := range sourceAgent.Entry.PortForwarding.Rules {
+			if !rule.Enabled || rule.ListenPort <= 0 || rule.TargetPort <= 0 {
+				continue
+			}
+			if inboundPort > 0 && rule.TargetPort != inboundPort {
+				continue
+			}
+			if !customerRealmRuleTargetsAgent(rule, assignment.AgentID, targetAddresses) {
+				continue
+			}
+			host := customerRealmSourceHost(sourceAgent, rule)
+			if host == "" {
+				continue
+			}
+			return customerPublicEntry{Host: host, Port: rule.ListenPort}, true
+		}
+	}
+	return customerPublicEntry{}, false
+}
+
+func customerChainRootInboundPort(assignment model.CustomerAssignment, chain model.ClientChainView) int {
+	for _, step := range chain.Steps {
+		if step.AgentID != assignment.AgentID || step.Port <= 0 {
+			continue
+		}
+		if step.StepType == "inbound" || step.StepType == "match" {
+			return step.Port
+		}
+	}
+	return 0
+}
+
+func customerRealmRuleTargetsAgent(rule model.RealmForwardRule, targetAgentID string, targetAddresses map[string]struct{}) bool {
+	if strings.TrimSpace(rule.TargetAgentID) != "" {
+		return strings.EqualFold(strings.TrimSpace(rule.TargetAgentID), targetAgentID)
+	}
+	targetHost := normalizeCustomerShareHost(rule.TargetAddress)
+	if targetHost == "" {
+		return false
+	}
+	_, ok := targetAddresses[strings.ToLower(targetHost)]
+	return ok
+}
+
+func customerAgentAddressSet(agent model.DashboardAgentView) map[string]struct{} {
+	values := append([]string{}, agent.Entry.Addresses...)
+	values = append(values, agent.Summary.ObservedIP, agent.Summary.PublicIPv4, agent.Summary.PublicIPv6)
+	result := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		host := normalizeCustomerShareHost(value)
+		if host == "" {
+			continue
+		}
+		result[strings.ToLower(host)] = struct{}{}
+	}
+	return result
+}
+
+func customerRealmSourceHost(agent model.DashboardAgentView, rule model.RealmForwardRule) string {
+	for _, candidate := range []string{agent.Entry.ImportDomain} {
+		if host := normalizeCustomerShareHost(candidate); host != "" && !isWildcardListenAddress(host) {
+			return host
+		}
+	}
+	for _, candidate := range agent.Entry.Addresses {
+		if host := normalizeCustomerShareHost(candidate); host != "" && !isWildcardListenAddress(host) {
+			return host
+		}
+	}
+	for _, candidate := range []string{rule.ListenAddress, agent.Summary.ObservedIP, agent.Summary.PublicIPv4, agent.Summary.PublicIPv6} {
+		if host := normalizeCustomerShareHost(candidate); host != "" && !isWildcardListenAddress(host) {
+			return host
+		}
+	}
+	return ""
+}
+
+func rewriteCustomerImportURL(rawURL string, host string, port int) string {
+	rawURL = strings.TrimSpace(rawURL)
+	host = normalizeCustomerShareHost(host)
+	if rawURL == "" || host == "" || port <= 0 || port > 65535 {
+		return ""
+	}
+	if strings.HasPrefix(strings.ToLower(rawURL), "vmess://") {
+		return rewriteCustomerVMessImportURL(rawURL, host, port)
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Scheme == "" {
+		return ""
+	}
+	parsed.Host = net.JoinHostPort(host, strconv.Itoa(port))
+	return parsed.String()
+}
+
+func rewriteCustomerVMessImportURL(rawURL string, host string, port int) string {
+	payload := strings.TrimSpace(rawURL[len("vmess://"):])
+	decoded, err := decodeCustomerVMessPayload(payload)
+	if err != nil {
+		return ""
+	}
+	var data map[string]any
+	if err := json.Unmarshal(decoded, &data); err != nil {
+		return ""
+	}
+	data["add"] = host
+	data["port"] = port
+	next, err := json.Marshal(data)
+	if err != nil {
+		return ""
+	}
+	return "vmess://" + base64.StdEncoding.EncodeToString(next)
+}
+
+func decodeCustomerVMessPayload(payload string) ([]byte, error) {
+	normalized := strings.NewReplacer("-", "+", "_", "/").Replace(payload)
+	if padding := len(normalized) % 4; padding > 0 {
+		normalized += strings.Repeat("=", 4-padding)
+	}
+	return base64.StdEncoding.DecodeString(normalized)
+}
+
+func normalizeCustomerShareHost(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if parsed, err := url.Parse(value); err == nil && parsed.Host != "" {
+		value = parsed.Host
+	}
+	if host, _, err := net.SplitHostPort(value); err == nil {
+		value = host
+	}
+	value = strings.Trim(strings.TrimSpace(value), "[]")
+	if slash := strings.Index(value, "/"); slash >= 0 {
+		value = value[:slash]
+	}
+	return strings.TrimSpace(value)
+}
+
+func isWildcardListenAddress(host string) bool {
+	switch strings.TrimSpace(strings.ToLower(host)) {
+	case "", "0.0.0.0", "::", "[::]", "*":
+		return true
+	default:
+		return false
+	}
 }
 
 func customerBillingForAssignment(assignment model.CustomerAssignment, agentMap map[string]model.DashboardAgentView) (model.XUIClientBillingConfig, bool) {

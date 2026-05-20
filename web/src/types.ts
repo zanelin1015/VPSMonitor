@@ -115,6 +115,7 @@ export interface AgentEntryConfig {
   import_domain?: string
   mappings?: AgentEntryMapping[]
   network_policy?: NetworkPolicyConfig
+  port_forwarding?: RealmForwardConfig
 }
 
 export interface AgentEntryMapping {
@@ -141,6 +142,29 @@ export interface NetworkPortPolicyRule {
   protocol?: 'tcp' | 'udp' | 'both' | string
   rate_limit_mbps?: number
   whitelist_ips?: string[]
+}
+
+export interface RealmForwardConfig {
+  enabled?: boolean
+  backend?: 'realm' | 'none' | string
+  binary_path?: string
+  config_path?: string
+  service_name?: string
+  log_level?: 'trace' | 'debug' | 'info' | 'warn' | 'error' | string
+  rules?: RealmForwardRule[]
+}
+
+export interface RealmForwardRule {
+  id?: string
+  name?: string
+  enabled?: boolean
+  listen_address?: string
+  listen_port?: number
+  target_agent_id?: string
+  target_address?: string
+  target_port?: number
+  network?: 'tcp' | 'udp' | 'both' | string
+  note?: string
 }
 
 export interface AdminUser {

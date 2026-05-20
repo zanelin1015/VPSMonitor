@@ -15,6 +15,7 @@ type AgentSnapshot struct {
 	ReportedAt    time.Time       `json:"reported_at"`
 	Summary       VPSSummary      `json:"summary"`
 	XUI           *XUISnapshot    `json:"xui,omitempty"`
+	Realm         *RealmSnapshot  `json:"realm,omitempty"`
 	Nezha         *NezhaSnapshot  `json:"nezha,omitempty"`
 	Logs          []AgentLogEntry `json:"logs,omitempty"`
 }
@@ -79,6 +80,15 @@ type XUILocalCertificate struct {
 	KeyPath   string     `json:"key_path,omitempty"`
 	SourceDir string     `json:"source_dir,omitempty"`
 	NotAfter  *time.Time `json:"not_after,omitempty"`
+}
+
+type RealmSnapshot struct {
+	ConfigPath  string             `json:"config_path,omitempty"`
+	ServiceName string             `json:"service_name,omitempty"`
+	BinaryPath  string             `json:"binary_path,omitempty"`
+	CollectedAt time.Time          `json:"collected_at"`
+	Error       string             `json:"error,omitempty"`
+	Rules       []RealmForwardRule `json:"rules,omitempty"`
 }
 
 type XUIServerStatus struct {

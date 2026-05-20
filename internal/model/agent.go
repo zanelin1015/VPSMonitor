@@ -48,10 +48,11 @@ type XUIClientBillingConfig struct {
 }
 
 type AgentEntryConfig struct {
-	Addresses     []string            `json:"addresses,omitempty"`
-	ImportDomain  string              `json:"import_domain,omitempty"`
-	Mappings      []AgentEntryMapping `json:"mappings,omitempty"`
-	NetworkPolicy NetworkPolicyConfig `json:"network_policy,omitempty"`
+	Addresses      []string            `json:"addresses,omitempty"`
+	ImportDomain   string              `json:"import_domain,omitempty"`
+	Mappings       []AgentEntryMapping `json:"mappings,omitempty"`
+	NetworkPolicy  NetworkPolicyConfig `json:"network_policy,omitempty"`
+	PortForwarding RealmForwardConfig  `json:"port_forwarding,omitempty"`
 }
 
 type AgentEntryMapping struct {
@@ -78,6 +79,29 @@ type NetworkPortPolicyRule struct {
 	Protocol      string   `json:"protocol,omitempty"`
 	RateLimitMbps float64  `json:"rate_limit_mbps,omitempty"`
 	WhitelistIPs  []string `json:"whitelist_ips,omitempty"`
+}
+
+type RealmForwardConfig struct {
+	Enabled     bool               `json:"enabled,omitempty"`
+	Backend     string             `json:"backend,omitempty"`
+	BinaryPath  string             `json:"binary_path,omitempty"`
+	ConfigPath  string             `json:"config_path,omitempty"`
+	ServiceName string             `json:"service_name,omitempty"`
+	LogLevel    string             `json:"log_level,omitempty"`
+	Rules       []RealmForwardRule `json:"rules,omitempty"`
+}
+
+type RealmForwardRule struct {
+	ID            string `json:"id,omitempty"`
+	Name          string `json:"name,omitempty"`
+	Enabled       bool   `json:"enabled,omitempty"`
+	ListenAddress string `json:"listen_address,omitempty"`
+	ListenPort    int    `json:"listen_port,omitempty"`
+	TargetAgentID string `json:"target_agent_id,omitempty"`
+	TargetAddress string `json:"target_address,omitempty"`
+	TargetPort    int    `json:"target_port,omitempty"`
+	Network       string `json:"network,omitempty"`
+	Note          string `json:"note,omitempty"`
 }
 
 type AgentRegisterRequest struct {

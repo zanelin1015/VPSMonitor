@@ -40,9 +40,13 @@ func BuildGlobalDashboard(agents []model.AgentRecord, snapshots []model.AgentSna
 		entryByAgent[agent.AgentID] = agent.Config.Entry
 	}
 	overviewByAgent := make(map[string]*model.XUIOverview, len(snapshots))
+	realmByAgent := make(map[string]*model.RealmSnapshot, len(snapshots))
 	for _, snapshot := range snapshots {
 		if overview := BuildXUIOverviewWithOptions(snapshot, XUIOverviewOptions{Entry: entryByAgent[snapshot.AgentID]}); overview != nil {
 			overviewByAgent[snapshot.AgentID] = overview
+		}
+		if snapshot.Realm != nil {
+			realmByAgent[snapshot.AgentID] = snapshot.Realm
 		}
 	}
 
@@ -63,6 +67,7 @@ func BuildGlobalDashboard(agents []model.AgentRecord, snapshots []model.AgentSna
 		if summary.PublicIPv6 == "" {
 			summary.PublicIPv6 = agent.PublicIPv6
 		}
+		entry := mergeRealmSnapshotIntoEntry(agent.Config.Entry, realmByAgent[agent.AgentID])
 		view := model.DashboardAgentView{
 			AgentID:             agent.AgentID,
 			AgentName:           agent.AgentName,
@@ -74,7 +79,7 @@ func BuildGlobalDashboard(agents []model.AgentRecord, snapshots []model.AgentSna
 			SortOrder:           agent.SortOrder,
 			Tags:                cloneStrings(agent.Tags),
 			Renewal:             agent.Config.Renewal,
-			Entry:               agent.Config.Entry,
+			Entry:               entry,
 			ReportedAt:          agent.ReportedAt,
 			RegisteredAt:        &agent.RegisteredAt,
 			UpdatedAt:           &agent.UpdatedAt,
@@ -223,6 +228,36 @@ func lookupOverviewGeo(overview *model.XUIOverview, resolver *topologyResolver) 
 	return nil
 }
 
+func mergeRealmSnapshotIntoEntry(entry model.AgentEntryConfig, snapshot *model.RealmSnapshot) model.AgentEntryConfig {
+	if snapshot == nil || len(snapshot.Rules) == 0 {
+		return entry
+	}
+	merged := entry
+	merged.PortForwarding.Enabled = true
+	merged.PortForwarding.Backend = firstNonEmpty(merged.PortForwarding.Backend, "realm")
+	merged.PortForwarding.ConfigPath = firstNonEmpty(merged.PortForwarding.ConfigPath, snapshot.ConfigPath)
+	merged.PortForwarding.ServiceName = firstNonEmpty(merged.PortForwarding.ServiceName, snapshot.ServiceName)
+	merged.PortForwarding.BinaryPath = firstNonEmpty(merged.PortForwarding.BinaryPath, snapshot.BinaryPath)
+	rules := make([]model.RealmForwardRule, 0, len(merged.PortForwarding.Rules)+len(snapshot.Rules))
+	seen := make(map[string]struct{}, len(merged.PortForwarding.Rules)+len(snapshot.Rules))
+	appendRule := func(rule model.RealmForwardRule) {
+		key := fmt.Sprintf("%s:%d:%s:%d:%s", strings.ToLower(rule.ListenAddress), rule.ListenPort, strings.ToLower(rule.TargetAddress), rule.TargetPort, strings.ToLower(rule.Network))
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		rules = append(rules, rule)
+	}
+	for _, rule := range merged.PortForwarding.Rules {
+		appendRule(rule)
+	}
+	for _, rule := range snapshot.Rules {
+		appendRule(rule)
+	}
+	merged.PortForwarding.Rules = rules
+	return merged
+}
+
 func terminalAgentExitGeo(agentView model.DashboardAgentView, overview *model.XUIOverview, resolver *topologyResolver) (string, *model.IPGeoView) {
 	if resolver == nil {
 		return "", nil
@@ -350,7 +385,48 @@ func buildOutboundCandidates(agentViews map[string]model.DashboardAgentView, ove
 			result[outboundTopologyKey(agentID, outbound.Tag)] = topologyOutboundCandidate{ref: ref}
 		}
 	}
+	for agentID, agentView := range agentViews {
+		for _, rule := range activeRealmForwardRulesForTopology(agentView.Entry.PortForwarding.Rules) {
+			resolvedIPs := resolver.lookupHost(rule.TargetAddress)
+			ref := model.TopologyOutboundRef{
+				AgentID:     agentID,
+				AgentName:   agentView.AgentName,
+				AgentTags:   cloneStrings(agentView.Tags),
+				OutboundTag: firstNonEmpty(rule.Name, rule.ID, fmt.Sprintf("realm:%d", rule.ListenPort)),
+				Protocol:    "realm",
+				Target:      fmt.Sprintf("%s:%d", rule.TargetAddress, rule.TargetPort),
+				Address:     rule.TargetAddress,
+				Port:        rule.TargetPort,
+				Network:     normalizeRealmForwardNetworkForTopology(rule.Network),
+				ResolvedIPs: resolvedIPs,
+			}
+			result[outboundTopologyKey(agentID, "realm:"+firstNonEmpty(rule.ID, ref.OutboundTag))] = topologyOutboundCandidate{ref: ref}
+		}
+	}
 	return result
+}
+
+func activeRealmForwardRulesForTopology(items []model.RealmForwardRule) []model.RealmForwardRule {
+	rules := make([]model.RealmForwardRule, 0, len(items))
+	for _, rule := range items {
+		rule.TargetAddress = strings.TrimSpace(rule.TargetAddress)
+		if !rule.Enabled || rule.TargetAddress == "" || rule.ListenPort <= 0 || rule.TargetPort <= 0 {
+			continue
+		}
+		rules = append(rules, rule)
+	}
+	return rules
+}
+
+func normalizeRealmForwardNetworkForTopology(network string) string {
+	switch strings.ToLower(strings.TrimSpace(network)) {
+	case "udp":
+		return "udp"
+	case "both", "tcp+udp", "all":
+		return "tcp+udp"
+	default:
+		return "tcp"
+	}
 }
 
 func buildBalancerCandidates(overviewByAgent map[string]*model.XUIOverview) map[string]map[string]model.XUIBalancerView {

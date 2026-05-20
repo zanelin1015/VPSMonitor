@@ -12,6 +12,7 @@ import type {
   GlobalDashboardView,
   IPGeoView,
   ManagedAgentConfig,
+  RealmForwardConfig,
   TopologyLinkView,
   VPSRenewalConfig,
   VPSSummary,
@@ -1102,6 +1103,30 @@ function normalizeEntryConfig(config?: AgentEntryConfig): AgentEntryConfig {
       note: mapping.note || '',
     })),
     network_policy: normalizeNetworkPolicyConfig(config?.network_policy),
+    port_forwarding: normalizeRealmForwardConfig(config?.port_forwarding),
+  }
+}
+
+function normalizeRealmForwardConfig(config?: RealmForwardConfig): RealmForwardConfig {
+  return {
+    enabled: Boolean(config?.enabled),
+    backend: config?.backend === 'none' ? 'none' : 'realm',
+    binary_path: (config?.binary_path || '').trim(),
+    config_path: (config?.config_path || '').trim(),
+    service_name: (config?.service_name || '').trim(),
+    log_level: ['trace', 'debug', 'warn', 'error'].includes(String(config?.log_level || '')) ? config?.log_level : 'info',
+    rules: (config?.rules || []).map((rule, index) => ({
+      id: rule.id || `realm-${rule.listen_port || 0}-${rule.target_port || 0}-${index}`,
+      name: rule.name || '',
+      enabled: rule.enabled !== false,
+      listen_address: '0.0.0.0',
+      listen_port: Math.max(0, Number(rule.listen_port || 0)),
+      target_agent_id: rule.target_agent_id || '',
+      target_address: rule.target_address || '',
+      target_port: Math.max(0, Number(rule.target_port || 0)),
+      network: rule.network === 'udp' || rule.network === 'both' ? rule.network : 'tcp',
+      note: rule.note || '',
+    })),
   }
 }
 
@@ -1173,6 +1198,7 @@ function buildSectionSavePayload(base: ManagedAgentConfig, draft: ManagedAgentCo
       import_domain: base.entry?.import_domain || '',
       mappings: (base.entry?.mappings || []).map((mapping) => ({ ...mapping })),
       network_policy: normalizeNetworkPolicyConfig(base.entry?.network_policy),
+      port_forwarding: normalizeRealmForwardConfig(base.entry?.port_forwarding),
     },
     xui: { ...base.xui },
   }
@@ -1195,6 +1221,7 @@ function buildSectionSavePayload(base: ManagedAgentConfig, draft: ManagedAgentCo
         import_domain: draft.entry?.import_domain || '',
         mappings: (draft.entry?.mappings || []).map((mapping) => ({ ...mapping })),
         network_policy: normalizeNetworkPolicyConfig(draft.entry?.network_policy),
+        port_forwarding: normalizeRealmForwardConfig(draft.entry?.port_forwarding),
       }
       break
   }
@@ -1225,6 +1252,7 @@ function mergeSavedSectionIntoDraft(draft: ManagedAgentConfig, saved: ManagedAge
         import_domain: saved.entry?.import_domain || '',
         mappings: (saved.entry?.mappings || []).map((mapping) => ({ ...mapping })),
         network_policy: normalizeNetworkPolicyConfig(saved.entry?.network_policy),
+        port_forwarding: normalizeRealmForwardConfig(saved.entry?.port_forwarding),
       }
       break
   }
@@ -1574,6 +1602,15 @@ function createEmptyManagedConfig(agentID: string, agentName?: string): ManagedA
         interface: '',
         firewall_backend: 'auto',
         rate_limit_backend: 'auto',
+        rules: [],
+      },
+      port_forwarding: {
+        enabled: false,
+        backend: 'realm',
+        binary_path: '',
+        config_path: '',
+        service_name: '',
+        log_level: 'info',
         rules: [],
       },
     },

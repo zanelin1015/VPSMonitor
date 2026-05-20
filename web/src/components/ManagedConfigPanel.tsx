@@ -1,7 +1,7 @@
 import { Alert, AutoComplete, Button, Card, Col, Empty, Input, InputNumber, List, Row, Select, Space, Spin, Switch, Typography } from 'antd'
 import { DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 
-import type { AgentEntryConfig, AgentEntryMapping, AgentListItem, ConfigAuditLog, ManagedAgentConfig, NetworkPortPolicyRule, VPSRenewalConfig, XUIConfig, XUILocalCertificate } from '../types'
+import type { AgentEntryConfig, AgentEntryMapping, AgentListItem, ConfigAuditLog, ManagedAgentConfig, NetworkPortPolicyRule, RealmForwardRule, VPSRenewalConfig, XUIConfig, XUILocalCertificate } from '../types'
 import { DEFAULT_COST_CURRENCY, type CurrencyCode } from '../lib/currency'
 import { bytesToGB, gbToBytes } from '../lib/traffic'
 import type { ConfigSectionKey } from '../lib/appHelpers'
@@ -11,6 +11,7 @@ const { Text, Title } = Typography
 
 export interface ConfigPanelProps {
   selectedAgent?: AgentListItem
+  agents?: AgentListItem[]
   managedConfig: ManagedAgentConfig | null
   certificates: XUILocalCertificate[]
   configLoading: boolean
@@ -39,6 +40,7 @@ export interface ConfigPanelProps {
 export function ManagedConfigPanel(props: ConfigPanelProps) {
   const {
     selectedAgent,
+    agents = [],
     managedConfig,
     certificates,
     configLoading,
@@ -85,8 +87,13 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
     import_domain: managedConfig.entry?.import_domain || '',
     mappings: managedConfig.entry?.mappings || [],
     network_policy: managedConfig.entry?.network_policy || { enabled: false, interface: '', firewall_backend: 'auto', rate_limit_backend: 'auto', rules: [] },
+    port_forwarding: managedConfig.entry?.port_forwarding || selectedAgent.entry?.port_forwarding || { enabled: false, backend: 'realm', binary_path: '', config_path: '', service_name: '', log_level: 'info', rules: [] },
   }
   const networkPolicy = entryConfig.network_policy || { enabled: false, interface: '', firewall_backend: 'auto', rate_limit_backend: 'auto', rules: [] }
+  const portForwarding = entryConfig.port_forwarding || { enabled: false, backend: 'realm', binary_path: '', config_path: '', service_name: '', log_level: 'info', rules: [] }
+  const targetAgentOptions = agents
+    .filter((agent) => agent.agent_id && agent.agent_id !== selectedAgent.agent_id)
+    .map((agent) => ({ value: agent.agent_id, label: `${agent.agent_name || agent.agent_id} · ${bestAgentAddress(agent) || '未上报 IP'}` }))
   const domainOptions = buildCertificateDomainOptions(certificates)
   const defaultImportDomain = domainOptions.find((option) => !option.value.startsWith('*.'))?.value || ''
   const updateEntryMapping = (index: number, patch: Partial<AgentEntryMapping>) => {
@@ -128,6 +135,44 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
   }
   const removeNetworkPolicyRule = (index: number) => {
     updateNetworkPolicy({ rules: (networkPolicy.rules || []).filter((_, currentIndex) => currentIndex !== index) })
+  }
+  const updatePortForwarding = (patch: Partial<NonNullable<AgentEntryConfig['port_forwarding']>>) => {
+    onEntryChange({ port_forwarding: { ...portForwarding, ...patch } })
+  }
+  const updatePortForwardRule = (index: number, patch: Partial<RealmForwardRule>) => {
+    const rules = (portForwarding.rules || []).map((rule, currentIndex) => (currentIndex === index ? { ...rule, ...patch } : rule))
+    updatePortForwarding({ rules })
+  }
+  const addPortForwardRule = () => {
+    updatePortForwarding({
+      enabled: true,
+      backend: 'realm',
+      rules: [
+        ...(portForwarding.rules || []),
+        {
+          id: `realm-${Date.now()}`,
+          enabled: true,
+          name: '',
+          listen_address: '0.0.0.0',
+          listen_port: 443,
+          target_agent_id: '',
+          target_address: '',
+          target_port: 443,
+          network: 'tcp',
+          note: '',
+        },
+      ],
+    })
+  }
+  const removePortForwardRule = (index: number) => {
+    updatePortForwarding({ rules: (portForwarding.rules || []).filter((_, currentIndex) => currentIndex !== index) })
+  }
+  const selectPortForwardTargetAgent = (index: number, agentID: string) => {
+    const agent = agents.find((item) => item.agent_id === agentID)
+    updatePortForwardRule(index, {
+      target_agent_id: agentID,
+      target_address: bestAgentAddress(agent) || '',
+    })
   }
   const sectionSaving = Boolean(configSavingSection)
   const sectionSaveButton = (section: ConfigSectionKey, label: string) => (
@@ -594,6 +639,140 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
       </Card>
 
       <Card className="config-section-card" bordered={false}>
+        <div className="section-title-row">
+          <Title level={4}>Realm 端口转发</Title>
+          <Space wrap>
+            <Button size="small" icon={<PlusOutlined />} onClick={addPortForwardRule}>
+              添加转发
+            </Button>
+            {sectionSaveButton('entry', '保存 Realm 转发')}
+          </Space>
+        </div>
+        <Alert
+          type="info"
+          showIcon
+          className="compact-alert"
+          message="用于广州 -> HK 这种整端口中转"
+          description="Client 会在当前 VPS 本机生成 realm 配置，并把本机监听端口直接转发到目标 Client 的指定端口；这不经过 x-ui 用户和出站规则。需要当前 Client 所在 VPS 已安装 realm，或在这里填写 realm 二进制路径。"
+        />
+        <Row gutter={[16, 16]}>
+          <Col xs={24} md={6}>
+            <div className="switch-row">
+              <span>启用 Realm 转发</span>
+              <Switch checked={Boolean(portForwarding.enabled)} onChange={(checked) => updatePortForwarding({ enabled: checked })} />
+            </div>
+          </Col>
+          <Col xs={24} md={6}>
+            <Text type="secondary">后端</Text>
+            <Select
+              style={{ width: '100%' }}
+              value={portForwarding.backend || 'realm'}
+              options={[
+                { value: 'realm', label: 'realm' },
+                { value: 'none', label: '不处理' },
+              ]}
+              onChange={(value) => updatePortForwarding({ backend: value })}
+            />
+          </Col>
+          <Col xs={24} md={6}>
+            <Text type="secondary">服务名</Text>
+            <Input value={portForwarding.service_name || ''} placeholder="默认 vpsmonitor-realm" onChange={(event) => updatePortForwarding({ service_name: event.target.value })} />
+          </Col>
+          <Col xs={24} md={6}>
+            <Text type="secondary">日志等级</Text>
+            <Select
+              style={{ width: '100%' }}
+              value={portForwarding.log_level || 'info'}
+              options={[
+                { value: 'info', label: 'info' },
+                { value: 'debug', label: 'debug' },
+                { value: 'warn', label: 'warn' },
+                { value: 'error', label: 'error' },
+                { value: 'trace', label: 'trace' },
+              ]}
+              onChange={(value) => updatePortForwarding({ log_level: value })}
+            />
+          </Col>
+          <Col xs={24} md={12}>
+            <Text type="secondary">realm 二进制路径</Text>
+            <Input value={portForwarding.binary_path || ''} placeholder="留空自动查找 realm，例如 /usr/local/bin/realm" onChange={(event) => updatePortForwarding({ binary_path: event.target.value })} />
+          </Col>
+          <Col xs={24} md={12}>
+            <Text type="secondary">realm 配置路径</Text>
+            <Input value={portForwarding.config_path || ''} placeholder="默认 /etc/vpsmonitor/realm.toml" onChange={(event) => updatePortForwarding({ config_path: event.target.value })} />
+          </Col>
+          <Col xs={24}>
+            <List
+              locale={{ emptyText: '暂无 Realm 转发；例如广州 Client 监听 443，转发到 HK Client 的 443/8443' }}
+              dataSource={portForwarding.rules || []}
+              renderItem={(rule, index) => (
+                <List.Item
+                  actions={[
+                    <Button key="delete" size="small" danger icon={<DeleteOutlined />} onClick={() => removePortForwardRule(index)}>
+                      删除
+                    </Button>,
+                  ]}
+                >
+                  <Row gutter={[12, 12]} style={{ width: '100%' }}>
+                    <Col xs={24} md={3}>
+                      <Text type="secondary">启用</Text>
+                      <Switch checked={rule.enabled !== false} onChange={(checked) => updatePortForwardRule(index, { enabled: checked })} />
+                    </Col>
+                    <Col xs={24} md={5}>
+                      <Text type="secondary">名称</Text>
+                      <Input value={rule.name || ''} placeholder="例如 广州到 HK 443" onChange={(event) => updatePortForwardRule(index, { name: event.target.value })} />
+                    </Col>
+                    <Col xs={12} md={4}>
+                      <Text type="secondary">监听端口</Text>
+                      <InputNumber style={{ width: '100%' }} min={1} max={65535} precision={0} value={rule.listen_port || 0} onChange={(value) => updatePortForwardRule(index, { listen_port: Number(value || 0) })} />
+                    </Col>
+                    <Col xs={24} md={8}>
+                      <Text type="secondary">目标 Client</Text>
+                      <Select
+                        allowClear
+                        showSearch
+                        style={{ width: '100%' }}
+                        value={rule.target_agent_id || undefined}
+                        placeholder="选择 HK Client，可自动填目标地址"
+                        options={targetAgentOptions}
+                        filterOption={(input, option) => String(option?.label || '').toLowerCase().includes(input.toLowerCase())}
+                        onChange={(value) => selectPortForwardTargetAgent(index, value || '')}
+                      />
+                    </Col>
+                    <Col xs={24} md={8}>
+                      <Text type="secondary">目标地址</Text>
+                      <Input value={rule.target_address || ''} placeholder="HK 公网 IP / 域名" onChange={(event) => updatePortForwardRule(index, { target_address: event.target.value })} />
+                    </Col>
+                    <Col xs={12} md={4}>
+                      <Text type="secondary">目标端口</Text>
+                      <InputNumber style={{ width: '100%' }} min={1} max={65535} precision={0} value={rule.target_port || 0} onChange={(value) => updatePortForwardRule(index, { target_port: Number(value || 0) })} />
+                    </Col>
+                    <Col xs={12} md={4}>
+                      <Text type="secondary">协议</Text>
+                      <Select
+                        style={{ width: '100%' }}
+                        value={rule.network || 'tcp'}
+                        options={[
+                          { value: 'tcp', label: 'TCP' },
+                          { value: 'udp', label: 'UDP' },
+                          { value: 'both', label: 'TCP + UDP' },
+                        ]}
+                        onChange={(value) => updatePortForwardRule(index, { network: value })}
+                      />
+                    </Col>
+                    <Col xs={24} md={8}>
+                      <Text type="secondary">备注</Text>
+                      <Input value={rule.note || ''} placeholder="可选" onChange={(event) => updatePortForwardRule(index, { note: event.target.value })} />
+                    </Col>
+                  </Row>
+                </List.Item>
+              )}
+            />
+          </Col>
+        </Row>
+      </Card>
+
+      <Card className="config-section-card" bordered={false}>
         <Title level={4}>配置修改记录</Title>
         <Spin spinning={configAuditsLoading}>
           {configAudits.length ? (
@@ -650,4 +829,17 @@ function normalizeDomainOption(value?: string) {
 
 function isIPLike(value: string) {
   return /^\d{1,3}(\.\d{1,3}){3}$/.test(value) || (value.includes(':') && /^[0-9a-f:]+$/i.test(value))
+}
+
+function bestAgentAddress(agent?: AgentListItem) {
+  if (!agent) {
+    return ''
+  }
+  return (
+    agent.entry?.addresses?.find(Boolean) ||
+    agent.summary?.observed_ip ||
+    agent.summary?.public_ipv4 ||
+    agent.summary?.public_ipv6 ||
+    ''
+  )
 }

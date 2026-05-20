@@ -285,7 +285,7 @@ export function CustomerManagementModal(props: {
 
   const assignmentColumns: ColumnsType<CustomerAssignment> = [
     {
-      title: '用户可见名称',
+      title: '授权链路名称',
       dataIndex: 'public_client_name',
       width: 180,
       render: (value?: string) => <Text strong>{value || '-'}</Text>,
@@ -307,7 +307,7 @@ export function CustomerManagementModal(props: {
       render: (value?: string) => value || '-',
     },
     {
-      title: '节点费用',
+      title: '费用',
       key: 'revenue',
       width: 150,
       render: (_, record) => {
@@ -1070,7 +1070,7 @@ export function CustomerManagementModal(props: {
               保存用户
             </Button>
             {selectedCustomerID ? (
-              <Button onClick={() => setActiveManagementTab('assignments')}>管理该用户链路</Button>
+              <Button onClick={() => setActiveManagementTab('assignments')}>管理授权链路</Button>
             ) : null}
           </Space>
         </Card>
@@ -1098,7 +1098,7 @@ export function CustomerManagementModal(props: {
         <Select
           style={{ width: '100%' }}
           showSearch
-          placeholder="选择要分配链路的用户"
+          placeholder="选择要分配授权链路的用户"
           value={selectedCustomerID ?? undefined}
           options={customerSelectOptions}
           optionFilterProp="label"
@@ -1109,7 +1109,7 @@ export function CustomerManagementModal(props: {
       <Card className="customer-admin-card" bordered={false}>
         <div className="customer-admin-card-head">
           <div>
-            <Title level={5}>客户端 / 节点分配</Title>
+            <Title level={5}>授权链路分配</Title>
             <Text type="secondary">当前用户：{selectedCustomer ? selectedCustomer.display_name || selectedCustomer.username : '未选择'}</Text>
           </div>
           <Button onClick={() => {
@@ -1146,11 +1146,11 @@ export function CustomerManagementModal(props: {
             />
           </Col>
           <Col xs={24} md={6}>
-            <Text type="secondary">用户可见名称</Text>
+            <Text type="secondary">授权链路名称</Text>
             <Input value={assignmentForm.public_client_name} onChange={(event) => setAssignmentForm((current) => ({ ...current, public_client_name: event.target.value }))} />
           </Col>
           {canViewFinance ? <Col xs={24} md={4}>
-            <Text type="secondary">节点费用</Text>
+            <Text type="secondary">费用</Text>
             <InputNumber
               style={{ width: '100%' }}
               min={0}
@@ -1194,7 +1194,7 @@ export function CustomerManagementModal(props: {
           </Col>
         </Row>
         <Button style={{ marginTop: 14 }} type="primary" icon={<SaveOutlined />} disabled={!selectedCustomerID} loading={savingAssignment} onClick={() => void saveAssignment()}>
-          {editingAssignmentID ? '保存分配' : '新增分配'}
+          {editingAssignmentID ? '保存授权' : '新增授权'}
         </Button>
         <Table
           style={{ marginTop: 14 }}
@@ -1202,7 +1202,7 @@ export function CustomerManagementModal(props: {
           columns={visibleAssignmentColumns}
           dataSource={selectedCustomer?.assignments || []}
           pagination={{ pageSize: 8, hideOnSinglePage: true }}
-          locale={{ emptyText: <Empty description="暂无分配" /> }}
+          locale={{ emptyText: <Empty description="暂无授权链路" /> }}
         />
       </Card>
     </Space>
@@ -1211,17 +1211,25 @@ export function CustomerManagementModal(props: {
   const managementTabs = [
     ...(canManageAreaManagers && areaManagersPanel ? [{ key: 'area', label: '区域账号', children: areaManagersPanel }] : []),
     { key: 'customers', label: '用户账号', children: customersPanel },
-    { key: 'assignments', label: '链路分配', children: assignmentsPanel },
+    { key: 'assignments', label: '授权链路', children: assignmentsPanel },
   ]
 
   const content = (
     <Spin spinning={loading || areaManagersLoading}>
-      <Tabs
-        className="customer-admin-tabs"
-        activeKey={activeManagementTab}
-        items={managementTabs}
-        onChange={(key) => setActiveManagementTab(key as ManagementTabKey)}
-      />
+      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Alert
+          type="info"
+          showIcon
+          message="授权使用规则与停用机制"
+          description="建议仅给已授权用户开放链路，可用于独享或多人共享场景；禁止滥发、攻击、诈骗、爬虫滥用、扫描爆破等行为。出现异常时，可先停用用户账号或单条授权链路；如需彻底切断连接，再到对应 Client 的 x-ui 客户端列表中删除或停用该 client。"
+        />
+        <Tabs
+          className="customer-admin-tabs"
+          activeKey={activeManagementTab}
+          items={managementTabs}
+          onChange={(key) => setActiveManagementTab(key as ManagementTabKey)}
+        />
+      </Space>
     </Spin>
   )
 
@@ -1230,8 +1238,8 @@ export function CustomerManagementModal(props: {
       <div id="customer-management-panel" className="customer-admin-page">
         <div className="admin-content-title">
           <div>
-            <Title level={3}>用户管理</Title>
-            <Text type="secondary">管理用户账号、用户可见名称，以及分配给用户的 Client / 节点链路。</Text>
+            <Title level={3}>用户授权管理</Title>
+            <Text type="secondary">管理用户账号、授权链路名称，以及分配给用户的 Client / 节点授权链路。</Text>
           </div>
           <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadCustomers()}>刷新</Button>
         </div>
@@ -1241,7 +1249,7 @@ export function CustomerManagementModal(props: {
   }
 
   return (
-    <Modal title="人员管理 / 用户链路分配" open={open} onCancel={onClose} footer={null} width={1160} destroyOnClose>
+    <Modal title="人员管理 / 授权链路" open={open} onCancel={onClose} footer={null} width={1160} destroyOnClose>
       {content}
     </Modal>
   )

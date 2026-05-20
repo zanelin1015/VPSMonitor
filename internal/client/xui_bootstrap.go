@@ -75,7 +75,7 @@ func configure3XUI(ctx context.Context, cfg config.XUIConfig) error {
 		}
 	}
 	_, _ = runCommandOutput(ctx, "x-ui", "restart")
-	_ = os.Setenv("XUI_DB_PATH", firstNonEmpty(cfg.DBPath, "/etc/x-ui/x-ui.db"))
+	_ = os.Setenv("XUI_DB_PATH", firstNonEmpty(cfg.DBPath, config.DefaultXUIDBPath))
 	return nil
 }
 

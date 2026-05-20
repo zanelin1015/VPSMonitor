@@ -224,7 +224,7 @@ export function CustomerPortal() {
   if (!user) {
     return (
       <LoginScreen
-        title="AlanStone链路面板"
+        title="AlanStone授权链路面板"
         subtitle=""
         loginForm={loginForm}
         loginLoading={loginLoading}
@@ -241,7 +241,7 @@ export function CustomerPortal() {
       <div className="customer-shell customer-dashboard-shell">
         <header className="customer-mobile-header">
           <div>
-            <div className="eyebrow">AlanStone链路面板</div>
+            <div className="eyebrow">授权链路</div>
             <Title level={2}>{user.display_name || user.username}</Title>
             <Text type="secondary">{overview?.generated_at ? formatDateTime(overview.generated_at) : '等待数据同步'}</Text>
           </div>
@@ -271,7 +271,7 @@ export function CustomerPortal() {
         </section>
         <header className="customer-hero customer-dashboard-header">
           <div>
-            <div className="eyebrow">用户看板 / 我的链路</div>
+            <div className="eyebrow">授权访问 / 我的链路</div>
             <Title level={1}>{user.display_name || user.username}</Title>
           </div>
           <Space wrap>
@@ -284,6 +284,13 @@ export function CustomerPortal() {
             <Button icon={<LogoutOutlined />} onClick={() => void logout()}>退出</Button>
           </Space>
         </header>
+        <Alert
+          className="customer-policy-alert"
+          type="info"
+          showIcon
+          message="授权使用规则"
+          description="仅限已授权用户使用，可按独享或共享方式开放；禁止滥发、攻击、诈骗、爬虫滥用、扫描爆破等高风险行为。发现异常时，管理员可随时停用账号或授权链路，并停用对应 x-ui client。"
+        />
 
         <div className="customer-board-layout">
           <aside className="customer-board-side">
@@ -298,7 +305,7 @@ export function CustomerPortal() {
               <Text type="secondary">看板摘要</Text>
               <div className="customer-board-score">
                 <strong>{overview?.links.length || 0}</strong>
-                <span>条链路</span>
+                <span>条授权链路</span>
               </div>
               <div className="customer-board-score">
                 <strong>{exitCountryCount}</strong>
@@ -310,7 +317,7 @@ export function CustomerPortal() {
           <section className="customer-board-main">
             <div className="customer-stat-grid">
               <Card bordered={false} className="surface-card customer-stat-card">
-                <Statistic title="已分配链路" value={overview?.links.length || 0} suffix="条" />
+                <Statistic title="已授权链路" value={overview?.links.length || 0} suffix="条" />
               </Card>
               <Card bordered={false} className="surface-card customer-stat-card">
                 <Statistic title="已解析链路" value={(overview?.links || []).filter((link) => link.resolved).length} suffix="条" />
@@ -325,17 +332,17 @@ export function CustomerPortal() {
             {overview?.generated_at ? <Text type="secondary">数据更新时间：{formatDateTime(overview.generated_at)}</Text> : null}
             {!overview?.links.length ? (
               <Card bordered={false} className="surface-card customer-link-card">
-                <Empty description="暂无分配链路，请联系管理员开通" />
+                <Empty description="暂无授权链路，请联系管理员开通" />
               </Card>
             ) : null}
             {(overview?.links || []).map((link) => {
               const effectiveName = customerLinkDisplayName(link, remarkDrafts[link.assignment_id])
               const effectiveImportURL = customerLinkImportURL(link, remarkDrafts[link.assignment_id])
-              const billingItems = customerLinkBillingItems(link)
+              const billingItems = customerLinkMetaItems(link)
               return (
               <Card key={link.assignment_id} bordered={false} className="surface-card customer-link-card">
                 <div className="customer-link-head">
-                  <div>
+                  <div className="customer-link-main">
                     <div className="customer-link-title-row">
                       {editingRemarkID === link.assignment_id ? (
                         <Input
@@ -373,19 +380,15 @@ export function CustomerPortal() {
                       )}
                     </div>
                     <Paragraph className="customer-link-summary">{link.summary}</Paragraph>
-                    {billingItems.length ? (
-                      <div className="customer-link-billing-row">
-                        {billingItems.map((item) => (
-                          <div key={item.key} className="customer-link-billing-item">
-                            <span>{item.title}</span>
-                            <strong>{item.value}</strong>
-                            {item.note ? <small>{item.note}</small> : null}
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
                   </div>
-                  <Space wrap>
+                  {billingItems.length ? (
+                    <div className="customer-link-meta-row" aria-label="授权链路费用和过期时间">
+                      {billingItems.map((item) => (
+                        <span key={item.key} className={`customer-link-meta-item customer-link-meta-${item.key}`}>{item.text}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                  <Space wrap className="customer-link-exit-tags">
                     {link.exit_country_code || link.exit_country_name ? <Tag color="blue">出口 {countryFlag(link.exit_country_code)} {link.exit_country_code || link.exit_country_name}</Tag> : null}
                     {link.exit_ip ? <Tag color="geekblue">{link.exit_ip}</Tag> : null}
                     {!link.resolved ? <Tag color="orange">待解析</Tag> : null}
@@ -514,28 +517,40 @@ export function CustomerPortal() {
 function CustomerTopologyMap({ steps }: { steps: CustomerLinkStep[] }) {
   const visibleSteps = steps.length ? steps : [{ role: 'entry', label: '入口' }]
   return (
-    <div className="customer-topology-canvas" aria-label="用户链路拓扑图">
+    <div className="customer-topology-canvas" aria-label="授权链路拓扑图">
       <div className="customer-topology-track">
-        {visibleSteps.map((step, index) => (
-          <div key={`${step.role}-${step.label}-${index}`} className="customer-topology-segment">
-            <div className={`customer-topology-node customer-topology-node-${step.role}`}>
-              <span className="customer-topology-node-icon">
-                {topologyNodeIcon(step.role)}
-                {step.role === 'exit' ? <span className="customer-topology-node-flag">{countryFlag(step.country_code)}</span> : null}
-              </span>
-              <span className="customer-topology-node-label">{step.label}</span>
-              {step.role === 'exit' && step.exit_ip ? <span className="customer-topology-node-meta">{step.exit_ip}</span> : null}
-            </div>
-            {index < visibleSteps.length - 1 ? (
-              <div className="customer-topology-edge">
-                <span />
+        {visibleSteps.map((step, index) => {
+          const displayLabel = customerTopologyStepLabel(step)
+          const showExitIP = step.role === 'exit' && Boolean(step.exit_ip)
+          return (
+            <div key={`${step.role}-${step.label}-${index}`} className="customer-topology-segment">
+              <div className={`customer-topology-node customer-topology-node-${step.role}`}>
+                <span className="customer-topology-node-icon">
+                  {topologyNodeIcon(step.role)}
+                  {step.role === 'exit' ? <span className="customer-topology-node-flag">{countryFlag(step.country_code)}</span> : null}
+                </span>
+                <span className="customer-topology-node-label">{displayLabel}</span>
+                {showExitIP ? <span className="customer-topology-node-meta">{step.exit_ip}</span> : null}
               </div>
-            ) : null}
-          </div>
-        ))}
+              {index < visibleSteps.length - 1 ? (
+                <div className="customer-topology-edge">
+                  <span />
+                </div>
+              ) : null}
+            </div>
+          )
+        })}
       </div>
     </div>
   )
+}
+
+function customerTopologyStepLabel(step: CustomerLinkStep): string {
+  if (step.role !== 'exit' || !step.exit_ip) {
+    return step.label
+  }
+  const escapedIP = step.exit_ip.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return step.label.replace(new RegExp(`\\s*${escapedIP}\\s*$`), '').trim() || step.label
 }
 
 function topologyNodeIcon(role: string) {
@@ -553,43 +568,50 @@ function topologyNodeIcon(role: string) {
 
 function customerLinkDisplayName(link: CustomerLinkView, draft?: string): string {
   const draftName = (draft || '').trim()
-  return draftName || link.remark || link.entry_client_name || link.client_email || '用户链路'
+  return draftName || link.remark || link.entry_client_name || link.client_email || '授权链路'
 }
 
-function customerLinkBillingItems(link: CustomerLinkView): Array<{ key: string; title: string; value: string; note?: string }> {
-  const items: Array<{ key: string; title: string; value: string; note?: string }> = []
+function customerLinkMetaItems(link: CustomerLinkView): Array<{ key: string; text: string }> {
+  const items: Array<{ key: string; text: string }> = []
   if (Number(link.revenue_amount || 0) > 0) {
     items.push({
       key: 'revenue',
-      title: '费用',
-      value: formatCustomerMoney(Number(link.revenue_amount || 0), link.revenue_currency || 'CNY'),
-      note: cycleLabel(link.revenue_cycle),
+      text: `费用：${formatCustomerRecurringPrice(Number(link.revenue_amount || 0), link.revenue_currency || 'CNY', link.revenue_cycle)}`,
     })
   }
   if (Number(link.expire_time || 0) > 0) {
     items.push({
       key: 'expiry',
-      title: '过期时间',
-      value: formatCustomerExpiryTime(Number(link.expire_time || 0)),
-      note: link.expire_auto_renew ? `自动续期 · ${cycleLabel(link.expire_cycle)}` : cycleLabel(link.expire_cycle),
+      text: `过期时间：${formatCustomerExpiryTime(Number(link.expire_time || 0))}`,
     })
   }
   return items
 }
 
+function formatCustomerRecurringPrice(amount: number, currency: string, cycle?: string): string {
+  return `${formatCustomerMoney(amount, currency)}/${cycleUnitLabel(cycle)}`
+}
+
 function formatCustomerMoney(amount: number, currency: string): string {
-  const normalizedCurrency = currency || 'CNY'
-  if (normalizedCurrency === 'USDT') {
-    return `USDT ${amount.toFixed(amount >= 100 ? 0 : 2)}`
+  const normalizedCurrency = (currency || 'CNY').toUpperCase()
+  const amountText = formatCompactAmount(amount)
+  if (normalizedCurrency === 'CNY') {
+    return `${amountText}元`
+  }
+  return `${amountText}${normalizedCurrency}`
+}
+
+function formatCompactAmount(amount: number): string {
+  if (Number.isInteger(amount)) {
+    return String(amount)
   }
   try {
     return new Intl.NumberFormat('zh-CN', {
-      style: 'currency',
-      currency: normalizedCurrency,
-      maximumFractionDigits: amount >= 100 ? 0 : 2,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
     }).format(amount)
   } catch {
-    return `${normalizedCurrency} ${amount.toFixed(amount >= 100 ? 0 : 2)}`
+    return amount.toFixed(2).replace(/\.?0+$/, '')
   }
 }
 
@@ -601,16 +623,15 @@ function formatCustomerExpiryTime(value: number): string {
   }).format(new Date(value))
 }
 
-function cycleLabel(cycle?: string): string {
+function cycleUnitLabel(cycle?: string): string {
   switch (cycle) {
     case 'quarter':
-      return '每季'
+      return '季'
     case 'year':
-      return '每年'
+      return '年'
     case 'month':
-      return '每月'
     default:
-      return ''
+      return '月'
   }
 }
 
