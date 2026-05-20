@@ -189,6 +189,69 @@ func TestBuildGlobalDashboardMergesRealmSnapshotIntoAgentEntry(t *testing.T) {
 	}
 }
 
+func TestBuildGlobalDashboardPrefersCollectedRealmConfigForSameListenPort(t *testing.T) {
+	now := time.Now().UTC()
+	agents := []model.AgentRecord{{
+		AgentID:      "gz",
+		AgentName:    "Guangzhou",
+		RegisteredAt: now,
+		UpdatedAt:    now,
+		Config: model.ManagedAgentConfig{
+			Entry: model.AgentEntryConfig{
+				PortForwarding: model.RealmForwardConfig{
+					Enabled:     true,
+					Backend:     "realm",
+					ConfigPath:  "/etc/vpsmonitor/realm.toml",
+					ServiceName: "vpsmonitor-realm",
+					Rules: []model.RealmForwardRule{{
+						ID:            "operator-rule",
+						Enabled:       true,
+						ListenAddress: "0.0.0.0",
+						ListenPort:    20001,
+						TargetAgentID: "hk",
+						TargetAddress: "old.example.com",
+						TargetPort:    20001,
+						Network:       "tcp",
+						Note:          "keep target agent metadata",
+					}},
+				},
+			},
+		},
+	}}
+	snapshots := []model.AgentSnapshot{{
+		AgentID:    "gz",
+		AgentName:  "Guangzhou",
+		ReportedAt: now,
+		Realm: &model.RealmSnapshot{
+			ConfigPath:  "/etc/realm/config.toml",
+			ServiceName: "realm",
+			CollectedAt: now,
+			Rules: []model.RealmForwardRule{{
+				ID:            "auto-realm-20001-20001-0",
+				Enabled:       true,
+				ListenAddress: "0.0.0.0",
+				ListenPort:    20001,
+				TargetAddress: "47.239.135.242",
+				TargetPort:    20001,
+				Network:       "tcp",
+			}},
+		},
+	}}
+
+	view := BuildGlobalDashboard(agents, snapshots)
+	got := view.Agents[0].Entry.PortForwarding
+	if got.ConfigPath != "/etc/realm/config.toml" || got.ServiceName != "realm" {
+		t.Fatalf("expected collected realm metadata to win, got %#v", got)
+	}
+	if len(got.Rules) != 1 {
+		t.Fatalf("expected collected realm rule to replace same listen port, got %#v", got.Rules)
+	}
+	rule := got.Rules[0]
+	if rule.TargetAddress != "47.239.135.242" || rule.TargetAgentID != "hk" || rule.Note != "keep target agent metadata" {
+		t.Fatalf("expected collected target with preserved operator metadata, got %#v", rule)
+	}
+}
+
 func TestBuildGlobalDashboardMatchesDirectIPOutbound(t *testing.T) {
 	now := time.Now().UTC()
 	agents := []model.AgentRecord{

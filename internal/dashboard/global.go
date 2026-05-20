@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"bridge-core/internal/model"
+	"bridge-core/internal/realmconfig"
 )
 
 type topologyInboundCandidate struct {
@@ -229,33 +230,7 @@ func lookupOverviewGeo(overview *model.XUIOverview, resolver *topologyResolver) 
 }
 
 func MergeRealmSnapshotIntoEntry(entry model.AgentEntryConfig, snapshot *model.RealmSnapshot) model.AgentEntryConfig {
-	if snapshot == nil || len(snapshot.Rules) == 0 {
-		return entry
-	}
-	merged := entry
-	merged.PortForwarding.Enabled = true
-	merged.PortForwarding.Backend = firstNonEmpty(merged.PortForwarding.Backend, "realm")
-	merged.PortForwarding.ConfigPath = firstNonEmpty(merged.PortForwarding.ConfigPath, snapshot.ConfigPath)
-	merged.PortForwarding.ServiceName = firstNonEmpty(merged.PortForwarding.ServiceName, snapshot.ServiceName)
-	merged.PortForwarding.BinaryPath = firstNonEmpty(merged.PortForwarding.BinaryPath, snapshot.BinaryPath)
-	rules := make([]model.RealmForwardRule, 0, len(merged.PortForwarding.Rules)+len(snapshot.Rules))
-	seen := make(map[string]struct{}, len(merged.PortForwarding.Rules)+len(snapshot.Rules))
-	appendRule := func(rule model.RealmForwardRule) {
-		key := fmt.Sprintf("%s:%d:%s:%d:%s", strings.ToLower(rule.ListenAddress), rule.ListenPort, strings.ToLower(rule.TargetAddress), rule.TargetPort, strings.ToLower(rule.Network))
-		if _, ok := seen[key]; ok {
-			return
-		}
-		seen[key] = struct{}{}
-		rules = append(rules, rule)
-	}
-	for _, rule := range merged.PortForwarding.Rules {
-		appendRule(rule)
-	}
-	for _, rule := range snapshot.Rules {
-		appendRule(rule)
-	}
-	merged.PortForwarding.Rules = rules
-	return merged
+	return realmconfig.MergeSnapshotIntoEntry(entry, snapshot)
 }
 
 func terminalAgentExitGeo(agentView model.DashboardAgentView, overview *model.XUIOverview, resolver *topologyResolver) (string, *model.IPGeoView) {

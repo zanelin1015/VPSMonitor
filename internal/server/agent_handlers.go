@@ -3,13 +3,16 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 
 	"bridge-core/internal/config"
 	"bridge-core/internal/dashboard"
 	"bridge-core/internal/model"
+	"bridge-core/internal/realmconfig"
 )
 
 func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
@@ -252,6 +255,7 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "x-ui snapshot not found")
 			return
 		}
+		a.applyRealmPublicImportURLs(agentID, overview)
 		if isAreaManager(user) {
 			overview.AgentName = areaManagerDisplayName(cfg.CustomerDisplayName, cfg.AgentName, agentID)
 		}
@@ -334,6 +338,66 @@ func (a *App) handleAgentLogs(w http.ResponseWriter, r *http.Request, agentID st
 		LastCollectionErr: snapshot.Summary.LastCollectionErr,
 		Logs:              logs,
 	})
+}
+
+func (a *App) applyRealmPublicImportURLs(agentID string, overview *model.XUIOverview) {
+	if overview == nil || len(overview.Clients) == 0 {
+		return
+	}
+	agents, err := a.store.ListAgents()
+	if err != nil {
+		return
+	}
+	view := dashboard.BuildGlobalDashboard(agents, a.store.ListLatest())
+	agentMap := make(map[string]model.DashboardAgentView, len(view.Agents))
+	for _, agent := range view.Agents {
+		agentMap[agent.AgentID] = agent
+	}
+	chainMap := make(map[string]model.ClientChainView, len(view.ClientChains))
+	for _, chain := range view.ClientChains {
+		chainMap[chain.Key] = chain
+	}
+	inboundPorts := make(map[string]int, len(overview.Nodes))
+	for _, node := range overview.Nodes {
+		inboundPorts[overviewInboundKey(node.ID, node.Tag)] = node.Port
+	}
+	for index := range overview.Clients {
+		client := &overview.Clients[index]
+		if client.ImportURL == "" {
+			continue
+		}
+		assignment := model.CustomerAssignment{
+			AgentID:     agentID,
+			InboundID:   client.InboundID,
+			InboundTag:  client.InboundTag,
+			ClientEmail: client.Email,
+		}
+		chain, found := findCustomerChain(assignment, chainMap)
+		if !found {
+			chain = model.ClientChainView{
+				RootAgentID:     agentID,
+				RootInboundTag:  client.InboundTag,
+				RootClientEmail: client.Email,
+				Steps: []model.ClientChainStep{{
+					StepType: "inbound",
+					AgentID:  agentID,
+					Label:    client.InboundTag,
+					Port:     inboundPorts[overviewInboundKey(client.InboundID, client.InboundTag)],
+				}},
+			}
+		}
+		publicEntry, ok := customerRealmPublicEntry(assignment, chain, agentMap)
+		if !ok {
+			continue
+		}
+		if rewritten := rewriteCustomerImportURL(client.ImportURL, publicEntry.Host, publicEntry.Port); rewritten != "" {
+			client.ImportURL = rewritten
+		}
+	}
+}
+
+func overviewInboundKey(inboundID int, inboundTag string) string {
+	return fmt.Sprintf("%d\x00%s", inboundID, inboundTag)
 }
 
 func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID string, parts []string) {
@@ -631,8 +695,31 @@ func (a *App) handleHeartbeat(w http.ResponseWriter, r *http.Request, agentID st
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	a.syncRealmConfigFromSnapshot(agentID, snapshot.Realm)
 	go a.alerts.EvaluateAgent(agentID)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
+}
+
+func (a *App) syncRealmConfigFromSnapshot(agentID string, snapshot *model.RealmSnapshot) {
+	if snapshot == nil || len(snapshot.Rules) == 0 {
+		return
+	}
+	cfg, found, err := a.store.GetAgentConfig(agentID)
+	if err != nil {
+		log.Printf("sync realm config for %s failed: load config: %v", agentID, err)
+		return
+	}
+	if !found {
+		return
+	}
+	merged := cfg
+	merged.Entry = realmconfig.MergeSnapshotIntoEntry(cfg.Entry, snapshot)
+	if reflect.DeepEqual(cfg.Entry.PortForwarding, merged.Entry.PortForwarding) {
+		return
+	}
+	if _, err := a.store.UpdateAgentConfigWithActor(agentID, merged, "system:realm-config"); err != nil {
+		log.Printf("sync realm config for %s failed: save config: %v", agentID, err)
+	}
 }
 
 func (a *App) isAuthorized(agentID, token string) bool {

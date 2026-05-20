@@ -1156,17 +1156,10 @@ function normalizeImportDomain(value?: string): string {
   if (portMatch) {
     domain = portMatch[1]
   }
-  if (!domain || domain.includes(' ') || domain.includes('*') || domain.includes(':') || isLikelyIP(domain)) {
+  if (!domain || domain.includes(' ') || domain.includes('*') || domain.includes(':')) {
     return ''
   }
   return domain
-}
-
-function isLikelyIP(value: string): boolean {
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(value)) {
-    return true
-  }
-  return /^[0-9a-f:]+$/i.test(value) && value.includes(':')
 }
 
 function normalizeEntryProtocol(protocol?: string): AgentEntryMapping['protocol'] {

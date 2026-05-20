@@ -212,7 +212,7 @@ func TestBuildXUIOverviewImportURLDefaultsToDomainCertificate(t *testing.T) {
 	}
 }
 
-func TestBuildXUIOverviewLeavesImportURLBlankWithoutDomain(t *testing.T) {
+func TestBuildXUIOverviewImportURLFallsBackToPublicIP(t *testing.T) {
 	now := time.Now().UTC()
 	snapshot := model.AgentSnapshot{
 		AgentID:    "agent-no-domain",
@@ -244,11 +244,42 @@ func TestBuildXUIOverviewLeavesImportURLBlankWithoutDomain(t *testing.T) {
 	if overview == nil || len(overview.Clients) != 1 {
 		t.Fatalf("expected overview client")
 	}
-	if got := overview.Clients[0].ImportURL; got != "" {
-		t.Fatalf("expected blank import url without domain, got %q", got)
+	parsed := mustParseURL(t, overview.Clients[0].ImportURL)
+	if got := parsed.Hostname(); got != "203.0.113.10" {
+		t.Fatalf("expected public IP fallback, got %q from %q", got, overview.Clients[0].ImportURL)
 	}
 	if got := len(overview.Certificates); got != 0 {
 		t.Fatalf("expected IP-only cert to be filtered, got %d", got)
+	}
+}
+
+func TestBuildXUIOverviewImportURLAllowsConfiguredIP(t *testing.T) {
+	now := time.Now().UTC()
+	snapshot := model.AgentSnapshot{
+		AgentID:    "agent-import-ip",
+		ReportedAt: now,
+		XUI: &model.XUISnapshot{
+			CollectedAt: now,
+			Inbounds: []map[string]any{
+				{
+					"id":       1,
+					"tag":      "in-vless",
+					"remark":   "Entry",
+					"protocol": "vless",
+					"port":     443,
+					"settings": `{"clients":[{"email":"user@example.com","enable":true,"id":"11111111-1111-1111-1111-111111111111"}]}`,
+				},
+			},
+		},
+	}
+
+	overview := BuildXUIOverviewWithOptions(snapshot, XUIOverviewOptions{Entry: model.AgentEntryConfig{ImportDomain: "https://198.51.100.20:8443/path"}})
+	if overview == nil || len(overview.Clients) != 1 {
+		t.Fatalf("expected overview client")
+	}
+	parsed := mustParseURL(t, overview.Clients[0].ImportURL)
+	if got := parsed.Hostname(); got != "198.51.100.20" {
+		t.Fatalf("expected configured IP import host, got %q", got)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"testing"
 	"time"
@@ -185,5 +186,109 @@ func TestHandleAgentConfigMergesCollectedRealmSnapshotForAdmin(t *testing.T) {
 	rule := cfg.Entry.PortForwarding.Rules[0]
 	if rule.ListenPort != 20001 || rule.TargetAddress != "47.239.135.242" || rule.TargetPort != 20001 {
 		t.Fatalf("unexpected merged realm rule: %#v", rule)
+	}
+}
+
+func TestSyncRealmConfigFromSnapshotPersistsMachineRealmConfig(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "gz", AgentName: "Guangzhou"}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	now := time.Now().UTC()
+	app := &App{store: sqliteStore}
+	app.syncRealmConfigFromSnapshot("gz", &model.RealmSnapshot{
+		ConfigPath:  "/etc/realm/config.toml",
+		ServiceName: "realm",
+		CollectedAt: now,
+		Rules: []model.RealmForwardRule{{
+			Enabled:       true,
+			ListenAddress: "0.0.0.0",
+			ListenPort:    20001,
+			TargetAddress: "47.239.135.242",
+			TargetPort:    20001,
+			Network:       "tcp",
+		}},
+	})
+
+	cfg, found, err := sqliteStore.GetAgentConfig("gz")
+	if err != nil || !found {
+		t.Fatalf("GetAgentConfig found=%v err=%v", found, err)
+	}
+	forwarding := cfg.Entry.PortForwarding
+	if !forwarding.Enabled || forwarding.ConfigPath != "/etc/realm/config.toml" || forwarding.ServiceName != "realm" || len(forwarding.Rules) != 1 {
+		t.Fatalf("expected collected realm config to be persisted, got %#v", forwarding)
+	}
+	rule := forwarding.Rules[0]
+	if rule.ListenPort != 20001 || rule.TargetAddress != "47.239.135.242" || rule.TargetPort != 20001 {
+		t.Fatalf("unexpected persisted realm rule: %#v", rule)
+	}
+}
+
+func TestApplyRealmPublicImportURLsRewritesAdminClientLink(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "gz", AgentName: "Guangzhou"}); err != nil {
+		t.Fatalf("RegisterAgent gz: %v", err)
+	}
+	if _, err := sqliteStore.UpdateAgentConfig("gz", model.ManagedAgentConfig{
+		AgentID:   "gz",
+		AgentName: "Guangzhou",
+		Entry: model.AgentEntryConfig{
+			ImportDomain: "gz.example.com",
+			PortForwarding: model.RealmForwardConfig{Rules: []model.RealmForwardRule{{
+				Enabled:       true,
+				ListenAddress: "0.0.0.0",
+				ListenPort:    20001,
+				TargetAgentID: "hk",
+				TargetAddress: "47.239.135.242",
+				TargetPort:    20001,
+				Network:       "tcp",
+			}}},
+		},
+	}); err != nil {
+		t.Fatalf("UpdateAgentConfig gz: %v", err)
+	}
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk", AgentName: "Hong Kong"}); err != nil {
+		t.Fatalf("RegisterAgent hk: %v", err)
+	}
+
+	overview := &model.XUIOverview{
+		AgentID: "hk",
+		Nodes: []model.XUINodeView{{
+			ID:       1001,
+			Tag:      "inbound-20001",
+			Protocol: "vless",
+			Port:     20001,
+		}},
+		Clients: []model.XUIClientView{{
+			InboundID:  1001,
+			InboundTag: "inbound-20001",
+			Protocol:   "vless",
+			Email:      "alice@example.com",
+			ImportURL:  "vless://11111111-1111-1111-1111-111111111111@47.239.135.242:20001?encryption=none&security=tls&type=tcp&sni=hk.example.com#HK",
+		}},
+	}
+
+	app := &App{store: sqliteStore}
+	app.applyRealmPublicImportURLs("hk", overview)
+
+	parsed, err := url.Parse(overview.Clients[0].ImportURL)
+	if err != nil {
+		t.Fatalf("parse import url: %v", err)
+	}
+	if parsed.Host != "gz.example.com:20001" {
+		t.Fatalf("expected Guangzhou realm entry host, got %q from %q", parsed.Host, overview.Clients[0].ImportURL)
+	}
+	if parsed.Query().Get("sni") != "hk.example.com" {
+		t.Fatalf("expected HK stream parameters to stay, got %q", overview.Clients[0].ImportURL)
 	}
 }

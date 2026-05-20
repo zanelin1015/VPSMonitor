@@ -105,7 +105,7 @@ func BuildXUIOverviewWithOptions(snapshot model.AgentSnapshot, options XUIOvervi
 	balancers := normalizeBalancers(snapshot.XUI.RawConfig, outbounds)
 	globalRuleIndexes := collectGlobalRuleIndexes(rules)
 	certificates := filterDomainCertificates(snapshot.XUI.Certificates)
-	inbounds := normalizeInbounds(snapshot.XUI.Inbounds, rules, defaultOutboundTag, globalRuleIndexes, snapshot.ReportedAt, certificates, options.Entry)
+	inbounds := normalizeInbounds(snapshot.XUI.Inbounds, rules, defaultOutboundTag, globalRuleIndexes, snapshot, certificates, options.Entry)
 	clients, onlineCount := normalizeClients(inbounds, rules, defaultOutboundTag, globalRuleIndexes, snapshot.ReportedAt)
 
 	nodes := make([]model.XUINodeView, 0, len(inbounds))
@@ -151,9 +151,9 @@ func BuildXUIOverviewWithOptions(snapshot model.AgentSnapshot, options XUIOvervi
 	}
 }
 
-func normalizeInbounds(rawInbounds []map[string]any, rules []routeRule, defaultOutboundTag string, globalRuleIndexes []int, reportedAt time.Time, certificates []model.XUILocalCertificate, entry model.AgentEntryConfig) []inboundRecord {
+func normalizeInbounds(rawInbounds []map[string]any, rules []routeRule, defaultOutboundTag string, globalRuleIndexes []int, snapshot model.AgentSnapshot, certificates []model.XUILocalCertificate, entry model.AgentEntryConfig) []inboundRecord {
 	result := make([]inboundRecord, 0, len(rawInbounds))
-	importHost := chooseSingleNodeImportHost(entry.ImportDomain, certificates)
+	importHost := chooseSingleNodeImportHost(entry, certificates, snapshot)
 	for _, raw := range rawInbounds {
 		streamMeta := parseInboundStreamSettings(raw["streamSettings"])
 		protocolMeta := parseInboundProtocolSettings(raw["settings"])
@@ -193,7 +193,7 @@ func normalizeInbounds(rawInbounds []map[string]any, rules []routeRule, defaultO
 			hysteriaVersion:     protocolMeta.hysteriaVersion,
 		}
 		record.view.ClientCount = len(record.clients)
-		record.view.OnlineCount = countOnlineClients(record.clientStats, reportedAt)
+		record.view.OnlineCount = countOnlineClients(record.clientStats, snapshot.ReportedAt)
 		record.view.Route = resolveRoute("", record.view.Tag, rules, defaultOutboundTag, globalRuleIndexes)
 		result = append(result, record)
 	}
@@ -654,12 +654,27 @@ func parseInboundStreamSettings(raw any) inboundStreamMeta {
 	return meta
 }
 
-func chooseSingleNodeImportHost(configuredDomain string, certificates []model.XUILocalCertificate) string {
-	if domain := normalizeImportDomain(configuredDomain); domain != "" {
-		return domain
+func chooseSingleNodeImportHost(entry model.AgentEntryConfig, certificates []model.XUILocalCertificate, snapshot model.AgentSnapshot) string {
+	if host := normalizeImportHost(entry.ImportDomain); host != "" {
+		return host
 	}
 	if domain := firstCertificateDomain(certificates); domain != "" {
 		return domain
+	}
+	for _, address := range entry.Addresses {
+		if host := normalizeImportHost(address); host != "" {
+			return host
+		}
+	}
+	for _, value := range []string{
+		snapshot.Summary.PublicIPv4,
+		snapshot.Summary.PublicIPv6,
+		snapshot.Summary.ObservedIP,
+		xuiBaseURLHost(snapshot.XUI),
+	} {
+		if host := normalizeUsableImportIP(value); host != "" {
+			return host
+		}
 	}
 	return ""
 }
@@ -724,6 +739,14 @@ func normalizeCertificateDomain(value string) string {
 }
 
 func normalizeImportDomain(value string) string {
+	host := normalizeImportHost(value)
+	if net.ParseIP(host) != nil {
+		return ""
+	}
+	return host
+}
+
+func normalizeImportHost(value string) string {
 	value = strings.TrimSpace(strings.ToLower(value))
 	value = strings.TrimSuffix(value, ".")
 	value = strings.TrimPrefix(value, "https://")
@@ -735,13 +758,37 @@ func normalizeImportDomain(value string) string {
 		value = host
 	}
 	value = strings.Trim(value, "[]")
+	if ip := net.ParseIP(value); ip != nil {
+		return ip.String()
+	}
 	if value == "" || strings.Contains(value, " ") || strings.Contains(value, "*") || strings.Contains(value, ":") {
 		return ""
 	}
-	if net.ParseIP(value) != nil {
+	return value
+}
+
+func normalizeUsableImportIP(value string) string {
+	host := normalizeImportHost(value)
+	ip := net.ParseIP(host)
+	if ip == nil || !isUsableImportIP(ip) {
 		return ""
 	}
-	return value
+	return ip.String()
+}
+
+func isUsableImportIP(ip net.IP) bool {
+	return ip != nil && !ip.IsUnspecified() && !ip.IsLoopback() && !ip.IsLinkLocalUnicast() && !ip.IsLinkLocalMulticast()
+}
+
+func xuiBaseURLHost(snapshot *model.XUISnapshot) string {
+	if snapshot == nil {
+		return ""
+	}
+	parsed, err := url.Parse(strings.TrimSpace(snapshot.BaseURL))
+	if err != nil {
+		return ""
+	}
+	return parsed.Hostname()
 }
 
 func buildSingleNodeImportURL(inbound inboundRecord, cfg clientConfig) string {

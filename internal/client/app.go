@@ -20,6 +20,7 @@ import (
 	"bridge-core/internal/config"
 	"bridge-core/internal/model"
 	"bridge-core/internal/panels"
+	"bridge-core/internal/realmconfig"
 	"bridge-core/internal/version"
 )
 
@@ -64,12 +65,17 @@ func (a *App) RunOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	effectiveConfig.Entry = mergeLocalRealmConfigIntoEntry(effectiveConfig.Entry)
 	a.ensureXUIBootstrapIfNeeded(ctx, effectiveConfig.XUI)
 	a.executePendingXUIActions(ctx, effectiveConfig)
 	a.applyNetworkPolicyIfNeeded(ctx, effectiveConfig.Entry.NetworkPolicy)
 	a.applyRealmForwardingIfNeeded(ctx, effectiveConfig.Entry.PortForwarding)
 	snapshot := a.collect(ctx, effectiveConfig)
 	return a.pushSnapshot(ctx, snapshot)
+}
+
+func mergeLocalRealmConfigIntoEntry(entry model.AgentEntryConfig) model.AgentEntryConfig {
+	return realmconfig.MergeSnapshotIntoEntry(entry, collectRealmSnapshot(entry.PortForwarding))
 }
 
 func (a *App) executePendingXUIActions(ctx context.Context, effectiveConfig model.ManagedAgentConfig) {
