@@ -459,28 +459,7 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 				writeError(w, status, err.Error())
 				return
 			}
-			if action.Kind == model.XUIActionRestartXUI {
-				if a.realtime.sendAgentControl(agentID, model.AgentControlMessage{
-					Type:     model.AgentControlRestartXUI,
-					ActionID: action.ID,
-					Payload:  action.Payload,
-				}) {
-					if running, markErr := a.store.MarkXUIActionRunning(agentID, action.ID); markErr == nil {
-						action = running
-					}
-				}
-			} else if realtimeXUIActionAllowed(action.Kind) {
-				if a.realtime.sendAgentControl(agentID, model.AgentControlMessage{
-					Type:     model.AgentControlExecuteXUI,
-					Kind:     action.Kind,
-					ActionID: action.ID,
-					Payload:  action.Payload,
-				}) {
-					if running, markErr := a.store.MarkXUIActionRunning(agentID, action.ID); markErr == nil {
-						action = running
-					}
-				}
-			}
+			action, _ = a.dispatchXUIActionRealtime(agentID, action)
 			writeJSON(w, http.StatusOK, action)
 		default:
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -652,11 +631,50 @@ func realtimeXUIActionAllowed(kind string) bool {
 		model.XUIActionUpsertRoutingRule,
 		model.XUIActionUpdateClientExpiry,
 		model.XUIActionDeleteClient,
+		model.XUIActionUpdateClient,
 		model.XUIActionExecuteCommand,
 		model.XUIActionUpdate3XUI:
 		return true
 	default:
 		return false
+	}
+}
+
+func (a *App) dispatchXUIActionRealtime(agentID string, action model.XUIAction) (model.XUIAction, bool) {
+	control := model.AgentControlMessage{
+		ActionID: action.ID,
+		Payload:  action.Payload,
+	}
+	switch {
+	case action.Kind == model.XUIActionRestartXUI:
+		control.Type = model.AgentControlRestartXUI
+	case realtimeXUIActionAllowed(action.Kind):
+		control.Type = model.AgentControlExecuteXUI
+		control.Kind = action.Kind
+	default:
+		return action, false
+	}
+	if !a.realtime.sendAgentControl(agentID, control) {
+		return action, false
+	}
+	running, err := a.store.MarkXUIActionRunning(agentID, action.ID)
+	if err != nil {
+		return action, true
+	}
+	return running, true
+}
+
+func (a *App) dispatchPendingXUIActionsRealtime(agentID string) {
+	actions, err := a.store.ListXUIActions(agentID, 100)
+	if err != nil {
+		return
+	}
+	for i := len(actions) - 1; i >= 0; i-- {
+		action := actions[i]
+		if action.Status != model.XUIActionStatusPending {
+			continue
+		}
+		a.dispatchXUIActionRealtime(agentID, action)
 	}
 }
 

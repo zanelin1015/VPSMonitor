@@ -518,6 +518,7 @@ func (a *App) handleAgentMetricsWS(w http.ResponseWriter, r *http.Request, agent
 	serverSeenIP := requestObservedIP(r)
 	controlSession := a.realtime.registerAgentControl(agentID)
 	defer a.realtime.unregisterAgentControl(agentID, controlSession)
+	a.dispatchPendingXUIActionsRealtime(agentID)
 
 	go func() {
 		for {

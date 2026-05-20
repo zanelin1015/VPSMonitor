@@ -34,6 +34,90 @@ func TestRealtimeHubAgentControlLifecycle(t *testing.T) {
 	}
 }
 
+func TestDispatchXUIActionRealtimeSendsUpdateClient(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "agent-1", AgentName: "Agent 1"}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	action, err := sqliteStore.CreateXUIAction("agent-1", model.XUIActionRequest{
+		Kind:    model.XUIActionUpdateClient,
+		Payload: map[string]any{"version": "0.2.38"},
+	})
+	if err != nil {
+		t.Fatalf("CreateXUIAction: %v", err)
+	}
+	app := &App{store: sqliteStore, realtime: newRealtimeHub()}
+	session := app.realtime.registerAgentControl("agent-1")
+	defer app.realtime.unregisterAgentControl("agent-1", session)
+
+	dispatched, ok := app.dispatchXUIActionRealtime("agent-1", action)
+	if !ok {
+		t.Fatal("expected update_client to dispatch over realtime websocket")
+	}
+	if dispatched.Status != model.XUIActionStatusRunning || dispatched.ClaimedAt == nil {
+		t.Fatalf("expected dispatched action to be marked running, got %#v", dispatched)
+	}
+	select {
+	case message := <-session.ch:
+		if message.Type != model.AgentControlExecuteXUI || message.Kind != model.XUIActionUpdateClient || message.ActionID != action.ID {
+			t.Fatalf("unexpected control message: %#v", message)
+		}
+	default:
+		t.Fatal("expected websocket control message")
+	}
+
+	stored, found, err := sqliteStore.GetXUIAction("agent-1", action.ID)
+	if err != nil || !found {
+		t.Fatalf("GetXUIAction found=%v err=%v", found, err)
+	}
+	if stored.Status != model.XUIActionStatusRunning || stored.ClaimedAt == nil {
+		t.Fatalf("expected stored action running, got %#v", stored)
+	}
+}
+
+func TestDispatchPendingXUIActionsRealtimeSendsExistingPendingUpdateClient(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "agent-1", AgentName: "Agent 1"}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	action, err := sqliteStore.CreateXUIAction("agent-1", model.XUIActionRequest{
+		Kind:    model.XUIActionUpdateClient,
+		Payload: map[string]any{"version": "0.2.38"},
+	})
+	if err != nil {
+		t.Fatalf("CreateXUIAction: %v", err)
+	}
+	app := &App{store: sqliteStore, realtime: newRealtimeHub()}
+	session := app.realtime.registerAgentControl("agent-1")
+	defer app.realtime.unregisterAgentControl("agent-1", session)
+
+	app.dispatchPendingXUIActionsRealtime("agent-1")
+
+	select {
+	case message := <-session.ch:
+		if message.Type != model.AgentControlExecuteXUI || message.Kind != model.XUIActionUpdateClient || message.ActionID != action.ID {
+			t.Fatalf("unexpected control message: %#v", message)
+		}
+	default:
+		t.Fatal("expected pending update_client to be pushed over websocket")
+	}
+	stored, found, err := sqliteStore.GetXUIAction("agent-1", action.ID)
+	if err != nil || !found {
+		t.Fatalf("GetXUIAction found=%v err=%v", found, err)
+	}
+	if stored.Status != model.XUIActionStatusRunning || stored.ClaimedAt == nil {
+		t.Fatalf("expected pending action marked running, got %#v", stored)
+	}
+}
+
 func TestIsUsableObservedIPRejectsLocalAddresses(t *testing.T) {
 	for _, value := range []string{"127.0.0.1", "::1", "10.0.0.1", "192.168.1.2", "0.0.0.0", ""} {
 		if isUsableObservedIP(value) {

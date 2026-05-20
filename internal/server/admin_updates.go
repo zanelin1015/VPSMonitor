@@ -147,9 +147,11 @@ func (a *App) createClientUpdateActions(req model.UpdateRequest) (model.UpdateRe
 		if serviceName != "" {
 			payload["service_name"] = serviceName
 		}
-		if _, err := a.store.CreateXUIAction(agent.AgentID, model.XUIActionRequest{Kind: model.XUIActionUpdateClient, Payload: payload}); err != nil {
+		action, err := a.store.CreateXUIAction(agent.AgentID, model.XUIActionRequest{Kind: model.XUIActionUpdateClient, Payload: payload})
+		if err != nil {
 			return model.UpdateResponse{}, err
 		}
+		a.dispatchXUIActionRealtime(agent.AgentID, action)
 		count++
 	}
 	return model.UpdateResponse{
@@ -316,9 +318,11 @@ func (a *App) create3XUIUpdateActions(req model.UpdateRequest) (model.UpdateResp
 			"target_tag":      latest.Tag,
 			"force":           req.Force,
 		}
-		if _, err := a.store.CreateXUIAction(status.AgentID, model.XUIActionRequest{Kind: model.XUIActionUpdate3XUI, Payload: payload}); err != nil {
+		action, err := a.store.CreateXUIAction(status.AgentID, model.XUIActionRequest{Kind: model.XUIActionUpdate3XUI, Payload: payload})
+		if err != nil {
 			return model.UpdateResponse{}, err
 		}
+		a.dispatchXUIActionRealtime(status.AgentID, action)
 		count++
 	}
 	return model.UpdateResponse{
