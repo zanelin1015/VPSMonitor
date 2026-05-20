@@ -2,6 +2,7 @@ package client
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -27,6 +28,9 @@ const (
 )
 
 func (a *App) applyRealmForwardingIfNeeded(ctx context.Context, cfg model.RealmForwardConfig) {
+	if a.realmForwardSignature == "" && isEmptyClientRealmForwardConfig(cfg) {
+		return
+	}
 	signature := realmForwardSignature(cfg)
 	if signature == a.realmForwardSignature {
 		return
@@ -38,6 +42,16 @@ func (a *App) applyRealmForwardingIfNeeded(ctx context.Context, cfg model.RealmF
 		return
 	}
 	a.realmForwardSignature = signature
+}
+
+func isEmptyClientRealmForwardConfig(cfg model.RealmForwardConfig) bool {
+	return !cfg.Enabled &&
+		strings.TrimSpace(cfg.Backend) == "" &&
+		strings.TrimSpace(cfg.BinaryPath) == "" &&
+		strings.TrimSpace(cfg.ConfigPath) == "" &&
+		strings.TrimSpace(cfg.ServiceName) == "" &&
+		strings.TrimSpace(cfg.LogLevel) == "" &&
+		len(cfg.Rules) == 0
 }
 
 func realmForwardSignature(cfg model.RealmForwardConfig) string {
@@ -125,6 +139,9 @@ func discoverRealmConfigPaths(cfg model.RealmForwardConfig) []string {
 		"/etc/realm/config.toml",
 		"/usr/local/etc/realm/config.toml",
 		"/etc/realm.toml",
+		"/root/realm/config.toml",
+		"/opt/realm/config.toml",
+		"/usr/local/realm/config.toml",
 	}
 	serviceNames := []string{
 		strings.TrimSpace(cfg.ServiceName),
@@ -141,6 +158,7 @@ func discoverRealmConfigPaths(cfg model.RealmForwardConfig) []string {
 			configPathFromOpenRCServiceFile(filepath.Join("/etc/init.d", serviceName)),
 		)
 	}
+	candidates = append(candidates, configPathsFromRealmProcesses("/proc")...)
 	seen := make(map[string]struct{}, len(candidates))
 	paths := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {
@@ -189,22 +207,83 @@ func configPathFromOpenRCServiceFile(path string) string {
 }
 
 func realmConfigPathFromCommand(command string) string {
-	fields := splitRealmCommandFields(command)
+	return realmConfigPathFromFields(splitRealmCommandFields(command))
+}
+
+func realmConfigPathFromFields(fields []string) string {
 	for index, field := range fields {
+		field = strings.Trim(field, `"'`)
 		switch {
 		case field == "-c" || field == "--config":
 			if index+1 < len(fields) {
-				return fields[index+1]
+				return strings.Trim(fields[index+1], `"'`)
 			}
 		case strings.HasPrefix(field, "-c="):
-			return strings.TrimPrefix(field, "-c=")
+			return strings.Trim(strings.TrimPrefix(field, "-c="), `"'`)
 		case strings.HasPrefix(field, "--config="):
-			return strings.TrimPrefix(field, "--config=")
+			return strings.Trim(strings.TrimPrefix(field, "--config="), `"'`)
 		case strings.HasPrefix(field, "-c") && len(field) > 2:
-			return strings.TrimPrefix(field, "-c")
+			return strings.Trim(strings.TrimPrefix(field, "-c"), `"'`)
 		}
 	}
 	return ""
+}
+
+func configPathsFromRealmProcesses(procRoot string) []string {
+	entries, err := os.ReadDir(procRoot)
+	if err != nil {
+		return nil
+	}
+	paths := make([]string, 0)
+	for _, entry := range entries {
+		if !entry.IsDir() || !isNumericString(entry.Name()) {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(procRoot, entry.Name(), "cmdline"))
+		if err != nil || len(body) == 0 {
+			continue
+		}
+		fields := splitProcCmdline(body)
+		if !isRealmProcessCommand(fields) {
+			continue
+		}
+		if path := realmConfigPathFromFields(fields); path != "" {
+			paths = append(paths, path)
+		}
+	}
+	return paths
+}
+
+func splitProcCmdline(body []byte) []string {
+	parts := bytes.Split(body, []byte{0})
+	fields := make([]string, 0, len(parts))
+	for _, part := range parts {
+		value := strings.TrimSpace(string(part))
+		if value != "" {
+			fields = append(fields, value)
+		}
+	}
+	return fields
+}
+
+func isRealmProcessCommand(fields []string) bool {
+	if len(fields) == 0 {
+		return false
+	}
+	name := strings.ToLower(filepath.Base(fields[0]))
+	return name == "realm" || strings.HasPrefix(name, "realm-")
+}
+
+func isNumericString(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func splitRealmCommandFields(command string) []string {

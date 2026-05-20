@@ -52,6 +52,15 @@ type ClientConfig struct {
 
 const DefaultXUIDBPath = "/etc/x-ui/x-ui.db"
 
+func DefaultXUIDBPathForOS(osName string) string {
+	switch strings.ToLower(strings.TrimSpace(osName)) {
+	case "", "linux":
+		return DefaultXUIDBPath
+	default:
+		return ""
+	}
+}
+
 type XUIConfig struct {
 	Enabled          bool   `json:"enabled"`
 	BaseURL          string `json:"base_url"`

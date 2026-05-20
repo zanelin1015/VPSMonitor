@@ -50,3 +50,12 @@ func TestSanitizeClientAgentID(t *testing.T) {
 		t.Fatalf("sanitizeClientAgentID() = %q, want my-vps-hk-01", got)
 	}
 }
+
+func TestDefaultXUIDBPathForOS(t *testing.T) {
+	if got := DefaultXUIDBPathForOS("linux"); got != DefaultXUIDBPath {
+		t.Fatalf("DefaultXUIDBPathForOS(linux) = %q, want %q", got, DefaultXUIDBPath)
+	}
+	if got := DefaultXUIDBPathForOS("windows"); got != "" {
+		t.Fatalf("DefaultXUIDBPathForOS(windows) = %q, want empty", got)
+	}
+}

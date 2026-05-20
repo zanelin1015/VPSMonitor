@@ -67,7 +67,7 @@ func BuildGlobalDashboard(agents []model.AgentRecord, snapshots []model.AgentSna
 		if summary.PublicIPv6 == "" {
 			summary.PublicIPv6 = agent.PublicIPv6
 		}
-		entry := mergeRealmSnapshotIntoEntry(agent.Config.Entry, realmByAgent[agent.AgentID])
+		entry := MergeRealmSnapshotIntoEntry(agent.Config.Entry, realmByAgent[agent.AgentID])
 		view := model.DashboardAgentView{
 			AgentID:             agent.AgentID,
 			AgentName:           agent.AgentName,
@@ -228,7 +228,7 @@ func lookupOverviewGeo(overview *model.XUIOverview, resolver *topologyResolver) 
 	return nil
 }
 
-func mergeRealmSnapshotIntoEntry(entry model.AgentEntryConfig, snapshot *model.RealmSnapshot) model.AgentEntryConfig {
+func MergeRealmSnapshotIntoEntry(entry model.AgentEntryConfig, snapshot *model.RealmSnapshot) model.AgentEntryConfig {
 	if snapshot == nil || len(snapshot.Rules) == 0 {
 		return entry
 	}

@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -96,6 +97,15 @@ no_tcp = true
 	}
 }
 
+func TestEmptyRealmForwardConfigIsUnmanaged(t *testing.T) {
+	if !isEmptyClientRealmForwardConfig(model.RealmForwardConfig{}) {
+		t.Fatal("expected zero realm config to be treated as unmanaged")
+	}
+	if isEmptyClientRealmForwardConfig(model.RealmForwardConfig{ServiceName: "vpsmonitor-realm"}) {
+		t.Fatal("expected explicit realm service to be treated as managed")
+	}
+}
+
 func TestRealmConfigPathFromCommand(t *testing.T) {
 	for _, command := range []string{
 		`/usr/local/bin/realm -c /etc/realm/config.toml`,
@@ -105,6 +115,23 @@ func TestRealmConfigPathFromCommand(t *testing.T) {
 		if got := realmConfigPathFromCommand(command); got != "/etc/realm/config.toml" {
 			t.Fatalf("expected config path from %q, got %q", command, got)
 		}
+	}
+}
+
+func TestConfigPathsFromRealmProcesses(t *testing.T) {
+	procRoot := t.TempDir()
+	processDir := filepath.Join(procRoot, "1234")
+	if err := os.MkdirAll(processDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	cmdline := strings.Join([]string{"/usr/local/bin/realm", "-c", "/root/custom-realm.toml"}, "\x00") + "\x00"
+	if err := os.WriteFile(filepath.Join(processDir, "cmdline"), []byte(cmdline), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	paths := configPathsFromRealmProcesses(procRoot)
+	if len(paths) != 1 || paths[0] != "/root/custom-realm.toml" {
+		t.Fatalf("unexpected process config paths: %#v", paths)
 	}
 }
 

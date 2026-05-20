@@ -109,9 +109,7 @@ func (s *SQLiteStore) RegisterAgent(req model.AgentRegisterRequest) (model.Agent
 			HasConfig: hasManagedConfig(req.SeedConfig),
 		}
 		record.CustomerDisplayName = record.Config.CustomerDisplayName
-		if record.Config.XUI.AutoInstall && record.Config.XUI.DBPath == "" {
-			record.Config.XUI.DBPath = config.DefaultXUIDBPath
-		}
+		record.Config.XUI = normalizeRegisteredXUIConfigForOS(record.Config.XUI, req.OS)
 		xuiJSON, xuiErr := s.storedXUIConfigJSON(record.Config.XUI)
 		if xuiErr != nil {
 			return model.AgentRegisterResponse{}, xuiErr
@@ -163,9 +161,7 @@ func (s *SQLiteStore) RegisterAgent(req model.AgentRegisterRequest) (model.Agent
 		if !hasXUIConfig(record.Config.XUI) && hasXUIConfig(req.SeedConfig.XUI) {
 			record.Config.XUI = req.SeedConfig.XUI
 		}
-		if record.Config.XUI.AutoInstall && record.Config.XUI.DBPath == "" {
-			record.Config.XUI.DBPath = config.DefaultXUIDBPath
-		}
+		record.Config.XUI = normalizeRegisteredXUIConfigForOS(record.Config.XUI, req.OS)
 		if len(record.Config.Tags) == 0 && len(req.SeedConfig.Tags) > 0 {
 			record.Config.Tags = normalizeTags(req.SeedConfig.Tags)
 		}
@@ -248,6 +244,21 @@ func (s *SQLiteStore) RegisterAgent(req model.AgentRegisterRequest) (model.Agent
 			XUI:                 record.Config.XUI,
 		},
 	}, nil
+}
+
+func normalizeRegisteredXUIConfigForOS(cfg config.XUIConfig, osName string) config.XUIConfig {
+	if !cfg.AutoInstall {
+		return cfg
+	}
+	defaultDBPath := config.DefaultXUIDBPathForOS(osName)
+	if strings.TrimSpace(cfg.DBPath) == "" {
+		cfg.DBPath = defaultDBPath
+		return cfg
+	}
+	if defaultDBPath == "" && cfg.DBPath == config.DefaultXUIDBPath {
+		cfg.DBPath = ""
+	}
+	return cfg
 }
 
 func (s *SQLiteStore) GetAgent(agentID string) (model.AgentRecord, bool, error) {

@@ -60,7 +60,7 @@ func (a *App) applyDefaultXUIBootstrap(req *model.AgentRegisterRequest) {
 	webPath := normalizeXUIWebPath(settings.XUIWebPath)
 	req.SeedConfig.XUI.Enabled = true
 	req.SeedConfig.XUI.BaseURL = fmt.Sprintf("http://127.0.0.1:%d%s", panelPort, webPath)
-	req.SeedConfig.XUI.DBPath = config.DefaultXUIDBPath
+	req.SeedConfig.XUI.DBPath = config.DefaultXUIDBPathForOS(req.OS)
 	req.SeedConfig.XUI.Username = settings.XUIUsername
 	req.SeedConfig.XUI.Password = settings.XUIPassword
 	req.SeedConfig.XUI.AutoInstall = true
@@ -71,6 +71,17 @@ func (a *App) applyDefaultXUIBootstrap(req *model.AgentRegisterRequest) {
 
 func registerSeedHasXUIConfig(cfg config.XUIConfig) bool {
 	return cfg.Enabled || cfg.BaseURL != "" || cfg.Username != "" || cfg.Password != "" || cfg.APIToken != "" || cfg.TwoFactorCode != "" || cfg.SkipTLSVerify || cfg.AutoInstall
+}
+
+func latestSnapshotsByAgent(snapshots []model.AgentSnapshot) map[string]model.AgentSnapshot {
+	result := make(map[string]model.AgentSnapshot, len(snapshots))
+	for _, snapshot := range snapshots {
+		if snapshot.AgentID == "" {
+			continue
+		}
+		result[snapshot.AgentID] = snapshot
+	}
+	return result
 }
 
 func (a *App) handleAgents(w http.ResponseWriter, r *http.Request) {
@@ -89,9 +100,13 @@ func (a *App) handleAgents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	agents = a.filterAgentRecordsForAdmin(user, agents)
+	latestByAgent := latestSnapshotsByAgent(a.filterSnapshotsForAdmin(user, a.store.ListLatest()))
 
 	items := make([]model.AgentListItem, 0, len(agents))
 	for _, agent := range agents {
+		if snapshot, ok := latestByAgent[agent.AgentID]; ok {
+			agent.Config.Entry = dashboard.MergeRealmSnapshotIntoEntry(agent.Config.Entry, snapshot.Realm)
+		}
 		items = append(items, model.AgentListItem{
 			AgentID:             agent.AgentID,
 			AgentName:           agent.AgentName,
@@ -465,6 +480,7 @@ func (a *App) handleAgentRecord(w http.ResponseWriter, r *http.Request, agentID 
 		agent.OS = snapshot.OS
 		agent.Arch = snapshot.Arch
 		agent.SystemVersion = snapshot.SystemVersion
+		agent.Config.Entry = dashboard.MergeRealmSnapshotIntoEntry(agent.Config.Entry, snapshot.Realm)
 	}
 	agent = a.sanitizeAgentRecordForAdmin(user, agent)
 	writeJSON(w, http.StatusOK, agent)
@@ -486,9 +502,14 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 			writeError(w, http.StatusNotFound, "agent not found")
 			return
 		}
-		cfg = a.hydrateRealmForwardTargets(cfg)
 		if user, _, ok := a.currentAdmin(r); ok {
+			if snapshot, exists := a.store.GetLatest(agentID); exists {
+				cfg.Entry = dashboard.MergeRealmSnapshotIntoEntry(cfg.Entry, snapshot.Realm)
+			}
+			cfg = a.hydrateRealmForwardTargets(cfg)
 			cfg = a.sanitizeManagedConfigForAdmin(user, cfg)
+		} else {
+			cfg = a.hydrateRealmForwardTargets(cfg)
 		}
 		writeJSON(w, http.StatusOK, cfg)
 	case http.MethodPut:
