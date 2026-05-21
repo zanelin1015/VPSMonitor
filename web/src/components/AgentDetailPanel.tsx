@@ -780,6 +780,40 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     <Empty description="暂无本机证书数据" />
   )
 
+  function renderManagedConfigSection(section: 'basic' | 'xui' | 'nat' | 'network' | 'realm' | 'audit') {
+    return renderManagedConfigPanel({
+      selectedAgent,
+      agents: dashboardView?.agents || filteredAgents,
+      managedConfig,
+      certificates: overview?.certificates || [],
+      configLoading,
+      configSavingSection,
+      configError,
+      onSave: onSaveManagedConfigSection,
+      onAgentNameChange: onManagedConfigAgentNameChange,
+      onCustomerDisplayNameChange: onManagedConfigCustomerDisplayNameChange,
+      onSortOrderChange: onManagedConfigSortOrderChange,
+      tagOptions,
+      newTagName,
+      tagSaving,
+      onNewTagNameChange,
+      onCreateTag,
+      onTagsChange: (values) => {
+        const tags = mergeTagOptions([], values)
+        onTagsChange(tags)
+      },
+      onRenewalChange,
+      entryAddressInputText,
+      onEntryAddressesTextChange,
+      onEntryChange,
+      onXUIChange,
+      configAudits,
+      configAuditsLoading,
+      currencyOptions,
+      section,
+    })
+  }
+
   return (
     <>
       {overviewError ? (
@@ -934,45 +968,43 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
               label: `本机证书 (${overview?.certificates.length || 0})`,
               children: certificateDomainPanel,
             }] : []),
-            ...(canManageConfig ? [{
-              key: 'config',
-              label: (
-                <Space size={6}>
-                  <SettingOutlined />
-                  <span>托管配置</span>
-                </Space>
-              ),
-              children: renderManagedConfigPanel({
-                selectedAgent,
-                agents: dashboardView?.agents || filteredAgents,
-                managedConfig,
-                certificates: overview?.certificates || [],
-                configLoading,
-                configSavingSection,
-                configError,
-                onSave: onSaveManagedConfigSection,
-                onAgentNameChange: onManagedConfigAgentNameChange,
-                onCustomerDisplayNameChange: onManagedConfigCustomerDisplayNameChange,
-                onSortOrderChange: onManagedConfigSortOrderChange,
-                tagOptions,
-                newTagName,
-                tagSaving,
-                onNewTagNameChange,
-                onCreateTag,
-                onTagsChange: (values) => {
-                  const tags = mergeTagOptions([], values)
-                  onTagsChange(tags)
-                },
-                onRenewalChange,
-                entryAddressInputText,
-                onEntryAddressesTextChange,
-                onEntryChange,
-                onXUIChange,
-                configAudits,
-                configAuditsLoading,
-                currencyOptions,
-              }),
-            }] : []),
+            ...(canManageConfig ? [
+              {
+                key: 'config',
+                label: (
+                  <Space size={6}>
+                    <SettingOutlined />
+                    <span>基础信息</span>
+                  </Space>
+                ),
+                children: renderManagedConfigSection('basic'),
+              },
+              {
+                key: 'xui-config',
+                label: 'X-UI 配置',
+                children: renderManagedConfigSection('xui'),
+              },
+              {
+                key: 'entry-nat',
+                label: 'NAT 映射',
+                children: renderManagedConfigSection('nat'),
+              },
+              {
+                key: 'network-policy',
+                label: '端口策略',
+                children: renderManagedConfigSection('network'),
+              },
+              {
+                key: 'realm-forwarding',
+                label: 'Realm 转发',
+                children: renderManagedConfigSection('realm'),
+              },
+              {
+                key: 'config-audits',
+                label: `配置记录 (${configAudits.length})`,
+                children: renderManagedConfigSection('audit'),
+              },
+            ] : []),
             {
               key: 'nodes',
               label: `节点 (${overview?.nodes.length || 0})`,

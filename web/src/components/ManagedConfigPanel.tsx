@@ -9,6 +9,8 @@ import { formatDateTime, formatRenewalHint, summarizeConfigAudit } from '../lib/
 
 const { Text, Title } = Typography
 
+export type ConfigPanelSection = 'all' | 'basic' | 'xui' | 'nat' | 'network' | 'realm' | 'audit'
+
 export interface ConfigPanelProps {
   selectedAgent?: AgentListItem
   agents?: AgentListItem[]
@@ -35,6 +37,7 @@ export interface ConfigPanelProps {
   configAudits: ConfigAuditLog[]
   configAuditsLoading: boolean
   currencyOptions: CurrencyCode[]
+  section?: ConfigPanelSection
 }
 
 export function ManagedConfigPanel(props: ConfigPanelProps) {
@@ -64,6 +67,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
     configAudits,
     configAuditsLoading,
     currencyOptions,
+    section = 'all',
   } = props
 
   if (!selectedAgent) {
@@ -175,6 +179,8 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
     })
   }
   const sectionSaving = Boolean(configSavingSection)
+  const showSection = (target: ConfigPanelSection) => section === 'all' || section === target
+  const hiddenSectionStyle = (target: ConfigPanelSection) => showSection(target) ? undefined : { display: 'none' }
   const sectionSaveButton = (section: ConfigSectionKey, label: string) => (
     <Button
       type="primary"
@@ -189,7 +195,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
   )
 
   return (
-    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, width: '100%' }}>
       {configError ? (
         <Alert
           type="warning"
@@ -206,9 +212,10 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
         message="统一配置说明"
         description="client 注册后，server 会保存并下发 x-ui 托管参数。后台修改后，不需要再改 client 本地文件，下一次轮询会自动使用新配置。"
         className="compact-alert"
+        style={hiddenSectionStyle('basic')}
       />
 
-      <Card className="config-section-card" bordered={false}>
+      <Card className="config-section-card" bordered={false} style={hiddenSectionStyle('basic')}>
         <div className="section-title-row">
           <Title level={4}>Client 信息</Title>
           {sectionSaveButton('client', '保存 Client 信息')}
@@ -265,7 +272,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
         </Row>
       </Card>
 
-      <Card className="config-section-card" bordered={false}>
+      <Card className="config-section-card" bordered={false} style={hiddenSectionStyle('basic')}>
         <div className="section-title-row">
           <Title level={4}>VPS 信息</Title>
           {sectionSaveButton('renewal', '保存 VPS 信息')}
@@ -374,7 +381,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
         </Row>
       </Card>
 
-      <Card className="config-section-card" bordered={false}>
+      <Card className="config-section-card" bordered={false} style={hiddenSectionStyle('xui')}>
         <div className="section-title-row">
           <Title level={4}>X-UI 托管配置</Title>
           {sectionSaveButton('xui', '保存 X-UI 配置')}
@@ -427,7 +434,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
         </Row>
       </Card>
 
-      <Card className="config-section-card" bordered={false}>
+      <Card className="config-section-card" bordered={false} style={hiddenSectionStyle('nat')}>
         <div className="section-title-row">
           <Title level={4}>入口地址 / NAT 映射</Title>
           <Space wrap>
@@ -524,7 +531,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
         </Space>
       </Card>
 
-      <Card className="config-section-card" bordered={false}>
+      <Card className="config-section-card" bordered={false} style={hiddenSectionStyle('network')}>
         <div className="section-title-row">
           <Title level={4}>端口限速 / IP 白名单</Title>
           <Space wrap>
@@ -638,7 +645,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
         </Row>
       </Card>
 
-      <Card className="config-section-card" bordered={false}>
+      <Card className="config-section-card" bordered={false} style={hiddenSectionStyle('realm')}>
         <div className="section-title-row">
           <Title level={4}>Realm 端口转发</Title>
           <Space wrap>
@@ -770,7 +777,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
         </Row>
       </Card>
 
-      <Card className="config-section-card" bordered={false}>
+      <Card className="config-section-card" bordered={false} style={hiddenSectionStyle('audit')}>
         <Title level={4}>配置修改记录</Title>
         <Spin spinning={configAuditsLoading}>
           {configAudits.length ? (
@@ -793,7 +800,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
         </Spin>
       </Card>
 
-    </Space>
+    </div>
   )
 }
 
