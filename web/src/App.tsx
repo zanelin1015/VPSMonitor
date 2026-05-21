@@ -1619,12 +1619,13 @@ export default function App() {
     }
   }
 
-  async function saveManagedConfigSection(section: ConfigSectionKey) {
-    if (!selectedAgentId || !managedConfig) {
+  async function saveManagedConfigSection(section: ConfigSectionKey, draftOverride?: ManagedAgentConfig) {
+    const draftConfig = draftOverride || managedConfig
+    if (!selectedAgentId || !draftConfig) {
       return
     }
     const baseConfig = savedManagedConfig || createEmptyManagedConfig(selectedAgentId, selectedAgent?.agent_name)
-    const payload = buildSectionSavePayload(baseConfig, managedConfig, section, selectedAgentId)
+    const payload = buildSectionSavePayload(baseConfig, draftConfig, section, selectedAgentId)
     setConfigSavingSection(section)
     setConfigError('')
     try {
@@ -1640,7 +1641,7 @@ export default function App() {
       const normalized = normalizeManagedConfig(savedWithSubmittedCustomerName, selectedAgentId, saved.agent_name || selectedAgent?.agent_name)
       rememberCustomerDisplayName(selectedAgentId, normalized.customer_display_name || '')
       setSavedManagedConfig(normalized)
-      const nextDraft = mergeSavedSectionIntoDraft(managedConfig, normalized, section)
+      const nextDraft = mergeSavedSectionIntoDraft(draftConfig, normalized, section)
       managedConfigDirtyRef.current = configSignature(nextDraft) !== configSignature(normalized)
       setManagedConfig(nextDraft)
       if (section === 'client') {
@@ -1666,6 +1667,23 @@ export default function App() {
     } finally {
       setConfigSavingSection(null)
     }
+  }
+
+  function savePrimaryDomain(value: string) {
+    if (!selectedAgentId) {
+      return
+    }
+    const draftConfig = managedConfig || savedManagedConfig || createEmptyManagedConfig(selectedAgentId, selectedAgent?.agent_name)
+    const nextDraft = normalizeManagedConfig({
+      ...draftConfig,
+      entry: {
+        ...draftConfig.entry,
+        import_domain: value,
+      },
+    }, selectedAgentId, selectedAgent?.agent_name)
+    managedConfigDirtyRef.current = true
+    setManagedConfig(nextDraft)
+    void saveManagedConfigSection('entry', nextDraft)
   }
 
   async function saveClientBilling(record: XUIClientView) {
@@ -2332,6 +2350,7 @@ export default function App() {
                 onReturnHome={returnHome}
                 onSaveClientBilling={(record) => void saveClientBilling(record)}
                 onSaveManagedConfigSection={(section) => void saveManagedConfigSection(section)}
+                onSavePrimaryDomain={savePrimaryDomain}
                 onSelectTag={selectDashboardTag}
                 onTagsChange={(values) => {
                   setTagOptions((current) => mergeTagOptions(current, values))

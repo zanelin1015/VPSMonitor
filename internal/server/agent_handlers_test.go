@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"bridge-core/internal/config"
+	"bridge-core/internal/dashboard"
 	"bridge-core/internal/model"
 	"bridge-core/internal/store"
 )
@@ -303,7 +304,7 @@ func TestSyncRealmConfigFromSnapshotPersistsMachineRealmConfig(t *testing.T) {
 	}
 }
 
-func TestApplyRealmPublicImportURLsRewritesAdminClientLink(t *testing.T) {
+func TestAppendRealmForwardedImportURLsScopesAdminExportToEntryAgent(t *testing.T) {
 	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore: %v", err)
@@ -334,26 +335,72 @@ func TestApplyRealmPublicImportURLsRewritesAdminClientLink(t *testing.T) {
 	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk", AgentName: "Hong Kong"}); err != nil {
 		t.Fatalf("RegisterAgent hk: %v", err)
 	}
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "sz", AgentName: "Shenzhen"}); err != nil {
+		t.Fatalf("RegisterAgent sz: %v", err)
+	}
+	if _, err := sqliteStore.UpdateAgentConfig("sz", model.ManagedAgentConfig{
+		AgentID:   "sz",
+		AgentName: "Shenzhen",
+		Entry: model.AgentEntryConfig{
+			ImportDomain: "sz.example.com",
+			PortForwarding: model.RealmForwardConfig{Rules: []model.RealmForwardRule{{
+				Enabled:       true,
+				ListenAddress: "0.0.0.0",
+				ListenPort:    30001,
+				TargetAgentID: "hk",
+				TargetAddress: "47.239.135.242",
+				TargetPort:    20001,
+				Network:       "tcp",
+			}}},
+		},
+	}); err != nil {
+		t.Fatalf("UpdateAgentConfig sz: %v", err)
+	}
 
-	overview := &model.XUIOverview{
-		AgentID: "hk",
-		Nodes: []model.XUINodeView{{
-			ID:       1001,
-			Tag:      "inbound-20001",
-			Protocol: "vless",
-			Port:     20001,
-		}},
-		Clients: []model.XUIClientView{{
-			InboundID:  1001,
-			InboundTag: "inbound-20001",
-			Protocol:   "vless",
-			Email:      "alice@example.com",
-			ImportURL:  "vless://11111111-1111-1111-1111-111111111111@47.239.135.242:20001?encryption=none&security=tls&type=tcp&sni=hk.example.com#HK",
-		}},
+	now := time.Now().UTC()
+	if err := sqliteStore.SaveSnapshot(model.AgentSnapshot{
+		AgentID:    "gz",
+		AgentName:  "Guangzhou",
+		ReportedAt: now,
+		Summary:    model.VPSSummary{PublicIPv4: "1.1.1.1", ObservedIP: "1.1.1.1"},
+	}); err != nil {
+		t.Fatalf("SaveSnapshot gz: %v", err)
+	}
+	if err := sqliteStore.SaveSnapshot(model.AgentSnapshot{
+		AgentID:    "hk",
+		AgentName:  "Hong Kong",
+		ReportedAt: now,
+		Summary:    model.VPSSummary{PublicIPv4: "47.239.135.242"},
+		XUI: &model.XUISnapshot{
+			CollectedAt: now,
+			Inbounds: []map[string]any{{
+				"id":       1001,
+				"tag":      "inbound-20001",
+				"remark":   "HK VLESS",
+				"protocol": "vless",
+				"port":     20001,
+				"settings": `{"clients":[{"email":"alice@example.com","enable":true,"id":"11111111-1111-1111-1111-111111111111"}]}`,
+				"streamSettings": map[string]any{
+					"network":  "tcp",
+					"security": "tls",
+					"tlsSettings": map[string]any{
+						"serverName": "hk.example.com",
+					},
+				},
+			}},
+		},
+	}); err != nil {
+		t.Fatalf("SaveSnapshot hk: %v", err)
 	}
 
 	app := &App{store: sqliteStore}
-	app.applyRealmPublicImportURLs("hk", overview)
+	overview := emptyAgentXUIOverview(model.AgentSnapshot{
+		AgentID:    "gz",
+		AgentName:  "Guangzhou",
+		ReportedAt: now,
+		Summary:    model.VPSSummary{PublicIPv4: "1.1.1.1", ObservedIP: "1.1.1.1"},
+	}, model.ManagedAgentConfig{AgentID: "gz", AgentName: "Guangzhou"})
+	app.appendRealmForwardedImportURLs("gz", overview)
 
 	parsed, err := url.Parse(overview.Clients[0].ImportURL)
 	if err != nil {
@@ -364,5 +411,34 @@ func TestApplyRealmPublicImportURLsRewritesAdminClientLink(t *testing.T) {
 	}
 	if parsed.Query().Get("sni") != "hk.example.com" {
 		t.Fatalf("expected HK stream parameters to stay, got %q", overview.Clients[0].ImportURL)
+	}
+
+	hkOverview := dashboard.BuildXUIOverviewWithOptions(model.AgentSnapshot{
+		AgentID:    "hk",
+		AgentName:  "Hong Kong",
+		ReportedAt: now,
+		Summary:    model.VPSSummary{PublicIPv4: "47.239.135.242"},
+		XUI: &model.XUISnapshot{
+			CollectedAt: now,
+			Inbounds: []map[string]any{{
+				"id":       1001,
+				"tag":      "inbound-20001",
+				"remark":   "HK VLESS",
+				"protocol": "vless",
+				"port":     20001,
+				"settings": `{"clients":[{"email":"alice@example.com","enable":true,"id":"11111111-1111-1111-1111-111111111111"}]}`,
+			}},
+		},
+	}, dashboard.XUIOverviewOptions{})
+	if hkOverview == nil || len(hkOverview.Clients) != 1 {
+		t.Fatalf("expected hk overview client")
+	}
+	app.appendRealmForwardedImportURLs("hk", hkOverview)
+	parsedHK, err := url.Parse(hkOverview.Clients[0].ImportURL)
+	if err != nil {
+		t.Fatalf("parse hk import url: %v", err)
+	}
+	if parsedHK.Host == "gz.example.com:20001" || parsedHK.Host == "sz.example.com:30001" {
+		t.Fatalf("HK page should not arbitrarily export through GZ or SZ, got %q", hkOverview.Clients[0].ImportURL)
 	}
 }

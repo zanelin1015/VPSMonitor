@@ -252,6 +252,78 @@ func TestBuildGlobalDashboardPrefersCollectedRealmConfigForSameListenPort(t *tes
 	}
 }
 
+func TestBuildGlobalDashboardMatchesRealmToShadowsocksInbound(t *testing.T) {
+	now := time.Now().UTC()
+	agents := []model.AgentRecord{
+		{
+			AgentID:      "gz",
+			AgentName:    "Guangzhou",
+			RegisteredAt: now,
+			UpdatedAt:    now,
+		},
+		{
+			AgentID:      "hk",
+			AgentName:    "Hong Kong",
+			RegisteredAt: now,
+			UpdatedAt:    now,
+			Summary: model.VPSSummary{
+				PublicIPv4: "47.239.135.242",
+			},
+		},
+	}
+	snapshots := []model.AgentSnapshot{
+		{
+			AgentID:    "gz",
+			AgentName:  "Guangzhou",
+			ReportedAt: now,
+			Realm: &model.RealmSnapshot{
+				ConfigPath:  "/etc/realm/config.toml",
+				ServiceName: "realm",
+				CollectedAt: now,
+				Rules: []model.RealmForwardRule{{
+					ID:            "auto-realm-20003-20003-2",
+					Enabled:       true,
+					ListenAddress: "0.0.0.0",
+					ListenPort:    20003,
+					TargetAddress: "47.239.135.242",
+					TargetPort:    20003,
+					Network:       "both",
+				}},
+			},
+		},
+		{
+			AgentID:    "hk",
+			AgentName:  "Hong Kong",
+			ReportedAt: now,
+			Summary:    model.VPSSummary{PublicIPv4: "47.239.135.242"},
+			XUI: &model.XUISnapshot{
+				CollectedAt: now,
+				Inbounds: []map[string]any{{
+					"id":       3,
+					"tag":      "inbound-20003",
+					"remark":   "CN-HK-SS",
+					"protocol": "shadowsocks",
+					"port":     20003,
+					"enable":   true,
+					"settings": `{"clients":[{"email":"ss-client","enable":true}]}`,
+				}},
+			},
+		},
+	}
+
+	view := BuildGlobalDashboard(agents, snapshots)
+	if view.Totals.LinkCount != 1 {
+		t.Fatalf("expected realm to match shadowsocks inbound, got %d links: %#v", view.Totals.LinkCount, view.Links)
+	}
+	link := view.Links[0]
+	if link.Source.Protocol != "realm" || link.Target.Protocol != "shadowsocks" || link.Target.Port != 20003 {
+		t.Fatalf("unexpected realm shadowsocks link: %#v", link)
+	}
+	if !containsString(link.MatchFields, "address_ip") || !containsString(link.MatchFields, "port") {
+		t.Fatalf("expected address_ip and port match fields, got %#v", link.MatchFields)
+	}
+}
+
 func TestBuildGlobalDashboardMatchesDirectIPOutbound(t *testing.T) {
 	now := time.Now().UTC()
 	agents := []model.AgentRecord{

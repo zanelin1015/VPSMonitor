@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -232,10 +233,9 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 		}
 		overview := dashboard.BuildXUIOverviewWithOptions(snapshot, dashboard.XUIOverviewOptions{Entry: cfg.Entry})
 		if overview == nil {
-			writeError(w, http.StatusNotFound, "x-ui snapshot not found")
-			return
+			overview = emptyAgentXUIOverview(snapshot, cfg)
 		}
-		a.applyRealmPublicImportURLs(agentID, overview)
+		a.appendRealmForwardedImportURLs(agentID, overview)
 		if isAreaManager(user) {
 			overview.AgentName = areaManagerDisplayName(cfg.CustomerDisplayName, cfg.AgentName, agentID)
 		}
@@ -320,64 +320,157 @@ func (a *App) handleAgentLogs(w http.ResponseWriter, r *http.Request, agentID st
 	})
 }
 
-func (a *App) applyRealmPublicImportURLs(agentID string, overview *model.XUIOverview) {
-	if overview == nil || len(overview.Clients) == 0 {
+func emptyAgentXUIOverview(snapshot model.AgentSnapshot, cfg model.ManagedAgentConfig) *model.XUIOverview {
+	return &model.XUIOverview{
+		AgentID:     snapshot.AgentID,
+		AgentName:   firstNonEmptyString(snapshot.AgentName, cfg.AgentName),
+		ReportedAt:  snapshot.ReportedAt,
+		CollectedAt: snapshot.ReportedAt,
+		Summary:     snapshot.Summary,
+	}
+}
+
+func (a *App) appendRealmForwardedImportURLs(agentID string, overview *model.XUIOverview) {
+	if overview == nil {
 		return
 	}
 	agents, err := a.store.ListAgents()
 	if err != nil {
 		return
 	}
-	view := dashboard.BuildGlobalDashboard(agents, a.store.ListLatest())
+	snapshots := a.store.ListLatest()
+	view := dashboard.BuildGlobalDashboard(agents, snapshots)
 	agentMap := make(map[string]model.DashboardAgentView, len(view.Agents))
 	for _, agent := range view.Agents {
 		agentMap[agent.AgentID] = agent
 	}
-	chainMap := make(map[string]model.ClientChainView, len(view.ClientChains))
-	for _, chain := range view.ClientChains {
-		chainMap[chain.Key] = chain
+	snapshotMap := make(map[string]model.AgentSnapshot, len(snapshots))
+	for _, snapshot := range snapshots {
+		snapshotMap[snapshot.AgentID] = snapshot
 	}
-	inboundPorts := make(map[string]int, len(overview.Nodes))
-	for _, node := range overview.Nodes {
-		inboundPorts[overviewInboundKey(node.ID, node.Tag)] = node.Port
+	entryByAgent := make(map[string]model.AgentEntryConfig, len(agents))
+	for _, agent := range agents {
+		entryByAgent[agent.AgentID] = agent.Config.Entry
 	}
-	for index := range overview.Clients {
-		client := &overview.Clients[index]
-		if client.ImportURL == "" {
+	sourceAgent, ok := agentMap[agentID]
+	if !ok {
+		return
+	}
+	added := 0
+	for _, rule := range sourceAgent.Entry.PortForwarding.Rules {
+		if !rule.Enabled || rule.ListenPort <= 0 || rule.TargetPort <= 0 {
 			continue
 		}
-		assignment := model.CustomerAssignment{
-			AgentID:     agentID,
-			InboundID:   client.InboundID,
-			InboundTag:  client.InboundTag,
-			ClientEmail: client.Email,
+		targetAgentID := findRealmTargetAgentID(rule, agentMap)
+		if targetAgentID == "" || strings.EqualFold(targetAgentID, agentID) {
+			continue
 		}
-		chain, found := findCustomerChain(assignment, chainMap)
-		if !found {
-			chain = model.ClientChainView{
-				RootAgentID:     agentID,
-				RootInboundTag:  client.InboundTag,
-				RootClientEmail: client.Email,
-				Steps: []model.ClientChainStep{{
-					StepType: "inbound",
-					AgentID:  agentID,
-					Label:    client.InboundTag,
-					Port:     inboundPorts[overviewInboundKey(client.InboundID, client.InboundTag)],
-				}},
-			}
-		}
-		publicEntry, ok := customerRealmPublicEntry(assignment, chain, agentMap)
+		targetSnapshot, ok := snapshotMap[targetAgentID]
 		if !ok {
 			continue
 		}
-		if rewritten := rewriteCustomerImportURL(client.ImportURL, publicEntry.Host, publicEntry.Port); rewritten != "" {
-			client.ImportURL = rewritten
+		targetOverview := dashboard.BuildXUIOverviewWithOptions(targetSnapshot, dashboard.XUIOverviewOptions{Entry: entryByAgent[targetAgentID]})
+		if targetOverview == nil {
+			continue
 		}
+		host := customerRealmSourceHost(sourceAgent, rule)
+		if host == "" {
+			continue
+		}
+		targetPorts := overviewNodePorts(targetOverview.Nodes)
+		for _, client := range targetOverview.Clients {
+			targetPort := targetPorts[overviewInboundKey(client.InboundID, client.InboundTag)]
+			if targetPort > 0 && targetPort != rule.TargetPort {
+				continue
+			}
+			if targetPort == 0 && rule.TargetPort <= 0 {
+				continue
+			}
+			rewritten := rewriteCustomerImportURL(client.ImportURL, host, rule.ListenPort)
+			if rewritten == "" {
+				continue
+			}
+			sourceClient := client
+			sourceClient.ImportURL = rewritten
+			sourceClient.InboundTag = realmForwardedInboundTag(rule, client)
+			sourceClient.InboundRemark = realmForwardedInboundRemark(sourceAgent, agentMap[targetAgentID], rule, client)
+			sourceClient.Route.Note = fmt.Sprintf("Realm 入口 %s:%d -> %s:%d", host, rule.ListenPort, firstNonEmptyString(agentMap[targetAgentID].AgentName, targetAgentID), rule.TargetPort)
+			overview.Clients = append(overview.Clients, sourceClient)
+			added++
+		}
+	}
+	if added > 0 {
+		sortXUIClients(overview.Clients)
+		overview.ClientCount = len(overview.Clients)
+		overview.OnlineClientCount = countOnlineXUIClients(overview.Clients)
 	}
 }
 
 func overviewInboundKey(inboundID int, inboundTag string) string {
 	return fmt.Sprintf("%d\x00%s", inboundID, inboundTag)
+}
+
+func overviewNodePorts(nodes []model.XUINodeView) map[string]int {
+	ports := make(map[string]int, len(nodes))
+	for _, node := range nodes {
+		ports[overviewInboundKey(node.ID, node.Tag)] = node.Port
+	}
+	return ports
+}
+
+func findRealmTargetAgentID(rule model.RealmForwardRule, agentMap map[string]model.DashboardAgentView) string {
+	if strings.TrimSpace(rule.TargetAgentID) != "" {
+		if _, ok := agentMap[rule.TargetAgentID]; ok {
+			return rule.TargetAgentID
+		}
+		return ""
+	}
+	for _, agent := range agentMap {
+		if customerRealmRuleTargetsAgent(rule, agent.AgentID, customerAgentAddressSet(agent)) {
+			return agent.AgentID
+		}
+	}
+	return ""
+}
+
+func realmForwardedInboundTag(rule model.RealmForwardRule, client model.XUIClientView) string {
+	target := firstNonEmptyString(client.InboundRemark, client.InboundTag, fmt.Sprintf(":%d", rule.TargetPort))
+	return fmt.Sprintf("Realm %d -> %s", rule.ListenPort, target)
+}
+
+func realmForwardedInboundRemark(sourceAgent model.DashboardAgentView, targetAgent model.DashboardAgentView, rule model.RealmForwardRule, client model.XUIClientView) string {
+	name := strings.TrimSpace(rule.Name)
+	if name == "" {
+		name = fmt.Sprintf("%s:%d -> %s:%d",
+			firstNonEmptyString(sourceAgent.AgentName, sourceAgent.AgentID),
+			rule.ListenPort,
+			firstNonEmptyString(targetAgent.AgentName, targetAgent.AgentID),
+			rule.TargetPort,
+		)
+	}
+	if client.InboundRemark != "" || client.InboundTag != "" {
+		name = fmt.Sprintf("%s / %s", name, firstNonEmptyString(client.InboundRemark, client.InboundTag))
+	}
+	return name
+}
+
+func sortXUIClients(clients []model.XUIClientView) {
+	sort.SliceStable(clients, func(i, j int) bool {
+		if clients[i].InboundTag != clients[j].InboundTag {
+			return clients[i].InboundTag < clients[j].InboundTag
+		}
+		return clients[i].Email < clients[j].Email
+	})
+}
+
+func countOnlineXUIClients(clients []model.XUIClientView) int {
+	total := 0
+	for _, client := range clients {
+		if client.LastOnline > 0 {
+			total++
+		}
+	}
+	return total
 }
 
 func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID string, parts []string) {

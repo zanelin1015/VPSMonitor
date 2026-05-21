@@ -1176,7 +1176,7 @@ func addressPortFromObject(item map[string]any, addressKey, portKey string) stri
 
 func isSupportedNodeProtocol(protocol string) bool {
 	switch normalizedTopologyProtocol(protocol) {
-	case "vless", "vmess", "http", "socks", "realm":
+	case "vless", "vmess", "http", "socks", "shadowsocks", "realm":
 		return true
 	default:
 		return false
@@ -1187,6 +1187,8 @@ func normalizedTopologyProtocol(protocol string) string {
 	switch strings.ToLower(strings.TrimSpace(protocol)) {
 	case "socks5":
 		return "socks"
+	case "ss":
+		return "shadowsocks"
 	default:
 		return strings.ToLower(strings.TrimSpace(protocol))
 	}

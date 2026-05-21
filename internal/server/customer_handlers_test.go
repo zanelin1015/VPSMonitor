@@ -183,8 +183,13 @@ func TestBuildCustomerLinkViewRewritesImportURLToRealmEntry(t *testing.T) {
 	agentMap := map[string]model.DashboardAgentView{
 		"gz": {
 			AgentID: "gz",
+			Summary: model.VPSSummary{
+				PublicIPv4: "1.1.1.1",
+				ObservedIP: "1.1.1.1",
+			},
 			Entry: model.AgentEntryConfig{
-				Addresses: []string{"gz.example.com"},
+				ImportDomain: "gz.example.com",
+				Addresses:    []string{"1.1.1.1"},
 				PortForwarding: model.RealmForwardConfig{Rules: []model.RealmForwardRule{{
 					Enabled:       true,
 					ListenAddress: "0.0.0.0",

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Badge, Button, Card, Empty, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, Tag, Typography } from 'antd'
+import { Alert, AutoComplete, Badge, Button, Card, Empty, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { ReloadOutlined, SettingOutlined } from '@ant-design/icons'
 import { Terminal } from '@xterm/xterm'
@@ -129,6 +129,7 @@ export interface AgentDetailPanelProps {
   onReturnHome: () => void
   onSaveClientBilling: (record: XUIClientView) => void
   onSaveManagedConfigSection: (section: ConfigSectionKey) => void
+  onSavePrimaryDomain: (value: string) => void
   onSelectTag: (tag: string) => void
   onTagsChange: (values: string[]) => void
   onSaveAreaTags?: (values: string[]) => void
@@ -208,6 +209,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onReturnHome,
     onSaveClientBilling,
     onSaveManagedConfigSection,
+    onSavePrimaryDomain,
     onSelectTag,
     onTagsChange,
     onSaveAreaTags,
@@ -238,6 +240,13 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const commandText = String(commandResult.command || commandPayload.command || '')
   const stdoutText = String(commandResult.stdout || '')
   const stderrText = String(commandResult.stderr || commandOutputAction?.error || '')
+  const currentPrimaryDomain = managedConfig?.entry?.import_domain || selectedAgent.entry?.import_domain || ''
+  const certificateDomainOptions = buildPrimaryDomainOptions(overview?.certificates || [])
+  const [primaryDomainDraft, setPrimaryDomainDraft] = useState(currentPrimaryDomain)
+
+  useEffect(() => {
+    setPrimaryDomainDraft(currentPrimaryDomain)
+  }, [currentPrimaryDomain, selectedAgentId])
 
   function submitRemoteCommand() {
     const command = remoteCommand.trim()
@@ -708,7 +717,68 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       width: 260,
       render: (value?: string) => value || '-',
     },
+    {
+      title: '主域名',
+      key: 'primary_domain',
+      width: 150,
+      fixed: 'right',
+      render: (_, record) => {
+        const domain = firstCertificateDomainCandidate(record)
+        if (!domain) {
+          return <Text type="secondary">无域名</Text>
+        }
+        const selected = currentPrimaryDomain === domain
+        return (
+          <Button
+            size="small"
+            type={selected ? 'primary' : 'default'}
+            disabled={!canManageConfig || configSavingSection === 'entry'}
+            loading={configSavingSection === 'entry' && selected}
+            onClick={() => onSavePrimaryDomain(domain)}
+          >
+            {selected ? '当前主域名' : '设为主域名'}
+          </Button>
+        )
+      },
+    },
   ]
+
+  const certificateDomainPanel = overview ? (
+    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+      <Alert
+        type="info"
+        showIcon
+        message="VPS 主域名"
+        description="导出的单节点链接会优先使用这里保存的主域名替代 IP；如果该 VPS 是 Realm 入口机，转发后导出的节点也会使用入口机的主域名和监听端口。SNI、Reality 等目标节点参数保持不变。"
+      />
+      <Space.Compact style={{ width: '100%' }}>
+        <AutoComplete
+          allowClear
+          value={primaryDomainDraft}
+          options={certificateDomainOptions}
+          placeholder="可从证书域名选择，也可以手动输入域名"
+          onChange={setPrimaryDomainDraft}
+          filterOption={(inputValue, option) => String(option?.value || '').toLowerCase().includes(inputValue.toLowerCase())}
+          style={{ width: '100%' }}
+          disabled={!canManageConfig}
+        />
+        <Button
+          type="primary"
+          loading={configSavingSection === 'entry'}
+          disabled={!canManageConfig || configSavingSection === 'entry' || primaryDomainDraft.trim() === currentPrimaryDomain}
+          onClick={() => onSavePrimaryDomain(primaryDomainDraft)}
+        >
+          保存主域名
+        </Button>
+      </Space.Compact>
+      <Text type="secondary">
+        {currentPrimaryDomain ? `当前主域名：${currentPrimaryDomain}` : '当前未设置主域名；未设置时会继续按证书域名、入口地址、公网 IP 的顺序回退。'}
+      </Text>
+      <Table rowKey={(record) => record.id} columns={certificateColumns} dataSource={overview.certificates} pagination={{ pageSize: 8, hideOnSinglePage: true }} scroll={{ x: 1360 }} />
+    </Space>
+  ) : (
+    <Empty description="暂无本机证书数据" />
+  )
 
   return (
     <>
@@ -862,11 +932,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
             {
               key: 'certificates',
               label: `本机证书 (${overview?.certificates.length || 0})`,
-              children: overview ? (
-                <Table rowKey={(record) => record.id} columns={certificateColumns} dataSource={overview.certificates} pagination={{ pageSize: 8, hideOnSinglePage: true }} scroll={{ x: 1200 }} />
-              ) : (
-                <Empty description="暂无本机证书数据" />
-              ),
+              children: certificateDomainPanel,
             }] : []),
             ...(canManageConfig ? [{
               key: 'config',
@@ -1289,4 +1355,59 @@ function normalizeTerminalInput(data: string, shell: string): string {
   }
   const normalizedShell = String(shell || '').toLowerCase()
   return normalizedShell === 'powershell' || normalizedShell === 'pwsh' || normalizedShell === 'cmd' ? '\r\n' : '\n'
+}
+
+function buildPrimaryDomainOptions(certificates: XUILocalCertificate[]) {
+  const seen = new Set<string>()
+  const options: { value: string; label: string }[] = []
+  certificates.forEach((certificate) => {
+    certificateDomainCandidates(certificate).forEach((domain) => {
+      if (seen.has(domain)) {
+        return
+      }
+      seen.add(domain)
+      options.push({
+        value: domain,
+        label: certificate.name ? `${domain} · ${certificate.name}` : domain,
+      })
+    })
+  })
+  return options
+}
+
+function firstCertificateDomainCandidate(certificate: XUILocalCertificate) {
+  const candidates = certificateDomainCandidates(certificate)
+  return candidates.find((domain) => !domain.startsWith('*.')) || candidates[0] || ''
+}
+
+function certificateDomainCandidates(certificate: XUILocalCertificate) {
+  const values = [...(certificate.dns_names || []), certificate.subject || '']
+  const seen = new Set<string>()
+  const result: string[] = []
+  values.forEach((value) => {
+    const domain = normalizePrimaryDomain(value)
+    if (!domain || seen.has(domain)) {
+      return
+    }
+    seen.add(domain)
+    result.push(domain)
+  })
+  return result
+}
+
+function normalizePrimaryDomain(value?: string) {
+  let domain = (value || '').trim().toLowerCase().replace(/\.$/, '')
+  domain = domain.replace(/^https?:\/\//, '').split('/')[0]
+  const portMatch = domain.match(/^([^:[\]]+):\d+$/)
+  if (portMatch) {
+    domain = portMatch[1]
+  }
+  if (!domain || domain.includes(' ') || domain.includes('*') || isIPLikeDomain(domain)) {
+    return ''
+  }
+  return domain
+}
+
+function isIPLikeDomain(value: string) {
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(value) || (value.includes(':') && /^[0-9a-f:]+$/i.test(value))
 }

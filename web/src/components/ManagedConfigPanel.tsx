@@ -446,22 +446,22 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
         />
         <Row gutter={[16, 16]}>
           <Col xs={24} md={12}>
-            <Text type="secondary">导入链接域名</Text>
+            <Text type="secondary">VPS 主域名 / 导入链接域名</Text>
             <AutoComplete
               allowClear
               value={entryConfig.import_domain || ''}
               options={domainOptions}
-              placeholder={defaultImportDomain ? `默认使用第一个域名证书：${defaultImportDomain}` : '无域名证书时留空；可手动输入域名'}
+              placeholder={defaultImportDomain ? `可选择证书域名：${defaultImportDomain}` : '无域名证书也可以手动输入域名'}
               onChange={(value) => onEntryChange({ import_domain: value })}
               filterOption={(inputValue, option) => String(option?.value || '').toLowerCase().includes(inputValue.toLowerCase())}
               style={{ width: '100%' }}
             />
             <Text type="secondary">
               {entryConfig.import_domain
-                ? '生成 VLESS/VMess/Trojan 等单节点导入链接时固定使用该域名，不再回退到 IP。'
+                ? '生成 VLESS/VMess/Trojan/SS 等导入链接时固定使用该域名；Realm 转发导出时也使用入口 VPS 的主域名和监听端口。'
                 : defaultImportDomain
-                  ? '未填写时后端会自动使用第一个可连接的域名证书；只上传域名证书，IP 证书会被过滤。'
-                  : '未填写且没有域名证书时，导入链接不会使用 IP；需要手动输入域名后再保存。'}
+                  ? '未填写时后端会自动使用第一个可连接的域名证书；建议显式选择主域名，避免多证书时选错。'
+                  : '未填写且没有域名证书时会回退到入口地址或公网 IP；需要固定域名时请手动输入后保存。'}
             </Text>
           </Col>
           <Col xs={24}>
