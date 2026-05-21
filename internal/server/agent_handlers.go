@@ -597,10 +597,22 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		a.requestAgentConfigApply(agentID)
 		writeJSON(w, http.StatusOK, record.Config)
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func (a *App) requestAgentConfigApply(agentID string) bool {
+	if a.realtime == nil {
+		return false
+	}
+	if a.realtime.sendAgentControl(agentID, model.AgentControlMessage{Type: model.AgentControlCollectNow}) {
+		return true
+	}
+	log.Printf("client %s realtime connection is offline; config will apply on next poll", agentID)
+	return false
 }
 
 func filterRootOnlyXUIActions(actions []model.XUIAction) []model.XUIAction {

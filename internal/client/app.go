@@ -542,6 +542,10 @@ func buildSummary(snapshot model.AgentSnapshot) model.VPSSummary {
 		summary.CPU = snapshot.XUI.ServerStatus.CPU
 		summary.MemUsed = snapshot.XUI.ServerStatus.Mem.Current
 		summary.MemTotal = snapshot.XUI.ServerStatus.Mem.Total
+		if snapshot.XUI.ServerStatus.Disk.Total > 0 {
+			summary.DiskUsed = snapshot.XUI.ServerStatus.Disk.Current
+			summary.DiskTotal = snapshot.XUI.ServerStatus.Disk.Total
+		}
 		summary.NetTrafficSent = snapshot.XUI.ServerStatus.NetTraffic.Sent
 		summary.NetTrafficRecv = snapshot.XUI.ServerStatus.NetTraffic.Recv
 		summary.NetTrafficTotal = snapshot.XUI.ServerStatus.NetTraffic.Sent + snapshot.XUI.ServerStatus.NetTraffic.Recv
@@ -551,6 +555,12 @@ func buildSummary(snapshot model.AgentSnapshot) model.VPSSummary {
 		summary.InboundCount = len(snapshot.XUI.Inbounds)
 		summary.OutboundCount = len(snapshot.XUI.Outbounds)
 		summary.RoutingRuleCount = len(snapshot.XUI.RoutingRules)
+	}
+	if summary.DiskTotal == 0 {
+		if diskUsed, diskTotal, ok := readDiskUsage(); ok {
+			summary.DiskUsed = diskUsed
+			summary.DiskTotal = diskTotal
+		}
 	}
 
 	return summary

@@ -7,6 +7,8 @@ export interface VPSSummary {
   cpu?: number
   mem_used?: number
   mem_total?: number
+  disk_used?: number
+  disk_total?: number
   net_traffic_sent?: number
   net_traffic_recv?: number
   net_traffic_total?: number

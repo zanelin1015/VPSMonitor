@@ -43,6 +43,8 @@ type VPSSummary struct {
 	CPU               float64 `json:"cpu,omitempty"`
 	MemUsed           uint64  `json:"mem_used,omitempty"`
 	MemTotal          uint64  `json:"mem_total,omitempty"`
+	DiskUsed          uint64  `json:"disk_used,omitempty"`
+	DiskTotal         uint64  `json:"disk_total,omitempty"`
 	NetTrafficSent    uint64  `json:"net_traffic_sent,omitempty"`
 	NetTrafficRecv    uint64  `json:"net_traffic_recv,omitempty"`
 	NetTrafficTotal   uint64  `json:"net_traffic_total,omitempty"`

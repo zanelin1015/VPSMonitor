@@ -284,6 +284,8 @@ func sanitizeAreaManagerSummary(summary model.VPSSummary) model.VPSSummary {
 		NetTrafficTotal: summary.NetTrafficTotal,
 		NetIOUp:         summary.NetIOUp,
 		NetIODown:       summary.NetIODown,
+		DiskUsed:        summary.DiskUsed,
+		DiskTotal:       summary.DiskTotal,
 	}
 }
 

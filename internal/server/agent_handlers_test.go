@@ -189,6 +189,72 @@ func TestHandleAgentConfigMergesCollectedRealmSnapshotForAdmin(t *testing.T) {
 	}
 }
 
+func TestHandleAgentConfigUpdateRequestsImmediateClientApply(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+
+	if err := sqliteStore.EnsureAdminAccount("admin", "password123"); err != nil {
+		t.Fatalf("EnsureAdminAccount: %v", err)
+	}
+	admin, ok, err := sqliteStore.AuthenticateAdmin("admin", "password123")
+	if err != nil || !ok {
+		t.Fatalf("AuthenticateAdmin ok=%v err=%v", ok, err)
+	}
+	token, _, err := sqliteStore.CreateAdminSession(admin, time.Hour)
+	if err != nil {
+		t.Fatalf("CreateAdminSession: %v", err)
+	}
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "gz", AgentName: "Guangzhou"}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+
+	app := &App{store: sqliteStore, realtime: newRealtimeHub()}
+	controlSession := app.realtime.registerAgentControl("gz")
+	defer app.realtime.unregisterAgentControl("gz", controlSession)
+
+	body, err := json.Marshal(model.ManagedAgentConfig{
+		AgentID:   "gz",
+		AgentName: "Guangzhou",
+		Entry: model.AgentEntryConfig{
+			PortForwarding: model.RealmForwardConfig{
+				Enabled:     true,
+				Backend:     "realm",
+				ConfigPath:  "/etc/realm/config.toml",
+				ServiceName: "realm",
+				Rules: []model.RealmForwardRule{{
+					Enabled:       true,
+					ListenPort:    20003,
+					TargetAddress: "47.239.135.242",
+					TargetPort:    20003,
+					Network:       "both",
+				}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal config: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/agents/gz/config", bytes.NewReader(body))
+	req.AddCookie(&http.Cookie{Name: adminSessionCookieName, Value: token})
+	rec := httptest.NewRecorder()
+
+	app.handleAgentConfig(rec, req, "gz")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("handleAgentConfig status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	select {
+	case message := <-controlSession.ch:
+		if message.Type != model.AgentControlCollectNow {
+			t.Fatalf("expected collect_now control message, got %#v", message)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected config update to request immediate client apply")
+	}
+}
+
 func TestSyncRealmConfigFromSnapshotPersistsMachineRealmConfig(t *testing.T) {
 	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
 	if err != nil {

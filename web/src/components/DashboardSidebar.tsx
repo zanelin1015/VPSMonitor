@@ -21,6 +21,7 @@ import {
   xrayIssueLabel,
 } from '../lib/appHelpers'
 import {
+  calculateDiskPercent,
   calculateMemoryPercent,
   calculateTrafficStatus,
   clampMetricPercent,
@@ -1458,6 +1459,7 @@ function AgentRailItem(props: {
     : `${trafficStatus.total.label} · 上传 ${formatBytes(trafficStatus.upload.used)} · 下载 ${formatBytes(trafficStatus.download.used)}`
   const cpuPercent = clampMetricPercent(item.summary.cpu)
   const memPercent = calculateMemoryPercent(item.summary)
+  const diskPercent = calculateDiskPercent(item.summary)
   const displayStatus = agentDisplayStatus(item)
   const statusLevel = displayStatus.level
   const showStatusText = statusLevel !== 'ok'
@@ -1537,7 +1539,7 @@ function AgentRailItem(props: {
               </div>
             </div>
             <div className="agent-list-metrics">
-              {!restrictedView ? <AgentMeters item={item} cpuPercent={cpuPercent} memPercent={memPercent} showNetwork={false} /> : null}
+              {!restrictedView ? <AgentMeters item={item} cpuPercent={cpuPercent} memPercent={memPercent} diskPercent={diskPercent} showNetwork={false} /> : null}
               <AgentFlowProgress renewalStatus={restrictedView ? null : renewalStatus} trafficLabel={trafficTotalLabel} trafficValue={trafficSummaryValue} trafficStatus={trafficStatus} restrictedView={restrictedView} />
             </div>
           </>
@@ -1561,7 +1563,7 @@ function AgentRailItem(props: {
             <AgentRailTags item={item} tags={tags} restrictedView={restrictedView} />
             {!restrictedView ? <AgentRailRuntime item={item} /> : null}
             {!restrictedView ? <div className="agent-meter-grid">
-              <AgentMeters item={item} cpuPercent={cpuPercent} memPercent={memPercent} />
+              <AgentMeters item={item} cpuPercent={cpuPercent} memPercent={memPercent} diskPercent={diskPercent} />
             </div> : null}
             <div className="agent-traffic-grid">
               <AgentFlowProgress renewalStatus={restrictedView ? null : renewalStatus} trafficLabel={trafficTotalLabel} trafficValue={trafficSummaryValue} trafficStatus={trafficStatus} restrictedView={restrictedView} />
@@ -1711,12 +1713,13 @@ function formatClientPlatform(item: DashboardAgentView) {
   return [displayClientSystem(item), item.client_os, item.client_arch].filter(Boolean).join(' / ')
 }
 
-function AgentMeters(props: { item: DashboardAgentView; cpuPercent: number; memPercent: number; showNetwork?: boolean }) {
-  const { item, cpuPercent, memPercent, showNetwork = true } = props
+function AgentMeters(props: { item: DashboardAgentView; cpuPercent: number; memPercent: number; diskPercent: number; showNetwork?: boolean }) {
+  const { item, cpuPercent, memPercent, diskPercent, showNetwork = true } = props
   return (
     <>
       <MiniProgress label="CPU" value={formatPercent(cpuPercent)} percent={cpuPercent} level={metricLevel(cpuPercent)} />
       <MiniProgress label="内存" value={formatMem(item.summary.mem_used, item.summary.mem_total)} percent={memPercent} level={metricLevel(memPercent)} />
+      <MiniProgress label="硬盘" value={formatMem(item.summary.disk_used, item.summary.disk_total)} percent={diskPercent} level={metricLevel(diskPercent)} />
       {showNetwork ? <MiniProgress label="上行" value={formatSpeed(item.summary.net_io_up)} level="neutral" /> : null}
       {showNetwork ? <MiniProgress label="下行" value={formatSpeed(item.summary.net_io_down)} level="neutral" /> : null}
     </>

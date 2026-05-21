@@ -264,6 +264,8 @@ function mergeRealtimeSummary(current: VPSSummary, realtime: VPSSummary): VPSSum
     cpu: realtime.cpu ?? current.cpu,
     mem_used: realtime.mem_total ? realtime.mem_used : current.mem_used,
     mem_total: realtime.mem_total || current.mem_total,
+    disk_used: realtime.disk_total ? realtime.disk_used : current.disk_used,
+    disk_total: realtime.disk_total || current.disk_total,
     net_traffic_sent: realtime.net_traffic_sent ?? current.net_traffic_sent,
     net_traffic_recv: realtime.net_traffic_recv ?? current.net_traffic_recv,
     net_traffic_total: realtime.net_traffic_total ?? current.net_traffic_total,
@@ -1990,7 +1992,7 @@ function summarizeAgent(summary?: VPSSummary): string {
   if (!summary) {
     return '-'
   }
-  return `${formatPercent(summary.cpu)} CPU · ${formatMem(summary.mem_used, summary.mem_total)}`
+  return `${formatPercent(summary.cpu)} CPU · ${formatMem(summary.mem_used, summary.mem_total)} · 硬盘 ${formatMem(summary.disk_used, summary.disk_total)}`
 }
 export {
   APIError,

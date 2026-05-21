@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"bridge-core/internal/model"
@@ -31,6 +32,10 @@ func sampleSystemMetrics(s *systemMetricsSampler) model.VPSSummary {
 	if memUsed, memTotal, ok := readMemUsage(); ok {
 		summary.MemUsed = memUsed
 		summary.MemTotal = memTotal
+	}
+	if diskUsed, diskTotal, ok := readDiskUsage(); ok {
+		summary.DiskUsed = diskUsed
+		summary.DiskTotal = diskTotal
 	}
 	if net, ok := readNetCounters(); ok {
 		now := time.Now()
@@ -114,6 +119,91 @@ func readMemUsage() (uint64, uint64, bool) {
 		availableKB = totalKB
 	}
 	return (totalKB - availableKB) * 1024, totalKB * 1024, true
+}
+
+func readDiskUsage() (uint64, uint64, bool) {
+	if used, total, ok := readMountedDiskUsage("/proc/self/mounts"); ok {
+		return used, total, true
+	}
+	return readDiskUsagePath("/")
+}
+
+func readMountedDiskUsage(mountsPath string) (uint64, uint64, bool) {
+	file, err := os.Open(mountsPath)
+	if err != nil {
+		return 0, 0, false
+	}
+	defer file.Close()
+
+	var total uint64
+	var free uint64
+	seen := map[string]struct{}{}
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 3 {
+			continue
+		}
+		source, mountPoint, fsType := fields[0], unescapeMountPath(fields[1]), fields[2]
+		if !isLocalDiskMount(source, fsType) {
+			continue
+		}
+		if _, ok := seen[source]; ok {
+			continue
+		}
+		info, err := os.Stat(mountPoint)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		usedBytes, totalBytes, ok := readDiskUsagePath(mountPoint)
+		if !ok || totalBytes == 0 || usedBytes > totalBytes {
+			continue
+		}
+		seen[source] = struct{}{}
+		total += totalBytes
+		free += totalBytes - usedBytes
+	}
+	if total == 0 {
+		return 0, 0, false
+	}
+	if free > total {
+		free = total
+	}
+	return total - free, total, true
+}
+
+func readDiskUsagePath(path string) (uint64, uint64, bool) {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(path, &stat); err != nil {
+		return 0, 0, false
+	}
+	blockSize := uint64(stat.Bsize)
+	total := stat.Blocks * blockSize
+	free := stat.Bfree * blockSize
+	if total == 0 {
+		return 0, 0, false
+	}
+	if free > total {
+		free = total
+	}
+	return total - free, total, true
+}
+
+func isLocalDiskMount(source, fsType string) bool {
+	if strings.HasPrefix(source, "/dev/") {
+		return true
+	}
+	switch fsType {
+	case "ext2", "ext3", "ext4", "xfs", "btrfs", "f2fs", "zfs":
+		return true
+	default:
+		return false
+	}
+}
+
+func unescapeMountPath(value string) string {
+	replacer := strings.NewReplacer(`\040`, " ", `\011`, "\t", `\012`, "\n", `\134`, `\`)
+	return replacer.Replace(value)
 }
 
 func readNetCounters() (netCounters, bool) {

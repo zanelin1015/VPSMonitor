@@ -156,6 +156,13 @@ export function calculateMemoryPercent(summary?: VPSSummary): number {
   return clampMetricPercent(((summary.mem_used || 0) / summary.mem_total) * 100)
 }
 
+export function calculateDiskPercent(summary?: VPSSummary): number {
+  if (!summary?.disk_total) {
+    return 0
+  }
+  return clampMetricPercent(((summary.disk_used || 0) / summary.disk_total) * 100)
+}
+
 export function metricLevel(percent: number): 'ok' | 'warn' | 'bad' {
   if (percent >= 90) {
     return 'bad'

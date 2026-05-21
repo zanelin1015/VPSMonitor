@@ -294,6 +294,10 @@ func mergeRealtimeSummary(target *model.VPSSummary, source model.VPSSummary) {
 		target.MemUsed = source.MemUsed
 		target.MemTotal = source.MemTotal
 	}
+	if source.DiskTotal > 0 {
+		target.DiskUsed = source.DiskUsed
+		target.DiskTotal = source.DiskTotal
+	}
 	target.NetIOUp = source.NetIOUp
 	target.NetIODown = source.NetIODown
 	if source.NetTrafficSent > 0 || source.NetTrafficRecv > 0 || source.NetTrafficTotal > 0 {
