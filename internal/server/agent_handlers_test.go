@@ -15,7 +15,7 @@ import (
 	"bridge-core/internal/store"
 )
 
-func TestHandleRegisterSeedsDefaultXUIBootstrap(t *testing.T) {
+func TestHandleRegisterDoesNotSeedDefaultXUIBootstrap(t *testing.T) {
 	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore: %v", err)
@@ -61,17 +61,11 @@ func TestHandleRegisterSeedsDefaultXUIBootstrap(t *testing.T) {
 	if !found {
 		t.Fatalf("expected registered agent config")
 	}
-	if !cfg.XUI.Enabled || !cfg.XUI.AutoInstall {
-		t.Fatalf("expected x-ui bootstrap to be enabled: %#v", cfg.XUI)
+	if cfg.XUI.Enabled || cfg.XUI.AutoInstall || cfg.XUI.BaseURL != "" || cfg.XUI.Username != "" || cfg.XUI.Password != "" {
+		t.Fatalf("expected x-ui bootstrap seed to stay disabled, got %#v", cfg.XUI)
 	}
-	if cfg.XUI.BaseURL != "http://127.0.0.1:2053/xui/" || cfg.XUI.Username != "admin" || cfg.XUI.Password != "secret" {
-		t.Fatalf("unexpected x-ui bootstrap config: %#v", cfg.XUI)
-	}
-	if cfg.XUI.DBPath != config.DefaultXUIDBPath {
-		t.Fatalf("expected default x-ui db path to be saved in VPS management config, got %#v", cfg.XUI)
-	}
-	if cfg.XUI.InstallScriptURL != "https://example.com/3x-ui.sh" || cfg.XUI.PanelPort != 2053 || cfg.XUI.WebPath != "/xui/" {
-		t.Fatalf("unexpected x-ui bootstrap install settings: %#v", cfg.XUI)
+	if cfg.XUI.DBPath != "" || cfg.XUI.InstallScriptURL != "" || cfg.XUI.PanelPort != 0 || cfg.XUI.WebPath != "" {
+		t.Fatalf("expected x-ui bootstrap install settings to stay empty, got %#v", cfg.XUI)
 	}
 }
 
@@ -218,6 +212,13 @@ func TestHandleAgentConfigUpdateRequestsImmediateClientApply(t *testing.T) {
 	body, err := json.Marshal(model.ManagedAgentConfig{
 		AgentID:   "gz",
 		AgentName: "Guangzhou",
+		XUI: config.XUIConfig{
+			Enabled:          true,
+			AutoInstall:      true,
+			InstallScriptURL: "https://example.com/3x-ui.sh",
+			PanelPort:        2053,
+			WebPath:          "/xui/",
+		},
 		Entry: model.AgentEntryConfig{
 			PortForwarding: model.RealmForwardConfig{
 				Enabled:     true,
@@ -244,6 +245,13 @@ func TestHandleAgentConfigUpdateRequestsImmediateClientApply(t *testing.T) {
 	app.handleAgentConfig(rec, req, "gz")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("handleAgentConfig status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var saved model.ManagedAgentConfig
+	if err := json.NewDecoder(rec.Body).Decode(&saved); err != nil {
+		t.Fatalf("Decode config: %v", err)
+	}
+	if saved.XUI.AutoInstall || saved.XUI.InstallScriptURL != "" || saved.XUI.PanelPort != 0 || saved.XUI.WebPath != "" {
+		t.Fatalf("expected x-ui auto install fields to be disabled on save, got %#v", saved.XUI)
 	}
 	select {
 	case message := <-controlSession.ch:

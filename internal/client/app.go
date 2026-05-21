@@ -66,10 +66,10 @@ func (a *App) RunOnce(ctx context.Context) error {
 		return err
 	}
 	effectiveConfig.Entry = mergeLocalRealmConfigIntoEntry(effectiveConfig.Entry)
-	a.ensureXUIBootstrapIfNeeded(ctx, effectiveConfig.XUI)
-	a.executePendingXUIActions(ctx, effectiveConfig)
 	a.applyNetworkPolicyIfNeeded(ctx, effectiveConfig.Entry.NetworkPolicy)
 	a.applyRealmForwardingIfNeeded(ctx, effectiveConfig.Entry.PortForwarding)
+	a.ensureXUIBootstrapIfNeeded(ctx, effectiveConfig.XUI)
+	a.executePendingXUIActions(ctx, effectiveConfig)
 	snapshot := a.collect(ctx, effectiveConfig)
 	return a.pushSnapshot(ctx, snapshot)
 }

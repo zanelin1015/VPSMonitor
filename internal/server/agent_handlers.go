@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"bridge-core/internal/config"
 	"bridge-core/internal/dashboard"
 	"bridge-core/internal/model"
 	"bridge-core/internal/realmconfig"
@@ -52,28 +51,9 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) applyDefaultXUIBootstrap(req *model.AgentRegisterRequest) {
-	settings, found, err := a.store.GetClientInstallSettings()
-	if err != nil || !found || !settings.XUIAutoInstall || registerSeedHasXUIConfig(req.SeedConfig.XUI) {
-		return
-	}
-	panelPort := settings.XUIPanelPort
-	if panelPort <= 0 {
-		return
-	}
-	webPath := normalizeXUIWebPath(settings.XUIWebPath)
-	req.SeedConfig.XUI.Enabled = true
-	req.SeedConfig.XUI.BaseURL = fmt.Sprintf("http://127.0.0.1:%d%s", panelPort, webPath)
-	req.SeedConfig.XUI.DBPath = config.DefaultXUIDBPathForOS(req.OS)
-	req.SeedConfig.XUI.Username = settings.XUIUsername
-	req.SeedConfig.XUI.Password = settings.XUIPassword
-	req.SeedConfig.XUI.AutoInstall = true
-	req.SeedConfig.XUI.InstallScriptURL = firstNonEmptyString(settings.XUIInstallScriptURL, defaultXUIInstallScriptURL)
-	req.SeedConfig.XUI.PanelPort = panelPort
-	req.SeedConfig.XUI.WebPath = webPath
-}
-
-func registerSeedHasXUIConfig(cfg config.XUIConfig) bool {
-	return cfg.Enabled || cfg.BaseURL != "" || cfg.Username != "" || cfg.Password != "" || cfg.APIToken != "" || cfg.TwoFactorCode != "" || cfg.SkipTLSVerify || cfg.AutoInstall
+	// x-ui auto-install is currently disabled globally. Do not seed new clients
+	// with auto_install even if old install settings still have it enabled.
+	_ = req
 }
 
 func latestSnapshotsByAgent(snapshots []model.AgentSnapshot) map[string]model.AgentSnapshot {
@@ -554,6 +534,7 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 		} else {
 			cfg = a.hydrateRealmForwardTargets(cfg)
 		}
+		cfg = disableXUIAutoInstall(cfg)
 		writeJSON(w, http.StatusOK, cfg)
 	case http.MethodPut:
 		user, _, ok := a.requireRootAdmin(w, r)
@@ -588,6 +569,7 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 			}
 			cfg.CustomerDisplayName = existing.CustomerDisplayName
 		}
+		cfg = disableXUIAutoInstall(cfg)
 		record, err := a.store.UpdateAgentConfigWithActor(agentID, cfg, user.Username)
 		if err != nil {
 			if err.Error() == "agent not found" {
@@ -598,10 +580,18 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 			return
 		}
 		a.requestAgentConfigApply(agentID)
-		writeJSON(w, http.StatusOK, record.Config)
+		writeJSON(w, http.StatusOK, disableXUIAutoInstall(record.Config))
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func disableXUIAutoInstall(cfg model.ManagedAgentConfig) model.ManagedAgentConfig {
+	cfg.XUI.AutoInstall = false
+	cfg.XUI.InstallScriptURL = ""
+	cfg.XUI.PanelPort = 0
+	cfg.XUI.WebPath = ""
+	return cfg
 }
 
 func (a *App) requestAgentConfigApply(agentID string) bool {

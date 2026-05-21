@@ -212,16 +212,9 @@ func (a *App) clientInstallInfo(r *http.Request, settings model.ClientInstallSet
 		PollInterval:          pollInterval,
 		RequestTimeoutSeconds: requestTimeoutSeconds,
 		ServerSkipTLSVerify:   settings.ServerSkipTLSVerify,
-		XUIAutoInstall:        settings.XUIAutoInstall,
-		XUIUsername:           settings.XUIUsername,
-		XUIPassword:           settings.XUIPassword,
-		XUIPanelPort:          settings.XUIPanelPort,
-		XUIWebPath:            settings.XUIWebPath,
-		XUIInstallScriptURL:   firstNonEmptyString(settings.XUIInstallScriptURL, defaultXUIInstallScriptURL),
+		XUIAutoInstall:        false,
 	}
 }
-
-const defaultXUIInstallScriptURL = "https://raw.githubusercontent.com/MHSanaei/3x-ui/master/install.sh"
 
 func validateClientInstallSettings(req model.ClientInstallSettingsRequest) (model.ClientInstallSettingsRequest, error) {
 	req.ServerURL = strings.TrimSpace(req.ServerURL)
@@ -231,6 +224,12 @@ func validateClientInstallSettings(req model.ClientInstallSettingsRequest) (mode
 	req.XUIPassword = strings.TrimSpace(req.XUIPassword)
 	req.XUIInstallScriptURL = strings.TrimSpace(req.XUIInstallScriptURL)
 	req.XUIWebPath = normalizeXUIWebPath(req.XUIWebPath)
+	req.XUIAutoInstall = false
+	req.XUIUsername = ""
+	req.XUIPassword = ""
+	req.XUIPanelPort = 0
+	req.XUIWebPath = ""
+	req.XUIInstallScriptURL = ""
 	if req.ServerURL == "" {
 		return req, fmt.Errorf("server url is required")
 	}
@@ -251,23 +250,6 @@ func validateClientInstallSettings(req model.ClientInstallSettingsRequest) (mode
 	}
 	if req.RequestTimeoutSeconds <= 0 {
 		req.RequestTimeoutSeconds = 15
-	}
-	if req.XUIAutoInstall {
-		if req.XUIUsername == "" {
-			return req, fmt.Errorf("x-ui username is required")
-		}
-		if req.XUIPassword == "" {
-			return req, fmt.Errorf("x-ui password is required")
-		}
-		if req.XUIPanelPort <= 0 || req.XUIPanelPort > 65535 {
-			return req, fmt.Errorf("x-ui panel port must be 1-65535")
-		}
-		if req.XUIInstallScriptURL == "" {
-			req.XUIInstallScriptURL = defaultXUIInstallScriptURL
-		}
-		if err := validateHTTPURL(req.XUIInstallScriptURL, "x-ui install script url"); err != nil {
-			return req, err
-		}
 	}
 	return req, nil
 }

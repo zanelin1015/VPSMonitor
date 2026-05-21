@@ -11,14 +11,17 @@ export function renderGlobalOverviewPanel(props: {
   selectedTag: string
   links: TopologyLinkView[]
   onSelectTag: (value: string) => void
+  scopeAgentID?: string
   scopeAgentName?: string
 }) {
-  const { dashboardView, selectedTag, links, onSelectTag, scopeAgentName } = props
+  const { dashboardView, selectedTag, links, onSelectTag, scopeAgentID, scopeAgentName } = props
 
   if (!dashboardView) {
     return <Empty description="暂无总览数据" />
   }
   const scoped = Boolean(scopeAgentName)
+  const scopedAgent = scopeAgentID ? dashboardView.agents.find((agent) => agent.agent_id === scopeAgentID) : undefined
+  const scopedRealmRules = (scopedAgent?.entry?.port_forwarding?.rules || []).filter((rule) => rule.enabled !== false)
 
   return (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -26,7 +29,7 @@ export function renderGlobalOverviewPanel(props: {
         type="info"
         showIcon
         message={scoped ? `${scopeAgentName} 链路明细` : '链路明细'}
-        description={scoped ? `这里只显示当前选中 Client 相关的标签和已匹配链路。页面会每 ${Math.floor(DASHBOARD_AUTO_REFRESH_MS / 1000)} 秒自动刷新一次统计与匹配结果。` : `这里保留标签分组、已自动匹配链路和客户端转发链明细。页面会每 ${Math.floor(DASHBOARD_AUTO_REFRESH_MS / 1000)} 秒自动刷新一次统计与匹配结果。`}
+        description={scoped ? `这里显示当前选中 Client 相关的标签、Realm 原始转发和已匹配链路。页面会每 ${Math.floor(DASHBOARD_AUTO_REFRESH_MS / 1000)} 秒自动刷新一次统计与匹配结果。` : `这里保留标签分组、已自动匹配链路和客户端转发链明细。页面会每 ${Math.floor(DASHBOARD_AUTO_REFRESH_MS / 1000)} 秒自动刷新一次统计与匹配结果。`}
       />
 
       <Card className="config-section-card" bordered={false}>
@@ -46,6 +49,39 @@ export function renderGlobalOverviewPanel(props: {
           ))}
         </Space>
       </Card>
+
+      {scoped ? (
+        <Card className="config-section-card" bordered={false}>
+          <Title level={4}>当前 Client Realm 原始转发</Title>
+          {scopedRealmRules.length ? (
+            <div className="topology-link-list">
+              {scopedRealmRules.map((rule, index) => (
+                <section key={rule.id || `${rule.listen_port || 0}-${rule.target_address || ''}-${rule.target_port || 0}-${index}`} className="topology-link-card">
+                  <div className="topology-link-row">
+                    <Text strong>{rule.name || rule.id || `realm ${rule.listen_port || '-'}`}</Text>
+                    <Tag color="gold">{formatRealmRuleEndpoint(rule.listen_address || '0.0.0.0', rule.listen_port)}</Tag>
+                    <span className="topology-arrow">→</span>
+                    <Text strong>{formatRealmRuleEndpoint(rule.target_address || '-', rule.target_port)}</Text>
+                    <Tag color="cyan">{realmNetworkLabel(rule.network)}</Tag>
+                  </div>
+                  <div className="muted-line">
+                    这部分来自 Client 托管配置 / VPS 上报的 realm config；即使目标端口暂时没有匹配到 x-ui 节点，也会显示在这里。
+                  </div>
+                  {rule.target_agent_id || rule.note ? (
+                    <div className="muted-line">
+                      {rule.target_agent_id ? `目标 Client: ${rule.target_agent_id}` : ''}
+                      {rule.target_agent_id && rule.note ? ' · ' : ''}
+                      {rule.note || ''}
+                    </div>
+                  ) : null}
+                </section>
+              ))}
+            </div>
+          ) : (
+            <Empty description="当前 Client 暂无 Realm 转发配置" />
+          )}
+        </Card>
+      ) : null}
 
       <Card className="config-section-card" bordered={false}>
         <Title level={4}>{scoped ? '当前 Client 已匹配链路' : '跨 Client 已匹配链路'}</Title>
@@ -81,6 +117,18 @@ export function renderGlobalOverviewPanel(props: {
       </Card>
     </Space>
   )
+}
+
+function formatRealmRuleEndpoint(host?: string, port?: number): string {
+  const normalizedHost = (host || '').trim() || '-'
+  return port ? `${normalizedHost}:${port}` : normalizedHost
+}
+
+function realmNetworkLabel(network?: string): string {
+  const value = (network || '').trim().toLowerCase()
+  if (value === 'udp') return 'UDP'
+  if (value === 'tcp') return 'TCP'
+  return 'TCP + UDP'
 }
 
 export function renderCNFlowPanel(props: {

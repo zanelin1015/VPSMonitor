@@ -800,6 +800,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
                 selectedTag,
                 links: currentAgentLinks,
                 onSelectTag: (value) => onSelectTag(value),
+                scopeAgentID: selectedAgentId,
                 scopeAgentName: selectedAgent.agent_name || selectedAgent.agent_id,
               }),
             },

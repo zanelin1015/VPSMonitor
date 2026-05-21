@@ -6,7 +6,6 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"time"
 
 	"bridge-core/internal/config"
 )
@@ -92,19 +91,9 @@ func normalizeXUIBootstrapPath(value string) string {
 }
 
 func (a *App) ensureXUIBootstrapIfNeeded(ctx context.Context, cfg config.XUIConfig) {
-	if !cfg.AutoInstall {
-		return
-	}
-	sig := xuiBootstrapSignature(cfg)
-	if sig == "" || sig == a.xuiBootstrapSignature {
-		return
-	}
-	bootstrapCtx, cancel := context.WithTimeout(ctx, 20*time.Minute)
-	defer cancel()
-	if err := a.ensureXUIBootstrap(bootstrapCtx, cfg); err != nil {
-		return
-	}
-	a.xuiBootstrapSignature = sig
+	// x-ui auto-install is disabled: existing configs may still carry the flag,
+	// but clients must not trigger unattended 3x-ui installers anymore.
+	_, _ = ctx, cfg
 }
 
 func xuiBootstrapSignature(cfg config.XUIConfig) string {

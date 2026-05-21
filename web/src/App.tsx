@@ -1295,12 +1295,7 @@ export default function App() {
           poll_interval: clientInstallForm.poll_interval,
           request_timeout_seconds: clientInstallForm.request_timeout_seconds,
           server_skip_tls_verify: clientInstallForm.server_skip_tls_verify,
-          xui_auto_install: clientInstallForm.xui_auto_install,
-          xui_username: clientInstallForm.xui_username,
-          xui_password: clientInstallForm.xui_password,
-          xui_panel_port: clientInstallForm.xui_panel_port,
-          xui_web_path: clientInstallForm.xui_web_path,
-          xui_install_script_url: clientInstallForm.xui_install_script_url,
+          xui_auto_install: false,
         }),
       })
       setClientInstallForm(normalizeClientInstallCommandForm(data))

@@ -56,24 +56,35 @@ func executeRemoteCommandWithOptions(ctx context.Context, payload map[string]any
 	commandCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(commandCtx, name, args...)
+	cmd := exec.Command(name, args...)
+	prepareCommandProcessGroup(cmd)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	err = cmd.Run()
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Run()
+	}()
+	var runErr error
+	select {
+	case runErr = <-done:
+	case <-commandCtx.Done():
+		killCommandProcessGroup(cmd)
+		runErr = <-done
+	}
 	duration := time.Since(started)
 
 	exitCode := 0
-	if err != nil {
+	if runErr != nil {
 		exitCode = -1
 		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if errors.As(runErr, &exitErr) {
 			exitCode = exitErr.ExitCode()
 		}
 	}
 	if commandCtx.Err() != nil {
-		err = commandCtx.Err()
+		runErr = commandCtx.Err()
 	}
 
 	result := map[string]any{
@@ -91,8 +102,8 @@ func executeRemoteCommandWithOptions(ctx context.Context, payload map[string]any
 		result["run_as"] = current.Username
 		result["uid"] = current.Uid
 	}
-	if err != nil {
-		return result, fmt.Errorf("command exited with code %d: %w", exitCode, err)
+	if runErr != nil {
+		return result, fmt.Errorf("command exited with code %d: %w", exitCode, runErr)
 	}
 	return result, nil
 }

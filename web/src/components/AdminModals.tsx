@@ -219,42 +219,6 @@ export function ClientInstallModal(props: {
               </div>
             </Col>
           </Row>
-          <Divider orientation="left">VPS 初始化：自动安装 x-ui</Divider>
-          <Alert
-            type="info"
-            showIcon
-            message="新 Client 首次注册后会继承这里的 x-ui 初始化配置"
-            description="开启后，Linux VPS 上的 client 会自动安装 3x-ui，并统一配置后台账号、密码、端口和 web path。已单独配置过 x-ui 的 client 不会被覆盖。"
-          />
-          <Row gutter={[14, 14]}>
-            <Col xs={24} md={8}>
-              <Text type="secondary">自动安装 x-ui</Text>
-              <div className="client-install-switch">
-                <Switch checked={form.xui_auto_install} onChange={(checked) => update({ xui_auto_install: checked })} />
-                <Text type="secondary">仅 Linux VPS 生效</Text>
-              </div>
-            </Col>
-            <Col xs={24} md={8}>
-              <Text type="secondary">x-ui 账号</Text>
-              <Input value={form.xui_username} placeholder="admin" disabled={!form.xui_auto_install} onChange={(event) => update({ xui_username: event.target.value })} />
-            </Col>
-            <Col xs={24} md={8}>
-              <Text type="secondary">x-ui 密码</Text>
-              <Input.Password value={form.xui_password} placeholder="建议使用强密码" disabled={!form.xui_auto_install} onChange={(event) => update({ xui_password: event.target.value })} />
-            </Col>
-            <Col xs={24} md={8}>
-              <Text type="secondary">面板端口</Text>
-              <InputNumber style={{ width: '100%' }} min={1} max={65535} value={form.xui_panel_port} disabled={!form.xui_auto_install} onChange={(value) => update({ xui_panel_port: Number(value || 2053) })} />
-            </Col>
-            <Col xs={24} md={8}>
-              <Text type="secondary">Web Path</Text>
-              <Input value={form.xui_web_path} placeholder="/xui/" disabled={!form.xui_auto_install} onChange={(event) => update({ xui_web_path: event.target.value })} />
-            </Col>
-            <Col xs={24} md={8}>
-              <Text type="secondary">3x-ui 安装脚本</Text>
-              <Input value={form.xui_install_script_url} disabled={!form.xui_auto_install} onChange={(event) => update({ xui_install_script_url: event.target.value })} />
-            </Col>
-          </Row>
           <Tabs
             activeKey={commandKind}
             onChange={(key) => onCommandKindChange(key as ClientInstallCommandKind)}
