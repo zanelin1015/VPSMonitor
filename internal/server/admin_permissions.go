@@ -165,7 +165,8 @@ func (a *App) sanitizeXUIOverviewForAdmin(user model.AdminUser, overview *model.
 	clientScope := a.areaManagerClientScope(user)
 	filteredClients := make([]model.XUIClientView, 0, len(overview.Clients))
 	for _, client := range overview.Clients {
-		if !clientScope.allowsClient(overview.AgentID, client.InboundID, client.InboundTag, client.Email) {
+		if !clientScope.allowsClient(overview.AgentID, client.InboundID, client.InboundTag, client.Email) &&
+			!a.areaManagerCanViewRealmForwardedClient(user, overview.AgentID, client, clientScope) {
 			continue
 		}
 		client.TotalGB = 0
@@ -204,6 +205,24 @@ func (a *App) sanitizeXUIOverviewForAdmin(user model.AdminUser, overview *model.
 		overview.Outbounds[index].Target = redactEndpointIP(overview.Outbounds[index].Target)
 		overview.Outbounds[index].SendThrough = ""
 	}
+}
+
+func (a *App) areaManagerCanViewRealmForwardedClient(user model.AdminUser, sourceAgentID string, client model.XUIClientView, clientScope areaManagerClientScope) bool {
+	if client.RealmSourceAgentID == "" || !strings.EqualFold(client.RealmSourceAgentID, sourceAgentID) {
+		return false
+	}
+	if !a.adminCanAccessAgent(user, sourceAgentID) {
+		return false
+	}
+	listenPort := client.RealmListenPort
+	if listenPort <= 0 {
+		listenPort = client.InboundID
+	}
+	if listenPort <= 0 {
+		return false
+	}
+	return clientScope.allowsClient(sourceAgentID, listenPort, client.InboundTag, client.Email) ||
+		clientScope.allowsClient(sourceAgentID, listenPort, "", client.Email)
 }
 
 func (a *App) sanitizeXUIOverviewForAreaAssignment(user model.AdminUser, overview *model.XUIOverview) {

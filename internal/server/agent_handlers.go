@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"bridge-core/internal/dashboard"
 	"bridge-core/internal/model"
@@ -126,16 +127,69 @@ func (a *App) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agents, err := a.store.ListAgents()
+	view, err := a.dashboardViewForAdmin(user)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	agents = a.filterAgentRecordsForAdmin(user, agents)
-	view := dashboard.BuildGlobalDashboard(agents, a.filterSnapshotsForAdmin(user, a.store.ListLatest()))
-	a.realtime.applyToDashboard(&view)
-	a.sanitizeDashboardForAdmin(user, &view)
 	writeJSON(w, http.StatusOK, view)
+}
+
+func (a *App) dashboardViewForAdmin(user model.AdminUser) (model.GlobalDashboardView, error) {
+	cacheKey := dashboardCacheKey(user)
+	now := time.Now()
+
+	a.dashboardCacheMu.Lock()
+	if a.dashboardCache == nil {
+		a.dashboardCache = make(map[string]dashboardCacheEntry)
+	}
+	if entry, ok := a.dashboardCache[cacheKey]; ok && now.Before(entry.expiresAt) {
+		view, err := cloneDashboardView(entry.view)
+		a.dashboardCacheMu.Unlock()
+		return view, err
+	}
+	a.dashboardCacheMu.Unlock()
+
+	agents, snapshots, err := a.store.ListAgentsWithLatestSnapshots()
+	if err != nil {
+		return model.GlobalDashboardView{}, err
+	}
+	agents = a.filterAgentRecordsForAdmin(user, agents)
+	snapshots = a.filterSnapshotsForAdmin(user, snapshots)
+
+	view := dashboard.BuildGlobalDashboard(agents, snapshots)
+	if a.realtime != nil {
+		a.realtime.applyToDashboard(&view)
+	}
+	a.sanitizeDashboardForAdmin(user, &view)
+
+	cachedView, err := cloneDashboardView(view)
+	if err != nil {
+		return view, nil
+	}
+	a.dashboardCacheMu.Lock()
+	a.dashboardCache[cacheKey] = dashboardCacheEntry{
+		expiresAt: time.Now().Add(dashboardCacheTTL),
+		view:      cachedView,
+	}
+	a.dashboardCacheMu.Unlock()
+	return view, nil
+}
+
+func dashboardCacheKey(user model.AdminUser) string {
+	return fmt.Sprintf("%s:%d:%s:%d", user.Role, user.ID, user.Username, user.UpdatedAt.UnixNano())
+}
+
+func cloneDashboardView(view model.GlobalDashboardView) (model.GlobalDashboardView, error) {
+	body, err := json.Marshal(view)
+	if err != nil {
+		return model.GlobalDashboardView{}, err
+	}
+	var cloned model.GlobalDashboardView
+	if err := json.Unmarshal(body, &cloned); err != nil {
+		return model.GlobalDashboardView{}, err
+	}
+	return cloned, nil
 }
 
 func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
@@ -392,8 +446,16 @@ func (a *App) appendRealmForwardedImportURLs(agentID string, overview *model.XUI
 			}
 			sourceClient := client
 			sourceClient.ImportURL = rewritten
+			sourceClient.InboundID = rule.ListenPort
 			sourceClient.InboundTag = realmForwardedInboundTag(rule, client)
 			sourceClient.InboundRemark = realmForwardedInboundRemark(sourceAgent, agentMap[targetAgentID], rule, client)
+			sourceClient.IsRealmForwarded = true
+			sourceClient.RealmListenTag = sourceClient.InboundTag
+			sourceClient.RealmSourceAgentID = agentID
+			sourceClient.RealmTargetAgentID = targetAgentID
+			sourceClient.RealmTargetInboundID = client.InboundID
+			sourceClient.RealmTargetInboundTag = client.InboundTag
+			sourceClient.RealmListenPort = rule.ListenPort
 			sourceClient.Route.Note = fmt.Sprintf("Realm 入口 %s:%d -> %s:%d", host, rule.ListenPort, firstNonEmptyString(agentMap[targetAgentID].AgentName, targetAgentID), rule.TargetPort)
 			overview.Clients = append(overview.Clients, sourceClient)
 			added++

@@ -21,6 +21,8 @@ type App struct {
 	demoDataSource     http.Handler
 	exchangeRatesMu    sync.Mutex
 	exchangeRatesCache model.ExchangeRatesResponse
+	dashboardCacheMu   sync.Mutex
+	dashboardCache     map[string]dashboardCacheEntry
 }
 
 const (
@@ -28,7 +30,13 @@ const (
 	adminSessionTTL           = 24 * time.Hour
 	customerSessionCookieName = "bridge_core_customer_session"
 	customerSessionTTL        = 7 * 24 * time.Hour
+	dashboardCacheTTL         = 5 * time.Second
 )
+
+type dashboardCacheEntry struct {
+	expiresAt time.Time
+	view      model.GlobalDashboardView
+}
 
 func New(cfg config.ServerConfig) (*App, error) {
 	cipher, err := store.LoadOrCreateCredentialCipher(cfg.CredentialKeyPath)
@@ -70,6 +78,7 @@ func New(cfg config.ServerConfig) (*App, error) {
 		realtime:       newRealtimeHub(),
 		alerts:         newAlertService(fs),
 		demoDataSource: demoDataSource,
+		dashboardCache: make(map[string]dashboardCacheEntry),
 	}
 	app.alerts.Start()
 	return app, nil

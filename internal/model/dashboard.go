@@ -84,6 +84,14 @@ type XUIClientView struct {
 	TrafficTotal  int64         `json:"traffic_total,omitempty"`
 	LastOnline    int64         `json:"last_online,omitempty"`
 	Route         XUIRouteTrace `json:"route"`
+
+	IsRealmForwarded      bool   `json:"is_realm_forwarded,omitempty"`
+	RealmListenPort       int    `json:"realm_listen_port,omitempty"`
+	RealmListenTag        string `json:"realm_listen_tag,omitempty"`
+	RealmSourceAgentID    string `json:"-"`
+	RealmTargetAgentID    string `json:"-"`
+	RealmTargetInboundID  int    `json:"-"`
+	RealmTargetInboundTag string `json:"-"`
 }
 
 type XUIOutboundView struct {

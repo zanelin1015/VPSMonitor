@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -423,6 +424,11 @@ func nextAgentSortOrderQuery(db queryer) (int, error) {
 }
 
 func (s *SQLiteStore) ListAgents() ([]model.AgentRecord, error) {
+	agents, _, err := s.ListAgentsWithLatestSnapshots()
+	return agents, err
+}
+
+func (s *SQLiteStore) ListAgentsWithLatestSnapshots() ([]model.AgentRecord, []model.AgentSnapshot, error) {
 	rows, err := s.db.Query(`
 		SELECT
 			a.agent_id,
@@ -448,11 +454,12 @@ func (s *SQLiteStore) ListAgents() ([]model.AgentRecord, error) {
 		ORDER BY CASE WHEN a.sort_order > 0 THEN a.sort_order ELSE 2147483647 END ASC, a.created_at ASC, a.agent_id ASC
 	`)
 	if err != nil {
-		return nil, fmt.Errorf("list agents: %w", err)
+		return nil, nil, fmt.Errorf("list agents: %w", err)
 	}
 	defer rows.Close()
 
 	agents := make([]model.AgentRecord, 0)
+	snapshots := make([]model.AgentSnapshot, 0)
 	for rows.Next() {
 		var (
 			record         model.AgentRecord
@@ -487,7 +494,7 @@ func (s *SQLiteStore) ListAgents() ([]model.AgentRecord, error) {
 			&reportedAtText,
 			&snapshotJSON,
 		); err != nil {
-			return nil, fmt.Errorf("scan agent row: %w", err)
+			return nil, nil, fmt.Errorf("scan agent row: %w", err)
 		}
 
 		record.RegisteredAt = parseTime(createdAtText)
@@ -498,7 +505,7 @@ func (s *SQLiteStore) ListAgents() ([]model.AgentRecord, error) {
 		}
 		record.Config, err = s.parseManagedConfig(record.AgentID, record.AgentName, record.CustomerDisplayName, record.SortOrder, tagsJSON, xuiJSON, nezhaJSON, renewalJSON, entryJSON)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		record.Tags = cloneStrings(record.Config.Tags)
 		record.HasConfig = hasManagedConfig(record.Config)
@@ -515,6 +522,7 @@ func (s *SQLiteStore) ListAgents() ([]model.AgentRecord, error) {
 				record.Arch = snapshot.Arch
 				record.SystemVersion = snapshot.SystemVersion
 				record.Summary = snapshot.Summary
+				snapshots = append(snapshots, snapshot)
 				if record.Hostname == "" {
 					record.Hostname = snapshot.Summary.Hostname
 				}
@@ -529,7 +537,10 @@ func (s *SQLiteStore) ListAgents() ([]model.AgentRecord, error) {
 
 		agents = append(agents, record)
 	}
-	return agents, nil
+	sort.Slice(snapshots, func(i, j int) bool {
+		return snapshots[i].ReportedAt.After(snapshots[j].ReportedAt)
+	})
+	return agents, snapshots, nil
 }
 
 func (s *SQLiteStore) loadAgent(agentID string) (model.AgentRecord, bool, error) {
