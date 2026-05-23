@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -31,7 +32,7 @@ func (a *App) handleAdminUpdates(w http.ResponseWriter, r *http.Request, parts [
 		}
 		repo := firstNonEmptyString(r.URL.Query().Get("repo"), "zanelin1015/VPSMonitor")
 		packagePrefix := firstNonEmptyString(r.URL.Query().Get("package_prefix"), "VPSMonitor")
-		latest, err := a.fetchUpdateLatestInfo(repo, packagePrefix)
+		latest, err := a.cachedUpdateLatestInfo(repo, packagePrefix)
 		if err != nil {
 			writeError(w, http.StatusBadGateway, err.Error())
 			return
@@ -72,6 +73,54 @@ func (a *App) handleAdminUpdates(w http.ResponseWriter, r *http.Request, parts [
 	default:
 		writeError(w, http.StatusNotFound, "update route not found")
 	}
+}
+
+func (a *App) cachedUpdateLatestInfo(repo string, packagePrefix string) (*model.UpdateLatestInfo, error) {
+	cacheKey := strings.Trim(strings.TrimSpace(repo), "/") + "|" + firstNonEmptyString(packagePrefix, "VPSMonitor")
+	now := time.Now()
+	a.updateLatestMu.Lock()
+	if a.updateLatestCache == nil {
+		a.updateLatestCache = make(map[string]updateLatestCacheEntry)
+	}
+	if entry, ok := a.updateLatestCache[cacheKey]; ok && entry.info != nil && now.Before(entry.expiresAt) {
+		info := cloneUpdateLatestInfo(entry.info)
+		info.CacheExpiresAt = &entry.expiresAt
+		a.updateLatestMu.Unlock()
+		return info, nil
+	}
+	a.updateLatestMu.Unlock()
+
+	info, err := a.fetchUpdateLatestInfo(repo, packagePrefix)
+	if err != nil {
+		return nil, err
+	}
+	expiresAt := time.Now().Add(updateLatestCacheTTL)
+	a.updateLatestMu.Lock()
+	a.updateLatestCache[cacheKey] = updateLatestCacheEntry{expiresAt: expiresAt, info: cloneUpdateLatestInfo(info)}
+	a.updateLatestMu.Unlock()
+	info.CacheExpiresAt = &expiresAt
+	return info, nil
+}
+
+func cloneUpdateLatestInfo(info *model.UpdateLatestInfo) *model.UpdateLatestInfo {
+	if info == nil {
+		return nil
+	}
+	cloned := *info
+	cloned.Assets = cloneStringSlice(info.Assets)
+	cloned.ServerAssets = cloneStringSlice(info.ServerAssets)
+	cloned.ClientAssets = cloneStringSlice(info.ClientAssets)
+	cloned.AgentStatus = append([]model.UpdateAgentStatus(nil), info.AgentStatus...)
+	cloned.XUIAgentStatus = append([]model.UpdateAgentStatus(nil), info.XUIAgentStatus...)
+	if info.CacheExpiresAt != nil {
+		value := *info.CacheExpiresAt
+		cloned.CacheExpiresAt = &value
+	}
+	if info.RateLimitResetAt != nil {
+		value := *info.RateLimitResetAt
+		cloned.RateLimitResetAt = &value
+	}
+	return &cloned
 }
 
 func (a *App) startServerUpdate(req model.UpdateRequest) (*model.UpdateLatestInfo, error) {
@@ -178,13 +227,14 @@ func (a *App) fetchUpdateLatestInfo(repo string, packagePrefix string) (*model.U
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "VPSMonitor")
+	addGitHubAuthHeader(req)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch releases: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("fetch releases: http %d", resp.StatusCode)
+		return nil, githubHTTPError("fetch releases", resp)
 	}
 
 	var releases []struct {
@@ -263,7 +313,9 @@ func (a *App) fetchUpdateLatestInfo(repo string, packagePrefix string) (*model.U
 		ServerAssets:          serverLatest.Assets,
 		ClientAssets:          clientLatest.Assets,
 		FetchedAt:             time.Now().UTC(),
+		Authenticated:         githubToken() != "",
 	}
+	applyGitHubRateLimit(info, resp)
 	for _, agent := range agents {
 		status := buildUpdateAgentStatus(agent, clientLatest.Version, packagePrefix, clientLatest.Assets)
 		info.AgentStatus = append(info.AgentStatus, status)
@@ -438,13 +490,14 @@ func fetchLatestSemverRelease(repo string) (releaseUpdateInfo, error) {
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "VPSMonitor")
+	addGitHubAuthHeader(req)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return releaseUpdateInfo{}, fmt.Errorf("fetch releases: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return releaseUpdateInfo{}, fmt.Errorf("fetch releases: http %d", resp.StatusCode)
+		return releaseUpdateInfo{}, githubHTTPError("fetch releases", resp)
 	}
 	var releases []struct {
 		TagName string `json:"tag_name"`
@@ -477,6 +530,69 @@ func fetchLatestSemverRelease(repo string) (releaseUpdateInfo, error) {
 		return releaseUpdateInfo{}, fmt.Errorf("latest release has no semver tag")
 	}
 	return latest, nil
+}
+
+func addGitHubAuthHeader(req *http.Request) {
+	if req == nil {
+		return
+	}
+	if token := githubToken(); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+}
+
+func githubToken() string {
+	return strings.TrimSpace(firstNonEmptyString(
+		os.Getenv("VPSMONITOR_GITHUB_TOKEN"),
+		os.Getenv("GITHUB_TOKEN"),
+	))
+}
+
+func githubHTTPError(action string, resp *http.Response) error {
+	if resp == nil {
+		return fmt.Errorf("%s: empty response", action)
+	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+	message := strings.TrimSpace(string(body))
+	if message == "" {
+		message = resp.Status
+	}
+	resetText := strings.TrimSpace(resp.Header.Get("X-RateLimit-Reset"))
+	if resetText != "" {
+		if seconds, err := strconv.ParseInt(resetText, 10, 64); err == nil && seconds > 0 {
+			resetAt := time.Unix(seconds, 0).UTC().Format(time.RFC3339)
+			return fmt.Errorf("%s: http %d: %s (GitHub rate limit remaining=%s reset=%s; set VPSMONITOR_GITHUB_TOKEN to raise the limit)",
+				action,
+				resp.StatusCode,
+				message,
+				firstNonEmptyString(resp.Header.Get("X-RateLimit-Remaining"), "unknown"),
+				resetAt,
+			)
+		}
+	}
+	return fmt.Errorf("%s: http %d: %s", action, resp.StatusCode, message)
+}
+
+func applyGitHubRateLimit(info *model.UpdateLatestInfo, resp *http.Response) {
+	if info == nil || resp == nil {
+		return
+	}
+	info.RateLimitRemaining = resp.Header.Get("X-RateLimit-Remaining")
+	info.RateLimitLimit = resp.Header.Get("X-RateLimit-Limit")
+	info.RateLimitResource = resp.Header.Get("X-RateLimit-Resource")
+	resetText := strings.TrimSpace(resp.Header.Get("X-RateLimit-Reset"))
+	if resetText == "" {
+		return
+	}
+	seconds, err := strconv.ParseInt(resetText, 10, 64)
+	if err != nil || seconds <= 0 {
+		return
+	}
+	resetAt := time.Unix(seconds, 0).UTC()
+	info.RateLimitResetAt = &resetAt
+	if info.RateLimitRemaining == "0" {
+		info.RateLimitError = fmt.Sprintf("GitHub API rate limit exhausted until %s", resetAt.Format(time.RFC3339))
+	}
 }
 
 type releaseUpdateInfo struct {

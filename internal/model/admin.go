@@ -198,6 +198,13 @@ type UpdateLatestInfo struct {
 	AgentStatus                []UpdateAgentStatus `json:"agent_status,omitempty"`
 	XUIAgentStatus             []UpdateAgentStatus `json:"xui_agent_status,omitempty"`
 	FetchedAt                  time.Time           `json:"fetched_at"`
+	CacheExpiresAt             *time.Time          `json:"cache_expires_at,omitempty"`
+	RateLimitResetAt           *time.Time          `json:"rate_limit_reset_at,omitempty"`
+	RateLimitRemaining         string              `json:"rate_limit_remaining,omitempty"`
+	RateLimitLimit             string              `json:"rate_limit_limit,omitempty"`
+	RateLimitResource          string              `json:"rate_limit_resource,omitempty"`
+	RateLimitError             string              `json:"rate_limit_error,omitempty"`
+	Authenticated              bool                `json:"authenticated,omitempty"`
 }
 
 type UpdateAgentStatus struct {

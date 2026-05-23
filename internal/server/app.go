@@ -23,6 +23,8 @@ type App struct {
 	exchangeRatesCache model.ExchangeRatesResponse
 	dashboardCacheMu   sync.Mutex
 	dashboardCache     map[string]dashboardCacheEntry
+	updateLatestMu     sync.Mutex
+	updateLatestCache  map[string]updateLatestCacheEntry
 }
 
 const (
@@ -31,11 +33,17 @@ const (
 	customerSessionCookieName = "bridge_core_customer_session"
 	customerSessionTTL        = 7 * 24 * time.Hour
 	dashboardCacheTTL         = 5 * time.Second
+	updateLatestCacheTTL      = 10 * time.Minute
 )
 
 type dashboardCacheEntry struct {
 	expiresAt time.Time
 	view      model.GlobalDashboardView
+}
+
+type updateLatestCacheEntry struct {
+	expiresAt time.Time
+	info      *model.UpdateLatestInfo
 }
 
 func New(cfg config.ServerConfig) (*App, error) {
@@ -73,12 +81,13 @@ func New(cfg config.ServerConfig) (*App, error) {
 		log.Printf("demo data source enabled: %s", cfg.DemoDataSourceURL)
 	}
 	app := &App{
-		config:         cfg,
-		store:          fs,
-		realtime:       newRealtimeHub(),
-		alerts:         newAlertService(fs),
-		demoDataSource: demoDataSource,
-		dashboardCache: make(map[string]dashboardCacheEntry),
+		config:            cfg,
+		store:             fs,
+		realtime:          newRealtimeHub(),
+		alerts:            newAlertService(fs),
+		demoDataSource:    demoDataSource,
+		dashboardCache:    make(map[string]dashboardCacheEntry),
+		updateLatestCache: make(map[string]updateLatestCacheEntry),
 	}
 	app.alerts.Start()
 	return app, nil
