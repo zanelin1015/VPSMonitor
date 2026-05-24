@@ -127,10 +127,13 @@ export function CustomerManagementModal(props: {
   const [savingAssignment, setSavingAssignment] = useState(false)
   const [savingAreaManager, setSavingAreaManager] = useState(false)
   const [savingAreaBatchAssignment, setSavingAreaBatchAssignment] = useState(false)
+  const [areaManagerModalOpen, setAreaManagerModalOpen] = useState(false)
+  const [customerCreateModalOpen, setCustomerCreateModalOpen] = useState(false)
   const [selectedCustomerID, setSelectedCustomerID] = useState<number | null>(null)
   const [editingAreaManagerID, setEditingAreaManagerID] = useState<number | null>(null)
   const [editingAssignmentID, setEditingAssignmentID] = useState<number | null>(null)
   const [customerForm, setCustomerForm] = useState<CustomerFormState>(emptyCustomerForm)
+  const [customerCreateForm, setCustomerCreateForm] = useState<CustomerFormState>(emptyCustomerForm)
   const [areaManagerForm, setAreaManagerForm] = useState<AreaManagerFormState>(emptyAreaManagerForm)
   const [assignmentForm, setAssignmentForm] = useState<AssignmentFormState>(emptyAssignmentForm)
   const [overview, setOverview] = useState<XUIOverview | null>(null)
@@ -571,6 +574,7 @@ export function CustomerManagementModal(props: {
       }
       setEditingAreaManagerID(null)
       setAreaManagerForm(emptyAreaManagerForm)
+      setAreaManagerModalOpen(false)
       await loadAreaManagers()
     } catch (error) {
       message.error(error instanceof Error ? error.message : '保存区域账号失败')
@@ -586,6 +590,7 @@ export function CustomerManagementModal(props: {
       if (editingAreaManagerID === id) {
         setEditingAreaManagerID(null)
         setAreaManagerForm(emptyAreaManagerForm)
+        setAreaManagerModalOpen(false)
       }
       message.success('区域账号已删除')
       await loadAreaManagers()
@@ -679,6 +684,60 @@ export function CustomerManagementModal(props: {
       enabled: record.enabled,
       agent_ids: record.agent_ids || [],
     })
+    setAreaManagerModalOpen(true)
+  }
+
+  function openAreaManagerCreateModal() {
+    setEditingAreaManagerID(null)
+    setAreaManagerForm(emptyAreaManagerForm)
+    setAreaManagerModalOpen(true)
+  }
+
+  function closeAreaManagerModal() {
+    setAreaManagerModalOpen(false)
+    setEditingAreaManagerID(null)
+    setAreaManagerForm(emptyAreaManagerForm)
+  }
+
+  function openCustomerCreateModal() {
+    setCustomerCreateForm(emptyCustomerForm)
+    setCustomerCreateModalOpen(true)
+  }
+
+  async function createCustomer() {
+    if (!customerCreateForm.username.trim()) {
+      message.warning('请填写用户用户名')
+      return
+    }
+    if (customerCreateForm.password.length < 8) {
+      message.warning('新用户密码至少 8 位')
+      return
+    }
+    setSavingCustomer(true)
+    try {
+      const created = await fetchJSON<CustomerAdminView>('/api/v1/admin/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: customerCreateForm.username.trim(),
+          password: customerCreateForm.password,
+          display_name: customerCreateForm.display_name.trim(),
+          enabled: customerCreateForm.enabled,
+        }),
+      })
+      message.success('用户已创建')
+      setCustomerCreateModalOpen(false)
+      setCustomerCreateForm(emptyCustomerForm)
+      await loadCustomers()
+      setSelectedCustomerID(created.id)
+      if (canManageAreaManagers) {
+        await loadAreaManagers()
+      }
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '创建用户失败')
+    } finally {
+      setSavingCustomer(false)
+    }
   }
 
   async function saveCustomer() {
@@ -868,10 +927,7 @@ export function CustomerManagementModal(props: {
         <Title level={5}>区域管理账号</Title>
         <Space>
           <Button size="small" icon={<ReloadOutlined />} onClick={() => void loadAreaManagers()}>刷新区域账号</Button>
-          <Button size="small" onClick={() => {
-            setEditingAreaManagerID(null)
-            setAreaManagerForm(emptyAreaManagerForm)
-          }}>清空表单</Button>
+          <Button size="small" type="primary" icon={<PlusOutlined />} onClick={openAreaManagerCreateModal}>新增区域账号</Button>
         </Space>
       </div>
       <Alert
@@ -881,43 +937,6 @@ export function CustomerManagementModal(props: {
         message="区域账号权限"
         description="区域账号只能查看被分配的 Client，能下发 x-ui 转发规则，并且只能管理自己创建的普通用户；Admin 可见全部用户与区域账号。展开区域账号可直接查看其下属用户与链路。"
       />
-      <Row gutter={[12, 12]}>
-        <Col xs={24} md={5}>
-          <Text type="secondary">登录用户名</Text>
-          <Input value={areaManagerForm.username} onChange={(event) => setAreaManagerForm((current) => ({ ...current, username: event.target.value }))} />
-        </Col>
-        <Col xs={24} md={5}>
-          <Text type="secondary">显示名</Text>
-          <Input value={areaManagerForm.display_name} onChange={(event) => setAreaManagerForm((current) => ({ ...current, display_name: event.target.value }))} />
-        </Col>
-        <Col xs={24} md={5}>
-          <Text type="secondary">密码{editingAreaManagerID ? '（留空不改）' : ''}</Text>
-          <Input.Password value={areaManagerForm.password} onChange={(event) => setAreaManagerForm((current) => ({ ...current, password: event.target.value }))} />
-        </Col>
-        <Col xs={24} md={6}>
-          <Text type="secondary">允许管理的 Client</Text>
-          <Select
-            mode="multiple"
-            style={{ width: '100%' }}
-            showSearch
-            placeholder="选择 Client"
-            value={areaManagerForm.agent_ids}
-            options={agentOptions}
-            optionFilterProp="label"
-            onChange={(values) => setAreaManagerForm((current) => ({ ...current, agent_ids: values }))}
-          />
-        </Col>
-        <Col xs={24} md={3}>
-          <Text type="secondary">状态</Text>
-          <div className="customer-admin-switch-row">
-            <Switch checked={areaManagerForm.enabled} onChange={(checked) => setAreaManagerForm((current) => ({ ...current, enabled: checked }))} />
-            <Text>{areaManagerForm.enabled ? '启用' : '停用'}</Text>
-          </div>
-        </Col>
-      </Row>
-      <Button style={{ marginTop: 14 }} type="primary" icon={<SaveOutlined />} loading={savingAreaManager} onClick={() => void saveAreaManager()}>
-        {editingAreaManagerID ? '保存区域账号' : '新增区域账号'}
-      </Button>
       <Card size="small" style={{ marginTop: 14 }} bordered={false}>
         <div className="customer-admin-card-head">
           <div>
@@ -999,12 +1018,7 @@ export function CustomerManagementModal(props: {
             <Title level={5}>用户列表</Title>
             <Space>
               <Button size="small" icon={<ReloadOutlined />} onClick={() => void loadCustomers()} />
-              <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => {
-                setSelectedCustomerID(null)
-                setCustomerForm(emptyCustomerForm)
-                setAssignmentForm(emptyAssignmentForm)
-                setEditingAssignmentID(null)
-              }}>新建</Button>
+              <Button size="small" type="primary" icon={<PlusOutlined />} onClick={openCustomerCreateModal}>新增普通账号</Button>
             </Space>
           </div>
           <Space direction="vertical" style={{ width: '100%' }}>
@@ -1031,8 +1045,8 @@ export function CustomerManagementModal(props: {
         <Card className="customer-admin-card" bordered={false}>
           <div className="customer-admin-card-head">
             <div>
-              <Title level={5}>{selectedCustomerID ? '编辑用户' : '新建用户'}</Title>
-              <Text type="secondary">普通用户只在创建它的区域账号和 Admin 下可见。</Text>
+              <Title level={5}>{selectedCustomerID ? '编辑用户' : '用户详情'}</Title>
+              <Text type="secondary">普通用户只在创建它的区域账号和 Admin 下可见；新增账号请点击左侧新增按钮。</Text>
             </div>
             {selectedCustomerID ? (
               <Popconfirm title="删除该用户及其全部分配？" okText="删除" cancelText="取消" onConfirm={() => void deleteCustomer()}>
@@ -1040,39 +1054,43 @@ export function CustomerManagementModal(props: {
               </Popconfirm>
             ) : null}
           </div>
-          <Row gutter={[12, 12]}>
-            <Col xs={24} md={8}>
-              <Text type="secondary">登录用户名</Text>
-              <Input value={customerForm.username} onChange={(event) => setCustomerForm((current) => ({ ...current, username: event.target.value }))} />
-            </Col>
-            <Col xs={24} md={8}>
-              <Text type="secondary">用户显示名</Text>
-              <Input value={customerForm.display_name} onChange={(event) => setCustomerForm((current) => ({ ...current, display_name: event.target.value }))} />
-            </Col>
-            <Col xs={24} md={8}>
-              <Text type="secondary">密码{selectedCustomerID ? '（留空不改）' : ''}</Text>
-              <Input.Password value={customerForm.password} onChange={(event) => setCustomerForm((current) => ({ ...current, password: event.target.value }))} />
-            </Col>
-            <Col xs={24} md={8}>
-              <Text type="secondary">账号状态</Text>
-              <div className="customer-admin-switch-row">
-                <Switch checked={customerForm.enabled} onChange={(checked) => setCustomerForm((current) => ({ ...current, enabled: checked }))} />
-                <Text>{customerForm.enabled ? '启用' : '停用'}</Text>
-              </div>
-            </Col>
-            <Col xs={24} md={16}>
-              <Text type="secondary">用户入口地址</Text>
-              <Input value={`${window.location.origin}/customer`} readOnly />
-            </Col>
-          </Row>
-          <Space style={{ marginTop: 14 }}>
-            <Button type="primary" icon={<SaveOutlined />} loading={savingCustomer} onClick={() => void saveCustomer()}>
-              保存用户
-            </Button>
-            {selectedCustomerID ? (
-              <Button onClick={() => setActiveManagementTab('assignments')}>管理授权链路</Button>
-            ) : null}
-          </Space>
+          {selectedCustomerID ? (
+            <>
+              <Row gutter={[12, 12]}>
+                <Col xs={24} md={8}>
+                  <Text type="secondary">登录用户名</Text>
+                  <Input value={customerForm.username} onChange={(event) => setCustomerForm((current) => ({ ...current, username: event.target.value }))} />
+                </Col>
+                <Col xs={24} md={8}>
+                  <Text type="secondary">用户显示名</Text>
+                  <Input value={customerForm.display_name} onChange={(event) => setCustomerForm((current) => ({ ...current, display_name: event.target.value }))} />
+                </Col>
+                <Col xs={24} md={8}>
+                  <Text type="secondary">密码（留空不改）</Text>
+                  <Input.Password value={customerForm.password} onChange={(event) => setCustomerForm((current) => ({ ...current, password: event.target.value }))} />
+                </Col>
+                <Col xs={24} md={8}>
+                  <Text type="secondary">账号状态</Text>
+                  <div className="customer-admin-switch-row">
+                    <Switch checked={customerForm.enabled} onChange={(checked) => setCustomerForm((current) => ({ ...current, enabled: checked }))} />
+                    <Text>{customerForm.enabled ? '启用' : '停用'}</Text>
+                  </div>
+                </Col>
+                <Col xs={24} md={16}>
+                  <Text type="secondary">用户入口地址</Text>
+                  <Input value={`${window.location.origin}/customer`} readOnly />
+                </Col>
+              </Row>
+              <Space style={{ marginTop: 14 }}>
+                <Button type="primary" icon={<SaveOutlined />} loading={savingCustomer} onClick={() => void saveCustomer()}>
+                  保存用户
+                </Button>
+                <Button onClick={() => setActiveManagementTab('assignments')}>管理授权链路</Button>
+              </Space>
+            </>
+          ) : (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="请选择左侧用户，或点击新增创建普通账号" />
+          )}
         </Card>
       </Col>
     </Row>
@@ -1088,11 +1106,7 @@ export function CustomerManagementModal(props: {
           </div>
           <Space>
             <Button icon={<ReloadOutlined />} onClick={() => void loadCustomers()}>刷新用户</Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => {
-              setSelectedCustomerID(null)
-              setCustomerForm(emptyCustomerForm)
-              setActiveManagementTab('customers')
-            }}>新建用户</Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCustomerCreateModal}>新增普通账号</Button>
           </Space>
         </div>
         <Select
@@ -1208,6 +1222,111 @@ export function CustomerManagementModal(props: {
     </Space>
   )
 
+  const accountEditorModals = (
+    <>
+      {canManageAreaManagers ? (
+        <Modal
+          title={editingAreaManagerID ? '编辑区域账号' : '新增区域账号'}
+          open={areaManagerModalOpen}
+          onCancel={closeAreaManagerModal}
+          footer={(
+            <Space>
+              <Button onClick={closeAreaManagerModal}>取消</Button>
+              <Button type="primary" icon={<SaveOutlined />} loading={savingAreaManager} onClick={() => void saveAreaManager()}>
+                {editingAreaManagerID ? '保存区域账号' : '新增区域账号'}
+              </Button>
+            </Space>
+          )}
+          width={760}
+          destroyOnClose
+        >
+          <Row gutter={[12, 12]}>
+            <Col xs={24} md={12}>
+              <Text type="secondary">登录用户名</Text>
+              <Input value={areaManagerForm.username} onChange={(event) => setAreaManagerForm((current) => ({ ...current, username: event.target.value }))} />
+            </Col>
+            <Col xs={24} md={12}>
+              <Text type="secondary">显示名</Text>
+              <Input value={areaManagerForm.display_name} onChange={(event) => setAreaManagerForm((current) => ({ ...current, display_name: event.target.value }))} />
+            </Col>
+            <Col xs={24} md={12}>
+              <Text type="secondary">密码{editingAreaManagerID ? '（留空不改）' : ''}</Text>
+              <Input.Password value={areaManagerForm.password} onChange={(event) => setAreaManagerForm((current) => ({ ...current, password: event.target.value }))} />
+            </Col>
+            <Col xs={24} md={12}>
+              <Text type="secondary">状态</Text>
+              <div className="customer-admin-switch-row">
+                <Switch checked={areaManagerForm.enabled} onChange={(checked) => setAreaManagerForm((current) => ({ ...current, enabled: checked }))} />
+                <Text>{areaManagerForm.enabled ? '启用' : '停用'}</Text>
+              </div>
+            </Col>
+            <Col xs={24}>
+              <Text type="secondary">允许管理的 Client</Text>
+              <Select
+                mode="multiple"
+                style={{ width: '100%' }}
+                showSearch
+                placeholder="选择 Client"
+                value={areaManagerForm.agent_ids}
+                options={agentOptions}
+                optionFilterProp="label"
+                maxTagCount="responsive"
+                onChange={(values) => setAreaManagerForm((current) => ({ ...current, agent_ids: values }))}
+              />
+            </Col>
+          </Row>
+        </Modal>
+      ) : null}
+      <Modal
+        title="新增普通账号"
+        open={customerCreateModalOpen}
+        onCancel={() => {
+          setCustomerCreateModalOpen(false)
+          setCustomerCreateForm(emptyCustomerForm)
+        }}
+        footer={(
+          <Space>
+            <Button onClick={() => {
+              setCustomerCreateModalOpen(false)
+              setCustomerCreateForm(emptyCustomerForm)
+            }}>取消</Button>
+            <Button type="primary" icon={<SaveOutlined />} loading={savingCustomer} onClick={() => void createCustomer()}>
+              新增普通账号
+            </Button>
+          </Space>
+        )}
+        width={680}
+        destroyOnClose
+      >
+        <Row gutter={[12, 12]}>
+          <Col xs={24} md={12}>
+            <Text type="secondary">登录用户名</Text>
+            <Input value={customerCreateForm.username} onChange={(event) => setCustomerCreateForm((current) => ({ ...current, username: event.target.value }))} />
+          </Col>
+          <Col xs={24} md={12}>
+            <Text type="secondary">用户显示名</Text>
+            <Input value={customerCreateForm.display_name} onChange={(event) => setCustomerCreateForm((current) => ({ ...current, display_name: event.target.value }))} />
+          </Col>
+          <Col xs={24} md={12}>
+            <Text type="secondary">密码</Text>
+            <Input.Password value={customerCreateForm.password} onChange={(event) => setCustomerCreateForm((current) => ({ ...current, password: event.target.value }))} />
+          </Col>
+          <Col xs={24} md={12}>
+            <Text type="secondary">账号状态</Text>
+            <div className="customer-admin-switch-row">
+              <Switch checked={customerCreateForm.enabled} onChange={(checked) => setCustomerCreateForm((current) => ({ ...current, enabled: checked }))} />
+              <Text>{customerCreateForm.enabled ? '启用' : '停用'}</Text>
+            </div>
+          </Col>
+          <Col xs={24}>
+            <Text type="secondary">用户入口地址</Text>
+            <Input value={`${window.location.origin}/customer`} readOnly />
+          </Col>
+        </Row>
+      </Modal>
+    </>
+  )
+
   const managementTabs = [
     ...(canManageAreaManagers && areaManagersPanel ? [{ key: 'area', label: '区域账号', children: areaManagersPanel }] : []),
     { key: 'customers', label: '用户账号', children: customersPanel },
@@ -1244,6 +1363,7 @@ export function CustomerManagementModal(props: {
           <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadCustomers()}>刷新</Button>
         </div>
         {content}
+        {accountEditorModals}
       </div>
     )
   }
@@ -1251,6 +1371,7 @@ export function CustomerManagementModal(props: {
   return (
     <Modal title="人员管理 / 授权链路" open={open} onCancel={onClose} footer={null} width={1160} destroyOnClose>
       {content}
+      {accountEditorModals}
     </Modal>
   )
 }
