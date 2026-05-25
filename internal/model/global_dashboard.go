@@ -57,6 +57,23 @@ type IPGeoView struct {
 	City        string `json:"city,omitempty"`
 }
 
+type TopologyLookupCache struct {
+	Hosts map[string]TopologyHostCacheEntry `json:"hosts,omitempty"`
+	Geos  map[string]TopologyGeoCacheEntry  `json:"geos,omitempty"`
+}
+
+type TopologyHostCacheEntry struct {
+	IPs       []string  `json:"ips,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	ExpiresAt time.Time `json:"expires_at,omitempty"`
+}
+
+type TopologyGeoCacheEntry struct {
+	Geo       IPGeoView `json:"geo"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	ExpiresAt time.Time `json:"expires_at,omitempty"`
+}
+
 type TopologyInboundRef struct {
 	AgentID        string                 `json:"agent_id"`
 	AgentName      string                 `json:"agent_name,omitempty"`

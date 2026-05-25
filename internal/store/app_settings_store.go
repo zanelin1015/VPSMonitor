@@ -17,6 +17,7 @@ const (
 	tagSettingsKey           = "tag_settings"
 	frontendSettingsKey      = "frontend_settings"
 	outboundLinkLibraryKey   = "outbound_link_library"
+	topologyLookupCacheKey   = "topology_lookup_cache"
 )
 
 func (s *SQLiteStore) GetClientInstallSettings() (model.ClientInstallSettingsRequest, bool, error) {
@@ -179,6 +180,70 @@ func (s *SQLiteStore) SaveFrontendSettings(settings model.FrontendSettings) (mod
 		return model.FrontendSettings{}, fmt.Errorf("save frontend settings: %w", err)
 	}
 	return settings, nil
+}
+
+func (s *SQLiteStore) GetTopologyLookupCache() (model.TopologyLookupCache, bool, error) {
+	var raw string
+	err := s.db.QueryRow(`SELECT value_json FROM app_settings WHERE key = ?`, topologyLookupCacheKey).Scan(&raw)
+	if err == sql.ErrNoRows {
+		return model.TopologyLookupCache{}, false, nil
+	}
+	if err != nil {
+		return model.TopologyLookupCache{}, false, fmt.Errorf("load topology lookup cache: %w", err)
+	}
+	var cache model.TopologyLookupCache
+	if err := json.Unmarshal([]byte(raw), &cache); err != nil {
+		return model.TopologyLookupCache{}, false, fmt.Errorf("decode topology lookup cache: %w", err)
+	}
+	return normalizeTopologyLookupCache(cache), true, nil
+}
+
+func (s *SQLiteStore) SaveTopologyLookupCache(cache model.TopologyLookupCache) error {
+	cache = normalizeTopologyLookupCache(cache)
+	data, err := json.Marshal(cache)
+	if err != nil {
+		return fmt.Errorf("encode topology lookup cache: %w", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err = s.db.Exec(`
+		INSERT INTO app_settings (key, value_json, updated_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
+	`, topologyLookupCacheKey, string(data), now)
+	if err != nil {
+		return fmt.Errorf("save topology lookup cache: %w", err)
+	}
+	return nil
+}
+
+func normalizeTopologyLookupCache(cache model.TopologyLookupCache) model.TopologyLookupCache {
+	now := time.Now().UTC()
+	if len(cache.Hosts) > 0 {
+		hosts := make(map[string]model.TopologyHostCacheEntry, len(cache.Hosts))
+		for key, entry := range cache.Hosts {
+			key = strings.TrimSpace(strings.ToLower(key))
+			if key == "" || entry.ExpiresAt.Before(now) {
+				continue
+			}
+			hosts[key] = entry
+		}
+		cache.Hosts = hosts
+	}
+	if len(cache.Geos) > 0 {
+		geos := make(map[string]model.TopologyGeoCacheEntry, len(cache.Geos))
+		for key, entry := range cache.Geos {
+			key = strings.TrimSpace(key)
+			if key == "" || entry.ExpiresAt.Before(now) {
+				continue
+			}
+			if entry.Geo.IP == "" {
+				entry.Geo.IP = key
+			}
+			geos[key] = entry
+		}
+		cache.Geos = geos
+	}
+	return cache
 }
 
 type outboundLinkLibraryPayload struct {

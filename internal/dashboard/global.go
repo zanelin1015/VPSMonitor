@@ -27,15 +27,36 @@ type topologyOutboundCandidate struct {
 }
 
 type topologyResolver struct {
-	cache    map[string][]string
-	geoCache map[string]model.IPGeoView
+	cache        map[string][]string
+	geoCache     map[string]model.IPGeoView
+	allowNetwork bool
 }
 
 var topologyLookupHostIPs = defaultTopologyLookupHostIPs
 var topologyLookupIPGeo = defaultTopologyLookupIPGeo
 
+type TopologyResolverData struct {
+	Hosts map[string][]string
+	Geos  map[string]model.IPGeoView
+}
+
+type GlobalDashboardOptions struct {
+	IncludeTopology    bool
+	IncludeGeo         bool
+	AllowNetworkLookup bool
+	ResolverData       TopologyResolverData
+}
+
 func BuildGlobalDashboard(agents []model.AgentRecord, snapshots []model.AgentSnapshot) model.GlobalDashboardView {
-	resolver := newTopologyResolver()
+	return BuildGlobalDashboardWithOptions(agents, snapshots, GlobalDashboardOptions{
+		IncludeTopology:    true,
+		IncludeGeo:         true,
+		AllowNetworkLookup: true,
+	})
+}
+
+func BuildGlobalDashboardWithOptions(agents []model.AgentRecord, snapshots []model.AgentSnapshot, options GlobalDashboardOptions) model.GlobalDashboardView {
+	resolver := newTopologyResolverWithData(options.ResolverData, options.AllowNetworkLookup)
 	entryByAgent := make(map[string]model.AgentEntryConfig, len(agents))
 	for _, agent := range agents {
 		entryByAgent[agent.AgentID] = agent.Config.Entry
@@ -87,10 +108,12 @@ func BuildGlobalDashboard(agents []model.AgentRecord, snapshots []model.AgentSna
 			LastSeenAt:          agent.LastSeenAt,
 			HasConfig:           agent.HasConfig,
 			Summary:             summary,
-			Geo:                 lookupAgentGeo(summary, resolver),
 		}
-		if view.Geo == nil && overview != nil {
-			view.Geo = lookupOverviewGeo(overview, resolver)
+		if options.IncludeGeo {
+			view.Geo = lookupAgentGeo(summary, resolver)
+			if view.Geo == nil && overview != nil {
+				view.Geo = lookupOverviewGeo(overview, resolver)
+			}
 		}
 		if overview != nil {
 			view.NodeCount = overview.NodeCount
@@ -154,14 +177,18 @@ func BuildGlobalDashboard(agents []model.AgentRecord, snapshots []model.AgentSna
 		return tags[i].Tag < tags[j].Tag
 	})
 
-	inboundCandidates := buildInboundCandidates(agentViewByID, overviewByAgent, resolver)
-	outboundCandidates := buildOutboundCandidates(agentViewByID, overviewByAgent, resolver)
-	balancerCandidates := buildBalancerCandidates(overviewByAgent)
-	links, linkByOutboundKey := matchTopologyLinks(inboundCandidates, outboundCandidates)
-	chains := buildClientChains(agentViewByID, overviewByAgent, inboundCandidates, outboundCandidates, balancerCandidates, linkByOutboundKey)
-
-	totals.LinkCount = len(links)
-	totals.ChainCount = len(chains)
+	var links []model.TopologyLinkView
+	var chains []model.ClientChainView
+	if options.IncludeTopology {
+		inboundCandidates := buildInboundCandidates(agentViewByID, overviewByAgent, resolver)
+		outboundCandidates := buildOutboundCandidates(agentViewByID, overviewByAgent, resolver)
+		balancerCandidates := buildBalancerCandidates(overviewByAgent)
+		var linkByOutboundKey map[string]model.TopologyLinkView
+		links, linkByOutboundKey = matchTopologyLinks(inboundCandidates, outboundCandidates)
+		chains = buildClientChains(agentViewByID, overviewByAgent, inboundCandidates, outboundCandidates, balancerCandidates, linkByOutboundKey)
+		totals.LinkCount = len(links)
+		totals.ChainCount = len(chains)
+	}
 
 	return model.GlobalDashboardView{
 		GeneratedAt:  time.Now().UTC(),
@@ -1387,11 +1414,52 @@ func cloneStrings(values []string) []string {
 	return append([]string(nil), values...)
 }
 
-func newTopologyResolver() *topologyResolver {
-	return &topologyResolver{
-		cache:    make(map[string][]string),
-		geoCache: make(map[string]model.IPGeoView),
+func NewTopologyResolverData(values []string) TopologyResolverData {
+	resolver := newTopologyResolverWithData(TopologyResolverData{}, true)
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		resolved := resolver.lookupHost(value)
+		_, _ = resolver.lookupGeo(value, resolved)
 	}
+	return TopologyResolverData{
+		Hosts: cloneResolverHosts(resolver.cache),
+		Geos:  cloneResolverGeos(resolver.geoCache),
+	}
+}
+
+func newTopologyResolver() *topologyResolver {
+	return newTopologyResolverWithData(TopologyResolverData{}, true)
+}
+
+func newTopologyResolverWithData(data TopologyResolverData, allowNetwork bool) *topologyResolver {
+	resolver := &topologyResolver{
+		cache:        make(map[string][]string),
+		geoCache:     make(map[string]model.IPGeoView),
+		allowNetwork: allowNetwork,
+	}
+	for host, ips := range data.Hosts {
+		normalizedHost := normalizeHost(host)
+		if normalizedHost == "" {
+			continue
+		}
+		resolver.cache[normalizedHost] = uniqueNormalizedIPs(ips)
+	}
+	for ip, geo := range data.Geos {
+		normalizedIP := normalizeIP(ip)
+		if normalizedIP == "" && geo.IP != "" {
+			normalizedIP = normalizeIP(geo.IP)
+		}
+		if normalizedIP == "" {
+			continue
+		}
+		if geo.IP == "" {
+			geo.IP = normalizedIP
+		}
+		resolver.geoCache[normalizedIP] = geo
+	}
+	return resolver
 }
 
 func (r *topologyResolver) lookupAll(values []string) []string {
@@ -1409,6 +1477,10 @@ func (r *topologyResolver) lookupHost(value string) []string {
 	}
 	if cached, ok := r.cache[host]; ok {
 		return append([]string(nil), cached...)
+	}
+	if !r.allowNetwork {
+		r.cache[host] = nil
+		return nil
 	}
 	resolved := topologyLookupHostIPs(host)
 	resolved = uniqueNormalizedIPs(resolved)
@@ -1429,6 +1501,9 @@ func (r *topologyResolver) lookupGeo(address string, resolvedIPs []string) (stri
 		if cached, ok := r.geoCache[candidate]; ok {
 			return candidate, cloneGeo(cached)
 		}
+		if !r.allowNetwork {
+			continue
+		}
 		geo, ok := topologyLookupIPGeo(candidate)
 		if !ok {
 			r.geoCache[candidate] = model.IPGeoView{IP: candidate}
@@ -1441,6 +1516,28 @@ func (r *topologyResolver) lookupGeo(address string, resolvedIPs []string) (stri
 		return candidate, cloneGeo(geo)
 	}
 	return "", nil
+}
+
+func cloneResolverHosts(values map[string][]string) map[string][]string {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string][]string, len(values))
+	for key, item := range values {
+		cloned[key] = append([]string(nil), item...)
+	}
+	return cloned
+}
+
+func cloneResolverGeos(values map[string]model.IPGeoView) map[string]model.IPGeoView {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]model.IPGeoView, len(values))
+	for key, item := range values {
+		cloned[key] = item
+	}
+	return cloned
 }
 
 func cloneGeo(geo model.IPGeoView) *model.IPGeoView {

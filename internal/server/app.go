@@ -23,6 +23,9 @@ type App struct {
 	exchangeRatesCache model.ExchangeRatesResponse
 	dashboardCacheMu   sync.Mutex
 	dashboardCache     map[string]dashboardCacheEntry
+	topologyCache      map[string]dashboardCacheEntry
+	topologyBuilds     map[string]chan struct{}
+	lookupCacheMu      sync.Mutex
 	updateLatestMu     sync.Mutex
 	updateLatestCache  map[string]updateLatestCacheEntry
 }
@@ -32,7 +35,8 @@ const (
 	adminSessionTTL           = 24 * time.Hour
 	customerSessionCookieName = "bridge_core_customer_session"
 	customerSessionTTL        = 7 * 24 * time.Hour
-	dashboardCacheTTL         = 5 * time.Second
+	dashboardCacheTTL         = 10 * time.Second
+	topologyCacheTTL          = 45 * time.Second
 	updateLatestCacheTTL      = 10 * time.Minute
 )
 
@@ -87,6 +91,8 @@ func New(cfg config.ServerConfig) (*App, error) {
 		alerts:            newAlertService(fs),
 		demoDataSource:    demoDataSource,
 		dashboardCache:    make(map[string]dashboardCacheEntry),
+		topologyCache:     make(map[string]dashboardCacheEntry),
+		topologyBuilds:    make(map[string]chan struct{}),
 		updateLatestCache: make(map[string]updateLatestCacheEntry),
 	}
 	app.alerts.Start()
@@ -107,6 +113,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/frontend-settings", a.handlePublicFrontendSettings)
 	mux.HandleFunc("/api/v1/image-proxy", a.handleImageProxy)
 	mux.HandleFunc("/api/v1/dashboard/realtime", a.handleDashboardRealtime)
+	mux.HandleFunc("/api/v1/dashboard/topology", a.handleDashboardTopology)
 	mux.HandleFunc("/api/v1/exchange-rates", a.handleAdminExchangeRates)
 	mux.HandleFunc("/api/v1/dashboard", a.handleDashboard)
 	mux.HandleFunc("/api/v1/agents", a.handleAgents)

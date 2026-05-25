@@ -197,7 +197,12 @@ func (a *App) customerOverview(user model.CustomerUser) (model.CustomerOverviewR
 		return model.CustomerOverviewResponse{}, err
 	}
 	snapshots := a.store.ListLatest()
-	view := dashboard.BuildGlobalDashboard(agents, snapshots)
+	view := dashboard.BuildGlobalDashboardWithOptions(agents, snapshots, dashboard.GlobalDashboardOptions{
+		IncludeTopology:    true,
+		IncludeGeo:         true,
+		AllowNetworkLookup: false,
+		ResolverData:       a.dashboardTopologyResolverData(),
+	})
 	a.realtime.applyToDashboard(&view)
 	clientMap := buildCustomerClientMap(snapshots, agents)
 	chainMap := make(map[string]model.ClientChainView, len(view.ClientChains))

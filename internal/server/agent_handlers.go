@@ -49,6 +49,8 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	observedIP := requestObservedIP(r)
+	go a.refreshTopologyLookupCacheFromRegister(req, observedIP)
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -135,6 +137,24 @@ func (a *App) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, view)
 }
 
+func (a *App) handleDashboardTopology(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	user, _, ok := a.requireAdmin(w, r)
+	if !ok {
+		return
+	}
+
+	view, err := a.dashboardTopologyViewForAdmin(user)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
 func (a *App) dashboardViewForAdmin(user model.AdminUser) (model.GlobalDashboardView, error) {
 	cacheKey := dashboardCacheKey(user)
 	now := time.Now()
@@ -157,7 +177,12 @@ func (a *App) dashboardViewForAdmin(user model.AdminUser) (model.GlobalDashboard
 	agents = a.filterAgentRecordsForAdmin(user, agents)
 	snapshots = a.filterSnapshotsForAdmin(user, snapshots)
 
-	view := dashboard.BuildGlobalDashboard(agents, snapshots)
+	view := dashboard.BuildGlobalDashboardWithOptions(agents, snapshots, dashboard.GlobalDashboardOptions{
+		IncludeTopology:    false,
+		IncludeGeo:         true,
+		AllowNetworkLookup: false,
+		ResolverData:       a.dashboardTopologyResolverData(),
+	})
 	if a.realtime != nil {
 		a.realtime.applyToDashboard(&view)
 	}
@@ -174,6 +199,148 @@ func (a *App) dashboardViewForAdmin(user model.AdminUser) (model.GlobalDashboard
 	}
 	a.dashboardCacheMu.Unlock()
 	return view, nil
+}
+
+func (a *App) dashboardTopologyViewForAdmin(user model.AdminUser) (model.GlobalDashboardView, error) {
+	cacheKey := dashboardCacheKey(user)
+	now := time.Now()
+
+	for {
+		a.dashboardCacheMu.Lock()
+		if a.topologyCache == nil {
+			a.topologyCache = make(map[string]dashboardCacheEntry)
+		}
+		if a.topologyBuilds == nil {
+			a.topologyBuilds = make(map[string]chan struct{})
+		}
+		if entry, ok := a.topologyCache[cacheKey]; ok && now.Before(entry.expiresAt) {
+			view, err := cloneDashboardView(entry.view)
+			a.dashboardCacheMu.Unlock()
+			return view, err
+		}
+		if ch, ok := a.topologyBuilds[cacheKey]; ok {
+			if entry, hasStale := a.topologyCache[cacheKey]; hasStale {
+				view, err := cloneDashboardView(entry.view)
+				a.dashboardCacheMu.Unlock()
+				return view, err
+			}
+			a.dashboardCacheMu.Unlock()
+			<-ch
+			continue
+		}
+		a.topologyBuilds[cacheKey] = make(chan struct{})
+		a.dashboardCacheMu.Unlock()
+		break
+	}
+
+	view, err := a.buildDashboardViewForAdmin(user, true)
+
+	a.dashboardCacheMu.Lock()
+	if ch, ok := a.topologyBuilds[cacheKey]; ok {
+		close(ch)
+		delete(a.topologyBuilds, cacheKey)
+	}
+	if err == nil {
+		if cachedView, cloneErr := cloneDashboardView(view); cloneErr == nil {
+			a.topologyCache[cacheKey] = dashboardCacheEntry{
+				expiresAt: time.Now().Add(topologyCacheTTL),
+				view:      cachedView,
+			}
+		}
+	}
+	a.dashboardCacheMu.Unlock()
+
+	return view, err
+}
+
+func (a *App) buildDashboardViewForAdmin(user model.AdminUser, includeTopology bool) (model.GlobalDashboardView, error) {
+	agents, snapshots, err := a.store.ListAgentsWithLatestSnapshots()
+	if err != nil {
+		return model.GlobalDashboardView{}, err
+	}
+	agents = a.filterAgentRecordsForAdmin(user, agents)
+	snapshots = a.filterSnapshotsForAdmin(user, snapshots)
+
+	view := dashboard.BuildGlobalDashboardWithOptions(agents, snapshots, dashboard.GlobalDashboardOptions{
+		IncludeTopology:    includeTopology,
+		IncludeGeo:         true,
+		AllowNetworkLookup: false,
+		ResolverData:       a.dashboardTopologyResolverData(),
+	})
+	if a.realtime != nil {
+		a.realtime.applyToDashboard(&view)
+	}
+	a.sanitizeDashboardForAdmin(user, &view)
+	return view, nil
+}
+
+func (a *App) dashboardTopologyResolverData() dashboard.TopologyResolverData {
+	cache, found, err := a.store.GetTopologyLookupCache()
+	if err != nil {
+		log.Printf("load topology lookup cache failed: %v", err)
+		return dashboard.TopologyResolverData{}
+	}
+	if !found {
+		return dashboard.TopologyResolverData{}
+	}
+	data := dashboard.TopologyResolverData{
+		Hosts: make(map[string][]string, len(cache.Hosts)),
+		Geos:  make(map[string]model.IPGeoView, len(cache.Geos)),
+	}
+	for key, entry := range cache.Hosts {
+		data.Hosts[key] = append([]string(nil), entry.IPs...)
+	}
+	for key, entry := range cache.Geos {
+		data.Geos[key] = entry.Geo
+	}
+	return data
+}
+
+func (a *App) refreshTopologyLookupCacheFromRegister(req model.AgentRegisterRequest, observedIP string) {
+	values := []string{req.PublicIPv4, req.PublicIPv6, req.Hostname}
+	if isUsableObservedIP(observedIP) {
+		values = append(values, observedIP)
+	}
+	resolved := dashboard.NewTopologyResolverData(values)
+	if len(resolved.Hosts) == 0 && len(resolved.Geos) == 0 {
+		return
+	}
+
+	a.lookupCacheMu.Lock()
+	defer a.lookupCacheMu.Unlock()
+
+	cache, _, err := a.store.GetTopologyLookupCache()
+	if err != nil {
+		log.Printf("refresh topology lookup cache for %s failed: load cache: %v", req.AgentID, err)
+		return
+	}
+	now := time.Now().UTC()
+	if cache.Hosts == nil {
+		cache.Hosts = make(map[string]model.TopologyHostCacheEntry)
+	}
+	if cache.Geos == nil {
+		cache.Geos = make(map[string]model.TopologyGeoCacheEntry)
+	}
+	for host, ips := range resolved.Hosts {
+		cache.Hosts[host] = model.TopologyHostCacheEntry{
+			IPs:       append([]string(nil), ips...),
+			UpdatedAt: now,
+			ExpiresAt: now.Add(20 * time.Minute),
+		}
+	}
+	for ip, geo := range resolved.Geos {
+		if geo.CountryCode == "" && geo.CountryName == "" {
+			continue
+		}
+		cache.Geos[ip] = model.TopologyGeoCacheEntry{
+			Geo:       geo,
+			UpdatedAt: now,
+			ExpiresAt: now.Add(7 * 24 * time.Hour),
+		}
+	}
+	if err := a.store.SaveTopologyLookupCache(cache); err != nil {
+		log.Printf("refresh topology lookup cache for %s failed: save cache: %v", req.AgentID, err)
+	}
 }
 
 func dashboardCacheKey(user model.AdminUser) string {

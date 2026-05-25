@@ -7,6 +7,50 @@ import (
 	"bridge-core/internal/model"
 )
 
+func TestBuildGlobalDashboardWithOptionsUsesCachedGeoWithoutNetwork(t *testing.T) {
+	originalHostLookup := topologyLookupHostIPs
+	originalGeoLookup := topologyLookupIPGeo
+	topologyLookupHostIPs = func(host string) []string {
+		t.Fatalf("unexpected DNS lookup for %s", host)
+		return nil
+	}
+	topologyLookupIPGeo = func(ip string) (model.IPGeoView, bool) {
+		t.Fatalf("unexpected GeoIP lookup for %s", ip)
+		return model.IPGeoView{}, false
+	}
+	defer func() {
+		topologyLookupHostIPs = originalHostLookup
+		topologyLookupIPGeo = originalGeoLookup
+	}()
+
+	now := time.Now().UTC()
+	view := BuildGlobalDashboardWithOptions([]model.AgentRecord{{
+		AgentID:      "agent-a",
+		AgentName:    "Agent A",
+		RegisteredAt: now,
+		UpdatedAt:    now,
+		Summary: model.VPSSummary{
+			PublicIPv4: "8.8.8.8",
+		},
+	}}, nil, GlobalDashboardOptions{
+		IncludeTopology:    false,
+		IncludeGeo:         true,
+		AllowNetworkLookup: false,
+		ResolverData: TopologyResolverData{
+			Geos: map[string]model.IPGeoView{
+				"8.8.8.8": {IP: "8.8.8.8", CountryCode: "US", CountryName: "United States"},
+			},
+		},
+	})
+
+	if len(view.Agents) != 1 || view.Agents[0].Geo == nil || view.Agents[0].Geo.CountryCode != "US" {
+		t.Fatalf("expected cached geo to be used, got %#v", view.Agents)
+	}
+	if view.Totals.LinkCount != 0 || view.Totals.ChainCount != 0 || len(view.Links) != 0 || len(view.ClientChains) != 0 {
+		t.Fatalf("expected lightweight dashboard without topology, got totals=%#v", view.Totals)
+	}
+}
+
 func TestBuildGlobalDashboardMatchesCrossClientTopology(t *testing.T) {
 	now := time.Now().UTC()
 	originalLookup := topologyLookupHostIPs

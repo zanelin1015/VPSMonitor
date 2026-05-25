@@ -362,6 +362,9 @@ export default function App() {
   const [reloadToken, setReloadToken] = useState(0)
   const [activeTabKey, setActiveTabKey] = useState('overview')
   const [topologyVisible, setTopologyVisible] = useState(false)
+  const [topologyLoading, setTopologyLoading] = useState(false)
+  const [topologyError, setTopologyError] = useState('')
+  const [topologyLoaded, setTopologyLoaded] = useState(false)
   const [selectedOutboundTag, setSelectedOutboundTag] = useState('')
   const [selectedRuleIndex, setSelectedRuleIndex] = useState<number | null>(null)
   const [selectedNodeAnchor, setSelectedNodeAnchor] = useState('')
@@ -757,12 +760,30 @@ export default function App() {
     try {
       const data = await fetchJSON<GlobalDashboardView>('/api/v1/dashboard')
       const sortedAgents = sortAgentsByOrder((data.agents || []).map(applyCachedCustomerDisplayName))
-      setDashboardView({ ...data, agents: sortedAgents })
+      const nextView = { ...data, agents: sortedAgents }
+      setDashboardView((current) => {
+        if (!topologyVisible || !current || !topologyLoaded) {
+          return nextView
+        }
+        return {
+          ...nextView,
+          links: current.links || [],
+          client_chains: current.client_chains || [],
+          totals: {
+            ...nextView.totals,
+            link_count: current.totals?.link_count ?? nextView.totals.link_count,
+            chain_count: current.totals?.chain_count ?? nextView.totals.chain_count,
+          },
+        }
+      })
       setAgents(sortedAgents)
       setTagOptions((current) => mergeTagOptions(current, sortedAgents.flatMap((agent) => agent.tags || [])))
       setAgentsError('')
       if (!sortedAgents.length || (selectedAgentId && !sortedAgents.some((item) => item.agent_id === selectedAgentId))) {
         setSelectedAgentId('')
+      }
+      if (topologyVisible) {
+        void loadTopology({ silent: true })
       }
     } catch (error) {
       if (isUnauthorized(error)) {
@@ -775,6 +796,42 @@ export default function App() {
     } finally {
       if (!silent) {
         setAgentsLoading(false)
+      }
+      inFlightRequestsRef.current.delete(requestKey)
+    }
+  }
+
+  async function loadTopology(options: LoadOptions = {}) {
+    const requestKey = 'dashboard-topology'
+    if (inFlightRequestsRef.current.has(requestKey)) {
+      return
+    }
+    inFlightRequestsRef.current.add(requestKey)
+    const silent = Boolean(options.silent)
+    if (!silent) {
+      setTopologyLoading(true)
+      setTopologyError('')
+    }
+    try {
+      const data = await fetchJSON<GlobalDashboardView>('/api/v1/dashboard/topology')
+      const sortedAgents = sortAgentsByOrder((data.agents || []).map(applyCachedCustomerDisplayName))
+      setDashboardView({ ...data, agents: sortedAgents })
+      setAgents(sortedAgents)
+      setTagOptions((current) => mergeTagOptions(current, sortedAgents.flatMap((agent) => agent.tags || [])))
+      setTopologyLoaded(true)
+      setTopologyError('')
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      const messageText = error instanceof Error ? error.message : '加载链路拓扑失败'
+      setTopologyError(messageText)
+      if (!silent) {
+        message.error('无法加载链路拓扑')
+      }
+    } finally {
+      if (!silent) {
+        setTopologyLoading(false)
       }
       inFlightRequestsRef.current.delete(requestKey)
     }
@@ -2239,7 +2296,19 @@ export default function App() {
           <main className="main-stage">
             {dashboardView && topologyVisible ? (
               <div id="topology-panel">
-                {renderCNFlowPanel({
+                {topologyLoading && !topologyLoaded ? (
+                  <Card>
+                    <Spin tip="正在计算链路拓扑..." />
+                  </Card>
+                ) : topologyError && !topologyLoaded ? (
+                  <Alert
+                    type="error"
+                    showIcon
+                    message="链路拓扑加载失败"
+                    description={topologyError}
+                    action={<Button size="small" onClick={() => void loadTopology()}>重试</Button>}
+                  />
+                ) : renderCNFlowPanel({
                     dashboardView,
                     selectedTag,
                     selectedAgentId,
@@ -2417,6 +2486,9 @@ export default function App() {
     setSelectedRuleIndex(route.ruleIndex)
     setSelectedNodeAnchor(route.nodeAnchor)
     setClientSearch('')
+    if (route.topology) {
+      void loadTopology({ silent: topologyLoaded })
+    }
 
     if (route.page === 'assets' || route.topology) {
       setSelectedAgentId(route.agentId)
@@ -2447,6 +2519,7 @@ export default function App() {
   function openTopologyPanel() {
     setActiveAdminPage('dashboard')
     setTopologyVisible(true)
+    void loadTopology({ silent: topologyLoaded })
     window.setTimeout(() => {
       document.getElementById('topology-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }, 80)
