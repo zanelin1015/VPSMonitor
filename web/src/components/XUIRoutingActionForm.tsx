@@ -105,7 +105,7 @@ export function renderRoutingActionForm(props: {
               value={form.target_mode}
               options={[
                 { value: 'existing_outbound', label: '已存在出站规则' },
-                { value: 'registered_client', label: '已注册 Client 节点' },
+                { value: 'registered_client', label: '新增 / 复用出站（Client / 链接库）' },
               ]}
               onChange={(value: XUIRoutingActionForm['target_mode']) =>
                 update({

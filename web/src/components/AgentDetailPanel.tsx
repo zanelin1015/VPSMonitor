@@ -34,8 +34,11 @@ import {
   actionStatusColor,
   actionStatusLabel,
   buildAgentTerminalURL,
-  dateInputToExpiryMillis,
+  clientBillingPatchFromStart,
+  dateInputToStartMillis,
   defaultClientBilling,
+  effectiveClientBillingExpiryTime,
+  effectiveClientBillingStartTime,
   findClientBilling,
   findOutboundLinkedClient,
   formatDateInputFromMillis,
@@ -451,41 +454,45 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       },
     },
     {
-      title: '过期 / 自动刷新',
+      title: '开始 / 自动刷新',
       key: 'expiry',
       width: 360,
       render: (_, record) => {
         const billing = findClientBilling(managedConfig?.renewal?.client_billings, record) || defaultClientBilling(record)
-        const effectiveExpiry = billing.expire_time || record.expiry_time || 0
+        const effectiveStart = effectiveClientBillingStartTime(billing, record.expiry_time || 0)
+        const effectiveExpiry = effectiveClientBillingExpiryTime(billing, record.expiry_time || 0)
+        const expireCycle = billing.expire_cycle || 'month'
+        const autoRenew = Boolean(billing.expire_auto_renew)
         return (
           <Space direction="vertical" size={6} className="client-expiry-cell">
             <Text type="secondary">x-ui 当前：{formatExpiryTime(record.expiry_time)}</Text>
+            <Text type="secondary">当前周期到期：{formatExpiryTime(effectiveExpiry)}</Text>
             <Space wrap size={[6, 6]}>
               <Input
                 size="small"
                 type="date"
                 style={{ width: 132 }}
                 disabled={!canManageConfig}
-                value={formatDateInputFromMillis(effectiveExpiry)}
-                onChange={(event) => onUpdateClientBillingDraft(record, { expire_time: dateInputToExpiryMillis(event.target.value) })}
+                value={formatDateInputFromMillis(effectiveStart)}
+                onChange={(event) => onUpdateClientBillingDraft(record, clientBillingPatchFromStart(dateInputToStartMillis(event.target.value), expireCycle, autoRenew))}
               />
               <Select
                 size="small"
                 style={{ width: 78 }}
                 disabled={!canManageConfig}
-                value={billing.expire_cycle || 'month'}
+                value={expireCycle}
                 options={[
                   { value: 'month', label: '月' },
                   { value: 'quarter', label: '季' },
                   { value: 'year', label: '年' },
                 ]}
-                onChange={(value) => onUpdateClientBillingDraft(record, { expire_cycle: value as 'month' | 'quarter' | 'year', expire_time: effectiveExpiry })}
+                onChange={(value) => onUpdateClientBillingDraft(record, clientBillingPatchFromStart(effectiveStart, value as 'month' | 'quarter' | 'year', autoRenew))}
               />
               <Switch
                 size="small"
                 disabled={!canManageConfig}
-                checked={Boolean(billing.expire_auto_renew)}
-                onChange={(checked: boolean) => onUpdateClientBillingDraft(record, { expire_auto_renew: checked, expire_time: effectiveExpiry })}
+                checked={autoRenew}
+                onChange={(checked: boolean) => onUpdateClientBillingDraft(record, clientBillingPatchFromStart(effectiveStart, expireCycle, checked))}
               />
               <Text type="secondary">周期刷新</Text>
               <Button size="small" type="primary" disabled={!canManageConfig} loading={configSavingSection === 'renewal'} onClick={() => onSaveClientBilling(record)}>

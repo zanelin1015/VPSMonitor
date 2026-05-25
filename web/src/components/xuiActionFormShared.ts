@@ -28,6 +28,7 @@ export function buildOutboundImportPatch(
   ]
 
   return {
+    source_type: 'registered_client',
     tag: normalizeOutboundTag(tagParts.join('-')),
     protocol,
     address,
@@ -48,6 +49,174 @@ export function buildOutboundImportPatch(
     ws_path: sourceNode.ws_path || importEndpoint.wsPath || '/',
     ws_host: sourceNode.ws_host || importEndpoint.wsHost || '',
   }
+}
+
+export function parseOutboundImportText(text: string, currentForm: XUIOutboundActionForm): Partial<XUIOutboundActionForm> {
+  const trimmed = text.trim()
+  if (!trimmed) {
+    throw new Error('请粘贴出站 JSON 或节点链接')
+  }
+  if (trimmed.startsWith('{')) {
+    return buildOutboundPatchFromXrayOutbound(JSON.parse(trimmed) as Record<string, unknown>, currentForm)
+  }
+  const endpoint = parseImportEndpoint(trimmed)
+  const protocol = normalizeOutboundProtocol(trimmed.split(':', 1)[0] || currentForm.protocol)
+  return {
+    source_type: 'manual',
+    tag: currentForm.tag || normalizeOutboundTag(decodeURIComponent(trimmed.split('#')[1] || protocol || 'outbound')),
+    protocol,
+    address: endpoint.address,
+    port: endpoint.port || currentForm.port,
+    uuid: protocol === 'socks' || protocol === 'http' ? endpoint.username || currentForm.uuid : endpoint.username || currentForm.uuid,
+    password: endpoint.password || currentForm.password,
+    method: endpoint.method || currentForm.method,
+    security: endpoint.security || currentForm.security || 'none',
+    server_name: endpoint.serverName || currentForm.server_name,
+    alpn: endpoint.alpn || currentForm.alpn,
+    grpc_service: endpoint.grpcService || currentForm.grpc_service,
+    reality_public_key: endpoint.realityPublicKey || currentForm.reality_public_key,
+    reality_short_id: endpoint.realityShortID || currentForm.reality_short_id,
+    reality_fingerprint: endpoint.realityFingerprint || currentForm.reality_fingerprint || 'chrome',
+    reality_spider_x: endpoint.realitySpiderX || currentForm.reality_spider_x,
+    network: endpoint.network || currentForm.network || 'tcp',
+    ws_path: endpoint.wsPath || currentForm.ws_path || '/',
+    ws_host: endpoint.wsHost || currentForm.ws_host,
+  }
+}
+
+export function buildOutboundPatchFromXrayOutbound(outbound: Record<string, unknown>, currentForm: XUIOutboundActionForm): Partial<XUIOutboundActionForm> {
+  const protocol = normalizeOutboundProtocol(outbound.protocol || currentForm.protocol || 'vless')
+  const settings = objectMap(outbound.settings)
+  const stream = objectMap(outbound.streamSettings)
+  const endpoint = endpointFromOutboundSettings(protocol, settings)
+  const streamPatch = patchFromStreamSettings(stream, currentForm)
+  return {
+    source_type: 'manual',
+    tag: usableEndpointValue(outbound.tag) || currentForm.tag,
+    protocol,
+    send_through: usableEndpointValue(outbound.sendThrough) || currentForm.send_through,
+    address: endpoint.address || currentForm.address,
+    port: endpoint.port || currentForm.port,
+    uuid: endpoint.uuid || currentForm.uuid,
+    flow: endpoint.flow || currentForm.flow,
+    password: endpoint.password || currentForm.password,
+    method: endpoint.method || currentForm.method,
+    ...streamPatch,
+  }
+}
+
+export function outboundFormToXrayOutbound(form: XUIOutboundActionForm): Record<string, unknown> {
+  const protocol = normalizeOutboundProtocol(form.protocol)
+  const outbound: Record<string, unknown> = {
+    tag: form.tag.trim(),
+    protocol,
+  }
+  if (form.send_through.trim()) {
+    outbound.sendThrough = form.send_through.trim()
+  }
+  if (protocol === 'vless') {
+    outbound.settings = {
+      address: form.address.trim(),
+      port: Number(form.port || 0),
+      id: form.uuid.trim(),
+      flow: form.flow.trim(),
+      encryption: 'none',
+    }
+    outbound.streamSettings = outboundStreamSettingsFromForm(form)
+  } else if (protocol === 'vmess') {
+    outbound.settings = {
+      vnext: [{
+        address: form.address.trim(),
+        port: Number(form.port || 0),
+        users: [{ id: form.uuid.trim(), security: form.method.trim() || 'auto' }],
+      }],
+    }
+    outbound.streamSettings = outboundStreamSettingsFromForm(form)
+  } else if (protocol === 'shadowsocks') {
+    outbound.settings = { servers: [{ address: form.address.trim(), port: Number(form.port || 0), method: form.method.trim(), password: form.password.trim() }] }
+  } else if (protocol === 'socks' || protocol === 'http') {
+    outbound.settings = { servers: [{ address: form.address.trim(), port: Number(form.port || 0), users: form.password.trim() ? [{ user: form.uuid.trim(), pass: form.password.trim() }] : [] }] }
+  }
+  return outbound
+}
+
+function endpointFromOutboundSettings(protocol: string, settings: Record<string, unknown>) {
+  if (protocol === 'vless') {
+    return {
+      address: usableEndpointValue(settings.address),
+      port: validPort(settings.port),
+      uuid: usableEndpointValue(settings.id),
+      flow: usableEndpointValue(settings.flow),
+      password: '',
+      method: '',
+    }
+  }
+  if (protocol === 'vmess') {
+    const vnext = objectMapArray(settings.vnext)[0] || {}
+    const user = objectMapArray(vnext.users)[0] || {}
+    return { address: usableEndpointValue(vnext.address), port: validPort(vnext.port), uuid: usableEndpointValue(user.id), flow: '', password: '', method: usableEndpointValue(user.security) }
+  }
+  const server = objectMapArray(settings.servers)[0] || {}
+  const user = objectMapArray(server.users)[0] || {}
+  return {
+    address: usableEndpointValue(server.address),
+    port: validPort(server.port),
+    uuid: usableEndpointValue(user.user),
+    flow: '',
+    password: usableEndpointValue(server.password) || usableEndpointValue(user.pass),
+    method: usableEndpointValue(server.method),
+  }
+}
+
+function patchFromStreamSettings(stream: Record<string, unknown>, currentForm: XUIOutboundActionForm): Partial<XUIOutboundActionForm> {
+  const security = usableEndpointValue(stream.security) || 'none'
+  const network = usableEndpointValue(stream.network) || 'tcp'
+  const tls = objectMap(stream.tlsSettings)
+  const reality = objectMap(stream.realitySettings)
+  const ws = objectMap(stream.wsSettings)
+  const wsHeaders = objectMap(ws.headers)
+  const grpc = objectMap(stream.grpcSettings)
+  const tcp = objectMap(stream.tcpSettings)
+  const http = objectMap(stream.httpSettings)
+  return {
+    security,
+    network,
+    server_name: usableEndpointValue(tls.serverName) || usableEndpointValue(reality.serverName) || currentForm.server_name,
+    alpn: stringList(tls.alpn).join(','),
+    reality_public_key: usableEndpointValue(reality.publicKey) || currentForm.reality_public_key,
+    reality_short_id: usableEndpointValue(reality.shortId) || currentForm.reality_short_id,
+    reality_fingerprint: usableEndpointValue(reality.fingerprint) || usableEndpointValue(tls.fingerprint) || currentForm.reality_fingerprint,
+    reality_spider_x: usableEndpointValue(reality.spiderX) || currentForm.reality_spider_x,
+    ws_path: usableEndpointValue(ws.path) || usableEndpointValue(http.path) || currentForm.ws_path,
+    ws_host: usableEndpointValue(wsHeaders.Host) || stringList(http.host)[0] || currentForm.ws_host,
+    grpc_service: usableEndpointValue(grpc.serviceName) || currentForm.grpc_service,
+  }
+}
+
+function outboundStreamSettingsFromForm(form: XUIOutboundActionForm): Record<string, unknown> {
+  const stream: Record<string, unknown> = {
+    network: form.network || 'tcp',
+    security: form.security || 'none',
+  }
+  if (form.network === 'tcp') {
+    stream.tcpSettings = { header: { type: 'none' } }
+  }
+  if (form.network === 'ws') {
+    stream.wsSettings = { path: form.ws_path || '/', headers: form.ws_host ? { Host: form.ws_host } : {} }
+  }
+  if (form.security === 'tls') {
+    stream.tlsSettings = { serverName: form.server_name || undefined, alpn: form.alpn ? form.alpn.split(',').map((item) => item.trim()).filter(Boolean) : undefined }
+  }
+  if (form.security === 'reality') {
+    stream.realitySettings = {
+      serverName: form.server_name,
+      publicKey: form.reality_public_key,
+      shortId: form.reality_short_id,
+      fingerprint: form.reality_fingerprint || 'chrome',
+      spiderX: form.reality_spider_x,
+    }
+  }
+  return stream
 }
 
 function parseImportEndpoint(importURL?: string): {
@@ -174,6 +343,38 @@ function usableEndpointValue(value: unknown): string {
     return ''
   }
   return text
+}
+
+function objectMap(value: unknown): Record<string, unknown> {
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value) as unknown
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
+    } catch {
+      return {}
+    }
+  }
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+function objectMapArray(value: unknown): Array<Record<string, unknown>> {
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value) as unknown
+      return objectMapArray(parsed)
+    } catch {
+      return []
+    }
+  }
+  return Array.isArray(value) ? value.filter((item) => item && typeof item === 'object' && !Array.isArray(item)) as Array<Record<string, unknown>> : []
+}
+
+function stringList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => usableEndpointValue(item)).filter(Boolean)
+  }
+  const text = usableEndpointValue(value)
+  return text ? [text] : []
 }
 
 function normalizeOutboundProtocol(value: unknown): string {

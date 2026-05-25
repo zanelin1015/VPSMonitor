@@ -90,6 +90,7 @@ func New(cfg config.ServerConfig) (*App, error) {
 		updateLatestCache: make(map[string]updateLatestCacheEntry),
 	}
 	app.alerts.Start()
+	app.startClientExpiryScheduler()
 	return app, nil
 }
 

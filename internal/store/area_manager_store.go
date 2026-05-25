@@ -80,6 +80,9 @@ func (s *SQLiteStore) CreateAreaManager(req model.AreaManagerAccountRequest) (mo
 	if err != nil {
 		return model.AreaManagerAdminView{}, err
 	}
+	if req.Password == "" {
+		req.Password = model.DefaultAccountPassword
+	}
 	if len(req.Password) < adminPasswordMinLength {
 		return model.AreaManagerAdminView{}, fmt.Errorf("password must be at least %d characters", adminPasswordMinLength)
 	}
@@ -162,6 +165,7 @@ func (s *SQLiteStore) UpdateAreaManager(id int64, req model.AreaManagerAccountRe
 	}
 
 	passwordHash := current.passwordHash
+	passwordChanged := false
 	if req.Password != "" {
 		if len(req.Password) < adminPasswordMinLength {
 			return model.AreaManagerAdminView{}, fmt.Errorf("password must be at least %d characters", adminPasswordMinLength)
@@ -170,6 +174,7 @@ func (s *SQLiteStore) UpdateAreaManager(id int64, req model.AreaManagerAccountRe
 		if err != nil {
 			return model.AreaManagerAdminView{}, err
 		}
+		passwordChanged = true
 	}
 
 	now := time.Now().UTC()
@@ -193,10 +198,10 @@ func (s *SQLiteStore) UpdateAreaManager(id int64, req model.AreaManagerAccountRe
 	if err = s.replaceAreaManagerAgentsTx(tx, id, agentIDs); err != nil {
 		return model.AreaManagerAdminView{}, err
 	}
-	if !enabled {
+	if !enabled || passwordChanged {
 		_, err = tx.Exec(`DELETE FROM admin_sessions WHERE role = ? AND account_id = ?`, model.AdminRoleAreaManager, id)
 		if err != nil {
-			return model.AreaManagerAdminView{}, fmt.Errorf("clear disabled area manager sessions: %w", err)
+			return model.AreaManagerAdminView{}, fmt.Errorf("clear area manager sessions: %w", err)
 		}
 	}
 	if err = tx.Commit(); err != nil {

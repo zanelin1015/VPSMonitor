@@ -21,6 +21,10 @@ func (a *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		a.handleAdminCustomers(w, r, strings.Split(path, "/")[1:])
 		return
 	}
+	if path == "outbound-links" || strings.HasPrefix(path, "outbound-links/") {
+		a.handleAdminOutboundLinks(w, r, strings.Split(path, "/")[1:])
+		return
+	}
 	if path == "area-agent-tags" || strings.HasPrefix(path, "area-agent-tags/") {
 		a.handleAdminAreaAgentTags(w, r, strings.Split(path, "/")[1:])
 		return

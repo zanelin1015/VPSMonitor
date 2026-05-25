@@ -292,6 +292,9 @@ func (s *SQLiteStore) applyXUIClientExpiryConfig(agentID string, payload map[str
 	for index := range record.Config.Renewal.ClientBillings {
 		billing := &record.Config.Renewal.ClientBillings[index]
 		if billing.InboundID == inboundID && billing.InboundTag == inboundTag && billing.Email == email {
+			if startTime := numberFromPayload(payload["start_time"]); startTime > 0 {
+				billing.StartTime = startTime
+			}
 			billing.ExpireTime = expiryTime
 			if cycle, _ := payload["expire_cycle"].(string); cycle != "" {
 				billing.ExpireCycle = cycle
@@ -308,6 +311,7 @@ func (s *SQLiteStore) applyXUIClientExpiryConfig(agentID string, payload map[str
 			InboundID:       inboundID,
 			InboundTag:      inboundTag,
 			Email:           email,
+			StartTime:       numberFromPayload(payload["start_time"]),
 			ExpireTime:      expiryTime,
 			ExpireCycle:     stringFromPayload(payload["expire_cycle"]),
 			ExpireAutoRenew: boolFromPayload(payload["expire_auto_renew"]),

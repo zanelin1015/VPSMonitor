@@ -766,6 +766,7 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		a.syncAgentClientExpiryRules(record, "config_save")
 		a.requestAgentConfigApply(agentID)
 		writeJSON(w, http.StatusOK, disableXUIAutoInstall(record.Config))
 	default:

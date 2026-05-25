@@ -300,6 +300,7 @@ func buildCustomerLinkView(
 			link.RevenueCycle = firstNonEmptyString(billing.RevenueCycle, "month")
 		}
 		if billing.ExpireTime > 0 {
+			link.StartTime = billing.StartTime
 			link.ExpireTime = billing.ExpireTime
 			link.ExpireCycle = billing.ExpireCycle
 			link.ExpireAutoRenew = billing.ExpireAutoRenew

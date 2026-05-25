@@ -47,6 +47,25 @@ func (a *App) handleAdminAreaManagers(w http.ResponseWriter, r *http.Request, pa
 		return
 	}
 	if len(parts) >= 2 {
+		if len(parts) == 2 && parts[1] == "reset-password" {
+			if r.Method != http.MethodPost {
+				writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+				return
+			}
+			item, err := a.store.UpdateAreaManager(id, model.AreaManagerAccountRequest{
+				Password: model.DefaultAccountPassword,
+			})
+			if err != nil {
+				status := http.StatusBadRequest
+				if strings.Contains(err.Error(), "not found") {
+					status = http.StatusNotFound
+				}
+				writeError(w, status, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
+			return
+		}
 		if parts[1] != "assignments" {
 			writeError(w, http.StatusNotFound, "route not found")
 			return

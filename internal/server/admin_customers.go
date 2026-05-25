@@ -104,6 +104,26 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 		return
 	}
 
+	if len(parts) == 2 && parts[1] == "reset-password" {
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		customer, err := a.store.UpdateCustomer(customerID, model.CustomerAccountRequest{
+			Password: model.DefaultAccountPassword,
+		})
+		if err != nil {
+			status := http.StatusBadRequest
+			if strings.Contains(err.Error(), "not found") {
+				status = http.StatusNotFound
+			}
+			writeError(w, status, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, customer)
+		return
+	}
+
 	if parts[1] != "assignments" {
 		writeError(w, http.StatusNotFound, "route not found")
 		return
@@ -247,6 +267,7 @@ func (a *App) syncCustomerAssignmentRevenue(req model.CustomerAssignmentRequest,
 			(emailKey == "" || customerBillingEmailKey(existing.InboundID, existing.Email) != emailKey) {
 			continue
 		}
+		billing.StartTime = existing.StartTime
 		billing.ExpireTime = existing.ExpireTime
 		if existing.ExpireCycle != "" {
 			billing.ExpireCycle = existing.ExpireCycle

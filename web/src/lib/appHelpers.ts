@@ -86,6 +86,7 @@ export interface XUIInboundActionForm {
 }
 
 export interface XUIOutboundActionForm {
+  source_type: 'registered_client' | 'library' | 'manual'
   tag: string
   protocol: string
   send_through: string
@@ -326,6 +327,7 @@ function defaultInboundActionForm(): XUIInboundActionForm {
 
 function defaultOutboundActionForm(): XUIOutboundActionForm {
   return {
+    source_type: 'registered_client',
     tag: 'relay-hk',
     protocol: 'freedom',
     send_through: '',
@@ -655,8 +657,10 @@ function buildInboundClientPayload(client: XUIInboundClientForm, protocol: strin
 }
 
 function buildOutboundActionPayload(form: XUIOutboundActionForm): Record<string, unknown> {
-  if (!form.source_agent_id || !form.source_client_key) {
-    throw new Error('请选择源 Client 和源节点客户端')
+  const address = normalizeOutboundEndpointValue(form.address)
+  const port = normalizeOutboundPort(form.port)
+  if ((!address || !port) && !form.source_agent_id && !form.source_client_key && form.protocol !== 'freedom' && form.protocol !== 'blackhole') {
+    throw new Error('请选择源 Client / 出口链接库，或填写有效的远端地址和端口')
   }
   const protocol = form.protocol.toLowerCase()
   const tag = form.tag.trim()
@@ -671,9 +675,6 @@ function buildOutboundActionPayload(form: XUIOutboundActionForm): Record<string,
   if (form.send_through.trim()) {
     outbound.sendThrough = form.send_through.trim()
   }
-  const address = normalizeOutboundEndpointValue(form.address)
-  const port = normalizeOutboundPort(form.port)
-
   switch (protocol) {
     case 'freedom':
     case 'blackhole':
@@ -801,7 +802,7 @@ function buildVNextUser(form: XUIOutboundActionForm, protocol: string): Record<s
     }
     return user
   }
-  user.security = 'auto'
+  user.security = form.method.trim() || 'auto'
   return user
 }
 
@@ -1301,6 +1302,8 @@ function normalizeClientBillings(items: XUIClientBillingConfig[]): XUIClientBill
   const seen = new Set<string>()
   const normalized: XUIClientBillingConfig[] = []
   for (const item of items) {
+    const expireCycle = normalizeClientExpireCycle(item.expire_cycle)
+    const startTime = Math.max(0, Number(item.start_time || 0))
     const billing: XUIClientBillingConfig = {
       inbound_id: Number(item.inbound_id || 0),
       inbound_tag: item.inbound_tag || '',
@@ -1308,8 +1311,11 @@ function normalizeClientBillings(items: XUIClientBillingConfig[]): XUIClientBill
       revenue_amount: Math.max(0, Number(item.revenue_amount || 0)),
       revenue_currency: item.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
       revenue_cycle: item.revenue_cycle === 'quarter' || item.revenue_cycle === 'year' ? item.revenue_cycle : 'month',
-      expire_time: Math.max(0, Number(item.expire_time || 0)),
-      expire_cycle: item.expire_cycle === 'quarter' || item.expire_cycle === 'year' ? item.expire_cycle : 'month',
+      start_time: startTime,
+      expire_time: startTime > 0
+        ? calculateClientBillingExpiryTime(startTime, expireCycle, Boolean(item.expire_auto_renew))
+        : Math.max(0, Number(item.expire_time || 0)),
+      expire_cycle: expireCycle,
       expire_auto_renew: Boolean(item.expire_auto_renew),
     }
     const key = clientBillingKey(billing)
@@ -1338,6 +1344,7 @@ function defaultClientBilling(client: XUIClientView): XUIClientBillingConfig {
     revenue_amount: 0,
     revenue_currency: 'CNY',
     revenue_cycle: 'month',
+    start_time: 0,
     expire_time: Math.max(0, Number(client.expiry_time || 0)),
     expire_cycle: 'month',
     expire_auto_renew: false,
@@ -1359,6 +1366,77 @@ function upsertClientBilling(items: XUIClientBillingConfig[], client: XUIClientV
     return next
   }
   return [...next, normalized]
+}
+
+function normalizeClientExpireCycle(cycle?: string): 'month' | 'quarter' | 'year' {
+  return cycle === 'quarter' || cycle === 'year' ? cycle : 'month'
+}
+
+function calculateClientBillingExpiryTime(startTime: number, cycle?: string, autoRenew = false, now = Date.now()): number {
+  if (!startTime) {
+    return 0
+  }
+  let periodStart = startOfLocalDay(new Date(startTime))
+  if (!Number.isFinite(periodStart.getTime())) {
+    return 0
+  }
+  let nextStart = addRenewalCycle(periodStart, normalizeClientExpireCycle(cycle))
+  let periodEnd = new Date(nextStart.getTime() - 1000)
+  while (autoRenew && periodEnd.getTime() <= now) {
+    periodStart = nextStart
+    nextStart = addRenewalCycle(periodStart, normalizeClientExpireCycle(cycle))
+    periodEnd = new Date(nextStart.getTime() - 1000)
+  }
+  return periodEnd.getTime()
+}
+
+function deriveClientBillingStartTime(expireTime: number, cycle?: string): number {
+  if (!expireTime) {
+    return 0
+  }
+  const expireDate = new Date(expireTime)
+  if (!Number.isFinite(expireDate.getTime())) {
+    return 0
+  }
+  const nextStart = new Date(expireDate.getFullYear(), expireDate.getMonth(), expireDate.getDate() + 1)
+  return subtractRenewalCycle(nextStart, normalizeClientExpireCycle(cycle)).getTime()
+}
+
+function effectiveClientBillingStartTime(billing: XUIClientBillingConfig, fallbackExpiry = 0): number {
+  const startTime = Math.max(0, Number(billing.start_time || 0))
+  if (startTime > 0) {
+    return startTime
+  }
+  return deriveClientBillingStartTime(Math.max(0, Number(billing.expire_time || fallbackExpiry || 0)), billing.expire_cycle)
+}
+
+function effectiveClientBillingExpiryTime(billing: XUIClientBillingConfig, fallbackExpiry = 0): number {
+  const startTime = Math.max(0, Number(billing.start_time || 0))
+  if (startTime > 0) {
+    return calculateClientBillingExpiryTime(startTime, billing.expire_cycle, Boolean(billing.expire_auto_renew))
+  }
+  return Math.max(0, Number(billing.expire_time || fallbackExpiry || 0))
+}
+
+function dateInputToStartMillis(value: string): number {
+  if (!value) {
+    return 0
+  }
+  const date = new Date(`${value}T00:00:00`)
+  if (!Number.isFinite(date.getTime())) {
+    return 0
+  }
+  return date.getTime()
+}
+
+function clientBillingPatchFromStart(startTime: number, cycle?: string, autoRenew = false): Pick<XUIClientBillingConfig, 'start_time' | 'expire_time' | 'expire_cycle' | 'expire_auto_renew'> {
+  const normalizedCycle = normalizeClientExpireCycle(cycle)
+  return {
+    start_time: Math.max(0, Number(startTime || 0)),
+    expire_time: calculateClientBillingExpiryTime(Math.max(0, Number(startTime || 0)), normalizedCycle, autoRenew),
+    expire_cycle: normalizedCycle,
+    expire_auto_renew: autoRenew,
+  }
 }
 
 function calculateRenewalStatus(config?: VPSRenewalConfig): {
@@ -2081,8 +2159,12 @@ export {
   agentViewModeStorageKey,
   formatDateTime,
   formatDateInputFromMillis,
+  dateInputToStartMillis,
   dateInputToExpiryMillis,
   formatExpiryTime,
+  clientBillingPatchFromStart,
+  effectiveClientBillingStartTime,
+  effectiveClientBillingExpiryTime,
   formatRelativeTime,
   isClientOnline,
   scopeLabel,

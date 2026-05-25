@@ -343,6 +343,9 @@ func normalizeClientBillings(items []model.XUIClientBillingConfig) []model.XUICl
 		default:
 			item.RevenueCycle = "month"
 		}
+		if item.StartTime < 0 {
+			item.StartTime = 0
+		}
 		if item.ExpireTime < 0 {
 			item.ExpireTime = 0
 		}
@@ -354,6 +357,9 @@ func normalizeClientBillings(items []model.XUIClientBillingConfig) []model.XUICl
 		default:
 			item.ExpireCycle = "month"
 		}
+		if item.StartTime > 0 {
+			item.ExpireTime = calculateClientBillingExpireTime(item.StartTime, item.ExpireCycle, item.ExpireAutoRenew, time.Now())
+		}
 		key := fmt.Sprintf("%d\x00%s\x00%s", item.InboundID, item.InboundTag, item.Email)
 		if _, ok := seen[key]; ok {
 			continue
@@ -362,6 +368,37 @@ func normalizeClientBillings(items []model.XUIClientBillingConfig) []model.XUICl
 		normalized = append(normalized, item)
 	}
 	return normalized
+}
+
+func calculateClientBillingExpireTime(startMillis int64, cycle string, autoRenew bool, now time.Time) int64 {
+	if startMillis <= 0 {
+		return 0
+	}
+	periodStart := startOfLocalDay(time.UnixMilli(startMillis))
+	nextStart := addClientBillingCycle(periodStart, cycle)
+	periodEnd := nextStart.Add(-time.Second)
+	for autoRenew && !periodEnd.After(now) {
+		periodStart = nextStart
+		nextStart = addClientBillingCycle(periodStart, cycle)
+		periodEnd = nextStart.Add(-time.Second)
+	}
+	return periodEnd.UnixMilli()
+}
+
+func startOfLocalDay(value time.Time) time.Time {
+	local := value.Local()
+	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, local.Location())
+}
+
+func addClientBillingCycle(value time.Time, cycle string) time.Time {
+	switch cycle {
+	case "quarter":
+		return value.AddDate(0, 3, 0)
+	case "year":
+		return value.AddDate(1, 0, 0)
+	default:
+		return value.AddDate(0, 1, 0)
+	}
 }
 
 func hasRenewalConfig(cfg model.VPSRenewalConfig) bool {

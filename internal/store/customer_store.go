@@ -92,6 +92,9 @@ func (s *SQLiteStore) CreateCustomerForOwner(req model.CustomerAccountRequest, o
 	if err != nil {
 		return model.CustomerAdminView{}, err
 	}
+	if req.Password == "" {
+		req.Password = model.DefaultAccountPassword
+	}
 	if len(req.Password) < adminPasswordMinLength {
 		return model.CustomerAdminView{}, fmt.Errorf("password must be at least %d characters", adminPasswordMinLength)
 	}
@@ -181,6 +184,7 @@ func (s *SQLiteStore) UpdateCustomer(id int64, req model.CustomerAccountRequest)
 		enabled = *req.Enabled
 	}
 	passwordHash := currentHash
+	passwordChanged := false
 	if req.Password != "" {
 		if len(req.Password) < adminPasswordMinLength {
 			return model.CustomerAdminView{}, fmt.Errorf("password must be at least %d characters", adminPasswordMinLength)
@@ -189,6 +193,7 @@ func (s *SQLiteStore) UpdateCustomer(id int64, req model.CustomerAccountRequest)
 		if err != nil {
 			return model.CustomerAdminView{}, err
 		}
+		passwordChanged = true
 	}
 
 	now := time.Now().UTC()
@@ -200,7 +205,7 @@ func (s *SQLiteStore) UpdateCustomer(id int64, req model.CustomerAccountRequest)
 	if err != nil {
 		return model.CustomerAdminView{}, fmt.Errorf("update customer: %w", err)
 	}
-	if !enabled {
+	if !enabled || passwordChanged {
 		_, _ = s.db.Exec(`DELETE FROM customer_sessions WHERE customer_id = ?`, id)
 	}
 	customer, found, err := s.GetCustomer(id)

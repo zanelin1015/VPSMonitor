@@ -940,6 +940,11 @@ func (c *XUIClient) updateClientExpiry(ctx context.Context, payload map[string]a
 	)
 	lookupEmail := firstNonEmptyString(previousEmail, email)
 	expiryTime := int64Value(payload["expiry_time"])
+	enabled, hasEnabled := boolPayloadValue(payload, "enabled")
+	if value, ok := boolPayloadValue(payload, "enable"); ok {
+		enabled = value
+		hasEnabled = true
+	}
 	if inboundID <= 0 && inboundTag == "" {
 		return nil, fmt.Errorf("inbound_id or inbound_tag is required")
 	}
@@ -978,6 +983,9 @@ func (c *XUIClient) updateClientExpiry(ctx context.Context, payload map[string]a
 	for _, client := range clients {
 		if strings.TrimSpace(stringValue(client["email"])) == lookupEmail {
 			client["expiryTime"] = expiryTime
+			if hasEnabled {
+				client["enable"] = enabled
+			}
 			if previousEmail != "" && previousEmail != email {
 				client["email"] = email
 			}
@@ -1003,7 +1011,7 @@ func (c *XUIClient) updateClientExpiry(ctx context.Context, payload map[string]a
 			if err := c.restartXrayService(ctx); err != nil {
 				return nil, err
 			}
-			return map[string]any{"message": result.Msg, "email": email, "expiry_time": expiryTime, "routing_refs": routingRefsUpdated, "restarted": true}, nil
+			return map[string]any{"message": result.Msg, "email": email, "expiry_time": expiryTime, "enabled": updatedClient["enable"], "routing_refs": routingRefsUpdated, "restarted": true}, nil
 		}
 	}
 
@@ -1028,7 +1036,35 @@ func (c *XUIClient) updateClientExpiry(ctx context.Context, payload map[string]a
 	if err := c.restartXrayService(ctx); err != nil {
 		return nil, err
 	}
-	return map[string]any{"message": result.Msg, "email": email, "expiry_time": expiryTime, "routing_refs": routingRefsUpdated, "restarted": true}, nil
+	return map[string]any{"message": result.Msg, "email": email, "expiry_time": expiryTime, "enabled": updatedClient["enable"], "routing_refs": routingRefsUpdated, "restarted": true}, nil
+}
+
+func boolPayloadValue(payload map[string]any, key string) (bool, bool) {
+	value, ok := payload[key]
+	if !ok {
+		return false, false
+	}
+	switch typed := value.(type) {
+	case bool:
+		return typed, true
+	case string:
+		switch strings.ToLower(strings.TrimSpace(typed)) {
+		case "1", "true", "yes", "on", "enable", "enabled":
+			return true, true
+		case "0", "false", "no", "off", "disable", "disabled":
+			return false, true
+		default:
+			return false, false
+		}
+	case int:
+		return typed != 0, true
+	case int64:
+		return typed != 0, true
+	case float64:
+		return typed != 0, true
+	default:
+		return false, false
+	}
 }
 
 func (c *XUIClient) deleteClient(ctx context.Context, payload map[string]any) (map[string]any, error) {

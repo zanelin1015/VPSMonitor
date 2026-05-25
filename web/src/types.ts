@@ -82,6 +82,7 @@ export interface XUIClientBillingConfig {
   revenue_amount?: number
   revenue_currency?: 'CNY' | 'USDT' | ''
   revenue_cycle?: 'month' | 'quarter' | 'year' | ''
+  start_time?: number
   expire_time?: number
   expire_cycle?: 'month' | 'quarter' | 'year' | ''
   expire_auto_renew?: boolean
@@ -280,6 +281,7 @@ export interface CustomerLinkView {
   revenue_amount?: number
   revenue_currency?: 'CNY' | 'USDT' | string
   revenue_cycle?: 'month' | 'quarter' | 'year' | string
+  start_time?: number
   expire_time?: number
   expire_cycle?: 'month' | 'quarter' | 'year' | string
   expire_auto_renew?: boolean
@@ -491,6 +493,16 @@ export interface XUIOutboundView {
   down?: number
   total?: number
   is_default?: boolean
+}
+
+export interface OutboundLinkLibraryItem {
+  id?: string
+  name: string
+  protocol: string
+  tag: string
+  outbound: Record<string, unknown>
+  created_at?: string
+  updated_at?: string
 }
 
 export interface XUIBalancerView {

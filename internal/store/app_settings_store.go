@@ -1,9 +1,11 @@
 package store
 
 import (
+	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -14,6 +16,7 @@ const (
 	clientInstallSettingsKey = "client_install"
 	tagSettingsKey           = "tag_settings"
 	frontendSettingsKey      = "frontend_settings"
+	outboundLinkLibraryKey   = "outbound_link_library"
 )
 
 func (s *SQLiteStore) GetClientInstallSettings() (model.ClientInstallSettingsRequest, bool, error) {
@@ -176,4 +179,144 @@ func (s *SQLiteStore) SaveFrontendSettings(settings model.FrontendSettings) (mod
 		return model.FrontendSettings{}, fmt.Errorf("save frontend settings: %w", err)
 	}
 	return settings, nil
+}
+
+type outboundLinkLibraryPayload struct {
+	Items []model.OutboundLinkLibraryItem `json:"items"`
+}
+
+func (s *SQLiteStore) ListOutboundLinkLibraryItems() ([]model.OutboundLinkLibraryItem, error) {
+	var raw string
+	err := s.db.QueryRow(`SELECT value_json FROM app_settings WHERE key = ?`, outboundLinkLibraryKey).Scan(&raw)
+	if err == sql.ErrNoRows {
+		return []model.OutboundLinkLibraryItem{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load outbound link library: %w", err)
+	}
+	var payload outboundLinkLibraryPayload
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return nil, fmt.Errorf("decode outbound link library: %w", err)
+	}
+	return normalizeOutboundLinkLibraryItems(payload.Items), nil
+}
+
+func (s *SQLiteStore) SaveOutboundLinkLibraryItem(item model.OutboundLinkLibraryItem) (model.OutboundLinkLibraryItem, error) {
+	items, err := s.ListOutboundLinkLibraryItems()
+	if err != nil {
+		return model.OutboundLinkLibraryItem{}, err
+	}
+	now := time.Now().UTC()
+	item = normalizeOutboundLinkLibraryItem(item)
+	if item.ID == "" {
+		item.ID = randomSettingID()
+		item.CreatedAt = now
+	} else {
+		for _, existing := range items {
+			if existing.ID == item.ID {
+				item.CreatedAt = existing.CreatedAt
+				break
+			}
+		}
+		if item.CreatedAt.IsZero() {
+			item.CreatedAt = now
+		}
+	}
+	item.UpdatedAt = now
+	replaced := false
+	for index := range items {
+		if items[index].ID == item.ID {
+			items[index] = item
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		items = append(items, item)
+	}
+	if err := s.saveOutboundLinkLibraryItems(items); err != nil {
+		return model.OutboundLinkLibraryItem{}, err
+	}
+	return item, nil
+}
+
+func (s *SQLiteStore) DeleteOutboundLinkLibraryItem(id string) error {
+	id = strings.TrimSpace(id)
+	items, err := s.ListOutboundLinkLibraryItems()
+	if err != nil {
+		return err
+	}
+	next := items[:0]
+	for _, item := range items {
+		if item.ID != id {
+			next = append(next, item)
+		}
+	}
+	return s.saveOutboundLinkLibraryItems(next)
+}
+
+func (s *SQLiteStore) saveOutboundLinkLibraryItems(items []model.OutboundLinkLibraryItem) error {
+	payload := outboundLinkLibraryPayload{Items: normalizeOutboundLinkLibraryItems(items)}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("encode outbound link library: %w", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err = s.db.Exec(`
+		INSERT INTO app_settings (key, value_json, updated_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
+	`, outboundLinkLibraryKey, string(data), now)
+	if err != nil {
+		return fmt.Errorf("save outbound link library: %w", err)
+	}
+	return nil
+}
+
+func normalizeOutboundLinkLibraryItems(items []model.OutboundLinkLibraryItem) []model.OutboundLinkLibraryItem {
+	result := make([]model.OutboundLinkLibraryItem, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		item = normalizeOutboundLinkLibraryItem(item)
+		if item.ID == "" || item.Tag == "" || item.Protocol == "" || item.Outbound == nil {
+			continue
+		}
+		if _, ok := seen[item.ID]; ok {
+			continue
+		}
+		seen[item.ID] = struct{}{}
+		result = append(result, item)
+	}
+	return result
+}
+
+func normalizeOutboundLinkLibraryItem(item model.OutboundLinkLibraryItem) model.OutboundLinkLibraryItem {
+	item.ID = strings.TrimSpace(item.ID)
+	item.Name = strings.TrimSpace(item.Name)
+	item.Tag = strings.TrimSpace(item.Tag)
+	item.Protocol = strings.ToLower(strings.TrimSpace(item.Protocol))
+	if item.Outbound != nil {
+		if item.Tag == "" {
+			if tag, _ := item.Outbound["tag"].(string); tag != "" {
+				item.Tag = strings.TrimSpace(tag)
+			}
+		}
+		if item.Protocol == "" {
+			if protocol, _ := item.Outbound["protocol"].(string); protocol != "" {
+				item.Protocol = strings.ToLower(strings.TrimSpace(protocol))
+			}
+		}
+	}
+	if item.Name == "" {
+		item.Name = firstNonEmpty(item.Tag, item.Protocol, "outbound")
+	}
+	return item
+}
+
+func randomSettingID() string {
+	buf := make([]byte, 8)
+	if _, err := io.ReadFull(rand.Reader, buf); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return fmt.Sprintf("%x", buf)
 }

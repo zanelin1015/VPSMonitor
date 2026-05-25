@@ -3,8 +3,9 @@ package model
 import "time"
 
 const (
-	AdminRoleRoot        = "admin"
-	AdminRoleAreaManager = "area_manager"
+	AdminRoleRoot          = "admin"
+	AdminRoleAreaManager   = "area_manager"
+	DefaultAccountPassword = "12345678"
 )
 
 type AdminUser struct {
@@ -149,6 +150,16 @@ type AreaAgentTagsResponse struct {
 
 type FrontendSettings struct {
 	CustomCode string `json:"custom_code"`
+}
+
+type OutboundLinkLibraryItem struct {
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	Protocol  string         `json:"protocol"`
+	Tag       string         `json:"tag"`
+	Outbound  map[string]any `json:"outbound"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
 }
 
 type UpdateRequest struct {

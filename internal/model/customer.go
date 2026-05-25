@@ -105,6 +105,7 @@ type CustomerLinkView struct {
 	RevenueAmount    *float64           `json:"revenue_amount,omitempty"`
 	RevenueCurrency  string             `json:"revenue_currency,omitempty"`
 	RevenueCycle     string             `json:"revenue_cycle,omitempty"`
+	StartTime        int64              `json:"start_time,omitempty"`
 	ExpireTime       int64              `json:"expire_time,omitempty"`
 	ExpireCycle      string             `json:"expire_cycle,omitempty"`
 	ExpireAutoRenew  bool               `json:"expire_auto_renew,omitempty"`
