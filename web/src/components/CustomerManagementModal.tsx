@@ -1355,13 +1355,6 @@ export function CustomerManagementModal(props: {
   if (embedded) {
     return (
       <div id="customer-management-panel" className="customer-admin-page">
-        <div className="admin-content-title">
-          <div>
-            <Title level={3}>用户授权管理</Title>
-            <Text type="secondary">管理用户账号、授权链路名称，以及分配给用户的 Client / 节点授权链路。</Text>
-          </div>
-          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadCustomers()}>刷新</Button>
-        </div>
         {content}
         {accountEditorModals}
       </div>

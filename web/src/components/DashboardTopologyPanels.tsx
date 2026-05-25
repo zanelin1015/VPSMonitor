@@ -177,18 +177,30 @@ export function renderCNFlowPanel(props: {
     searchText,
     onSearchTextChange,
   } = props
-  const rows = buildCNFlowRows(chains, agents)
+  const rows = buildCNFlowRows(chains, agents, dashboardView.links)
   const selectedAgent = agents.find((agent) => agent.agent_id === selectedAgentId)
   const flowMode: 'cn' | 'agent' | 'tag' = selectedAgentId ? 'agent' : selectedTag ? 'tag' : 'cn'
-  const scopedRows = selectedAgentId ? rows.filter((row) => row.rootAgentID === selectedAgentId) : rows
+  const scopedRows = selectedAgentId ? rows.filter((row) => row.rootAgentID === selectedAgentId || row.entryRelay?.agentID === selectedAgentId) : rows
   const visibleRows = filterCNFlowRows(scopedRows, searchText)
   const toolbarAgents = selectedTag ? agents.filter((agent) => hasSelectedTag(agent.tags, selectedTag)) : agents
   const headerTitle = flowMode === 'agent' ? `${selectedAgent?.agent_name || selectedAgentId} 节点客户端拓扑` : flowMode === 'tag' ? `${selectedTag} 标签链路拓扑` : 'CN 出发链路拓扑'
   const normalizedSearch = searchText.trim()
 
-  const renderSource = () => {
+  const renderSource = (inputRows: CNFlowRow[]) => {
+    const relays = uniqueEntryRelays(inputRows)
     return (
       <div className="cn-flow-source">
+        {relays.length ? (
+          <div className="cn-source-relays">
+            {relays.map((relay) => (
+              <button key={relay.key} type="button" className="cn-source-relay" onClick={() => onSelectAgent(relay.agentID)}>
+                <span>Realm 入口</span>
+                <strong>{relay.agentName || relay.agentID}</strong>
+                <small>{relay.label || relay.detail || '端口转发'}</small>
+              </button>
+            ))}
+          </div>
+        ) : null}
         <div className="cn-source-orb">CN</div>
       </div>
     )
@@ -443,7 +455,7 @@ export function renderCNFlowPanel(props: {
 
       {visibleRows.length ? (
         <div className="cn-flow-map">
-          {renderSource()}
+          {renderSource(visibleRows)}
           <div className="cn-flow-lanes">
             {flowMode === 'tag'
               ? tagAgentGroups.map((group) => (
@@ -490,6 +502,14 @@ interface CNFlowHop {
   targetClientLabel?: string
 }
 
+interface CNFlowRelay {
+  key: string
+  agentID: string
+  agentName?: string
+  label?: string
+  detail?: string
+}
+
 interface CNFlowRow {
   key: string
   rootAgentID: string
@@ -498,6 +518,7 @@ interface CNFlowRow {
   clientLabel: string
   clientDetail?: string
   entryLabel: string
+  entryRelay?: CNFlowRelay
   hops: CNFlowHop[]
   exitCountryCode: string
   exitCountryLabel: string
@@ -515,11 +536,13 @@ function shouldShowChainWarning(row: CNFlowRow): boolean {
   return !isExpectedTerminalExit(lastHop?.outboundLabel, lastHop?.outboundDetail, row.unresolvedReason)
 }
 
-function buildCNFlowRows(chains: ClientChainView[], agents: DashboardAgentView[]): CNFlowRow[] {
+function buildCNFlowRows(chains: ClientChainView[], agents: DashboardAgentView[], links: TopologyLinkView[]): CNFlowRow[] {
   const agentByID = new Map(agents.map((agent) => [agent.agent_id, agent]))
   const rows = chains.map((chain) => {
     const clientStep = chain.steps.find((step) => step.step_type === 'client')
     const entryStep = chain.steps.find((step) => step.step_type === 'inbound')
+    const entryLabel = entryStep ? `${entryStep.label}${entryStep.port ? `:${entryStep.port}` : ''}` : chain.root_inbound_tag || '-'
+    const entryRelay = findEntryRealmRelay(chain, entryStep, entryLabel, links)
     const hops: CNFlowHop[] = []
     for (let index = 0; index < chain.steps.length; index += 1) {
       const step = chain.steps[index]
@@ -551,7 +574,7 @@ function buildCNFlowRows(chains: ClientChainView[], agents: DashboardAgentView[]
     const exitAgentID = lastHop?.targetAgentID || lastOutbound?.agent_id || chain.root_agent_id
     const exitAgent = exitAgentID ? agentByID.get(exitAgentID) : undefined
     const country = inferExitCountry(exitAgent, lastOutbound)
-    const searchText = buildChainSearchText(chain, hops, country)
+    const searchText = buildChainSearchText(chain, hops, country, entryRelay)
     return {
       key: chain.key,
       rootAgentID: chain.root_agent_id,
@@ -559,7 +582,8 @@ function buildCNFlowRows(chains: ClientChainView[], agents: DashboardAgentView[]
       rootAgentTags: chain.root_agent_tags,
       clientLabel: clientStep?.label || chain.root_client_email || 'anonymous-client',
       clientDetail: clientStep?.detail || chain.root_client_remark,
-      entryLabel: entryStep ? `${entryStep.label}${entryStep.port ? `:${entryStep.port}` : ''}` : chain.root_inbound_tag || '-',
+      entryLabel,
+      entryRelay,
       hops,
       exitCountryCode: country.code,
       exitCountryLabel: country.label,
@@ -604,7 +628,53 @@ function filterCNFlowRows(rows: CNFlowRow[], query: string): CNFlowRow[] {
   return rows.filter((row) => tokens.every((token) => row.searchText.includes(token)))
 }
 
-function buildChainSearchText(chain: ClientChainView, hops: CNFlowHop[], country: { code: string; label: string }): string {
+function findEntryRealmRelay(
+  chain: ClientChainView,
+  entryStep: ClientChainStep | undefined,
+  entryLabel: string,
+  links: TopologyLinkView[],
+): CNFlowRelay | undefined {
+  const targetPort = entryStep?.port || 0
+  const normalizedEntryLabel = normalizeNodeAnchorLabel(entryLabel).toLowerCase()
+  const relayLink = links.find((link) => {
+    if ((link.source.protocol || '').toLowerCase() !== 'realm' || link.source.agent_id === chain.root_agent_id) {
+      return false
+    }
+    if (link.target.agent_id !== chain.root_agent_id) {
+      return false
+    }
+    if (targetPort && link.target.port && targetPort === link.target.port) {
+      return true
+    }
+    const targetLabel = normalizeNodeAnchorLabel(`${link.target.inbound_name || link.target.inbound_tag || ''}${link.target.port ? `:${link.target.port}` : ''}`).toLowerCase()
+    return targetLabel !== '' && targetLabel === normalizedEntryLabel
+  })
+  if (!relayLink) {
+    return undefined
+  }
+  return {
+    key: relayLink.key,
+    agentID: relayLink.source.agent_id,
+    agentName: relayLink.source.agent_name,
+    label: relayLink.source.outbound_tag || 'realm',
+    detail: relayLink.source.target,
+  }
+}
+
+function uniqueEntryRelays(rows: CNFlowRow[]): CNFlowRelay[] {
+  const relays = new Map<string, CNFlowRelay>()
+  rows.forEach((row) => {
+    if (!row.entryRelay) {
+      return
+    }
+    if (!relays.has(row.entryRelay.key)) {
+      relays.set(row.entryRelay.key, row.entryRelay)
+    }
+  })
+  return Array.from(relays.values())
+}
+
+function buildChainSearchText(chain: ClientChainView, hops: CNFlowHop[], country: { code: string; label: string }, entryRelay?: CNFlowRelay): string {
   const values: Array<string | undefined> = [
     chain.key,
     chain.root_agent_id,
@@ -614,6 +684,10 @@ function buildChainSearchText(chain: ClientChainView, hops: CNFlowHop[], country
     chain.root_client_remark,
     chain.root_inbound_tag,
     chain.unresolved_reason,
+    entryRelay?.agentID,
+    entryRelay?.agentName,
+    entryRelay?.label,
+    entryRelay?.detail,
     country.code,
     country.label,
   ]

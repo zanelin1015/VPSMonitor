@@ -389,6 +389,7 @@ export default function App() {
   const deferredClientSearch = useDeferredValue(clientSearch.trim().toLowerCase())
   const applyingRouteRef = useRef(false)
   const lastAdminURLRef = useRef('')
+  const inFlightRequestsRef = useRef<Set<string>>(new Set())
 
   const selectedAgent = agents.find((item) => item.agent_id === selectedAgentId)
   const selectedSummary = overview?.summary || selectedAgent?.summary || {}
@@ -743,6 +744,11 @@ export default function App() {
   }
 
   async function loadAgents(options: LoadOptions = {}) {
+    const requestKey = 'dashboard'
+    if (inFlightRequestsRef.current.has(requestKey)) {
+      return
+    }
+    inFlightRequestsRef.current.add(requestKey)
     const silent = Boolean(options.silent)
     if (!silent) {
       setAgentsLoading(true)
@@ -770,6 +776,7 @@ export default function App() {
       if (!silent) {
         setAgentsLoading(false)
       }
+      inFlightRequestsRef.current.delete(requestKey)
     }
   }
 
@@ -861,6 +868,11 @@ export default function App() {
   }
 
   async function loadOverview(agentID: string, options: LoadOptions = {}) {
+    const requestKey = `overview:${agentID}`
+    if (inFlightRequestsRef.current.has(requestKey)) {
+      return
+    }
+    inFlightRequestsRef.current.add(requestKey)
     const silent = Boolean(options.silent)
     if (!silent) {
       setOverviewLoading(true)
@@ -883,10 +895,16 @@ export default function App() {
       if (!silent) {
         setOverviewLoading(false)
       }
+      inFlightRequestsRef.current.delete(requestKey)
     }
   }
 
   async function loadManagedConfig(agentID: string, options: LoadOptions = {}) {
+    const requestKey = `config:${agentID}`
+    if (inFlightRequestsRef.current.has(requestKey)) {
+      return
+    }
+    inFlightRequestsRef.current.add(requestKey)
     const silent = Boolean(options.silent)
     if (!silent) {
       setConfigLoading(true)
@@ -924,6 +942,7 @@ export default function App() {
       if (!silent) {
         setConfigLoading(false)
       }
+      inFlightRequestsRef.current.delete(requestKey)
     }
   }
 
@@ -932,6 +951,11 @@ export default function App() {
       setXUIActions([])
       return
     }
+    const requestKey = `actions:${agentID}`
+    if (inFlightRequestsRef.current.has(requestKey)) {
+      return
+    }
+    inFlightRequestsRef.current.add(requestKey)
     const silent = Boolean(options.silent)
     if (!silent) {
       setXUIActionsLoading(true)
@@ -949,6 +973,7 @@ export default function App() {
       if (!silent) {
         setXUIActionsLoading(false)
       }
+      inFlightRequestsRef.current.delete(requestKey)
     }
   }
 
@@ -958,6 +983,11 @@ export default function App() {
       setAgentLogsError('')
       return
     }
+    const requestKey = `logs:${agentID}`
+    if (inFlightRequestsRef.current.has(requestKey)) {
+      return
+    }
+    inFlightRequestsRef.current.add(requestKey)
     const silent = Boolean(options.silent)
     if (!silent) {
       setAgentLogsLoading(true)
@@ -978,6 +1008,7 @@ export default function App() {
       if (!silent) {
         setAgentLogsLoading(false)
       }
+      inFlightRequestsRef.current.delete(requestKey)
     }
   }
 
@@ -1738,17 +1769,17 @@ export default function App() {
     }
     const timer = window.setInterval(() => {
       void loadAgents({ silent: true })
-      if (selectedAgentId) {
-        void loadOverview(selectedAgentId, { silent: true })
-        void loadManagedConfig(selectedAgentId, { silent: true })
+      if (selectedAgentId && activeTabKey === 'actions') {
         void loadXUIActions(selectedAgentId, { silent: true })
+      }
+      if (selectedAgentId && activeTabKey === 'logs') {
         void loadAgentLogs(selectedAgentId, { silent: true })
       }
     }, DASHBOARD_AUTO_REFRESH_MS)
     return () => {
       window.clearInterval(timer)
     }
-  }, [adminUser, selectedAgentId])
+  }, [activeTabKey, adminUser, selectedAgentId])
 
   const filteredClients = overview
     ? overview.clients.filter((client) => {

@@ -393,24 +393,21 @@ func (a *App) appendRealmForwardedImportURLs(agentID string, overview *model.XUI
 		return
 	}
 	snapshots := a.store.ListLatest()
-	view := dashboard.BuildGlobalDashboard(agents, snapshots)
-	agentMap := make(map[string]model.DashboardAgentView, len(view.Agents))
-	for _, agent := range view.Agents {
-		agentMap[agent.AgentID] = agent
-	}
+	agentMap := buildRealmForwardAgentMap(agents, snapshots)
 	snapshotMap := make(map[string]model.AgentSnapshot, len(snapshots))
 	for _, snapshot := range snapshots {
 		snapshotMap[snapshot.AgentID] = snapshot
 	}
 	entryByAgent := make(map[string]model.AgentEntryConfig, len(agents))
-	for _, agent := range agents {
-		entryByAgent[agent.AgentID] = agent.Config.Entry
+	for agentID, agent := range agentMap {
+		entryByAgent[agentID] = agent.Entry
 	}
 	sourceAgent, ok := agentMap[agentID]
 	if !ok {
 		return
 	}
 	added := 0
+	targetOverviewByAgent := make(map[string]*model.XUIOverview)
 	for _, rule := range sourceAgent.Entry.PortForwarding.Rules {
 		if !rule.Enabled || rule.ListenPort <= 0 || rule.TargetPort <= 0 {
 			continue
@@ -423,7 +420,11 @@ func (a *App) appendRealmForwardedImportURLs(agentID string, overview *model.XUI
 		if !ok {
 			continue
 		}
-		targetOverview := dashboard.BuildXUIOverviewWithOptions(targetSnapshot, dashboard.XUIOverviewOptions{Entry: entryByAgent[targetAgentID]})
+		targetOverview := targetOverviewByAgent[targetAgentID]
+		if targetOverview == nil {
+			targetOverview = dashboard.BuildXUIOverviewWithOptions(targetSnapshot, dashboard.XUIOverviewOptions{Entry: entryByAgent[targetAgentID]})
+			targetOverviewByAgent[targetAgentID] = targetOverview
+		}
 		if targetOverview == nil {
 			continue
 		}
@@ -466,6 +467,37 @@ func (a *App) appendRealmForwardedImportURLs(agentID string, overview *model.XUI
 		overview.ClientCount = len(overview.Clients)
 		overview.OnlineClientCount = countOnlineXUIClients(overview.Clients)
 	}
+}
+
+func buildRealmForwardAgentMap(agents []model.AgentRecord, snapshots []model.AgentSnapshot) map[string]model.DashboardAgentView {
+	realmByAgent := make(map[string]*model.RealmSnapshot, len(snapshots))
+	for _, snapshot := range snapshots {
+		if snapshot.Realm != nil {
+			realmByAgent[snapshot.AgentID] = snapshot.Realm
+		}
+	}
+	agentMap := make(map[string]model.DashboardAgentView, len(agents))
+	for _, agent := range agents {
+		summary := agent.Summary
+		if summary.Hostname == "" {
+			summary.Hostname = agent.Hostname
+		}
+		if summary.PublicIPv4 == "" {
+			summary.PublicIPv4 = agent.PublicIPv4
+		}
+		if summary.PublicIPv6 == "" {
+			summary.PublicIPv6 = agent.PublicIPv6
+		}
+		agentMap[agent.AgentID] = model.DashboardAgentView{
+			AgentID:             agent.AgentID,
+			AgentName:           agent.AgentName,
+			CustomerDisplayName: agent.CustomerDisplayName,
+			Tags:                append([]string(nil), agent.Tags...),
+			Entry:               dashboard.MergeRealmSnapshotIntoEntry(agent.Config.Entry, realmByAgent[agent.AgentID]),
+			Summary:             summary,
+		}
+	}
+	return agentMap
 }
 
 func overviewInboundKey(inboundID int, inboundTag string) string {

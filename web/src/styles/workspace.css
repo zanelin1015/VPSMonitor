@@ -268,6 +268,56 @@
   background: var(--surface-soft);
 }
 
+.cn-source-relays {
+  display: grid;
+  width: calc(100% - 18px);
+  gap: 8px;
+  margin: 10px 0 14px;
+}
+
+.cn-source-relay {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 8px 7px;
+  border: 1px solid rgba(45, 212, 191, 0.36);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(236, 253, 245, 0.72), rgba(239, 246, 255, 0.62));
+  color: var(--text);
+  cursor: pointer;
+  text-align: center;
+}
+
+.cn-source-relay:hover {
+  border-color: rgba(45, 212, 191, 0.72);
+  background: rgba(236, 253, 245, 0.88);
+}
+
+.cn-source-relay span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.cn-source-relay strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cn-source-relay small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .cn-source-orb {
   display: grid;
   width: 64px;
