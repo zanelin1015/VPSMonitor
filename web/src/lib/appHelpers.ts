@@ -1307,7 +1307,7 @@ function normalizeClientBillings(items: XUIClientBillingConfig[]): XUIClientBill
   const seen = new Set<string>()
   const normalized: XUIClientBillingConfig[] = []
   for (const item of items) {
-    const expireCycle = normalizeClientExpireCycle(item.expire_cycle)
+    const billingCycle = normalizeClientExpireCycle(item.revenue_cycle || item.expire_cycle)
     const startTime = Math.max(0, Number(item.start_time || 0))
     const billing: XUIClientBillingConfig = {
       inbound_id: Number(item.inbound_id || 0),
@@ -1315,12 +1315,12 @@ function normalizeClientBillings(items: XUIClientBillingConfig[]): XUIClientBill
       email: item.email || '',
       revenue_amount: Math.max(0, Number(item.revenue_amount || 0)),
       revenue_currency: item.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
-      revenue_cycle: item.revenue_cycle === 'quarter' || item.revenue_cycle === 'year' ? item.revenue_cycle : 'month',
+      revenue_cycle: billingCycle,
       start_time: startTime,
       expire_time: startTime > 0
-        ? calculateClientBillingExpiryTime(startTime, expireCycle, Boolean(item.expire_auto_renew))
+        ? calculateClientBillingExpiryTime(startTime, billingCycle, Boolean(item.expire_auto_renew))
         : Math.max(0, Number(item.expire_time || 0)),
-      expire_cycle: expireCycle,
+      expire_cycle: billingCycle,
       expire_auto_renew: Boolean(item.expire_auto_renew),
     }
     const key = clientBillingKey(billing)
@@ -1377,6 +1377,10 @@ function normalizeClientExpireCycle(cycle?: string): 'month' | 'quarter' | 'year
   return cycle === 'quarter' || cycle === 'year' ? cycle : 'month'
 }
 
+function clientBillingCycle(billing: Pick<XUIClientBillingConfig, 'revenue_cycle' | 'expire_cycle'>): 'month' | 'quarter' | 'year' {
+  return normalizeClientExpireCycle(billing.revenue_cycle || billing.expire_cycle)
+}
+
 function calculateClientBillingExpiryTime(startTime: number, cycle?: string, autoRenew = false, now = Date.now()): number {
   if (!startTime) {
     return 0
@@ -1412,13 +1416,13 @@ function effectiveClientBillingStartTime(billing: XUIClientBillingConfig, fallba
   if (startTime > 0) {
     return startTime
   }
-  return deriveClientBillingStartTime(Math.max(0, Number(billing.expire_time || fallbackExpiry || 0)), billing.expire_cycle)
+  return deriveClientBillingStartTime(Math.max(0, Number(billing.expire_time || fallbackExpiry || 0)), clientBillingCycle(billing))
 }
 
 function effectiveClientBillingExpiryTime(billing: XUIClientBillingConfig, fallbackExpiry = 0): number {
   const startTime = Math.max(0, Number(billing.start_time || 0))
   if (startTime > 0) {
-    return calculateClientBillingExpiryTime(startTime, billing.expire_cycle, Boolean(billing.expire_auto_renew))
+    return calculateClientBillingExpiryTime(startTime, clientBillingCycle(billing), Boolean(billing.expire_auto_renew))
   }
   return Math.max(0, Number(billing.expire_time || fallbackExpiry || 0))
 }

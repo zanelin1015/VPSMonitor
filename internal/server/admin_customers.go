@@ -257,7 +257,7 @@ func (a *App) syncCustomerAssignmentRevenue(req model.CustomerAssignmentRequest,
 		RevenueAmount:   amount,
 		RevenueCurrency: currency,
 		RevenueCycle:    cycle,
-		ExpireCycle:     "month",
+		ExpireCycle:     cycle,
 	}
 	key := customerBillingKey(billing.InboundID, billing.InboundTag, billing.Email)
 	emailKey := customerBillingEmailKey(billing.InboundID, billing.Email)
@@ -269,9 +269,7 @@ func (a *App) syncCustomerAssignmentRevenue(req model.CustomerAssignmentRequest,
 		}
 		billing.StartTime = existing.StartTime
 		billing.ExpireTime = existing.ExpireTime
-		if existing.ExpireCycle != "" {
-			billing.ExpireCycle = existing.ExpireCycle
-		}
+		billing.ExpireCycle = cycle
 		billing.ExpireAutoRenew = existing.ExpireAutoRenew
 		cfg.Renewal.ClientBillings[index] = billing
 		replaced = true

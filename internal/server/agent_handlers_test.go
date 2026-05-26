@@ -608,3 +608,24 @@ func TestAppendRealmForwardedImportURLsScopesAdminExportToEntryAgent(t *testing.
 		t.Fatalf("HK page should not arbitrarily export through GZ or SZ, got %q", hkOverview.Clients[0].ImportURL)
 	}
 }
+
+func TestPendingTopologyLookupValuesIncludesUncachedOutboundIP(t *testing.T) {
+	now := time.Now().UTC()
+	cache := model.TopologyLookupCache{
+		Geos: map[string]model.TopologyGeoCacheEntry{
+			"47.239.135.242": {
+				Geo:       model.IPGeoView{IP: "47.239.135.242", CountryCode: "HK", CountryName: "Hong Kong"},
+				UpdatedAt: now,
+				ExpiresAt: now.Add(time.Hour),
+			},
+		},
+	}
+	values := pendingTopologyLookupValues(cache, []string{
+		"47.239.135.242",
+		"123.30.235.76:54401",
+		"https://123.30.235.76:54401/path",
+	})
+	if len(values) != 1 || values[0] != "123.30.235.76" {
+		t.Fatalf("expected only uncached VN outbound IP to be refreshed, got %#v", values)
+	}
+}

@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"net/netip"
 	"reflect"
 	"sort"
 	"strconv"
@@ -301,17 +303,48 @@ func (a *App) refreshTopologyLookupCacheFromRegister(req model.AgentRegisterRequ
 	if isUsableObservedIP(observedIP) {
 		values = append(values, observedIP)
 	}
-	resolved := dashboard.NewTopologyResolverData(values)
-	if len(resolved.Hosts) == 0 && len(resolved.Geos) == 0 {
-		return
-	}
+	a.refreshTopologyLookupCache(req.AgentID, values)
+}
 
+func (a *App) refreshTopologyLookupCacheFromSnapshot(agentID string, snapshot model.AgentSnapshot) {
+	values := []string{
+		snapshot.Summary.ObservedIP,
+		snapshot.Summary.ServerSeenIP,
+		snapshot.Summary.PublicIPv4,
+		snapshot.Summary.PublicIPv6,
+	}
+	if snapshot.XUI != nil {
+		values = append(values, snapshot.XUI.BaseURL)
+		overview := dashboard.BuildXUIOverview(snapshot)
+		if overview != nil {
+			for _, outbound := range overview.Outbounds {
+				values = append(values, outbound.Address, outbound.TLSServerName, outbound.WSHost, outbound.SendThrough)
+			}
+		}
+	}
+	if snapshot.Realm != nil {
+		for _, rule := range snapshot.Realm.Rules {
+			values = append(values, rule.ListenAddress, rule.TargetAddress)
+		}
+	}
+	a.refreshTopologyLookupCache(agentID, values)
+}
+
+func (a *App) refreshTopologyLookupCache(agentID string, values []string) {
 	a.lookupCacheMu.Lock()
 	defer a.lookupCacheMu.Unlock()
 
 	cache, _, err := a.store.GetTopologyLookupCache()
 	if err != nil {
-		log.Printf("refresh topology lookup cache for %s failed: load cache: %v", req.AgentID, err)
+		log.Printf("refresh topology lookup cache for %s failed: load cache: %v", agentID, err)
+		return
+	}
+	values = pendingTopologyLookupValues(cache, values)
+	if len(values) == 0 {
+		return
+	}
+	resolved := dashboard.NewTopologyResolverData(values)
+	if len(resolved.Hosts) == 0 && len(resolved.Geos) == 0 {
 		return
 	}
 	now := time.Now().UTC()
@@ -339,8 +372,74 @@ func (a *App) refreshTopologyLookupCacheFromRegister(req model.AgentRegisterRequ
 		}
 	}
 	if err := a.store.SaveTopologyLookupCache(cache); err != nil {
-		log.Printf("refresh topology lookup cache for %s failed: save cache: %v", req.AgentID, err)
+		log.Printf("refresh topology lookup cache for %s failed: save cache: %v", agentID, err)
+		return
 	}
+	a.clearDashboardTopologyCache()
+}
+
+func (a *App) clearDashboardTopologyCache() {
+	a.dashboardCacheMu.Lock()
+	a.topologyCache = make(map[string]dashboardCacheEntry)
+	a.dashboardCacheMu.Unlock()
+}
+
+func pendingTopologyLookupValues(cache model.TopologyLookupCache, values []string) []string {
+	now := time.Now().UTC()
+	seen := make(map[string]struct{}, len(values))
+	pending := make([]string, 0, len(values))
+	for _, value := range values {
+		normalized := normalizeTopologyLookupValue(value)
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		if ip := normalizeTopologyLookupIP(normalized); ip != "" {
+			entry, ok := cache.Geos[ip]
+			if ok && now.Before(entry.ExpiresAt) && (entry.Geo.CountryCode != "" || entry.Geo.CountryName != "") {
+				continue
+			}
+		} else {
+			entry, ok := cache.Hosts[normalized]
+			if ok && now.Before(entry.ExpiresAt) && len(entry.IPs) > 0 {
+				continue
+			}
+		}
+		pending = append(pending, normalized)
+	}
+	return pending
+}
+
+func normalizeTopologyLookupValue(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	if value == "" {
+		return ""
+	}
+	value = strings.TrimPrefix(value, "https://")
+	value = strings.TrimPrefix(value, "http://")
+	if strings.Contains(value, "/") {
+		value = strings.Split(value, "/")[0]
+	}
+	if host, _, err := net.SplitHostPort(value); err == nil {
+		value = host
+	}
+	value = strings.Trim(strings.TrimSuffix(value, "."), "[]")
+	return value
+}
+
+func normalizeTopologyLookupIP(value string) string {
+	value = normalizeTopologyLookupValue(value)
+	if value == "" {
+		return ""
+	}
+	addr, err := netip.ParseAddr(value)
+	if err != nil {
+		return ""
+	}
+	return addr.String()
 }
 
 func dashboardCacheKey(user model.AdminUser) string {
@@ -1145,6 +1244,7 @@ func (a *App) handleHeartbeat(w http.ResponseWriter, r *http.Request, agentID st
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	go a.refreshTopologyLookupCacheFromSnapshot(agentID, snapshot)
 	a.syncRealmConfigFromSnapshot(agentID, snapshot.Realm)
 	go a.alerts.EvaluateAgent(agentID)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})

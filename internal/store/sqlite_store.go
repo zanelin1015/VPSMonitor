@@ -385,16 +385,10 @@ func normalizeClientBillings(items []model.XUIClientBillingConfig) []model.XUICl
 		if item.ExpireTime < 0 {
 			item.ExpireTime = 0
 		}
-		switch strings.ToLower(strings.TrimSpace(item.ExpireCycle)) {
-		case "quarter", "quarterly", "season":
-			item.ExpireCycle = "quarter"
-		case "year", "yearly":
-			item.ExpireCycle = "year"
-		default:
-			item.ExpireCycle = "month"
-		}
+		// Client time periods follow the price cycle so billing and expiry stay in sync.
+		item.ExpireCycle = item.RevenueCycle
 		if item.StartTime > 0 {
-			item.ExpireTime = calculateClientBillingExpireTime(item.StartTime, item.ExpireCycle, item.ExpireAutoRenew, time.Now())
+			item.ExpireTime = calculateClientBillingExpireTime(item.StartTime, item.RevenueCycle, item.ExpireAutoRenew, time.Now())
 		}
 		key := fmt.Sprintf("%d\x00%s\x00%s", item.InboundID, item.InboundTag, item.Email)
 		if _, ok := seen[key]; ok {

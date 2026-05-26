@@ -158,6 +158,21 @@ export interface AgentDetailPanelProps {
   onFeatureChange: (feature: AgentFeatureKey, enabled: boolean) => void
 }
 
+function normalizeBillingCycle(cycle?: string): 'month' | 'quarter' | 'year' {
+  return cycle === 'quarter' || cycle === 'year' ? cycle : 'month'
+}
+
+function billingCycleLabel(cycle?: string): string {
+  switch (normalizeBillingCycle(cycle)) {
+    case 'quarter':
+      return '季'
+    case 'year':
+      return '年'
+    default:
+      return '月'
+  }
+}
+
 export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const {
     activeTabKey,
@@ -460,6 +475,9 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       width: 300,
       render: (_, record) => {
         const billing = findClientBilling(managedConfig?.renewal?.client_billings, record) || defaultClientBilling(record)
+        const revenueCycle = normalizeBillingCycle(billing.revenue_cycle || billing.expire_cycle)
+        const effectiveStart = effectiveClientBillingStartTime(billing, record.expiry_time || 0)
+        const autoRenew = Boolean(billing.expire_auto_renew)
         return (
           <Space wrap size={[6, 6]}>
             <InputNumber
@@ -483,13 +501,19 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
               size="small"
               style={{ width: 78 }}
               disabled={!canManageConfig}
-              value={billing.revenue_cycle || 'month'}
+              value={revenueCycle}
               options={[
                 { value: 'month', label: '月' },
                 { value: 'quarter', label: '季' },
                 { value: 'year', label: '年' },
               ]}
-              onChange={(value) => onUpdateClientBillingDraft(record, { revenue_cycle: value as 'month' | 'quarter' | 'year' })}
+              onChange={(value) => {
+                const nextCycle = value as 'month' | 'quarter' | 'year'
+                onUpdateClientBillingDraft(record, {
+                  revenue_cycle: nextCycle,
+                  ...clientBillingPatchFromStart(effectiveStart, nextCycle, autoRenew),
+                })
+              }}
             />
             <Button size="small" type="primary" disabled={!canManageConfig} loading={configSavingSection === 'renewal'} onClick={() => onSaveClientBilling(record)}>
               保存
@@ -506,7 +530,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         const billing = findClientBilling(managedConfig?.renewal?.client_billings, record) || defaultClientBilling(record)
         const effectiveStart = effectiveClientBillingStartTime(billing, record.expiry_time || 0)
         const effectiveExpiry = effectiveClientBillingExpiryTime(billing, record.expiry_time || 0)
-        const expireCycle = billing.expire_cycle || 'month'
+        const billingCycle = normalizeBillingCycle(billing.revenue_cycle || billing.expire_cycle)
         const autoRenew = Boolean(billing.expire_auto_renew)
         return (
           <Space direction="vertical" size={6} className="client-expiry-cell">
@@ -519,25 +543,14 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
                 style={{ width: 132 }}
                 disabled={!canManageConfig}
                 value={formatDateInputFromMillis(effectiveStart)}
-                onChange={(event) => onUpdateClientBillingDraft(record, clientBillingPatchFromStart(dateInputToStartMillis(event.target.value), expireCycle, autoRenew))}
+                onChange={(event) => onUpdateClientBillingDraft(record, clientBillingPatchFromStart(dateInputToStartMillis(event.target.value), billingCycle, autoRenew))}
               />
-              <Select
-                size="small"
-                style={{ width: 78 }}
-                disabled={!canManageConfig}
-                value={expireCycle}
-                options={[
-                  { value: 'month', label: '月' },
-                  { value: 'quarter', label: '季' },
-                  { value: 'year', label: '年' },
-                ]}
-                onChange={(value) => onUpdateClientBillingDraft(record, clientBillingPatchFromStart(effectiveStart, value as 'month' | 'quarter' | 'year', autoRenew))}
-              />
+              <Tag color="blue">按收费周期：{billingCycleLabel(billingCycle)}</Tag>
               <Switch
                 size="small"
                 disabled={!canManageConfig}
                 checked={autoRenew}
-                onChange={(checked: boolean) => onUpdateClientBillingDraft(record, clientBillingPatchFromStart(effectiveStart, expireCycle, checked))}
+                onChange={(checked: boolean) => onUpdateClientBillingDraft(record, clientBillingPatchFromStart(effectiveStart, billingCycle, checked))}
               />
               <Text type="secondary">周期刷新</Text>
               <Button size="small" type="primary" disabled={!canManageConfig} loading={configSavingSection === 'renewal'} onClick={() => onSaveClientBilling(record)}>

@@ -54,8 +54,8 @@ func TestSyncCustomerAssignmentRevenueCreatesBilling(t *testing.T) {
 	if billing.RevenueAmount != amount || billing.RevenueCurrency != "USDT" || billing.RevenueCycle != "quarter" {
 		t.Fatalf("unexpected billing revenue: %#v", billing)
 	}
-	if billing.ExpireCycle != "month" {
-		t.Fatalf("expected default expire cycle to be preserved, got %#v", billing)
+	if billing.ExpireCycle != "quarter" {
+		t.Fatalf("expected expire cycle to follow revenue cycle, got %#v", billing)
 	}
 }
 
