@@ -109,9 +109,17 @@ export interface ManagedAgentConfig {
   customer_display_name?: string
   sort_order?: number
   tags?: string[]
+  features?: AgentFeatureConfig
   renewal?: VPSRenewalConfig
   entry?: AgentEntryConfig
   xui: XUIConfig
+}
+
+export interface AgentFeatureConfig {
+  xui?: boolean
+  realm?: boolean
+  nat?: boolean
+  port_policy?: boolean
 }
 
 export interface AgentEntryConfig {

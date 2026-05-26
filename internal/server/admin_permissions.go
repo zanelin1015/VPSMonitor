@@ -704,7 +704,7 @@ func (a *App) areaManagerXUIActionAllowed(user model.AdminUser, agentID string, 
 		return true
 	case model.XUIActionAddClient:
 		return a.areaManagerAddClientPayloadAllowed(user, agentID, req.Payload)
-	case model.XUIActionDeleteClient:
+	case model.XUIActionSetClientEnabled, model.XUIActionDeleteClient:
 		return a.areaManagerDeleteClientPayloadAllowed(user, agentID, req.Payload)
 	default:
 		return false

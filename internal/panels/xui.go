@@ -327,6 +327,8 @@ func (c *XUIClient) executeActionAuthenticated(ctx context.Context, action model
 		return c.upsertRoutingRule(ctx, action.Payload)
 	case model.XUIActionUpdateClientExpiry:
 		return c.updateClientExpiry(ctx, action.Payload)
+	case model.XUIActionSetClientEnabled:
+		return c.setClientEnabled(ctx, action.Payload)
 	case model.XUIActionDeleteClient:
 		return c.deleteClient(ctx, action.Payload)
 	default:
@@ -1061,6 +1063,106 @@ func (c *XUIClient) updateClientExpiry(ctx context.Context, payload map[string]a
 		return nil, err
 	}
 	return map[string]any{"message": result.Msg, "email": email, "expiry_time": expiryTime, "enabled": updatedClient["enable"], "routing_refs": routingRefsUpdated, "restarted": true}, nil
+}
+
+func (c *XUIClient) setClientEnabled(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	inboundID := intValue(payload["inbound_id"])
+	inboundTag := strings.TrimSpace(stringFromMap(payload, "inbound_tag"))
+	email := strings.TrimSpace(stringFromMap(payload, "email"))
+	clientID := strings.TrimSpace(firstNonEmptyString(
+		stringFromMap(payload, "client_id"),
+		stringFromMap(payload, "client_uuid"),
+		stringFromMap(payload, "auth_uuid"),
+	))
+	enabled, hasEnabled := boolPayloadValue(payload, "enabled")
+	if value, ok := boolPayloadValue(payload, "enable"); ok {
+		enabled = value
+		hasEnabled = true
+	}
+	if inboundID <= 0 && inboundTag == "" {
+		return nil, fmt.Errorf("inbound_id or inbound_tag is required")
+	}
+	if email == "" && clientID == "" {
+		return nil, fmt.Errorf("email or client_id is required")
+	}
+	if !hasEnabled {
+		return nil, fmt.Errorf("enabled is required")
+	}
+
+	inbounds, err := c.getJSONList(ctx, "/panel/api/inbounds/list")
+	if err != nil {
+		return nil, err
+	}
+	var inbound map[string]any
+	for _, item := range inbounds {
+		if inboundID > 0 && intValue(item["id"]) == inboundID {
+			inbound = item
+			break
+		}
+		if inboundTag != "" && stringValue(item["tag"]) == inboundTag {
+			inbound = item
+			break
+		}
+	}
+	if inbound == nil {
+		return nil, fmt.Errorf("inbound not found for client %s", firstNonEmptyString(email, clientID))
+	}
+
+	settings, settingsText, err := decodeInboundSettings(inbound["settings"])
+	if err != nil {
+		return nil, err
+	}
+	clients := objectSlice(settings["clients"])
+	var updatedClient map[string]any
+	for _, client := range clients {
+		if clientMatchesDeletePayload(client, email, clientID) {
+			client["enable"] = enabled
+			if email == "" {
+				email = strings.TrimSpace(stringValue(client["email"]))
+			}
+			if clientID == "" {
+				clientID = clientPrimaryID(client)
+			}
+			updatedClient = client
+			break
+		}
+	}
+	if updatedClient == nil {
+		return nil, fmt.Errorf("client not found in inbound: %s", firstNonEmptyString(email, clientID))
+	}
+
+	inboundID = intValue(inbound["id"])
+	if updateID := clientPrimaryID(updatedClient); updateID != "" {
+		clientSettings, _ := json.Marshal(map[string]any{"clients": []map[string]any{updatedClient}})
+		if result, err := c.postJSON(ctx, "/panel/api/inbounds/updateClient/"+url.PathEscape(updateID), map[string]any{
+			"id":       inboundID,
+			"settings": string(clientSettings),
+		}); err == nil {
+			if err := c.restartXrayService(ctx); err != nil {
+				return nil, err
+			}
+			return map[string]any{"message": result.Msg, "email": email, "client_id": updateID, "inbound_id": inboundID, "enabled": updatedClient["enable"], "restarted": true}, nil
+		}
+	}
+
+	settings["clients"] = clients
+	body, err := json.Marshal(settings)
+	if err != nil {
+		return nil, fmt.Errorf("marshal inbound settings: %w", err)
+	}
+	if settingsText {
+		inbound["settings"] = string(body)
+	} else {
+		inbound["settings"] = settings
+	}
+	result, err := c.postJSON(ctx, fmt.Sprintf("/panel/api/inbounds/update/%d", inboundID), inbound)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.restartXrayService(ctx); err != nil {
+		return nil, err
+	}
+	return map[string]any{"message": result.Msg, "email": email, "client_id": clientID, "inbound_id": inboundID, "enabled": updatedClient["enable"], "restarted": true}, nil
 }
 
 func boolPayloadValue(payload map[string]any, key string) (bool, bool) {

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Alert, AutoComplete, Badge, Button, Card, Empty, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, Tag, Typography } from 'antd'
+import type { TabsProps } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { ReloadOutlined, SettingOutlined } from '@ant-design/icons'
 import { Terminal } from '@xterm/xterm'
@@ -61,6 +62,8 @@ import { RouteBadge } from './RouteBadge'
 
 const { Text, Title } = Typography
 
+type AgentFeatureKey = 'xui' | 'realm' | 'nat' | 'port_policy'
+
 export interface AgentDetailPanelProps {
   activeTabKey: string
   agentLogs: AgentLogsResponse | null
@@ -94,6 +97,7 @@ export interface AgentDetailPanelProps {
   xuiActions: XUIAction[]
   xuiActionsLoading: boolean
   xuiClientDeleteLoadingKey: string
+  xuiClientToggleLoadingKey: string
   agentDeleteLoading: boolean
   canOpenXUI: boolean
   canManageConfig: boolean
@@ -102,6 +106,7 @@ export interface AgentDetailPanelProps {
   remoteCommandLoading: boolean
   xuiRestartLoading: boolean
   xuiUpdateLoading: boolean
+  realmCopyLoading: boolean
   onActiveTabChange: (key: string) => void
   onClientSearchChange: (value: string) => void
   onCopyImportURL: (client: XUIClientView) => void
@@ -123,11 +128,13 @@ export interface AgentDetailPanelProps {
   onAuthorizeCustomer: (draft: CustomerAssignmentDraft) => void
   onDeleteCurrentAgent: () => void
   onDeleteXUIClient: (client: XUIClientView) => void
+  onSetXUIClientEnabled: (client: XUIClientView, enabled: boolean) => void
   onRefreshCurrentAgent: () => void
   onRestartXUI: () => void
   onUpdate3XUI: () => void
   onExecuteRemoteCommand: (command: string, shell: string, timeoutSeconds: number) => void
   onRefreshXUIActions: () => void
+  onCopyRealmConfig: (targetAgentID: string) => void
   onRenewalChange: (patch: Partial<VPSRenewalConfig>) => void
   onReturnHome: () => void
   onSaveClientBilling: (record: XUIClientView) => void
@@ -138,6 +145,7 @@ export interface AgentDetailPanelProps {
   onSaveAreaTags?: (values: string[]) => void
   onUpdateClientBillingDraft: (record: XUIClientView, patch: Partial<XUIClientBillingConfig>) => void
   onXUIChange: (patch: Partial<XUIConfig>) => void
+  onFeatureChange: (feature: AgentFeatureKey, enabled: boolean) => void
 }
 
 export function AgentDetailPanel(props: AgentDetailPanelProps) {
@@ -174,6 +182,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     xuiActions,
     xuiActionsLoading,
     xuiClientDeleteLoadingKey,
+    xuiClientToggleLoadingKey,
     agentDeleteLoading,
     canOpenXUI,
     canManageConfig,
@@ -182,6 +191,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     remoteCommandLoading,
     xuiRestartLoading,
     xuiUpdateLoading,
+    realmCopyLoading,
     onActiveTabChange,
     onClientSearchChange,
     onCopyImportURL,
@@ -203,11 +213,13 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onAuthorizeCustomer,
     onDeleteCurrentAgent,
     onDeleteXUIClient,
+    onSetXUIClientEnabled,
     onRefreshCurrentAgent,
     onRestartXUI,
     onUpdate3XUI,
     onExecuteRemoteCommand,
     onRefreshXUIActions,
+    onCopyRealmConfig,
     onRenewalChange,
     onReturnHome,
     onSaveClientBilling,
@@ -218,6 +230,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onSaveAreaTags,
     onUpdateClientBillingDraft,
     onXUIChange,
+    onFeatureChange,
   } = props
   const [remoteCommandOpen, setRemoteCommandOpen] = useState(false)
   const [remoteCommand, setRemoteCommand] = useState('')
@@ -246,6 +259,15 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const currentPrimaryDomain = managedConfig?.entry?.import_domain || selectedAgent.entry?.import_domain || ''
   const certificateDomainOptions = buildPrimaryDomainOptions(overview?.certificates || [])
   const [primaryDomainDraft, setPrimaryDomainDraft] = useState(currentPrimaryDomain)
+  const featureEnabled = {
+    xui: Boolean(managedConfig?.features?.xui),
+    realm: Boolean(managedConfig?.features?.realm),
+    nat: Boolean(managedConfig?.features?.nat),
+    port_policy: Boolean(managedConfig?.features?.port_policy),
+  }
+  const realmRuleCount = managedConfig?.entry?.port_forwarding?.rules?.length || selectedAgent.entry?.port_forwarding?.rules?.length || 0
+  const natMappingCount = managedConfig?.entry?.mappings?.length || selectedAgent.entry?.mappings?.length || 0
+  const portPolicyCount = managedConfig?.entry?.network_policy?.rules?.length || selectedAgent.entry?.network_policy?.rules?.length || 0
 
   useEffect(() => {
     setPrimaryDomainDraft(currentPrimaryDomain)
@@ -389,6 +411,15 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
           <Tag color={isClientOnline(record.last_online, overview?.reported_at) ? 'processing' : 'default'}>
             {isClientOnline(record.last_online, overview?.reported_at) ? '在线' : '离线'}
           </Tag>
+          <Switch
+            size="small"
+            checked={record.enabled}
+            checkedChildren="开"
+            unCheckedChildren="关"
+            disabled={!canManageConfig && !restrictedView}
+            loading={xuiClientToggleLoadingKey === xuiClientActionKey(record)}
+            onChange={(checked) => onSetXUIClientEnabled(record, checked)}
+          />
         </Space>
       ),
     },
@@ -547,25 +578,37 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     {
       title: '操作',
       key: 'actions',
-      width: 110,
+      width: 180,
       render: (_, record) => (
-        <Popconfirm
-          title="删除这个 Client？"
-          description={`将从 x-ui 入站 ${record.inbound_remark || record.inbound_tag || record.inbound_id} 删除 ${record.email || '该客户端'}，删除后会重启 Xray。`}
-          okText="删除"
-          cancelText="取消"
-          okButtonProps={{ danger: true }}
-          onConfirm={() => onDeleteXUIClient(record)}
-        >
-          <Button
-            size="small"
-            danger
-            disabled={!canManageConfig && !restrictedView}
-            loading={xuiClientDeleteLoadingKey === xuiClientActionKey(record)}
+        <Space wrap size={[6, 6]}>
+          {restrictedView ? (
+            <Button
+              size="small"
+              disabled={!canManageConfig && !restrictedView}
+              loading={xuiClientToggleLoadingKey === xuiClientActionKey(record)}
+              onClick={() => onSetXUIClientEnabled(record, !record.enabled)}
+            >
+              {record.enabled ? '停用' : '启用'}
+            </Button>
+          ) : null}
+          <Popconfirm
+            title="删除这个 Client？"
+            description={`将从 x-ui 入站 ${record.inbound_remark || record.inbound_tag || record.inbound_id} 删除 ${record.email || '该客户端'}，删除后会重启 Xray。`}
+            okText="删除"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+            onConfirm={() => onDeleteXUIClient(record)}
           >
-            删除
-          </Button>
-        </Popconfirm>
+            <Button
+              size="small"
+              danger
+              disabled={!canManageConfig && !restrictedView}
+              loading={xuiClientDeleteLoadingKey === xuiClientActionKey(record)}
+            >
+              删除
+            </Button>
+          </Popconfirm>
+        </Space>
       ),
     },
     {
@@ -814,12 +857,282 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       onEntryAddressesTextChange,
       onEntryChange,
       onXUIChange,
+      onCopyRealmConfig,
+      realmCopyLoading,
       configAudits,
       configAuditsLoading,
       currencyOptions,
       section,
     })
   }
+
+  const featureSwitchPanel = canManageConfig ? (
+    <div className="agent-feature-switch-panel">
+      <div>
+        <Text strong>启用功能</Text>
+        <div className="muted-line">只打开当前 VPS 拥有的能力；关闭后对应操作入口会从详情页隐藏。</div>
+      </div>
+      <Space wrap>
+        <FeatureSwitch label="x-ui" checked={featureEnabled.xui} onChange={(checked) => onFeatureChange('xui', checked)} />
+        <FeatureSwitch label="Realm" checked={featureEnabled.realm} onChange={(checked) => onFeatureChange('realm', checked)} />
+        <FeatureSwitch label="NAT" checked={featureEnabled.nat} onChange={(checked) => onFeatureChange('nat', checked)} />
+        <FeatureSwitch label="端口限速" checked={featureEnabled.port_policy} onChange={(checked) => onFeatureChange('port_policy', checked)} />
+        <Button size="small" type="primary" loading={configSavingSection === 'client'} onClick={() => onSaveManagedConfigSection('client')}>保存功能选择</Button>
+      </Space>
+    </div>
+  ) : null
+
+  const overviewTab: NonNullable<TabsProps['items']>[number] = {
+    key: 'overview',
+    label: `总览 (${selectedAgentId ? 1 : 0})`,
+    children: (
+      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        {featureSwitchPanel}
+        {renderGlobalOverviewPanel({
+          dashboardView: currentAgentDashboardView,
+          selectedTag,
+          links: currentAgentLinks,
+          onSelectTag: (value) => onSelectTag(value),
+          scopeAgentID: selectedAgentId,
+          scopeAgentName: selectedAgent.agent_name || selectedAgent.agent_id,
+        })}
+      </Space>
+    ),
+  }
+
+  const xuiTabs: TabsProps['items'] = featureEnabled.xui ? [
+    {
+      key: 'actions',
+      label: `x-ui 操作 (${xuiActions.length})`,
+      children: (
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Alert
+            type="warning"
+            showIcon
+            message="这里现在通过 WS 实时下发 x-ui 指令"
+            description="入站节点请直接通过 x-ui 面板手动新增；中心会把其它 client 的节点导入为当前 client 的出站，并通过在线 Client 实时执行和回传结果。Client 不在线时会保留任务等待轮询。"
+          />
+          <Space wrap>
+            <Button type="primary" disabled={!selectedAgentId} onClick={onCreateRoutingAction}>新增操作</Button>
+            {!restrictedView ? <Button danger onClick={openRealtimeTerminal}>实时 TTY</Button> : null}
+            {!restrictedView ? <Button loading={remoteCommandLoading} onClick={() => setRemoteCommandOpen(true)}>单次命令</Button> : null}
+            {!restrictedView ? (
+              <Popconfirm
+                title="升级 3x-ui？"
+                description="将通过在线 Client 执行 3x-ui 官方 update.sh 升级脚本，过程中可能短暂影响 x-ui / Xray。"
+                okText="升级"
+                cancelText="取消"
+                onConfirm={onUpdate3XUI}
+              >
+                <Button loading={xuiUpdateLoading}>升级 3x-ui</Button>
+              </Popconfirm>
+            ) : null}
+            <Button icon={<ReloadOutlined />} disabled={!selectedAgentId} loading={xuiActionsLoading} onClick={onRefreshXUIActions}>刷新操作记录</Button>
+          </Space>
+          <Table rowKey={(record) => record.id} columns={xuiActionColumns} dataSource={xuiActions} loading={xuiActionsLoading} pagination={{ pageSize: 8, hideOnSinglePage: true }} scroll={{ x: 820 }} />
+        </Space>
+      ),
+    },
+    ...(canManageConfig ? [{
+      key: 'xui-config',
+      label: 'X-ui 配置',
+      children: renderManagedConfigSection('xui'),
+    }] : []),
+    {
+      key: 'nodes',
+      label: `节点 (${overview?.nodes.length || 0})`,
+      children: overview ? (
+        <Table
+          rowKey={(record) => record.tag || String(record.id)}
+          columns={nodeColumns}
+          dataSource={overview.nodes}
+          pagination={false}
+          scroll={{ x: 1000 }}
+          onRow={(record) => {
+            const anchor = nodeElementId(selectedAgentId, record.remark || record.tag || String(record.id))
+            return {
+              id: anchor,
+              className: selectedNodeAnchor === anchor ? 'node-row-selected' : '',
+            }
+          }}
+        />
+      ) : (
+        <Empty description="暂无 x-ui 节点数据" />
+      ),
+    },
+    {
+      key: 'clients',
+      label: `客户端 (${overview?.clients.length || 0})`,
+      children: overview ? (
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
+            <Input.Search allowClear style={{ minWidth: 280, flex: 1 }} placeholder="按邮箱、备注、节点标签筛选客户端" value={clientSearch} onChange={(event) => onClientSearchChange(event.target.value)} />
+            <Button type="primary" disabled={!overview.nodes.length || (!canManageConfig && !restrictedView)} onClick={() => onCreateNodeClientAction(overview.nodes[0])}>
+              新增客户端
+            </Button>
+          </Space>
+          <Table rowKey={(record) => `${record.inbound_tag}-${record.email}`} columns={visibleClientColumns} dataSource={filteredClients} pagination={{ pageSize: 12, hideOnSinglePage: true }} scroll={{ x: restrictedView ? 980 : 1780 }} />
+        </Space>
+      ) : (
+        <Empty description="暂无客户端数据" />
+      ),
+    },
+    {
+      key: 'outbounds',
+      label: `出站 (${overview?.outbounds.length || 0})`,
+      children: overview ? (
+        <div className="outbound-grid">
+          {overview.outbounds.map((outbound) => {
+            const selected = outbound.tag && outbound.tag === selectedOutboundTag
+            const linkedClient = findOutboundLinkedClient(dashboardView, selectedAgentId, outbound.tag)
+            const linkedNodeLabel = linkedClient ? linkedClient.target.inbound_name || linkedClient.target.inbound_tag || String(linkedClient.target.inbound_id) : ''
+            return (
+              <section
+                key={outbound.tag || 'unknown'}
+                id={outboundElementId(outbound.tag || 'unknown')}
+                className={`outbound-card${selected ? ' selected' : ''}${linkedClient ? ' linked' : ''}`}
+                role={linkedClient ? 'button' : undefined}
+                tabIndex={linkedClient ? 0 : undefined}
+                onClick={() => {
+                  if (outbound.tag) {
+                    onJumpOutbound(outbound.tag)
+                  }
+                  if (linkedClient) {
+                    onJumpNode(linkedClient.target.agent_id, linkedNodeLabel)
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if (!linkedClient || (event.key !== 'Enter' && event.key !== ' ')) {
+                    return
+                  }
+                  event.preventDefault()
+                  onJumpNode(linkedClient.target.agent_id, linkedNodeLabel)
+                }}
+              >
+                <div className="outbound-head">
+                  <div>
+                    <Text className="outbound-tag">{outbound.tag || '-'}</Text>
+                    <div className="muted-line">{outbound.protocol || '-'}{outbound.is_default ? ' · 默认出口' : ''}</div>
+                  </div>
+                  <Space wrap size={[6, 6]}>
+                    {outbound.is_default ? <Tag color="success">默认</Tag> : null}
+                    {outbound.send_through ? <Tag>sendThrough:{outbound.send_through}</Tag> : null}
+                    {linkedClient ? <Tag color="cyan">关联 {linkedClient.target.agent_name || linkedClient.target.agent_id}</Tag> : null}
+                  </Space>
+                </div>
+                <div className="outbound-target">{outbound.target || '当前配置未提供远端地址'}</div>
+                {linkedClient ? <div className="muted-line">点击跳转到 {linkedClient.target.agent_name || linkedClient.target.agent_id} / {linkedNodeLabel}</div> : null}
+                <div className="outbound-metrics">
+                  <span>上行 {formatBytes(outbound.up || 0)}</span>
+                  <span>下行 {formatBytes(outbound.down || 0)}</span>
+                  <span>累计 {formatBytes(outbound.total || 0)}</span>
+                </div>
+              </section>
+            )
+          })}
+        </div>
+      ) : (
+        <Empty description="暂无出站数据" />
+      ),
+    },
+    {
+      key: 'routes',
+      label: `路由规则 (${overview?.routing_rules.length || 0})`,
+      children: overview ? (
+        <Table rowKey={(record) => record.index} columns={routingColumns} dataSource={overview.routing_rules} pagination={false} scroll={{ x: 1100 }} rowClassName={(record) => (selectedRuleIndex === record.index ? 'route-row-selected' : '')} />
+      ) : (
+        <Empty description="暂无路由规则数据" />
+      ),
+    },
+  ] : []
+
+  const realmTabs: TabsProps['items'] = featureEnabled.realm ? [
+    ...(canManageConfig ? [{
+      key: 'realm-forwarding',
+      label: 'Realm 转发',
+      children: renderManagedConfigSection('realm'),
+    }] : []),
+    {
+      key: 'realm-nodes',
+      label: `节点 (${realmRuleCount})`,
+      children: renderManagedConfigSection('realm'),
+    },
+    {
+      key: 'realm-clients',
+      label: `客户端 (${realmRuleCount})`,
+      children: renderManagedConfigSection('realm'),
+    },
+  ] : []
+
+  const natTabs: TabsProps['items'] = featureEnabled.nat && canManageConfig ? [{
+    key: 'entry-nat',
+    label: `NAT 映射 (${natMappingCount})`,
+    children: renderManagedConfigSection('nat'),
+  }] : []
+
+  const portPolicyTabs: TabsProps['items'] = featureEnabled.port_policy && canManageConfig ? [{
+    key: 'network-policy',
+    label: `端口策略 (${portPolicyCount})`,
+    children: renderManagedConfigSection('network'),
+  }] : []
+
+  const supportTabs: TabsProps['items'] = [
+    ...(!restrictedView ? [{
+      key: 'logs',
+      label: `日志 (${agentLogs?.logs.length || 0})`,
+      children: (
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          {agentLogs?.last_collection_err ? <Alert type="warning" showIcon message="最近一次 x-ui 采集异常" description={agentLogs.last_collection_err} /> : null}
+          {agentLogsError ? <Alert type="error" showIcon message={agentLogsError} /> : null}
+          <Space wrap>
+            <Button icon={<ReloadOutlined />} disabled={!selectedAgentId} loading={agentLogsLoading} onClick={onOpenLogs}>刷新日志</Button>
+            <Text type="secondary">当前显示 client 最近一次上报附带的异常日志</Text>
+          </Space>
+          <Table
+            rowKey={(record, index) => `${record.time}-${record.source || 'log'}-${index}`}
+            columns={agentLogColumns}
+            dataSource={agentLogs?.logs || []}
+            loading={agentLogsLoading}
+            pagination={{ pageSize: 10, hideOnSinglePage: true }}
+            scroll={{ x: 760 }}
+            locale={{ emptyText: <Empty description="暂无异常日志" /> }}
+          />
+        </Space>
+      ),
+    },
+    {
+      key: 'certificates',
+      label: `本机证书 (${overview?.certificates.length || 0})`,
+      children: certificateDomainPanel,
+    }] : []),
+    ...(canManageConfig ? [
+      {
+        key: 'config',
+        label: (
+          <Space size={6}>
+            <SettingOutlined />
+            <span>基础信息</span>
+          </Space>
+        ),
+        children: renderManagedConfigSection('basic'),
+      },
+      {
+        key: 'config-audits',
+        label: `配置记录 (${configAudits.length})`,
+        children: renderManagedConfigSection('audit'),
+      },
+    ] : []),
+  ]
+
+  const detailTabs: TabsProps['items'] = [
+    overviewTab,
+    ...xuiTabs,
+    ...realmTabs,
+    ...natTabs,
+    ...portPolicyTabs,
+    ...supportTabs,
+  ]
+  const effectiveActiveTabKey = detailTabs.some((item) => item?.key === activeTabKey) ? activeTabKey : 'overview'
 
   return (
     <>
@@ -900,225 +1213,9 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
           </div>
         ) : null}
         <Tabs
-          activeKey={activeTabKey}
+          activeKey={effectiveActiveTabKey}
           onChange={onActiveTabChange}
-          items={[
-            {
-              key: 'overview',
-              label: `总览 (${selectedAgentId ? 1 : 0})`,
-              children: renderGlobalOverviewPanel({
-                dashboardView: currentAgentDashboardView,
-                selectedTag,
-                links: currentAgentLinks,
-                onSelectTag: (value) => onSelectTag(value),
-                scopeAgentID: selectedAgentId,
-                scopeAgentName: selectedAgent.agent_name || selectedAgent.agent_id,
-              }),
-            },
-            {
-              key: 'actions',
-              label: `x-ui 操作 (${xuiActions.length})`,
-              children: (
-                <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                  <Alert
-                    type="warning"
-                    showIcon
-                    message="这里现在通过 WS 实时下发 x-ui 指令"
-                    description="入站节点请直接通过 x-ui 面板手动新增；中心会把其它 client 的节点导入为当前 client 的出站，并通过在线 Client 实时执行和回传结果。Client 不在线时会保留任务等待轮询。"
-                  />
-                  <Space wrap>
-                    <Button type="primary" disabled={!selectedAgentId} onClick={onCreateRoutingAction}>新增操作</Button>
-                    {!restrictedView ? <Button danger onClick={openRealtimeTerminal}>实时 TTY</Button> : null}
-                    {!restrictedView ? <Button loading={remoteCommandLoading} onClick={() => setRemoteCommandOpen(true)}>单次命令</Button> : null}
-                    {!restrictedView ? (
-                      <Popconfirm
-                        title="升级 3x-ui？"
-                        description="将通过在线 Client 执行 3x-ui 官方 update.sh 升级脚本，过程中可能短暂影响 x-ui / Xray。"
-                        okText="升级"
-                        cancelText="取消"
-                        onConfirm={onUpdate3XUI}
-                      >
-                        <Button loading={xuiUpdateLoading}>升级 3x-ui</Button>
-                      </Popconfirm>
-                    ) : null}
-                    <Button icon={<ReloadOutlined />} disabled={!selectedAgentId} loading={xuiActionsLoading} onClick={onRefreshXUIActions}>刷新操作记录</Button>
-                  </Space>
-                  <Table rowKey={(record) => record.id} columns={xuiActionColumns} dataSource={xuiActions} loading={xuiActionsLoading} pagination={{ pageSize: 8, hideOnSinglePage: true }} scroll={{ x: 820 }} />
-                </Space>
-              ),
-            },
-            ...(!restrictedView ? [{
-              key: 'logs',
-              label: `日志 (${agentLogs?.logs.length || 0})`,
-              children: (
-                <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                  {agentLogs?.last_collection_err ? <Alert type="warning" showIcon message="最近一次 x-ui 采集异常" description={agentLogs.last_collection_err} /> : null}
-                  {agentLogsError ? <Alert type="error" showIcon message={agentLogsError} /> : null}
-                  <Space wrap>
-                    <Button icon={<ReloadOutlined />} disabled={!selectedAgentId} loading={agentLogsLoading} onClick={onOpenLogs}>刷新日志</Button>
-                    <Text type="secondary">当前显示 client 最近一次上报附带的异常日志</Text>
-                  </Space>
-                  <Table
-                    rowKey={(record, index) => `${record.time}-${record.source || 'log'}-${index}`}
-                    columns={agentLogColumns}
-                    dataSource={agentLogs?.logs || []}
-                    loading={agentLogsLoading}
-                    pagination={{ pageSize: 10, hideOnSinglePage: true }}
-                    scroll={{ x: 760 }}
-                    locale={{ emptyText: <Empty description="暂无异常日志" /> }}
-                  />
-                </Space>
-              ),
-            },
-            {
-              key: 'certificates',
-              label: `本机证书 (${overview?.certificates.length || 0})`,
-              children: certificateDomainPanel,
-            }] : []),
-            ...(canManageConfig ? [
-              {
-                key: 'config',
-                label: (
-                  <Space size={6}>
-                    <SettingOutlined />
-                    <span>基础信息</span>
-                  </Space>
-                ),
-                children: renderManagedConfigSection('basic'),
-              },
-              {
-                key: 'xui-config',
-                label: 'X-UI 配置',
-                children: renderManagedConfigSection('xui'),
-              },
-              {
-                key: 'entry-nat',
-                label: 'NAT 映射',
-                children: renderManagedConfigSection('nat'),
-              },
-              {
-                key: 'network-policy',
-                label: '端口策略',
-                children: renderManagedConfigSection('network'),
-              },
-              {
-                key: 'realm-forwarding',
-                label: 'Realm 转发',
-                children: renderManagedConfigSection('realm'),
-              },
-              {
-                key: 'config-audits',
-                label: `配置记录 (${configAudits.length})`,
-                children: renderManagedConfigSection('audit'),
-              },
-            ] : []),
-            {
-              key: 'nodes',
-              label: `节点 (${overview?.nodes.length || 0})`,
-              children: overview ? (
-                <Table
-                  rowKey={(record) => record.tag || String(record.id)}
-                  columns={nodeColumns}
-                  dataSource={overview.nodes}
-                  pagination={false}
-                  scroll={{ x: 1000 }}
-                  onRow={(record) => {
-                    const anchor = nodeElementId(selectedAgentId, record.remark || record.tag || String(record.id))
-                    return {
-                      id: anchor,
-                      className: selectedNodeAnchor === anchor ? 'node-row-selected' : '',
-                    }
-                  }}
-                />
-              ) : (
-                <Empty description="暂无 x-ui 节点数据" />
-              ),
-            },
-            {
-              key: 'clients',
-              label: `客户端 (${overview?.clients.length || 0})`,
-              children: overview ? (
-                <Space direction="vertical" style={{ width: '100%' }} size="middle">
-                  <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
-                    <Input.Search allowClear style={{ minWidth: 280, flex: 1 }} placeholder="按邮箱、备注、节点标签筛选客户端" value={clientSearch} onChange={(event) => onClientSearchChange(event.target.value)} />
-                    <Button type="primary" disabled={!overview.nodes.length || (!canManageConfig && !restrictedView)} onClick={() => onCreateNodeClientAction(overview.nodes[0])}>
-                      新增客户端
-                    </Button>
-                  </Space>
-                  <Table rowKey={(record) => `${record.inbound_tag}-${record.email}`} columns={visibleClientColumns} dataSource={filteredClients} pagination={{ pageSize: 12, hideOnSinglePage: true }} scroll={{ x: restrictedView ? 980 : 1780 }} />
-                </Space>
-              ) : (
-                <Empty description="暂无客户端数据" />
-              ),
-            },
-            {
-              key: 'outbounds',
-              label: `出站 (${overview?.outbounds.length || 0})`,
-              children: overview ? (
-                <div className="outbound-grid">
-                  {overview.outbounds.map((outbound) => {
-                    const selected = outbound.tag && outbound.tag === selectedOutboundTag
-                    const linkedClient = findOutboundLinkedClient(dashboardView, selectedAgentId, outbound.tag)
-                    const linkedNodeLabel = linkedClient ? linkedClient.target.inbound_name || linkedClient.target.inbound_tag || String(linkedClient.target.inbound_id) : ''
-                    return (
-                      <section
-                        key={outbound.tag || 'unknown'}
-                        id={outboundElementId(outbound.tag || 'unknown')}
-                        className={`outbound-card${selected ? ' selected' : ''}${linkedClient ? ' linked' : ''}`}
-                        role={linkedClient ? 'button' : undefined}
-                        tabIndex={linkedClient ? 0 : undefined}
-                        onClick={() => {
-                          if (outbound.tag) {
-                            onJumpOutbound(outbound.tag)
-                          }
-                          if (linkedClient) {
-                            onJumpNode(linkedClient.target.agent_id, linkedNodeLabel)
-                          }
-                        }}
-                        onKeyDown={(event) => {
-                          if (!linkedClient || (event.key !== 'Enter' && event.key !== ' ')) {
-                            return
-                          }
-                          event.preventDefault()
-                          onJumpNode(linkedClient.target.agent_id, linkedNodeLabel)
-                        }}
-                      >
-                        <div className="outbound-head">
-                          <div>
-                            <Text className="outbound-tag">{outbound.tag || '-'}</Text>
-                            <div className="muted-line">{outbound.protocol || '-'}{outbound.is_default ? ' · 默认出口' : ''}</div>
-                          </div>
-                          <Space wrap size={[6, 6]}>
-                            {outbound.is_default ? <Tag color="success">默认</Tag> : null}
-                            {outbound.send_through ? <Tag>sendThrough:{outbound.send_through}</Tag> : null}
-                            {linkedClient ? <Tag color="cyan">关联 {linkedClient.target.agent_name || linkedClient.target.agent_id}</Tag> : null}
-                          </Space>
-                        </div>
-                        <div className="outbound-target">{outbound.target || '当前配置未提供远端地址'}</div>
-                        {linkedClient ? <div className="muted-line">点击跳转到 {linkedClient.target.agent_name || linkedClient.target.agent_id} / {linkedNodeLabel}</div> : null}
-                        <div className="outbound-metrics">
-                          <span>上行 {formatBytes(outbound.up || 0)}</span>
-                          <span>下行 {formatBytes(outbound.down || 0)}</span>
-                          <span>累计 {formatBytes(outbound.total || 0)}</span>
-                        </div>
-                      </section>
-                    )
-                  })}
-                </div>
-              ) : (
-                <Empty description="暂无出站数据" />
-              ),
-            },
-            {
-              key: 'routes',
-              label: `路由规则 (${overview?.routing_rules.length || 0})`,
-              children: overview ? (
-                <Table rowKey={(record) => record.index} columns={routingColumns} dataSource={overview.routing_rules} pagination={false} scroll={{ x: 1100 }} rowClassName={(record) => (selectedRuleIndex === record.index ? 'route-row-selected' : '')} />
-              ) : (
-                <Empty description="暂无路由规则数据" />
-              ),
-            },
-          ]}
+          items={detailTabs}
         />
       </Card>
       <Modal
@@ -1269,6 +1366,15 @@ interface TerminalWSMessage {
 
 function defaultTerminalShell(clientOS?: string): string {
   return String(clientOS || '').toLowerCase().includes('windows') ? 'powershell' : 'bash'
+}
+
+function FeatureSwitch({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <div className={`agent-feature-switch${checked ? ' active' : ''}`}>
+      <span>{label}</span>
+      <Switch size="small" checked={checked} onChange={onChange} />
+    </div>
+  )
 }
 
 function RemoteTTYTerminal(props: { agentID: string; shell: string; active: boolean; fontSize: number; expanded: boolean }) {

@@ -115,6 +115,16 @@ func (s *SQLiteStore) parseManagedConfig(agentID, agentName, customerDisplayName
 	if tagsJSON != "" {
 		_ = json.Unmarshal([]byte(tagsJSON), &cfg.Tags)
 		cfg.Tags = normalizeTags(cfg.Tags)
+		if strings.HasPrefix(strings.TrimSpace(tagsJSON), "{") {
+			var tagPayload struct {
+				Tags     []string                 `json:"tags"`
+				Features model.AgentFeatureConfig `json:"features"`
+			}
+			if err := json.Unmarshal([]byte(tagsJSON), &tagPayload); err == nil {
+				cfg.Tags = normalizeTags(tagPayload.Tags)
+				cfg.Features = tagPayload.Features
+			}
+		}
 	}
 	if xuiJSON != "" {
 		_ = json.Unmarshal([]byte(xuiJSON), &cfg.XUI)
@@ -149,6 +159,19 @@ func parseTime(value string) time.Time {
 func mustJSON(v any) string {
 	data, _ := json.Marshal(v)
 	return string(data)
+}
+
+func managedTagsJSON(cfg model.ManagedAgentConfig) string {
+	if cfg.Features.Configured || hasAgentFeatures(cfg.Features) {
+		return mustJSON(struct {
+			Tags     []string                 `json:"tags"`
+			Features model.AgentFeatureConfig `json:"features"`
+		}{
+			Tags:     cfg.Tags,
+			Features: cfg.Features,
+		})
+	}
+	return mustJSON(cfg.Tags)
 }
 
 func randomToken() (string, error) {
@@ -256,7 +279,20 @@ func normalizeTags(tags []string) []string {
 }
 
 func hasManagedConfig(cfg model.ManagedAgentConfig) bool {
-	return hasXUIConfig(cfg.XUI) || hasRenewalConfig(cfg.Renewal) || hasEntryConfig(cfg.Entry)
+	return hasXUIConfig(cfg.XUI) || hasRenewalConfig(cfg.Renewal) || hasEntryConfig(cfg.Entry) || hasAgentFeatures(cfg.Features)
+}
+
+func hasAgentFeatures(features model.AgentFeatureConfig) bool {
+	return features.XUI || features.Realm || features.NAT || features.PortPolicy
+}
+
+func mergeAgentFeatures(base model.AgentFeatureConfig, incoming model.AgentFeatureConfig) model.AgentFeatureConfig {
+	return model.AgentFeatureConfig{
+		XUI:        base.XUI || incoming.XUI,
+		Realm:      base.Realm || incoming.Realm,
+		NAT:        base.NAT || incoming.NAT,
+		PortPolicy: base.PortPolicy || incoming.PortPolicy,
+	}
 }
 
 func normalizeRenewalConfig(cfg model.VPSRenewalConfig) model.VPSRenewalConfig {
@@ -706,7 +742,7 @@ func hasXUIConfig(cfg config.XUIConfig) bool {
 
 func isValidXUIActionKind(kind string) bool {
 	switch kind {
-	case model.XUIActionAddOutbound, model.XUIActionAddClient, model.XUIActionAddRoutingRule, model.XUIActionUpsertRoutingRule, model.XUIActionUpdateClientExpiry, model.XUIActionDeleteClient, model.XUIActionUpdateClient, model.XUIActionRestartXUI, model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI:
+	case model.XUIActionAddOutbound, model.XUIActionAddClient, model.XUIActionAddRoutingRule, model.XUIActionUpsertRoutingRule, model.XUIActionUpdateClientExpiry, model.XUIActionSetClientEnabled, model.XUIActionDeleteClient, model.XUIActionUpdateClient, model.XUIActionRestartXUI, model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI:
 		return true
 	default:
 		return false

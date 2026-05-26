@@ -178,9 +178,92 @@ func TestHandleAgentConfigMergesCollectedRealmSnapshotForAdmin(t *testing.T) {
 	if !cfg.Entry.PortForwarding.Enabled || len(cfg.Entry.PortForwarding.Rules) != 1 {
 		t.Fatalf("expected collected realm rule to be merged into admin config: %#v", cfg.Entry.PortForwarding)
 	}
+	if !cfg.Features.Realm {
+		t.Fatalf("expected legacy realm snapshot to enable realm feature switch: %#v", cfg.Features)
+	}
 	rule := cfg.Entry.PortForwarding.Rules[0]
 	if rule.ListenPort != 20001 || rule.TargetAddress != "47.239.135.242" || rule.TargetPort != 20001 {
 		t.Fatalf("unexpected merged realm rule: %#v", rule)
+	}
+}
+
+func TestHandleAgentConfigPreservesExplicitFeatureSwitches(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+
+	if err := sqliteStore.EnsureAdminAccount("admin", "password123"); err != nil {
+		t.Fatalf("EnsureAdminAccount: %v", err)
+	}
+	admin, ok, err := sqliteStore.AuthenticateAdmin("admin", "password123")
+	if err != nil || !ok {
+		t.Fatalf("AuthenticateAdmin ok=%v err=%v", ok, err)
+	}
+	token, _, err := sqliteStore.CreateAdminSession(admin, time.Hour)
+	if err != nil {
+		t.Fatalf("CreateAdminSession: %v", err)
+	}
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "agent-1", AgentName: "Agent 1"}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+
+	body, err := json.Marshal(model.ManagedAgentConfig{
+		AgentID: "agent-1",
+		Features: model.AgentFeatureConfig{
+			XUI:        false,
+			Realm:      false,
+			NAT:        false,
+			PortPolicy: false,
+			Configured: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal config: %v", err)
+	}
+	putReq := httptest.NewRequest(http.MethodPut, "/api/v1/agents/agent-1/config", bytes.NewReader(body))
+	putReq.AddCookie(&http.Cookie{Name: adminSessionCookieName, Value: token})
+	putRec := httptest.NewRecorder()
+	app := &App{store: sqliteStore}
+	app.handleAgentConfig(putRec, putReq, "agent-1")
+	if putRec.Code != http.StatusOK {
+		t.Fatalf("handleAgentConfig put status=%d body=%s", putRec.Code, putRec.Body.String())
+	}
+
+	now := time.Now().UTC()
+	if err := sqliteStore.SaveSnapshot(model.AgentSnapshot{
+		AgentID:    "agent-1",
+		AgentName:  "Agent 1",
+		ReportedAt: now,
+		Summary:    model.VPSSummary{InboundCount: 1, OutboundCount: 1},
+		XUI: &model.XUISnapshot{
+			BaseURL:     "http://127.0.0.1:2053",
+			CollectedAt: now,
+			Inbounds:    []map[string]any{{"id": 1, "remark": "node"}},
+		},
+		Realm: &model.RealmSnapshot{
+			ConfigPath:  "/etc/realm/config.toml",
+			CollectedAt: now,
+			Rules:       []model.RealmForwardRule{{Enabled: true, ListenPort: 20001, TargetAddress: "1.1.1.1", TargetPort: 20001}},
+		},
+	}); err != nil {
+		t.Fatalf("SaveSnapshot: %v", err)
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/agents/agent-1/config", nil)
+	getReq.AddCookie(&http.Cookie{Name: adminSessionCookieName, Value: token})
+	getRec := httptest.NewRecorder()
+	app.handleAgentConfig(getRec, getReq, "agent-1")
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("handleAgentConfig get status=%d body=%s", getRec.Code, getRec.Body.String())
+	}
+	var cfg model.ManagedAgentConfig
+	if err := json.NewDecoder(getRec.Body).Decode(&cfg); err != nil {
+		t.Fatalf("Decode config: %v", err)
+	}
+	if cfg.Features.XUI || cfg.Features.Realm || cfg.Features.NAT || cfg.Features.PortPolicy {
+		t.Fatalf("expected explicit disabled feature switches to be preserved, got %#v", cfg.Features)
 	}
 }
 
@@ -261,6 +344,89 @@ func TestHandleAgentConfigUpdateRequestsImmediateClientApply(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("expected config update to request immediate client apply")
+	}
+}
+
+func TestHandleRealmConfigCopyCopiesAndAppliesToTarget(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+
+	if err := sqliteStore.EnsureAdminAccount("admin", "password123"); err != nil {
+		t.Fatalf("EnsureAdminAccount: %v", err)
+	}
+	admin, ok, err := sqliteStore.AuthenticateAdmin("admin", "password123")
+	if err != nil || !ok {
+		t.Fatalf("AuthenticateAdmin ok=%v err=%v", ok, err)
+	}
+	token, _, err := sqliteStore.CreateAdminSession(admin, time.Hour)
+	if err != nil {
+		t.Fatalf("CreateAdminSession: %v", err)
+	}
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "gz", AgentName: "Guangzhou"}); err != nil {
+		t.Fatalf("RegisterAgent source: %v", err)
+	}
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "backup", AgentName: "Backup"}); err != nil {
+		t.Fatalf("RegisterAgent target: %v", err)
+	}
+	if _, err := sqliteStore.UpdateAgentConfig("gz", model.ManagedAgentConfig{
+		AgentID:   "gz",
+		AgentName: "Guangzhou",
+		Entry: model.AgentEntryConfig{
+			PortForwarding: model.RealmForwardConfig{
+				Enabled:     true,
+				Backend:     "realm",
+				ConfigPath:  "/etc/realm/config.toml",
+				ServiceName: "realm",
+				Rules: []model.RealmForwardRule{{
+					Enabled:       true,
+					ListenAddress: "0.0.0.0",
+					ListenPort:    20001,
+					TargetAddress: "47.239.135.242",
+					TargetPort:    20001,
+					Network:       "both",
+				}},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("UpdateAgentConfig source: %v", err)
+	}
+
+	app := &App{store: sqliteStore, realtime: newRealtimeHub()}
+	controlSession := app.realtime.registerAgentControl("backup")
+	defer app.realtime.unregisterAgentControl("backup", controlSession)
+
+	body, err := json.Marshal(map[string]string{"target_agent_id": "backup"})
+	if err != nil {
+		t.Fatalf("Marshal body: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/gz/realm/copy", bytes.NewReader(body))
+	req.AddCookie(&http.Cookie{Name: adminSessionCookieName, Value: token})
+	rec := httptest.NewRecorder()
+	app.handleAgentByID(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("handleRealmConfigCopy status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	targetCfg, found, err := sqliteStore.GetAgentConfig("backup")
+	if err != nil || !found {
+		t.Fatalf("GetAgentConfig target found=%v err=%v", found, err)
+	}
+	forwarding := targetCfg.Entry.PortForwarding
+	if !forwarding.Enabled || forwarding.ConfigPath != "/etc/realm/config.toml" || forwarding.ServiceName != "realm" || len(forwarding.Rules) != 1 {
+		t.Fatalf("expected copied realm forwarding config, got %#v", forwarding)
+	}
+	if !targetCfg.Features.Realm {
+		t.Fatalf("expected copied config to enable realm feature, got %#v", targetCfg.Features)
+	}
+	select {
+	case message := <-controlSession.ch:
+		if message.Type != model.AgentControlCollectNow {
+			t.Fatalf("expected collect_now control message, got %#v", message)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected realm copy to request immediate client apply")
 	}
 }
 

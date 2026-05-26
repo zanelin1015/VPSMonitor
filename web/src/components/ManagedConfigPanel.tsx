@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Alert, AutoComplete, Button, Card, Col, Empty, Input, InputNumber, List, Row, Select, Space, Spin, Switch, Typography } from 'antd'
 import { DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 
@@ -34,6 +35,8 @@ export interface ConfigPanelProps {
   onEntryAddressesTextChange: (value: string) => void
   onEntryChange: (patch: Partial<AgentEntryConfig>) => void
   onXUIChange: (patch: Partial<XUIConfig>) => void
+  onCopyRealmConfig?: (targetAgentID: string) => void
+  realmCopyLoading?: boolean
   configAudits: ConfigAuditLog[]
   configAuditsLoading: boolean
   currencyOptions: CurrencyCode[]
@@ -64,11 +67,14 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
     onEntryAddressesTextChange,
     onEntryChange,
     onXUIChange,
+    onCopyRealmConfig,
+    realmCopyLoading = false,
     configAudits,
     configAuditsLoading,
     currencyOptions,
     section = 'all',
   } = props
+  const [realmCopyTargetAgentID, setRealmCopyTargetAgentID] = useState('')
 
   if (!selectedAgent) {
     return <Empty description="先选择一个 client" />
@@ -98,6 +104,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
   const targetAgentOptions = agents
     .filter((agent) => agent.agent_id && agent.agent_id !== selectedAgent.agent_id)
     .map((agent) => ({ value: agent.agent_id, label: `${agent.agent_name || agent.agent_id} · ${bestAgentAddress(agent) || '未上报 IP'}` }))
+  const canCopyRealmConfig = Boolean(onCopyRealmConfig && realmCopyTargetAgentID && (portForwarding.rules || []).length)
   const domainOptions = buildCertificateDomainOptions(certificates)
   const defaultImportDomain = domainOptions.find((option) => !option.value.startsWith('*.'))?.value || ''
   const updateEntryMapping = (index: number, patch: Partial<AgentEntryMapping>) => {
@@ -649,6 +656,29 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
         <div className="section-title-row">
           <Title level={4}>Realm 端口转发</Title>
           <Space wrap>
+            {onCopyRealmConfig ? (
+              <>
+                <Select
+                  showSearch
+                  allowClear
+                  size="small"
+                  style={{ minWidth: 240 }}
+                  value={realmCopyTargetAgentID || undefined}
+                  placeholder="复制到目标 Client"
+                  options={targetAgentOptions}
+                  filterOption={(input, option) => String(option?.label || '').toLowerCase().includes(input.toLowerCase())}
+                  onChange={(value) => setRealmCopyTargetAgentID(value || '')}
+                />
+                <Button
+                  size="small"
+                  loading={realmCopyLoading}
+                  disabled={!canCopyRealmConfig}
+                  onClick={() => realmCopyTargetAgentID && onCopyRealmConfig(realmCopyTargetAgentID)}
+                >
+                  复制到 Client 并生效
+                </Button>
+              </>
+            ) : null}
             <Button size="small" icon={<PlusOutlined />} onClick={addPortForwardRule}>
               添加转发
             </Button>

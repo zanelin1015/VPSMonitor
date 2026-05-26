@@ -419,6 +419,12 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, history)
 	case "config":
 		a.handleAgentConfig(w, r, agentID)
+	case "realm":
+		if len(parts) != 3 || parts[2] != "copy" {
+			writeError(w, http.StatusNotFound, "route not found")
+			return
+		}
+		a.handleRealmConfigCopy(w, r, agentID)
 	case "logs":
 		if r.Method != http.MethodGet {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -858,6 +864,9 @@ func (a *App) handleAgentRecord(w http.ResponseWriter, r *http.Request, agentID 
 		agent.Arch = snapshot.Arch
 		agent.SystemVersion = snapshot.SystemVersion
 		agent.Config.Entry = dashboard.MergeRealmSnapshotIntoEntry(agent.Config.Entry, snapshot.Realm)
+		agent.Config = inferLegacyAgentFeatures(agent.Config, &snapshot)
+	} else {
+		agent.Config = inferLegacyAgentFeatures(agent.Config, nil)
 	}
 	agent = a.sanitizeAgentRecordForAdmin(user, agent)
 	writeJSON(w, http.StatusOK, agent)
@@ -882,10 +891,18 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 		if user, _, ok := a.currentAdmin(r); ok {
 			if snapshot, exists := a.store.GetLatest(agentID); exists {
 				cfg.Entry = dashboard.MergeRealmSnapshotIntoEntry(cfg.Entry, snapshot.Realm)
+				cfg = inferLegacyAgentFeatures(cfg, &snapshot)
+			} else {
+				cfg = inferLegacyAgentFeatures(cfg, nil)
 			}
 			cfg = a.hydrateRealmForwardTargets(cfg)
 			cfg = a.sanitizeManagedConfigForAdmin(user, cfg)
 		} else {
+			if snapshot, exists := a.store.GetLatest(agentID); exists {
+				cfg = inferLegacyAgentFeatures(cfg, &snapshot)
+			} else {
+				cfg = inferLegacyAgentFeatures(cfg, nil)
+			}
 			cfg = a.hydrateRealmForwardTargets(cfg)
 		}
 		cfg = disableXUIAutoInstall(cfg)
@@ -949,6 +966,63 @@ func disableXUIAutoInstall(cfg model.ManagedAgentConfig) model.ManagedAgentConfi
 	return cfg
 }
 
+func inferLegacyAgentFeatures(cfg model.ManagedAgentConfig, snapshot *model.AgentSnapshot) model.ManagedAgentConfig {
+	if cfg.Features.Configured {
+		return cfg
+	}
+	entry := cfg.Entry
+	cfg.Features = model.AgentFeatureConfig{
+		XUI: legacyXUIConfigPresent(cfg) || snapshotHasXUI(snapshot),
+		Realm: entry.PortForwarding.Enabled ||
+			len(entry.PortForwarding.Rules) > 0 ||
+			strings.TrimSpace(entry.PortForwarding.ConfigPath) != "" ||
+			strings.TrimSpace(entry.PortForwarding.ServiceName) != "" ||
+			snapshotHasRealm(snapshot),
+		NAT: len(entry.Mappings) > 0 ||
+			len(entry.Addresses) > 0 ||
+			strings.TrimSpace(entry.ImportDomain) != "",
+		PortPolicy: entry.NetworkPolicy.Enabled ||
+			len(entry.NetworkPolicy.Rules) > 0 ||
+			strings.TrimSpace(entry.NetworkPolicy.Interface) != "",
+	}
+	return cfg
+}
+
+func legacyXUIConfigPresent(cfg model.ManagedAgentConfig) bool {
+	xui := cfg.XUI
+	return xui.Enabled ||
+		strings.TrimSpace(xui.BaseURL) != "" ||
+		strings.TrimSpace(xui.DBPath) != "" ||
+		strings.TrimSpace(xui.APIToken) != "" ||
+		strings.TrimSpace(xui.Username) != ""
+}
+
+func snapshotHasXUI(snapshot *model.AgentSnapshot) bool {
+	if snapshot == nil || snapshot.XUI == nil {
+		return false
+	}
+	xui := snapshot.XUI
+	return strings.TrimSpace(xui.BaseURL) != "" ||
+		len(xui.Inbounds) > 0 ||
+		len(xui.Outbounds) > 0 ||
+		len(xui.RoutingRules) > 0 ||
+		len(xui.Certificates) > 0 ||
+		snapshot.Summary.InboundCount > 0 ||
+		snapshot.Summary.OutboundCount > 0 ||
+		snapshot.Summary.RoutingRuleCount > 0
+}
+
+func snapshotHasRealm(snapshot *model.AgentSnapshot) bool {
+	if snapshot == nil || snapshot.Realm == nil {
+		return false
+	}
+	realm := snapshot.Realm
+	return len(realm.Rules) > 0 ||
+		strings.TrimSpace(realm.ConfigPath) != "" ||
+		strings.TrimSpace(realm.ServiceName) != "" ||
+		strings.TrimSpace(realm.BinaryPath) != ""
+}
+
 func (a *App) requestAgentConfigApply(agentID string) bool {
 	if a.realtime == nil {
 		return false
@@ -987,6 +1061,7 @@ func realtimeXUIActionAllowed(kind string) bool {
 		model.XUIActionAddRoutingRule,
 		model.XUIActionUpsertRoutingRule,
 		model.XUIActionUpdateClientExpiry,
+		model.XUIActionSetClientEnabled,
 		model.XUIActionDeleteClient,
 		model.XUIActionUpdateClient,
 		model.XUIActionExecuteCommand,

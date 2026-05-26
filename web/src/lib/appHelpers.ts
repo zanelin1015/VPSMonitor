@@ -955,6 +955,8 @@ function actionKindLabel(kind: string): string {
       return '升级 3x-ui'
     case 'delete_client':
       return '删除 Client'
+    case 'set_client_enabled':
+      return '启用 / 停用 Client'
     default:
       return kind
   }
@@ -1189,6 +1191,7 @@ function buildSectionSavePayload(base: ManagedAgentConfig, draft: ManagedAgentCo
     customer_display_name: base.customer_display_name || '',
     sort_order: base.sort_order || draft.sort_order || 0,
     tags: [...(base.tags || [])],
+    features: { ...(base.features || {}) },
     renewal: { ...(base.renewal || {}) },
     entry: {
       addresses: [...(base.entry?.addresses || [])],
@@ -1205,6 +1208,7 @@ function buildSectionSavePayload(base: ManagedAgentConfig, draft: ManagedAgentCo
       payload.customer_display_name = draft.customer_display_name || ''
       payload.sort_order = Number(draft.sort_order || base.sort_order || 0)
       payload.tags = [...(draft.tags || [])]
+      payload.features = { ...(draft.features || {}) }
       break
     case 'renewal':
       payload.renewal = { ...(draft.renewal || {}) }
@@ -1236,6 +1240,7 @@ function mergeSavedSectionIntoDraft(draft: ManagedAgentConfig, saved: ManagedAge
       next.customer_display_name = saved.customer_display_name || ''
       next.sort_order = saved.sort_order
       next.tags = [...(saved.tags || [])]
+      next.features = { ...(saved.features || {}) }
       break
     case 'renewal':
       next.renewal = { ...(saved.renewal || {}) }
@@ -1650,6 +1655,12 @@ function createEmptyManagedConfig(agentID: string, agentName?: string): ManagedA
     customer_display_name: '',
     sort_order: 0,
     tags: [],
+    features: {
+      xui: false,
+      realm: false,
+      nat: false,
+      port_policy: false,
+    },
     renewal: {
       enabled: false,
       start_date: '',
@@ -1709,6 +1720,7 @@ function normalizeManagedConfig(config: ManagedAgentConfig, agentID: string, age
     customer_display_name: config.customer_display_name || '',
     sort_order: Number(config.sort_order || base.sort_order || 0),
     tags: parseTagInput((config.tags || []).join(',')),
+    features: normalizeAgentFeatures(config.features, config),
     renewal: normalizeRenewalConfig(config.renewal || base.renewal),
     entry: normalizeEntryConfig(config.entry || base.entry),
     xui: {
@@ -1717,6 +1729,17 @@ function normalizeManagedConfig(config: ManagedAgentConfig, agentID: string, age
       enabled: Boolean(config.xui?.enabled),
       skip_tls_verify: Boolean(config.xui?.skip_tls_verify),
     },
+  }
+}
+
+function normalizeAgentFeatures(features: ManagedAgentConfig['features'], config?: ManagedAgentConfig): NonNullable<ManagedAgentConfig['features']> {
+  const entry = config?.entry
+  const xui = config?.xui
+  return {
+    xui: features?.xui ?? Boolean(xui?.enabled || xui?.base_url || xui?.db_path || xui?.api_token),
+    realm: features?.realm ?? Boolean(entry?.port_forwarding?.enabled || (entry?.port_forwarding?.rules || []).length),
+    nat: features?.nat ?? Boolean((entry?.mappings || []).length || (entry?.addresses || []).length || entry?.import_domain),
+    port_policy: features?.port_policy ?? Boolean(entry?.network_policy?.enabled || (entry?.network_policy?.rules || []).length),
   }
 }
 

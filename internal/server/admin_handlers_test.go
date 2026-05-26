@@ -115,6 +115,17 @@ func TestAreaManagerXUIActionAllowedIncludesAddClient(t *testing.T) {
 	}) {
 		t.Fatal("expected area manager to be allowed to delete a client under a node")
 	}
+	if !app.areaManagerXUIActionAllowed(user, "agent-1", model.XUIActionRequest{
+		Kind: model.XUIActionSetClientEnabled,
+		Payload: map[string]any{
+			"inbound_id":  7,
+			"inbound_tag": "node-7",
+			"email":       "alice@example.com",
+			"enabled":     false,
+		},
+	}) {
+		t.Fatal("expected area manager to be allowed to enable/disable a client under a node")
+	}
 	if app.areaManagerXUIActionAllowed(user, "agent-1", model.XUIActionRequest{
 		Kind: model.XUIActionDeleteClient,
 		Payload: map[string]any{

@@ -1747,6 +1747,78 @@ func TestXUIExecuteDeleteClientUsesDeleteAPI(t *testing.T) {
 	}
 }
 
+func TestXUIExecuteSetClientEnabledUsesUpdateClientAPI(t *testing.T) {
+	client, err := NewXUIClient(config.XUIConfig{
+		Enabled:  true,
+		BaseURL:  "https://xui.local",
+		Username: "admin",
+		Password: "pass",
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewXUIClient: %v", err)
+	}
+
+	updateCalled := false
+	restartCalled := false
+	client.client = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/login":
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
+			case "/panel/api/inbounds/list":
+				return jsonResponse(t, req, map[string]any{
+					"success": true,
+					"obj": []map[string]any{{
+						"id":       7,
+						"tag":      "in-a",
+						"settings": `{"clients":[{"id":"uuid-1","email":"alice@example.com","enable":true,"expiryTime":1893456000000}]}`,
+					}},
+				}), nil
+			case "/panel/api/inbounds/updateClient/uuid-1":
+				updateCalled = true
+				var body map[string]any
+				if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+					t.Fatalf("decode update body: %v", err)
+				}
+				var settings map[string][]map[string]any
+				if err := json.Unmarshal([]byte(body["settings"].(string)), &settings); err != nil {
+					t.Fatalf("decode settings: %v", err)
+				}
+				clients := settings["clients"]
+				if len(clients) != 1 || clients[0]["enable"] != false || int64Value(clients[0]["expiryTime"]) == 0 {
+					t.Fatalf("expected enable=false while preserving client fields, got %#v", clients)
+				}
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "updated"}), nil
+			case "/panel/api/server/restartXrayService":
+				restartCalled = true
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "restarted"}), nil
+			default:
+				t.Fatalf("unexpected path: %s", req.URL.Path)
+				return nil, nil
+			}
+		}),
+	}
+
+	result, err := client.ExecuteAction(context.Background(), model.XUIAction{
+		Kind: model.XUIActionSetClientEnabled,
+		Payload: map[string]any{
+			"inbound_id": 7,
+			"email":      "alice@example.com",
+			"enabled":    false,
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteAction: %v", err)
+	}
+	if result["client_id"] != "uuid-1" || result["enabled"] != false || result["restarted"] != true {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+	if !updateCalled || !restartCalled {
+		t.Fatalf("expected update client API and restart to be called, update=%v restart=%v", updateCalled, restartCalled)
+	}
+}
+
 func TestXUIExecuteAddClientUsesAddClientAPI(t *testing.T) {
 	client, err := NewXUIClient(config.XUIConfig{
 		Enabled:  true,

@@ -1018,8 +1018,39 @@ textarea,
   margin: 0;
 }
 
+.agent-feature-switch-panel {
+  align-items: center;
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(34, 197, 94, 0.08));
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 12px 14px;
+}
+
+.agent-feature-switch {
+  align-items: center;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  display: inline-flex;
+  gap: 8px;
+  padding: 6px 10px 6px 12px;
+}
+
+.agent-feature-switch.active {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.34);
+}
+
 @media (max-width: 720px) {
   .selected-agent-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .agent-feature-switch-panel {
     align-items: flex-start;
     flex-direction: column;
   }

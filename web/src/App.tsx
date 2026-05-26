@@ -378,6 +378,8 @@ export default function App() {
   const [xuiRestartLoading, setXUIRestartLoading] = useState(false)
   const [xuiUpdateLoading, setXUIUpdateLoading] = useState(false)
   const [xuiClientDeleteLoadingKey, setXUIClientDeleteLoadingKey] = useState('')
+  const [xuiClientToggleLoadingKey, setXUIClientToggleLoadingKey] = useState('')
+  const [realmCopyLoading, setRealmCopyLoading] = useState(false)
   const [remoteCommandLoading, setRemoteCommandLoading] = useState(false)
   const [xuiActionModalOpen, setXUIActionModalOpen] = useState(false)
   const [xuiActionSaving, setXUIActionSaving] = useState(false)
@@ -1210,6 +1212,73 @@ export default function App() {
       message.error(error instanceof Error ? error.message : '删除 Client 失败')
     } finally {
       setXUIClientDeleteLoadingKey('')
+    }
+  }
+
+  async function setXUIClientEnabled(record: XUIClientView, enabled: boolean, agentID = selectedAgentId) {
+    if (!agentID) {
+      return
+    }
+    const key = xuiClientActionKey(record)
+    setXUIClientToggleLoadingKey(key)
+    try {
+      const action = await fetchJSON<XUIAction>(`/api/v1/agents/${agentID}/xui/actions`, {
+        method: 'POST',
+        body: JSON.stringify({
+          kind: 'set_client_enabled',
+          payload: {
+            inbound_id: record.inbound_id,
+            inbound_tag: record.inbound_tag || '',
+            email: record.email || '',
+            client_id: record.auth_uuid || record.auth_password || '',
+            enabled,
+          },
+        }),
+      })
+      message.success(action.status === 'running' ? `已通过 WS 下发${enabled ? '启用' : '停用'} Client 任务，结果会回传到操作记录` : `已创建${enabled ? '启用' : '停用'} Client 任务，Client 不在线时会等待轮询执行`)
+      await loadXUIActions(agentID, { silent: true })
+      scheduleXUIActionResultRefresh(agentID)
+      window.setTimeout(() => {
+        void loadOverview(agentID, { silent: true })
+        void loadAgents({ silent: true })
+      }, 2500)
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      message.error(error instanceof Error ? error.message : `${enabled ? '启用' : '停用'} Client 失败`)
+    } finally {
+      setXUIClientToggleLoadingKey('')
+    }
+  }
+
+  async function copyRealmConfigToAgent(targetAgentID: string, sourceAgentID = selectedAgentId) {
+    if (!sourceAgentID || !targetAgentID) {
+      return
+    }
+    setRealmCopyLoading(true)
+    setConfigError('')
+    try {
+      const result = await fetchJSON<{ apply_sent?: boolean }>(`/api/v1/agents/${sourceAgentID}/realm/copy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_agent_id: targetAgentID }),
+      })
+      message.success(result.apply_sent ? 'Realm 配置已复制到目标 Client，并已通过 WS 通知立即生效' : 'Realm 配置已复制到目标 Client；目标 Client 不在线时会在下次轮询后生效')
+      await loadAgents()
+      if (targetAgentID === selectedAgentId) {
+        await loadManagedConfig(targetAgentID, { silent: true })
+        await loadConfigAudits(targetAgentID, { silent: true })
+      }
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      const detail = error instanceof Error ? error.message : '复制 Realm 配置失败'
+      setConfigError(detail)
+      message.error(detail)
+    } finally {
+      setRealmCopyLoading(false)
     }
   }
 
@@ -2371,6 +2440,7 @@ export default function App() {
                 currentAgentLoading={overviewLoading || configLoading || agentRefreshLoading}
                 xuiRestartLoading={xuiRestartLoading}
                 xuiUpdateLoading={xuiUpdateLoading}
+                realmCopyLoading={realmCopyLoading}
                 remoteCommandLoading={remoteCommandLoading}
                 dashboardView={dashboardView}
                 entryAddressInputText={entryAddressInputText}
@@ -2393,6 +2463,7 @@ export default function App() {
                 xuiActions={xuiActions}
                 xuiActionsLoading={xuiActionsLoading}
                 xuiClientDeleteLoadingKey={xuiClientDeleteLoadingKey}
+                xuiClientToggleLoadingKey={xuiClientToggleLoadingKey}
                 agentDeleteLoading={agentDeleteLoading}
                 onActiveTabChange={setActiveTabKey}
                 onClientSearchChange={setClientSearch}
@@ -2441,11 +2512,13 @@ export default function App() {
                 onAuthorizeCustomer={openCustomerAuthorization}
                 onDeleteCurrentAgent={() => void deleteAgent(selectedAgentId)}
                 onDeleteXUIClient={(client) => void deleteXUIClient(client, selectedAgentId)}
+                onSetXUIClientEnabled={(client, enabled) => void setXUIClientEnabled(client, enabled, selectedAgentId)}
                 onRefreshCurrentAgent={() => void requestAgentSnapshot(selectedAgentId)}
                 onRestartXUI={() => void restartXUIService(selectedAgentId)}
                 onUpdate3XUI={() => void update3XUI(selectedAgentId)}
                 onExecuteRemoteCommand={(command, shell, timeoutSeconds) => void executeRemoteCommand(command, shell, timeoutSeconds, selectedAgentId)}
                 onRefreshXUIActions={() => void loadXUIActions()}
+                onCopyRealmConfig={(targetAgentID) => void copyRealmConfigToAgent(targetAgentID, selectedAgentId)}
                 onRenewalChange={(patch) => updateManagedConfig((current) => ({ ...current, renewal: { ...current.renewal, ...patch } }))}
                 onReturnHome={returnHome}
                 onSaveClientBilling={(record) => void saveClientBilling(record)}
@@ -2459,6 +2532,7 @@ export default function App() {
                 onSaveAreaTags={(values) => void saveAreaAgentTags(values)}
                 onUpdateClientBillingDraft={updateClientBillingDraft}
                 onXUIChange={(patch) => updateManagedConfig((current) => ({ ...current, xui: { ...current.xui, ...patch } }))}
+                onFeatureChange={(feature, enabled) => updateManagedConfig((current) => ({ ...current, features: { ...current.features, [feature]: enabled } }))}
               />
             ) : null}
           </main>

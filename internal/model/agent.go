@@ -1,20 +1,48 @@
 package model
 
 import (
+	"encoding/json"
 	"time"
 
 	"bridge-core/internal/config"
 )
 
 type ManagedAgentConfig struct {
-	AgentID             string           `json:"agent_id,omitempty"`
-	AgentName           string           `json:"agent_name,omitempty"`
-	CustomerDisplayName string           `json:"customer_display_name,omitempty"`
-	SortOrder           int              `json:"sort_order,omitempty"`
-	Tags                []string         `json:"tags,omitempty"`
-	Renewal             VPSRenewalConfig `json:"renewal,omitempty"`
-	Entry               AgentEntryConfig `json:"entry,omitempty"`
-	XUI                 config.XUIConfig `json:"xui"`
+	AgentID             string             `json:"agent_id,omitempty"`
+	AgentName           string             `json:"agent_name,omitempty"`
+	CustomerDisplayName string             `json:"customer_display_name,omitempty"`
+	SortOrder           int                `json:"sort_order,omitempty"`
+	Tags                []string           `json:"tags,omitempty"`
+	Features            AgentFeatureConfig `json:"features,omitempty"`
+	Renewal             VPSRenewalConfig   `json:"renewal,omitempty"`
+	Entry               AgentEntryConfig   `json:"entry,omitempty"`
+	XUI                 config.XUIConfig   `json:"xui"`
+}
+
+type AgentFeatureConfig struct {
+	XUI        bool `json:"xui"`
+	Realm      bool `json:"realm"`
+	NAT        bool `json:"nat"`
+	PortPolicy bool `json:"port_policy"`
+	Configured bool `json:"-"`
+}
+
+func (c *AgentFeatureConfig) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		XUI        bool `json:"xui"`
+		Realm      bool `json:"realm"`
+		NAT        bool `json:"nat"`
+		PortPolicy bool `json:"port_policy"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	c.XUI = raw.XUI
+	c.Realm = raw.Realm
+	c.NAT = raw.NAT
+	c.PortPolicy = raw.PortPolicy
+	c.Configured = true
+	return nil
 }
 
 type VPSRenewalConfig struct {

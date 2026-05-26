@@ -103,6 +103,7 @@ func (s *SQLiteStore) RegisterAgent(req model.AgentRegisterRequest) (model.Agent
 				CustomerDisplayName: strings.TrimSpace(req.SeedConfig.CustomerDisplayName),
 				SortOrder:           sortOrder,
 				Tags:                normalizeTags(req.SeedConfig.Tags),
+				Features:            req.SeedConfig.Features,
 				Renewal:             normalizeRenewalConfig(req.SeedConfig.Renewal),
 				Entry:               normalizeEntryConfig(req.SeedConfig.Entry),
 				XUI:                 req.SeedConfig.XUI,
@@ -125,7 +126,7 @@ func (s *SQLiteStore) RegisterAgent(req model.AgentRegisterRequest) (model.Agent
 			record.AgentName,
 			record.CustomerDisplayName,
 			record.SortOrder,
-			mustJSON(record.Config.Tags),
+			managedTagsJSON(record.Config),
 			record.AgentToken,
 			record.Hostname,
 			record.PublicIPv4,
@@ -166,6 +167,7 @@ func (s *SQLiteStore) RegisterAgent(req model.AgentRegisterRequest) (model.Agent
 		if len(record.Config.Tags) == 0 && len(req.SeedConfig.Tags) > 0 {
 			record.Config.Tags = normalizeTags(req.SeedConfig.Tags)
 		}
+		record.Config.Features = mergeAgentFeatures(record.Config.Features, req.SeedConfig.Features)
 		if record.CustomerDisplayName == "" && req.SeedConfig.CustomerDisplayName != "" {
 			record.CustomerDisplayName = strings.TrimSpace(req.SeedConfig.CustomerDisplayName)
 		}
@@ -205,7 +207,7 @@ func (s *SQLiteStore) RegisterAgent(req model.AgentRegisterRequest) (model.Agent
 			`,
 			record.AgentName,
 			record.CustomerDisplayName,
-			mustJSON(record.Config.Tags),
+			managedTagsJSON(record.Config),
 			record.AgentToken,
 			req.Hostname,
 			req.Hostname,
@@ -240,6 +242,7 @@ func (s *SQLiteStore) RegisterAgent(req model.AgentRegisterRequest) (model.Agent
 			CustomerDisplayName: record.CustomerDisplayName,
 			SortOrder:           record.SortOrder,
 			Tags:                cloneStrings(record.Config.Tags),
+			Features:            record.Config.Features,
 			Renewal:             record.Config.Renewal,
 			Entry:               record.Config.Entry,
 			XUI:                 record.Config.XUI,
@@ -308,6 +311,7 @@ func (s *SQLiteStore) updateAgentConfig(agentID string, cfg model.ManagedAgentCo
 		CustomerDisplayName: record.CustomerDisplayName,
 		SortOrder:           record.SortOrder,
 		Tags:                normalizeTags(cfg.Tags),
+		Features:            cfg.Features,
 		Renewal:             normalizeRenewalConfig(cfg.Renewal),
 		Entry:               normalizeEntryConfig(cfg.Entry),
 		XUI:                 cfg.XUI,
@@ -332,7 +336,7 @@ func (s *SQLiteStore) updateAgentConfig(agentID string, cfg model.ManagedAgentCo
 		record.AgentName,
 		record.CustomerDisplayName,
 		record.SortOrder,
-		mustJSON(record.Config.Tags),
+		managedTagsJSON(record.Config),
 		record.UpdatedAt.Format(time.RFC3339Nano),
 		xuiJSON,
 		mustJSON(config.NezhaConfig{}),
