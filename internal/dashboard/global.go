@@ -910,7 +910,10 @@ func collectAgentIPs(overview *model.XUIOverview) []string {
 }
 
 func collectEntryDomains(entry model.AgentEntryConfig) []string {
-	result := make([]string, 0, len(entry.Addresses)+len(entry.Mappings))
+	result := make([]string, 0, len(entry.Addresses)+len(entry.Mappings)+1)
+	if normalizeIP(extractEndpointHost(entry.ImportDomain)) == "" {
+		result = append(result, entry.ImportDomain)
+	}
 	for _, address := range entry.Addresses {
 		if normalizeIP(extractEndpointHost(address)) == "" {
 			result = append(result, address)
@@ -925,7 +928,10 @@ func collectEntryDomains(entry model.AgentEntryConfig) []string {
 }
 
 func collectEntryIPs(entry model.AgentEntryConfig) []string {
-	result := make([]string, 0, len(entry.Addresses)+len(entry.Mappings))
+	result := make([]string, 0, len(entry.Addresses)+len(entry.Mappings)+1)
+	if ip := normalizeIP(extractEndpointHost(entry.ImportDomain)); ip != "" {
+		result = append(result, ip)
+	}
 	for _, address := range entry.Addresses {
 		if ip := normalizeIP(extractEndpointHost(address)); ip != "" {
 			result = append(result, ip)

@@ -420,6 +420,7 @@ func customerRealmRuleTargetsAgent(rule model.RealmForwardRule, targetAgentID st
 
 func customerAgentAddressSet(agent model.DashboardAgentView) map[string]struct{} {
 	values := append([]string{}, agent.Entry.Addresses...)
+	values = append(values, agent.Entry.ImportDomain)
 	values = append(values, agent.Summary.ObservedIP, agent.Summary.PublicIPv4, agent.Summary.PublicIPv6)
 	result := make(map[string]struct{}, len(values))
 	for _, value := range values {

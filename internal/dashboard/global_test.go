@@ -765,3 +765,82 @@ func TestBuildGlobalDashboardMatchesConfiguredEntryMapping(t *testing.T) {
 		t.Fatalf("expected high confidence, got %q", link.MatchConfidence)
 	}
 }
+
+func TestBuildGlobalDashboardMatchesImportDomain(t *testing.T) {
+	now := time.Now().UTC()
+	agents := []model.AgentRecord{
+		{
+			AgentID:      "edge",
+			AgentName:    "Edge",
+			RegisteredAt: now,
+			UpdatedAt:    now,
+		},
+		{
+			AgentID:      "landing",
+			AgentName:    "Landing",
+			RegisteredAt: now,
+			UpdatedAt:    now,
+			Config: model.ManagedAgentConfig{
+				Entry: model.AgentEntryConfig{
+					ImportDomain: "landing.example.com",
+				},
+			},
+		},
+	}
+	snapshots := []model.AgentSnapshot{
+		{
+			AgentID:    "edge",
+			AgentName:  "Edge",
+			ReportedAt: now,
+			XUI: &model.XUISnapshot{
+				CollectedAt: now,
+				Inbounds: []map[string]any{{
+					"id":       1,
+					"tag":      "edge-in",
+					"protocol": "vmess",
+					"port":     20005,
+					"settings": `{"clients":[{"email":"alice","enable":true}]}`,
+				}},
+				Outbounds: []map[string]any{{
+					"tag":      "to-landing",
+					"protocol": "vless",
+					"settings": map[string]any{
+						"vnext": []map[string]any{{"address": "landing.example.com", "port": 20106}},
+					},
+					"streamSettings": map[string]any{"network": "tcp", "security": "reality"},
+				}},
+				RoutingRules: []map[string]any{{"type": "field", "user": []string{"alice"}, "outboundTag": "to-landing"}},
+			},
+		},
+		{
+			AgentID:    "landing",
+			AgentName:  "Landing",
+			ReportedAt: now,
+			XUI: &model.XUISnapshot{
+				CollectedAt: now,
+				Inbounds: []map[string]any{{
+					"id":             19,
+					"tag":            "inbound-20106",
+					"remark":         "Anilam",
+					"protocol":       "vless",
+					"port":           20106,
+					"settings":       `{"clients":[]}`,
+					"streamSettings": `{"network":"tcp","security":"reality"}`,
+				}},
+				Outbounds: []map[string]any{{"tag": "direct", "protocol": "freedom"}},
+			},
+		},
+	}
+
+	view := BuildGlobalDashboard(agents, snapshots)
+	if view.Totals.LinkCount != 1 {
+		t.Fatalf("expected import-domain link, got %d", view.Totals.LinkCount)
+	}
+	link := view.Links[0]
+	if link.Target.AgentID != "landing" || !containsString(link.MatchFields, "address_domain") {
+		t.Fatalf("expected landing import domain match, got %#v", link)
+	}
+	if len(view.ClientChains) != 1 || view.ClientChains[0].MatchedLinkCount != 1 {
+		t.Fatalf("expected client chain to follow import-domain link, got %#v", view.ClientChains)
+	}
+}
