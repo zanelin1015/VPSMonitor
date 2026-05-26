@@ -98,6 +98,41 @@ func TestBuildCustomerLinkViewUsesCustomerDisplayNames(t *testing.T) {
 	}
 }
 
+func TestBuildCustomerLinkViewShowsUnmatchedOutboundRoute(t *testing.T) {
+	assignment := model.CustomerAssignment{
+		ID:               7,
+		AgentID:          "entry",
+		InboundID:        20005,
+		InboundTag:       "inbound-20005",
+		ClientEmail:      "alice@example.com",
+		PublicClientName: "US-200M - AnilamVM",
+	}
+	chainMap := map[string]model.ClientChainView{
+		customerAssignmentKey("entry", 20005, "alice@example.com"): {
+			RootAgentID:      "entry",
+			RootClientEmail:  "alice@example.com",
+			RootInboundTag:   "inbound-20005",
+			UnresolvedReason: "the outbound target did not match any registered client inbound",
+			Steps: []model.ClientChainStep{
+				{StepType: "client", AgentID: "entry", Label: "alice@example.com"},
+				{StepType: "inbound", AgentID: "entry", Label: "AnilamVM", Port: 20005},
+				{StepType: "outbound", AgentID: "entry", Label: "COX-Anilam", OutboundTag: "COX-Anilam", Target: "cox.example.com:443"},
+			},
+		},
+	}
+	agentMap := map[string]model.DashboardAgentView{
+		"entry": {AgentID: "entry", AgentName: "US-VMISS-1"},
+	}
+
+	link := buildCustomerLinkView(assignment, chainMap, nil, agentMap)
+	if len(link.Steps) < 2 || link.Steps[1].Role != "relay" || link.Steps[1].Label != "COX-Anilam" {
+		t.Fatalf("expected unmatched outbound to appear as relay step, got %#v", link.Steps)
+	}
+	if link.Summary != "US-200M - AnilamVM 转发 COX-Anilam 出口 未知" {
+		t.Fatalf("expected summary to include outbound route, got %q", link.Summary)
+	}
+}
+
 func TestBuildCustomerLinkViewIncludesBillingAndExpiry(t *testing.T) {
 	assignment := model.CustomerAssignment{
 		ID:          7,

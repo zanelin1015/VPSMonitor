@@ -13,8 +13,9 @@ export function renderGlobalOverviewPanel(props: {
   onSelectTag: (value: string) => void
   scopeAgentID?: string
   scopeAgentName?: string
+  showMatchedLinks?: boolean
 }) {
-  const { dashboardView, selectedTag, links, onSelectTag, scopeAgentID, scopeAgentName } = props
+  const { dashboardView, selectedTag, links, onSelectTag, scopeAgentID, scopeAgentName, showMatchedLinks = true } = props
 
   if (!dashboardView) {
     return <Empty description="暂无总览数据" />
@@ -22,6 +23,9 @@ export function renderGlobalOverviewPanel(props: {
   const scoped = Boolean(scopeAgentName)
   const scopedAgent = scopeAgentID ? dashboardView.agents.find((agent) => agent.agent_id === scopeAgentID) : undefined
   const scopedRealmRules = (scopedAgent?.entry?.port_forwarding?.rules || []).filter((rule) => rule.enabled !== false)
+  const scopedDescription = showMatchedLinks
+    ? `这里显示当前选中 Client 相关的 Realm 原始转发和已匹配链路。页面会每 ${Math.floor(DASHBOARD_AUTO_REFRESH_MS / 1000)} 秒自动刷新一次统计与匹配结果。`
+    : `这里显示当前选中 Client 相关的 Realm 原始转发。页面会每 ${Math.floor(DASHBOARD_AUTO_REFRESH_MS / 1000)} 秒自动刷新一次统计与匹配结果。`
 
   return (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -29,26 +33,28 @@ export function renderGlobalOverviewPanel(props: {
         type="info"
         showIcon
         message={scoped ? `${scopeAgentName} 链路明细` : '链路明细'}
-        description={scoped ? `这里显示当前选中 Client 相关的标签、Realm 原始转发和已匹配链路。页面会每 ${Math.floor(DASHBOARD_AUTO_REFRESH_MS / 1000)} 秒自动刷新一次统计与匹配结果。` : `这里保留标签分组、已自动匹配链路和客户端转发链明细。页面会每 ${Math.floor(DASHBOARD_AUTO_REFRESH_MS / 1000)} 秒自动刷新一次统计与匹配结果。`}
+        description={scoped ? scopedDescription : `这里保留标签分组、已自动匹配链路和客户端转发链明细。页面会每 ${Math.floor(DASHBOARD_AUTO_REFRESH_MS / 1000)} 秒自动刷新一次统计与匹配结果。`}
       />
 
-      <Card className="config-section-card" bordered={false}>
-        <Space wrap>
-          <Tag color={!selectedTag ? 'blue' : 'default'} className="tag-filter-chip" onClick={() => onSelectTag('')}>
-            {scoped ? '当前 Client' : '全部'}
-          </Tag>
-          {dashboardView.tags.map((tag) => (
-            <Tag
-              key={tag.tag}
-              className="tag-filter-chip"
-              style={tagChipStyle(tag.tag, selectedTag === tag.tag)}
-              onClick={() => onSelectTag(tag.tag)}
-            >
-              {tag.tag} · {tag.client_count}
+      {!scoped ? (
+        <Card className="config-section-card" bordered={false}>
+          <Space wrap>
+            <Tag color={!selectedTag ? 'blue' : 'default'} className="tag-filter-chip" onClick={() => onSelectTag('')}>
+              全部
             </Tag>
-          ))}
-        </Space>
-      </Card>
+            {dashboardView.tags.map((tag) => (
+              <Tag
+                key={tag.tag}
+                className="tag-filter-chip"
+                style={tagChipStyle(tag.tag, selectedTag === tag.tag)}
+                onClick={() => onSelectTag(tag.tag)}
+              >
+                {tag.tag} · {tag.client_count}
+              </Tag>
+            ))}
+          </Space>
+        </Card>
+      ) : null}
 
       {scoped ? (
         <Card className="config-section-card" bordered={false}>
@@ -83,38 +89,40 @@ export function renderGlobalOverviewPanel(props: {
         </Card>
       ) : null}
 
-      <Card className="config-section-card" bordered={false}>
-        <Title level={4}>{scoped ? '当前 Client 已匹配链路' : '跨 Client 已匹配链路'}</Title>
-        {links.length ? (
-          <div className="topology-link-list">
-            {links.map((link) => (
-              <section key={link.key} className="topology-link-card">
-                <div className="topology-link-row">
-                  <Text strong>{link.source.agent_name || link.source.agent_id}</Text>
-                  <Tag color="gold">{link.source.outbound_tag || '-'}</Tag>
-                  <span className="topology-arrow">→</span>
-                  <Text strong>{link.target.agent_name || link.target.agent_id}</Text>
-                  <Tag color="cyan">{link.target.inbound_name || link.target.inbound_tag || '-'}</Tag>
-                </div>
-                <div className="muted-line">
-                  {link.source.target || '-'} → {link.target.entry_addresses?.[0] || link.target.domains?.[0] || link.target.ips?.[0] || '-'}:{link.target.port || 0}
-                </div>
-                {link.source.resolved_ips?.length || link.target.resolved_ips?.length ? (
-                  <div className="muted-line">
-                    解析 IP: {(link.source.resolved_ips || []).join(', ') || '-'} → {(link.target.resolved_ips || []).join(', ') || '-'}
+      {showMatchedLinks ? (
+        <Card className="config-section-card" bordered={false}>
+          <Title level={4}>{scoped ? '当前 Client 已匹配链路' : '跨 Client 已匹配链路'}</Title>
+          {links.length ? (
+            <div className="topology-link-list">
+              {links.map((link) => (
+                <section key={link.key} className="topology-link-card">
+                  <div className="topology-link-row">
+                    <Text strong>{link.source.agent_name || link.source.agent_id}</Text>
+                    <Tag color="gold">{link.source.outbound_tag || '-'}</Tag>
+                    <span className="topology-arrow">→</span>
+                    <Text strong>{link.target.agent_name || link.target.agent_id}</Text>
+                    <Tag color="cyan">{link.target.inbound_name || link.target.inbound_tag || '-'}</Tag>
                   </div>
-                ) : null}
-                <div className="muted-line">
-                  {link.match_reason || '-'} · {confidenceLabel(link.match_confidence)} · score {link.match_score}
-                </div>
-                {link.match_explanation ? <div className="muted-line">{link.match_explanation}</div> : null}
-              </section>
-            ))}
-          </div>
-        ) : (
-          <Empty description="当前没有自动匹配上的跨 client 出站链路" />
-        )}
-      </Card>
+                  <div className="muted-line">
+                    {link.source.target || '-'} → {link.target.entry_addresses?.[0] || link.target.domains?.[0] || link.target.ips?.[0] || '-'}:{link.target.port || 0}
+                  </div>
+                  {link.source.resolved_ips?.length || link.target.resolved_ips?.length ? (
+                    <div className="muted-line">
+                      解析 IP: {(link.source.resolved_ips || []).join(', ') || '-'} → {(link.target.resolved_ips || []).join(', ') || '-'}
+                    </div>
+                  ) : null}
+                  <div className="muted-line">
+                    {link.match_reason || '-'} · {confidenceLabel(link.match_confidence)} · score {link.match_score}
+                  </div>
+                  {link.match_explanation ? <div className="muted-line">{link.match_explanation}</div> : null}
+                </section>
+              ))}
+            </div>
+          ) : (
+            <Empty description="当前没有自动匹配上的跨 client 出站链路" />
+          )}
+        </Card>
+      ) : null}
     </Space>
   )
 }

@@ -546,7 +546,24 @@ func customerBillingForAssignment(assignment model.CustomerAssignment, agentMap 
 func customerRelayNames(chain model.ClientChainView, rootAgentID string, agentMap map[string]model.DashboardAgentView) []string {
 	seen := make(map[string]struct{})
 	result := make([]string, 0)
+	pendingOutbound := ""
+	appendRelay := func(label string) {
+		label = strings.TrimSpace(label)
+		if label == "" {
+			return
+		}
+		key := strings.ToLower(label)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		result = append(result, label)
+	}
 	for _, step := range chain.Steps {
+		if step.StepType == "outbound" {
+			pendingOutbound = firstNonEmptyString(step.Label, step.OutboundTag, step.Target)
+			continue
+		}
 		if step.AgentID == "" || step.AgentID == rootAgentID {
 			continue
 		}
@@ -554,15 +571,11 @@ func customerRelayNames(chain model.ClientChainView, rootAgentID string, agentMa
 			continue
 		}
 		label := firstNonEmptyString(customerAgentDisplayName(step.AgentID, agentMap), step.AgentName, step.Label)
-		if label == "" {
-			continue
-		}
-		key := strings.ToLower(label)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		result = append(result, label)
+		appendRelay(label)
+		pendingOutbound = ""
+	}
+	if pendingOutbound != "" && strings.Contains(chain.UnresolvedReason, "outbound target did not match") {
+		appendRelay(pendingOutbound)
 	}
 	return result
 }
