@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -522,6 +523,104 @@ func TestXUICollectUsesLocalDBWithoutLogin(t *testing.T) {
 	}
 }
 
+func TestXUICollectPrefersAPIBeforeLocalDB(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "broken-x-ui.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE inbounds (id INTEGER PRIMARY KEY)`); err != nil {
+		t.Fatalf("create broken db: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite: %v", err)
+	}
+
+	loginCount := 0
+	client, err := NewXUIClient(config.XUIConfig{
+		Enabled:  true,
+		BaseURL:  "https://xui.local",
+		Username: "admin",
+		Password: "pass",
+		DBPath:   dbPath,
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewXUIClient: %v", err)
+	}
+	client.client = &http.Client{
+		Timeout:   5 * time.Second,
+		Transport: xuiCollectTransport(t, &loginCount, nil),
+	}
+
+	snapshot := client.Collect(context.Background())
+	if snapshot.Error != "" {
+		t.Fatalf("Collect returned error: %s", snapshot.Error)
+	}
+	if loginCount != 1 {
+		t.Fatalf("expected API login before local DB fallback, got %d", loginCount)
+	}
+	if snapshot.Inbounds == nil {
+		t.Fatalf("expected API inbounds to be collected")
+	}
+}
+
+func TestXUICollectLocalDBSupports3XUISchemaWithoutAllTime(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "x-ui-v3.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	stmts := []string{
+		`CREATE TABLE inbounds (
+			id INTEGER PRIMARY KEY, user_id INTEGER, up INTEGER, down INTEGER, total INTEGER,
+			remark TEXT, enable BOOLEAN, expiry_time INTEGER, traffic_reset TEXT, last_traffic_reset_time INTEGER,
+			listen TEXT, port INTEGER, protocol TEXT, settings TEXT, stream_settings TEXT, tag TEXT, sniffing TEXT
+		)`,
+		`CREATE TABLE client_traffics (
+			id INTEGER PRIMARY KEY, inbound_id INTEGER, enable BOOLEAN, email TEXT, up INTEGER, down INTEGER,
+			expiry_time INTEGER, total INTEGER, reset INTEGER, last_online INTEGER
+		)`,
+		`CREATE TABLE outbound_traffics (id INTEGER PRIMARY KEY, tag TEXT, up INTEGER, down INTEGER, total INTEGER)`,
+		`CREATE TABLE settings (id INTEGER PRIMARY KEY, key TEXT, value TEXT)`,
+		`INSERT INTO inbounds
+			(id, user_id, up, down, total, remark, enable, expiry_time, traffic_reset, last_traffic_reset_time,
+			 listen, port, protocol, settings, stream_settings, tag, sniffing)
+			VALUES
+			(1, 1, 10, 20, 0, 'v3-hk', 1, 0, 'never', 0, '', 443, 'vless',
+			 '{"clients":[{"id":"uuid-1","email":"alice","enable":true}]}',
+			 '{"network":"tcp","security":"none"}', 'inbound-443', '{}')`,
+		`INSERT INTO client_traffics
+			(id, inbound_id, enable, email, up, down, expiry_time, total, reset, last_online)
+			VALUES (1, 1, 1, 'alice', 1, 2, 0, 0, 0, 123456)`,
+		`INSERT INTO outbound_traffics (id, tag, up, down, total) VALUES (1, 'direct', 5, 6, 11)`,
+		`INSERT INTO settings (id, key, value) VALUES (1, 'xrayTemplateConfig', '{"outbounds":[],"routing":{"rules":[]}}')`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec schema/data: %v\n%s", err, stmt)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite: %v", err)
+	}
+
+	client, err := NewXUIClient(config.XUIConfig{Enabled: true, DBPath: dbPath}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewXUIClient: %v", err)
+	}
+	snapshot := client.Collect(context.Background())
+	if snapshot.Error != "" {
+		t.Fatalf("Collect returned error: %s", snapshot.Error)
+	}
+	if got := snapshot.Inbounds[0]["allTime"]; got != int64(0) {
+		t.Fatalf("expected missing inbound all_time to default to 0, got %#v", got)
+	}
+	stats := snapshot.Inbounds[0]["clientStats"].([]map[string]any)
+	if got := stats[0]["allTime"]; got != int64(0) {
+		t.Fatalf("expected missing client all_time to default to 0, got %#v", got)
+	}
+}
+
 func TestXUICollectLocalDBEnrichesMissingXrayTemplateFromAPI(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "x-ui.db")
 	createLocalXUITestDB(t, dbPath)
@@ -573,6 +672,22 @@ func TestXUICollectLocalDBEnrichesMissingXrayTemplateFromAPI(t *testing.T) {
 			case "/secret/login":
 				loginCount++
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
+			case "/secret/panel/api/server/status":
+				return jsonResponse(t, req, map[string]any{
+					"success": true,
+					"obj": map[string]any{
+						"cpu":  1,
+						"mem":  map[string]any{"current": 1, "total": 2},
+						"xray": map[string]any{"state": "running"},
+					},
+				}), nil
+			case "/secret/panel/api/inbounds/list":
+				return &http.Response{
+					StatusCode: http.StatusInternalServerError,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader("api unavailable")),
+					Request:    req,
+				}, nil
 			case "/secret/panel/api/server/getConfigJson":
 				return jsonResponse(t, req, map[string]any{
 					"success": true,

@@ -152,31 +152,55 @@ func (c *XUIClient) Collect(ctx context.Context) *model.XUISnapshot {
 		CollectedAt: time.Now().UTC(),
 	}
 
+	var apiErr error
+	if c.canCollectAuthenticated() {
+		if err := c.ensureLogin(ctx); err != nil {
+			apiErr = err
+		} else {
+			apiErr = c.collectAuthenticated(ctx, snapshot)
+			if isXUIAuthError(apiErr) {
+				c.invalidateSession()
+				if c.hasAPIToken() {
+					// API-token mode has no session to refresh; fall back to local DB.
+				} else if loginErr := c.login(ctx); loginErr != nil {
+					apiErr = loginErr
+				} else {
+					apiErr = c.collectAuthenticated(ctx, snapshot)
+				}
+			}
+			if apiErr == nil {
+				return snapshot
+			}
+		}
+	}
+
 	if err := c.collectLocal(ctx, snapshot); err == nil {
 		return snapshot
 	} else if c.config.DBPath != "" || !errors.Is(err, errXUILocalDBNotFound) {
+		if apiErr != nil {
+			snapshot.Error = fmt.Sprintf("%v; local fallback failed: %v", apiErr, err)
+			return snapshot
+		}
 		snapshot.Error = err.Error()
 		return snapshot
 	}
 
-	if err := c.ensureLogin(ctx); err != nil {
-		snapshot.Error = err.Error()
+	if apiErr != nil {
+		snapshot.Error = apiErr.Error()
 		return snapshot
 	}
-	if err := c.collectAuthenticated(ctx, snapshot); err != nil {
-		if isXUIAuthError(err) {
-			c.invalidateSession()
-			if loginErr := c.login(ctx); loginErr != nil {
-				snapshot.Error = loginErr.Error()
-				return snapshot
-			}
-			err = c.collectAuthenticated(ctx, snapshot)
-		}
-		if err != nil {
-			snapshot.Error = err.Error()
-		}
-	}
+	snapshot.Error = errXUILocalDBNotFound.Error()
 	return snapshot
+}
+
+func (c *XUIClient) canCollectAuthenticated() bool {
+	if c.baseURL == "" {
+		return false
+	}
+	if c.hasAPIToken() {
+		return true
+	}
+	return strings.TrimSpace(c.config.Username) != "" || strings.TrimSpace(c.config.Password) != ""
 }
 
 func (c *XUIClient) collectAuthenticated(ctx context.Context, snapshot *model.XUISnapshot) error {
@@ -1385,12 +1409,36 @@ func sqliteReadOnlyDSN(path string) string {
 }
 
 func readLocalInbounds(ctx context.Context, db *sql.DB) ([]map[string]any, error) {
-	rows, err := db.QueryContext(ctx, `
-		SELECT id, user_id, up, down, total, all_time, remark, enable, expiry_time,
-		       traffic_reset, last_traffic_reset_time, listen, port, protocol,
-		       settings, stream_settings, tag, sniffing
+	columns, err := sqliteTableColumns(ctx, db, "inbounds")
+	if err != nil {
+		return nil, err
+	}
+	query := fmt.Sprintf(`
+		SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s,
+		       %s, %s, %s, %s, %s,
+		       %s, %s, %s, %s
 		FROM inbounds
-		ORDER BY id`)
+		ORDER BY id`,
+		sqliteColumnExpr(columns, "id", "0", "id"),
+		sqliteColumnExpr(columns, "user_id", "0", "user_id"),
+		sqliteColumnExpr(columns, "up", "0", "up"),
+		sqliteColumnExpr(columns, "down", "0", "down"),
+		sqliteColumnExpr(columns, "total", "0", "total"),
+		sqliteColumnExpr(columns, "all_time", "0", "all_time"),
+		sqliteColumnExpr(columns, "remark", "''", "remark"),
+		sqliteColumnExpr(columns, "enable", "1", "enable"),
+		sqliteColumnExpr(columns, "expiry_time", "0", "expiry_time"),
+		sqliteColumnExpr(columns, "traffic_reset", "''", "traffic_reset"),
+		sqliteColumnExpr(columns, "last_traffic_reset_time", "0", "last_traffic_reset_time"),
+		sqliteColumnExpr(columns, "listen", "''", "listen"),
+		sqliteColumnExpr(columns, "port", "0", "port"),
+		sqliteColumnExpr(columns, "protocol", "''", "protocol"),
+		sqliteColumnExpr(columns, "settings", "'{}'", "settings"),
+		sqliteColumnExpr(columns, "stream_settings", "'{}'", "stream_settings"),
+		sqliteColumnExpr(columns, "tag", "''", "tag"),
+		sqliteColumnExpr(columns, "sniffing", "'{}'", "sniffing"),
+	)
+	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -1446,10 +1494,27 @@ func readLocalInbounds(ctx context.Context, db *sql.DB) ([]map[string]any, error
 }
 
 func readLocalClientStats(ctx context.Context, db *sql.DB) (map[int][]map[string]any, error) {
-	rows, err := db.QueryContext(ctx, `
-		SELECT id, inbound_id, enable, email, up, down, all_time, expiry_time, total, reset, last_online
+	columns, err := sqliteTableColumns(ctx, db, "client_traffics")
+	if err != nil {
+		return nil, err
+	}
+	query := fmt.Sprintf(`
+		SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
 		FROM client_traffics
-		ORDER BY id`)
+		ORDER BY id`,
+		sqliteColumnExpr(columns, "id", "0", "id"),
+		sqliteColumnExpr(columns, "inbound_id", "0", "inbound_id"),
+		sqliteColumnExpr(columns, "enable", "1", "enable"),
+		sqliteColumnExpr(columns, "email", "''", "email"),
+		sqliteColumnExpr(columns, "up", "0", "up"),
+		sqliteColumnExpr(columns, "down", "0", "down"),
+		sqliteColumnExpr(columns, "all_time", "0", "all_time"),
+		sqliteColumnExpr(columns, "expiry_time", "0", "expiry_time"),
+		sqliteColumnExpr(columns, "total", "0", "total"),
+		sqliteColumnExpr(columns, "reset", "0", "reset"),
+		sqliteColumnExpr(columns, "last_online", "0", "last_online"),
+	)
+	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -1479,6 +1544,43 @@ func readLocalClientStats(ctx context.Context, db *sql.DB) (map[int][]map[string
 		})
 	}
 	return result, rows.Err()
+}
+
+func sqliteTableColumns(ctx context.Context, db *sql.DB, table string) (map[string]struct{}, error) {
+	rows, err := db.QueryContext(ctx, `PRAGMA table_info(`+table+`)`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	columns := make(map[string]struct{})
+	for rows.Next() {
+		var cid int
+		var name, columnType string
+		var notNull int
+		var defaultValue any
+		var pk int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			return nil, err
+		}
+		if name != "" {
+			columns[name] = struct{}{}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(columns) == 0 {
+		return nil, fmt.Errorf("table %s has no columns", table)
+	}
+	return columns, nil
+}
+
+func sqliteColumnExpr(columns map[string]struct{}, column, fallback, alias string) string {
+	if _, ok := columns[column]; ok {
+		return column
+	}
+	return fallback + " AS " + alias
 }
 
 func readLocalXrayConfig(ctx context.Context, db *sql.DB) (map[string]any, error) {
