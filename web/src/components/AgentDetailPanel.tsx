@@ -57,7 +57,7 @@ import {
   summarizeRule,
 } from '../lib/appHelpers'
 import { renderGlobalOverviewPanel } from './DashboardTopologyPanels'
-import { ManagedConfigPanel as renderManagedConfigPanel } from './ManagedConfigPanel'
+import { ManagedConfigPanel } from './ManagedConfigPanel'
 import { RouteBadge } from './RouteBadge'
 
 const { Text, Title } = Typography
@@ -831,39 +831,41 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   )
 
   function renderManagedConfigSection(section: 'basic' | 'xui' | 'nat' | 'network' | 'realm' | 'audit') {
-    return renderManagedConfigPanel({
-      selectedAgent,
-      agents: dashboardView?.agents || filteredAgents,
-      managedConfig,
-      certificates: overview?.certificates || [],
-      configLoading,
-      configSavingSection,
-      configError,
-      onSave: onSaveManagedConfigSection,
-      onAgentNameChange: onManagedConfigAgentNameChange,
-      onCustomerDisplayNameChange: onManagedConfigCustomerDisplayNameChange,
-      onSortOrderChange: onManagedConfigSortOrderChange,
-      tagOptions,
-      newTagName,
-      tagSaving,
-      onNewTagNameChange,
-      onCreateTag,
-      onTagsChange: (values) => {
-        const tags = mergeTagOptions([], values)
-        onTagsChange(tags)
-      },
-      onRenewalChange,
-      entryAddressInputText,
-      onEntryAddressesTextChange,
-      onEntryChange,
-      onXUIChange,
-      onCopyRealmConfig,
-      realmCopyLoading,
-      configAudits,
-      configAuditsLoading,
-      currencyOptions,
-      section,
-    })
+    return (
+      <ManagedConfigPanel
+        selectedAgent={selectedAgent}
+        agents={dashboardView?.agents || filteredAgents}
+        managedConfig={managedConfig}
+        certificates={overview?.certificates || []}
+        configLoading={configLoading}
+        configSavingSection={configSavingSection}
+        configError={configError}
+        onSave={onSaveManagedConfigSection}
+        onAgentNameChange={onManagedConfigAgentNameChange}
+        onCustomerDisplayNameChange={onManagedConfigCustomerDisplayNameChange}
+        onSortOrderChange={onManagedConfigSortOrderChange}
+        tagOptions={tagOptions}
+        newTagName={newTagName}
+        tagSaving={tagSaving}
+        onNewTagNameChange={onNewTagNameChange}
+        onCreateTag={onCreateTag}
+        onTagsChange={(values) => {
+          const tags = mergeTagOptions([], values)
+          onTagsChange(tags)
+        }}
+        onRenewalChange={onRenewalChange}
+        entryAddressInputText={entryAddressInputText}
+        onEntryAddressesTextChange={onEntryAddressesTextChange}
+        onEntryChange={onEntryChange}
+        onXUIChange={onXUIChange}
+        onCopyRealmConfig={onCopyRealmConfig}
+        realmCopyLoading={realmCopyLoading}
+        configAudits={configAudits}
+        configAuditsLoading={configAuditsLoading}
+        currencyOptions={currencyOptions}
+        section={section}
+      />
+    )
   }
 
   const featureSwitchPanel = canManageConfig ? (
