@@ -40,6 +40,7 @@ export interface AgentListItem {
   last_seen_at?: string
   has_config: boolean
   summary: VPSSummary
+  network_policy?: NetworkPolicySnapshot
   geo?: IPGeoView
 }
 
@@ -154,6 +155,14 @@ export interface NetworkPortPolicyRule {
   protocol?: 'tcp' | 'udp' | 'both' | string
   rate_limit_mbps?: number
   whitelist_ips?: string[]
+}
+
+export interface NetworkPolicySnapshot {
+  collected_at?: string
+  interface?: string
+  rate_limit_backend?: string
+  error?: string
+  rules?: NetworkPortPolicyRule[]
 }
 
 export interface RealmForwardConfig {

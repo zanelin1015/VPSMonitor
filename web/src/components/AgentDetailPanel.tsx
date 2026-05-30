@@ -292,11 +292,11 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     xui: Boolean(managedConfig?.features?.xui),
     realm: Boolean(managedConfig?.features?.realm),
     nat: Boolean(managedConfig?.features?.nat),
-    port_policy: Boolean(managedConfig?.features?.port_policy),
+    port_policy: Boolean(managedConfig?.features?.port_policy || selectedAgent.network_policy?.rules?.length),
   }
   const realmRuleCount = managedConfig?.entry?.port_forwarding?.rules?.length || selectedAgent.entry?.port_forwarding?.rules?.length || 0
   const natMappingCount = managedConfig?.entry?.mappings?.length || selectedAgent.entry?.mappings?.length || 0
-  const portPolicyCount = managedConfig?.entry?.network_policy?.rules?.length || selectedAgent.entry?.network_policy?.rules?.length || 0
+  const portPolicyCount = managedConfig?.entry?.network_policy?.rules?.length || selectedAgent.entry?.network_policy?.rules?.length || selectedAgent.network_policy?.rules?.length || 0
 
   useEffect(() => {
     setPrimaryDomainDraft(currentPrimaryDomain)

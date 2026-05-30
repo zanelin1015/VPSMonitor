@@ -1,0 +1,4 @@
+561adc9f49d7f3bc7dca9029462fe3a65c95ef31e896f4a1bf6148c0bdbe552e  VPSMonitor-client-linux-amd64.tar.gz
+4529f3f636176b9b9228f1c9ef3390ff3530067096ff65c35d065e0cbb994b9d  VPSMonitor-client-windows-amd64.zip
+aa9c0c1fa38f2012a557fe4760349876d93de1b5008e93b5bfb3c9abb020548d  VPSMonitor-server-linux-amd64.tar.gz
+7dde8163f4443861c65792e1ecf3a4c898025820327efbe591de2798cf93cca3  VPSMonitor-server-windows-amd64.zip

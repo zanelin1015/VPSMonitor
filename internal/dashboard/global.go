@@ -1020,9 +1020,8 @@ func collectInboundDomains(node model.XUINodeView, certificateDomains []string) 
 	if node.Listen != "" && normalizeIP(node.Listen) == "" {
 		result = append(result, node.Listen)
 	}
-	if strings.EqualFold(node.Security, "tls") {
-		result = append(result, certificateDomains...)
-	}
+	// Local cert domains are VPS-level entry aliases, not only TLS-node names.
+	result = append(result, certificateDomains...)
 	return uniqueNormalizedDomains(result)
 }
 

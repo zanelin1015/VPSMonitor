@@ -68,11 +68,121 @@ func TestApplyNetworkPolicyUsesTCForRateLimit(t *testing.T) {
 	joined := strings.Join(runner.commands, "\n")
 	for _, want := range []string{
 		"tc qdisc add dev eth0 root handle 1: htb default 999",
-		"tc class add dev eth0 parent 1: classid 1:10 htb rate 20mbit ceil 20mbit",
+		"tc qdisc add dev eth0 handle ffff: ingress",
+		"tc class add dev eth0 parent 1: classid 1:10 htb rate 20mbit ceil 20mbit burst 15k cburst 15k",
 		"tc filter add dev eth0 protocol ip parent 1: prio 10 u32 match ip protocol 6 0xff match ip sport 8443 0xffff flowid 1:10",
+		"tc filter add dev eth0 parent ffff: protocol ip prio 10 u32 match ip protocol 6 0xff match ip dport 8443 0xffff action police rate 20mbit burst 200k drop flowid :1",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("expected command %q in:\n%s", want, joined)
 		}
+	}
+}
+
+func TestApplyNetworkPolicyDedupesRateLimitByPort(t *testing.T) {
+	runner := &fakeCommandRunner{paths: map[string]bool{"tc": true}}
+	rules := activeNetworkPolicyRules([]model.NetworkPortPolicyRule{
+		{Enabled: true, Port: 20002, Protocol: "tcp", RateLimitMbps: 100},
+		{Enabled: true, Port: 20002, Protocol: "udp", RateLimitMbps: 100},
+		{Enabled: true, Port: 20002, Protocol: "tcp", RateLimitMbps: 100},
+	})
+	if len(rules) != 1 {
+		t.Fatalf("expected one deduped rule, got %#v", rules)
+	}
+	if rules[0].Protocol != "both" {
+		t.Fatalf("expected tcp+udp protocol, got %#v", rules[0])
+	}
+	err := applyRateLimitPolicy(context.Background(), model.NetworkPolicyConfig{Interface: "eth0", RateLimitBackend: "tc"}, rules, runner)
+	if err != nil {
+		t.Fatalf("applyNetworkPolicy: %v", err)
+	}
+	joined := strings.Join(runner.commands, "\n")
+	if got := strings.Count(joined, "match ip sport 20002"); got != 1 {
+		t.Fatalf("expected one root filter for port 20002, got %d in:\n%s", got, joined)
+	}
+	if got := strings.Count(joined, "match ip dport 20002"); got != 1 {
+		t.Fatalf("expected one ingress filter for port 20002, got %d in:\n%s", got, joined)
+	}
+	if strings.Contains(joined, "match ip protocol 6 0xff") || strings.Contains(joined, "match ip protocol 17 0xff") {
+		t.Fatalf("expected deduped tcp+udp port rule to avoid duplicate protocol filters, got:\n%s", joined)
+	}
+}
+
+func TestApplyNetworkPolicyClearsTCWhenRateLimitRemoved(t *testing.T) {
+	runner := &fakeCommandRunner{paths: map[string]bool{"tc": true}}
+	err := applyRateLimitPolicy(context.Background(), model.NetworkPolicyConfig{Interface: "eth0", RateLimitBackend: "tc"}, []model.NetworkPortPolicyRule{{
+		Enabled:      true,
+		Port:         20002,
+		Protocol:     "tcp",
+		WhitelistIPs: []string{"1.2.3.4"},
+	}}, runner)
+	if err != nil {
+		t.Fatalf("applyNetworkPolicy: %v", err)
+	}
+	joined := strings.Join(runner.commands, "\n")
+	if !strings.Contains(joined, "tc qdisc del dev eth0 root") {
+		t.Fatalf("expected tc qdisc to be cleared when rate limit is removed, got:\n%s", joined)
+	}
+	if !strings.Contains(joined, "tc qdisc del dev eth0 ingress") {
+		t.Fatalf("expected tc ingress qdisc to be cleared when rate limit is removed, got:\n%s", joined)
+	}
+}
+
+func TestCollectTCRateLimitSnapshotParsesCurrentRules(t *testing.T) {
+	runner := &fakeCommandRunner{
+		paths: map[string]bool{"tc": true},
+		outputs: map[string]string{
+			"tc qdisc show dev eth0": "qdisc htb 1: root refcnt 3 r2q 10 default 0x999 direct_packets_stat 0 direct_qlen 1000\n",
+			"tc class show dev eth0": strings.Join([]string{
+				"class htb 1:10 root prio 0 rate 100Mbit ceil 100Mbit burst 1600b cburst 1600b",
+				"class htb 1:11 root prio 0 rate 100Mbit ceil 100Mbit burst 1600b cburst 1600b",
+				"class htb 1:12 root prio 0 rate 100Mbit ceil 100Mbit burst 1600b cburst 1600b",
+				"class htb 1:999 root prio 0 rate 10Gbit ceil 10Gbit burst 0b cburst 0b",
+			}, "\n"),
+			"tc filter show dev eth0": strings.Join([]string{
+				"filter protocol ip pref 10 u32 chain 0 fh 800::800 order 2048 key ht 800 bkt 0 *flowid 1:10 not_in_hw",
+				"  match 00060000/00ff0000 at 8",
+				"  match 4e220000/ffff0000 at 20",
+				"filter protocol ip pref 11 u32 chain 0 fh 801::800 order 2048 key ht 801 bkt 0 *flowid 1:11 not_in_hw",
+				"  match 00110000/00ff0000 at 8",
+				"  match 4e220000/ffff0000 at 20",
+				"filter protocol ip pref 12 u32 chain 0 fh 802::800 order 2048 key ht 802 bkt 0 *flowid 1:12 not_in_hw",
+				"  match ip protocol 6 0xff",
+				"  match ip sport 20004 0xffff",
+			}, "\n"),
+		},
+	}
+
+	snapshot := collectTCRateLimitSnapshot(context.Background(), model.NetworkPolicyConfig{Interface: "eth0"}, runner)
+	if snapshot == nil {
+		t.Fatalf("expected snapshot")
+	}
+	if snapshot.Interface != "eth0" {
+		t.Fatalf("expected eth0 interface, got %q", snapshot.Interface)
+	}
+	if len(snapshot.Rules) != 2 {
+		t.Fatalf("expected 2 deduped tc rules, got %#v", snapshot.Rules)
+	}
+	if snapshot.Rules[0].Port != 20002 || snapshot.Rules[0].Protocol != "both" || snapshot.Rules[0].RateLimitMbps != 100 {
+		t.Fatalf("unexpected first rule: %#v", snapshot.Rules[0])
+	}
+	if snapshot.Rules[1].Port != 20004 || snapshot.Rules[1].Protocol != "tcp" || snapshot.Rules[1].RateLimitMbps != 100 {
+		t.Fatalf("unexpected second rule: %#v", snapshot.Rules[1])
+	}
+}
+
+func TestCollectTCRateLimitSnapshotParsesProtocolAgnosticPortRule(t *testing.T) {
+	rules := parseTCRateLimitRules(
+		"class htb 1:10 root prio 0 rate 50Mbit ceil 50Mbit burst 15k cburst 15k",
+		strings.Join([]string{
+			"filter protocol ip pref 10 u32 chain 0 fh 800::800 order 2048 key ht 800 bkt 0 *flowid 1:10 not_in_hw",
+			"  match 4e220000/ffff0000 at 20",
+		}, "\n"),
+	)
+	if len(rules) != 1 {
+		t.Fatalf("expected one rule, got %#v", rules)
+	}
+	if rules[0].Port != 20002 || rules[0].Protocol != "both" || rules[0].RateLimitMbps != 50 {
+		t.Fatalf("unexpected parsed rule: %#v", rules[0])
 	}
 }

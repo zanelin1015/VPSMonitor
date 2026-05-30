@@ -99,7 +99,19 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
     network_policy: managedConfig.entry?.network_policy || { enabled: false, interface: '', firewall_backend: 'auto', rate_limit_backend: 'auto', rules: [] },
     port_forwarding: managedConfig.entry?.port_forwarding || selectedAgent.entry?.port_forwarding || { enabled: false, backend: 'realm', binary_path: '', config_path: '', service_name: '', log_level: 'info', rules: [] },
   }
-  const networkPolicy = entryConfig.network_policy || { enabled: false, interface: '', firewall_backend: 'auto', rate_limit_backend: 'auto', rules: [] }
+  const observedNetworkPolicy = selectedAgent.network_policy
+  const observedNetworkRules = observedNetworkPolicy?.rules || []
+  const configuredNetworkPolicy = entryConfig.network_policy || { enabled: false, interface: '', firewall_backend: 'auto', rate_limit_backend: 'auto', rules: [] }
+  const usingObservedNetworkPolicy = !hasNetworkPolicyConfig(configuredNetworkPolicy) && observedNetworkRules.length > 0
+  const networkPolicy = usingObservedNetworkPolicy
+    ? {
+        ...configuredNetworkPolicy,
+        enabled: true,
+        interface: observedNetworkPolicy?.interface || configuredNetworkPolicy.interface || '',
+        rate_limit_backend: 'tc',
+        rules: dedupeNetworkPolicyRules(observedNetworkRules.map((rule) => ({ ...rule, enabled: rule.enabled !== false, whitelist_ips: rule.whitelist_ips || [] }))),
+      }
+    : configuredNetworkPolicy
   const portForwarding = entryConfig.port_forwarding || { enabled: false, backend: 'realm', binary_path: '', config_path: '', service_name: '', log_level: 'info', rules: [] }
   const targetAgentOptions = agents
     .filter((agent) => agent.agent_id && agent.agent_id !== selectedAgent.agent_id)
@@ -142,6 +154,14 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
         ...(networkPolicy.rules || []),
         { id: `rule-${Date.now()}`, enabled: true, name: '', port: 443, protocol: 'tcp', rate_limit_mbps: 0, whitelist_ips: [] },
       ],
+    })
+  }
+  const importObservedNetworkPolicy = () => {
+    updateNetworkPolicy({
+      enabled: true,
+      interface: observedNetworkPolicy?.interface || networkPolicy.interface || '',
+      rate_limit_backend: 'tc',
+      rules: dedupeNetworkPolicyRules(observedNetworkRules.map((rule) => ({ ...rule, enabled: rule.enabled !== false, whitelist_ips: rule.whitelist_ips || [] }))),
     })
   }
   const removeNetworkPolicyRule = (index: number) => {
@@ -555,6 +575,36 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
           message="由 Client 在 VPS 本机执行"
           description="IP 白名单会优先在 Debian/Ubuntu 使用 ufw，其他系统自动回退 iptables；端口限速使用 Linux tc，对服务端出方向按源端口限速。启用前请确认防火墙不会锁死 SSH。"
         />
+        {observedNetworkPolicy?.error ? (
+          <Alert type="warning" showIcon className="compact-alert" message="读取当前 tc 限速失败" description={observedNetworkPolicy.error} />
+        ) : null}
+        {usingObservedNetworkPolicy ? (
+          <Alert
+            type="info"
+            showIcon
+            className="compact-alert"
+            message="已读取当前系统 tc 限速作为可编辑策略"
+            description="修改下方端口策略并保存后，Client 会重建 tc 规则；同一个端口最终只保留一组 TCP/UDP 限速规则。"
+          />
+        ) : null}
+        {observedNetworkRules.length ? (
+          <Card size="small" className="subtle-card" title={`当前系统 tc 限速（${observedNetworkPolicy?.interface || '未知网卡'}）`} extra={<Button size="small" onClick={importObservedNetworkPolicy}>填入托管配置</Button>}>
+            <List
+              size="small"
+              dataSource={observedNetworkRules}
+              renderItem={(rule) => (
+                <List.Item>
+                  <Space wrap>
+                    <Text strong>{rule.port}</Text>
+                    <Text>{formatNetworkPolicyProtocol(rule.protocol)}</Text>
+                    <Text>{rule.rate_limit_mbps || 0} Mbps</Text>
+                    <Text type="secondary">{rule.name || 'tc 限速'}</Text>
+                  </Space>
+                </List.Item>
+              )}
+            />
+          </Card>
+        ) : null}
         <Row gutter={[16, 16]}>
           <Col xs={24} md={6}>
             <div className="switch-row">
@@ -864,6 +914,89 @@ function normalizeDomainOption(value?: string) {
 
 function isIPLike(value: string) {
   return /^\d{1,3}(\.\d{1,3}){3}$/.test(value) || (value.includes(':') && /^[0-9a-f:]+$/i.test(value))
+}
+
+function hasNetworkPolicyConfig(policy?: AgentEntryConfig['network_policy']) {
+  if (!policy) {
+    return false
+  }
+  const firewallBackend = String(policy.firewall_backend || '').trim()
+  const rateLimitBackend = String(policy.rate_limit_backend || '').trim()
+  return Boolean(
+    policy.enabled ||
+      policy.interface ||
+      (firewallBackend && firewallBackend !== 'auto') ||
+      (rateLimitBackend && rateLimitBackend !== 'auto') ||
+      (policy.rules || []).length,
+  )
+}
+
+function dedupeNetworkPolicyRules(rules: NetworkPortPolicyRule[]) {
+  const byPort = new Map<number, NetworkPortPolicyRule>()
+  rules.forEach((rule) => {
+    const port = Number(rule.port || 0)
+    if (!port) {
+      return
+    }
+    const existing = byPort.get(port)
+    if (!existing) {
+      byPort.set(port, { ...rule, port, protocol: normalizeNetworkPolicyProtocol(rule.protocol) })
+      return
+    }
+    byPort.set(port, {
+      ...existing,
+      protocol: mergeNetworkPolicyProtocol(existing.protocol, rule.protocol),
+      rate_limit_mbps: mergeNetworkPolicyRate(existing.rate_limit_mbps, rule.rate_limit_mbps),
+      whitelist_ips: Array.from(new Set([...(existing.whitelist_ips || []), ...(rule.whitelist_ips || [])])),
+      name: existing.name || rule.name,
+      id: existing.id || rule.id,
+      enabled: existing.enabled !== false || rule.enabled !== false,
+    })
+  })
+  return Array.from(byPort.values()).sort((a, b) => Number(a.port || 0) - Number(b.port || 0))
+}
+
+function normalizeNetworkPolicyProtocol(protocol?: string) {
+  if (protocol === 'udp') {
+    return 'udp'
+  }
+  if (protocol === 'both' || protocol === 'all' || protocol === 'tcp+udp') {
+    return 'both'
+  }
+  return 'tcp'
+}
+
+function mergeNetworkPolicyProtocol(a?: string, b?: string) {
+  const protocols = [normalizeNetworkPolicyProtocol(a), normalizeNetworkPolicyProtocol(b)]
+  const hasTCP = protocols.includes('tcp') || protocols.includes('both')
+  const hasUDP = protocols.includes('udp') || protocols.includes('both')
+  if (hasTCP && hasUDP) {
+    return 'both'
+  }
+  return hasUDP ? 'udp' : 'tcp'
+}
+
+function mergeNetworkPolicyRate(a?: number, b?: number) {
+  const first = Number(a || 0)
+  const second = Number(b || 0)
+  if (!first) {
+    return second
+  }
+  if (!second) {
+    return first
+  }
+  return Math.min(first, second)
+}
+
+function formatNetworkPolicyProtocol(protocol?: string) {
+  switch (normalizeNetworkPolicyProtocol(protocol)) {
+    case 'udp':
+      return 'UDP'
+    case 'both':
+      return 'TCP + UDP'
+    default:
+      return 'TCP'
+  }
 }
 
 function bestAgentAddress(agent?: AgentListItem) {

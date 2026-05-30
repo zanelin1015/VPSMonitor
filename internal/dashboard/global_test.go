@@ -844,3 +844,84 @@ func TestBuildGlobalDashboardMatchesImportDomain(t *testing.T) {
 		t.Fatalf("expected client chain to follow import-domain link, got %#v", view.ClientChains)
 	}
 }
+
+func TestBuildGlobalDashboardMatchesNonPrimaryCertificateDomain(t *testing.T) {
+	now := time.Now().UTC()
+	agents := []model.AgentRecord{
+		{
+			AgentID:      "edge",
+			AgentName:    "Edge",
+			RegisteredAt: now,
+			UpdatedAt:    now,
+		},
+		{
+			AgentID:      "landing",
+			AgentName:    "Landing",
+			RegisteredAt: now,
+			UpdatedAt:    now,
+			Config: model.ManagedAgentConfig{
+				Entry: model.AgentEntryConfig{
+					ImportDomain: "primary.example.com",
+				},
+			},
+		},
+	}
+	snapshots := []model.AgentSnapshot{
+		{
+			AgentID:    "edge",
+			AgentName:  "Edge",
+			ReportedAt: now,
+			XUI: &model.XUISnapshot{
+				CollectedAt: now,
+				Inbounds: []map[string]any{{
+					"id":       1,
+					"tag":      "edge-in",
+					"protocol": "vmess",
+					"port":     20005,
+					"settings": `{"clients":[{"email":"alice","enable":true}]}`,
+				}},
+				Outbounds: []map[string]any{{
+					"tag":      "att-s5",
+					"protocol": "socks",
+					"settings": map[string]any{
+						"servers": []map[string]any{{"address": "other.example.com", "port": 20002}},
+					},
+				}},
+				RoutingRules: []map[string]any{{"type": "field", "user": []string{"alice"}, "outboundTag": "att-s5"}},
+			},
+		},
+		{
+			AgentID:    "landing",
+			AgentName:  "Landing",
+			ReportedAt: now,
+			XUI: &model.XUISnapshot{
+				CollectedAt: now,
+				Certificates: []model.XUILocalCertificate{
+					{ID: "primary", DNSNames: []string{"primary.example.com"}},
+					{ID: "other", DNSNames: []string{"other.example.com"}},
+				},
+				Inbounds: []map[string]any{{
+					"id":       2,
+					"tag":      "socks-in",
+					"remark":   "ATT-S5",
+					"protocol": "socks",
+					"port":     20002,
+					"settings": `{"accounts":[]}`,
+				}},
+				Outbounds: []map[string]any{{"tag": "direct", "protocol": "freedom"}},
+			},
+		},
+	}
+
+	view := BuildGlobalDashboard(agents, snapshots)
+	if view.Totals.LinkCount != 1 {
+		t.Fatalf("expected non-primary cert-domain link, got %d", view.Totals.LinkCount)
+	}
+	link := view.Links[0]
+	if link.Target.AgentID != "landing" || !containsString(link.MatchFields, "address_domain") {
+		t.Fatalf("expected landing cert domain match, got %#v", link)
+	}
+	if len(view.ClientChains) != 1 || view.ClientChains[0].MatchedLinkCount != 1 {
+		t.Fatalf("expected client chain to follow cert-domain link, got %#v", view.ClientChains)
+	}
+}

@@ -93,8 +93,10 @@ func (a *App) handleAgents(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]model.AgentListItem, 0, len(agents))
 	for _, agent := range agents {
+		var networkPolicy *model.NetworkPolicySnapshot
 		if snapshot, ok := latestByAgent[agent.AgentID]; ok {
 			agent.Config.Entry = dashboard.MergeRealmSnapshotIntoEntry(agent.Config.Entry, snapshot.Realm)
+			networkPolicy = snapshot.NetworkPolicy
 		}
 		items = append(items, model.AgentListItem{
 			AgentID:             agent.AgentID,
@@ -113,6 +115,7 @@ func (a *App) handleAgents(w http.ResponseWriter, r *http.Request) {
 			UpdatedAt:           &agent.UpdatedAt,
 			LastSeenAt:          agent.LastSeenAt,
 			Summary:             agent.Summary,
+			NetworkPolicy:       networkPolicy,
 			HasConfig:           agent.HasConfig,
 		})
 	}

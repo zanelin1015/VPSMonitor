@@ -330,6 +330,53 @@ func TestBuildXUIOverviewPrefersDirectAsDefaultOutbound(t *testing.T) {
 	}
 }
 
+func TestBuildXUIOverviewAddsImplicitDirectOutbound(t *testing.T) {
+	now := time.Now().UTC()
+	snapshot := model.AgentSnapshot{
+		AgentID:    "agent-implicit-direct",
+		ReportedAt: now,
+		XUI: &model.XUISnapshot{
+			CollectedAt: now,
+			Inbounds: []map[string]any{
+				{
+					"id":       1,
+					"tag":      "in-vless",
+					"remark":   "Entry",
+					"protocol": "vless",
+					"settings": `{"clients":[{"email":"user@example.com","enable":true}]}`,
+				},
+			},
+			Outbounds: []map[string]any{},
+			OutboundTraffic: []map[string]any{
+				{"tag": "direct", "up": 10, "down": 20, "total": 30},
+			},
+		},
+	}
+
+	overview := BuildXUIOverview(snapshot)
+	if overview == nil {
+		t.Fatalf("expected overview")
+	}
+	if got := len(overview.Outbounds); got != 1 {
+		t.Fatalf("expected implicit direct outbound, got %d: %#v", got, overview.Outbounds)
+	}
+	if got := overview.Outbounds[0].Tag; got != "direct" {
+		t.Fatalf("expected direct outbound, got %q", got)
+	}
+	if got := overview.Outbounds[0].Protocol; got != "freedom" {
+		t.Fatalf("expected freedom protocol, got %q", got)
+	}
+	if !overview.Outbounds[0].IsDefault {
+		t.Fatalf("expected implicit direct to be default: %#v", overview.Outbounds[0])
+	}
+	if got := overview.Outbounds[0].Total; got != int64(30) {
+		t.Fatalf("expected direct traffic to be preserved, got %d", got)
+	}
+	if got := overview.Clients[0].Route.OutboundTag; got != "direct" {
+		t.Fatalf("expected client default route direct, got %q", got)
+	}
+}
+
 func TestBuildXUIOverviewParsesFlatVLESSOutbound(t *testing.T) {
 	now := time.Now().UTC()
 	snapshot := model.AgentSnapshot{

@@ -102,6 +102,18 @@ func BuildXUIOverviewWithOptions(snapshot model.AgentSnapshot, options XUIOvervi
 	rules := normalizeRouteRules(snapshot.XUI.RoutingRules)
 	trafficByTag := outboundTrafficByTag(snapshot.XUI.OutboundTraffic)
 	outbounds, defaultOutboundTag := normalizeOutbounds(snapshot.XUI.Outbounds, trafficByTag)
+	if defaultOutboundTag == "" && len(snapshot.XUI.Inbounds) > 0 {
+		traffic := trafficByTag["direct"]
+		outbounds = append(outbounds, model.XUIOutboundView{
+			Tag:       "direct",
+			Protocol:  "freedom",
+			Up:        traffic.up,
+			Down:      traffic.down,
+			Total:     chooseInt64(traffic.total, traffic.up+traffic.down),
+			IsDefault: true,
+		})
+		defaultOutboundTag = "direct"
+	}
 	balancers := normalizeBalancers(snapshot.XUI.RawConfig, outbounds)
 	globalRuleIndexes := collectGlobalRuleIndexes(rules)
 	certificates := filterDomainCertificates(snapshot.XUI.Certificates)

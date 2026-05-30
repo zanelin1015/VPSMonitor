@@ -267,6 +267,7 @@ func (a *App) collect(ctx context.Context, effectiveConfig model.ManagedAgentCon
 		}
 	}
 	snapshot.Realm = collectRealmSnapshot(effectiveConfig.Entry.PortForwarding)
+	snapshot.NetworkPolicy = collectNetworkPolicySnapshot(ctx, effectiveConfig.Entry.NetworkPolicy)
 
 	snapshot.Summary = buildSummary(snapshot)
 	if outboundIP := a.detectOutboundIP(ctx); outboundIP != "" {

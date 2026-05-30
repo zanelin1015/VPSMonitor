@@ -1079,3 +1079,24 @@ func TestSQLiteStoreCustomerAccountsAssignmentsAndSessions(t *testing.T) {
 		t.Fatalf("expected disabled customer session to be invalid, ok=%v err=%v", ok, err)
 	}
 }
+
+func TestNormalizeNetworkPolicyConfigDedupesByPort(t *testing.T) {
+	cfg := normalizeNetworkPolicyConfig(model.NetworkPolicyConfig{
+		Enabled: true,
+		Rules: []model.NetworkPortPolicyRule{
+			{ID: "tcp-20002-a", Enabled: true, Port: 20002, Protocol: "tcp", RateLimitMbps: 100, WhitelistIPs: []string{"1.1.1.1"}},
+			{ID: "udp-20002-b", Enabled: true, Port: 20002, Protocol: "udp", RateLimitMbps: 50, WhitelistIPs: []string{"2.2.2.2"}},
+			{ID: "tcp-20002-c", Enabled: true, Port: 20002, Protocol: "tcp", RateLimitMbps: 100, WhitelistIPs: []string{"1.1.1.1"}},
+		},
+	})
+	if len(cfg.Rules) != 1 {
+		t.Fatalf("expected one rule after dedupe, got %#v", cfg.Rules)
+	}
+	rule := cfg.Rules[0]
+	if rule.Port != 20002 || rule.Protocol != "both" || rule.RateLimitMbps != 50 {
+		t.Fatalf("unexpected deduped rule: %#v", rule)
+	}
+	if len(rule.WhitelistIPs) != 2 {
+		t.Fatalf("expected whitelist union, got %#v", rule.WhitelistIPs)
+	}
+}

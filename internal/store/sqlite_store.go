@@ -645,8 +645,8 @@ func normalizeNetworkPolicyConfig(cfg model.NetworkPolicyConfig) model.NetworkPo
 	default:
 		cfg.RateLimitBackend = "auto"
 	}
-	rules := make([]model.NetworkPortPolicyRule, 0, len(cfg.Rules))
-	seen := make(map[string]struct{}, len(cfg.Rules))
+	rulesByPort := make(map[int]model.NetworkPortPolicyRule, len(cfg.Rules))
+	portOrder := make([]int, 0, len(cfg.Rules))
 	for _, rule := range cfg.Rules {
 		rule.ID = strings.TrimSpace(rule.ID)
 		rule.Name = strings.TrimSpace(rule.Name)
@@ -664,12 +664,28 @@ func normalizeNetworkPolicyConfig(cfg model.NetworkPolicyConfig) model.NetworkPo
 		if rule.ID == "" {
 			rule.ID = fmt.Sprintf("%s-%d-%s", rule.Protocol, rule.Port, strings.ToLower(strings.ReplaceAll(rule.Name, " ", "-")))
 		}
-		key := fmt.Sprintf("%s:%d:%s", strings.ToLower(rule.ID), rule.Port, rule.Protocol)
-		if _, ok := seen[key]; ok {
+		if existing, ok := rulesByPort[rule.Port]; ok {
+			existing.Protocol = mergeNetworkPolicyProtocol(existing.Protocol, rule.Protocol)
+			existing.WhitelistIPs = normalizeNetworkPolicyIPs(append(existing.WhitelistIPs, rule.WhitelistIPs...))
+			if existing.RateLimitMbps <= 0 || (rule.RateLimitMbps > 0 && rule.RateLimitMbps < existing.RateLimitMbps) {
+				existing.RateLimitMbps = rule.RateLimitMbps
+			}
+			if existing.Name == "" {
+				existing.Name = rule.Name
+			}
+			if existing.ID == "" {
+				existing.ID = rule.ID
+			}
+			existing.Enabled = existing.Enabled || rule.Enabled
+			rulesByPort[rule.Port] = existing
 			continue
 		}
-		seen[key] = struct{}{}
-		rules = append(rules, rule)
+		portOrder = append(portOrder, rule.Port)
+		rulesByPort[rule.Port] = rule
+	}
+	rules := make([]model.NetworkPortPolicyRule, 0, len(portOrder))
+	for _, port := range portOrder {
+		rules = append(rules, rulesByPort[port])
 	}
 	sort.Slice(rules, func(i, j int) bool {
 		if rules[i].Port != rules[j].Port {
@@ -684,6 +700,26 @@ func normalizeNetworkPolicyConfig(cfg model.NetworkPolicyConfig) model.NetworkPo
 		cfg.RateLimitBackend = ""
 	}
 	return cfg
+}
+
+func mergeNetworkPolicyProtocol(a, b string) string {
+	seenTCP := false
+	seenUDP := false
+	for _, protocol := range []string{normalizeNetworkPolicyProtocol(a), normalizeNetworkPolicyProtocol(b)} {
+		if protocol == "both" || protocol == "tcp" {
+			seenTCP = true
+		}
+		if protocol == "both" || protocol == "udp" {
+			seenUDP = true
+		}
+	}
+	if seenTCP && seenUDP {
+		return "both"
+	}
+	if seenUDP {
+		return "udp"
+	}
+	return "tcp"
 }
 
 func normalizeNetworkPolicyProtocol(protocol string) string {

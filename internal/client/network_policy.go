@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -92,6 +93,7 @@ func activeNetworkPolicyRules(items []model.NetworkPortPolicyRule) []model.Netwo
 		}
 		rules = append(rules, rule)
 	}
+	rules = mergeNetworkPolicyRulesByPort(rules)
 	sort.Slice(rules, func(i, j int) bool {
 		if rules[i].Port != rules[j].Port {
 			return rules[i].Port < rules[j].Port
@@ -99,6 +101,63 @@ func activeNetworkPolicyRules(items []model.NetworkPortPolicyRule) []model.Netwo
 		return rules[i].Protocol < rules[j].Protocol
 	})
 	return rules
+}
+
+func mergeNetworkPolicyRulesByPort(items []model.NetworkPortPolicyRule) []model.NetworkPortPolicyRule {
+	byPort := make(map[int]model.NetworkPortPolicyRule, len(items))
+	order := make([]int, 0, len(items))
+	for _, item := range items {
+		if item.Port <= 0 || item.Port > 65535 {
+			continue
+		}
+		item.Protocol = networkPolicyProtocol(item.Protocol)
+		item.WhitelistIPs = validNetworkPolicyIPs(item.WhitelistIPs)
+		if existing, ok := byPort[item.Port]; ok {
+			existing.Protocol = mergeNetworkPolicyProtocol(existing.Protocol, item.Protocol)
+			existing.WhitelistIPs = validNetworkPolicyIPs(append(existing.WhitelistIPs, item.WhitelistIPs...))
+			if existing.RateLimitMbps <= 0 || (item.RateLimitMbps > 0 && item.RateLimitMbps < existing.RateLimitMbps) {
+				existing.RateLimitMbps = item.RateLimitMbps
+			}
+			if existing.Name == "" {
+				existing.Name = item.Name
+			}
+			if existing.ID == "" {
+				existing.ID = item.ID
+			}
+			existing.Enabled = existing.Enabled || item.Enabled
+			byPort[item.Port] = existing
+			continue
+		}
+		order = append(order, item.Port)
+		byPort[item.Port] = item
+	}
+	result := make([]model.NetworkPortPolicyRule, 0, len(order))
+	for _, port := range order {
+		result = append(result, byPort[port])
+	}
+	return result
+}
+
+func mergeNetworkPolicyProtocol(a, b string) string {
+	seenTCP := false
+	seenUDP := false
+	for _, protocol := range []string{a, b} {
+		for _, item := range networkPolicyProtocols(protocol) {
+			if item == "tcp" {
+				seenTCP = true
+			}
+			if item == "udp" {
+				seenUDP = true
+			}
+		}
+	}
+	if seenTCP && seenUDP {
+		return "both"
+	}
+	if seenUDP {
+		return "udp"
+	}
+	return "tcp"
 }
 
 func networkPolicyProtocol(protocol string) string {
@@ -269,8 +328,11 @@ func clearIPTablesPolicy(ctx context.Context, runner commandRunner) error {
 }
 
 func applyRateLimitPolicy(ctx context.Context, cfg model.NetworkPolicyConfig, rules []model.NetworkPortPolicyRule, runner commandRunner) error {
-	if strings.EqualFold(cfg.RateLimitBackend, "none") || !hasRateLimitRule(rules) {
+	if strings.EqualFold(cfg.RateLimitBackend, "none") {
 		return nil
+	}
+	if !hasRateLimitRule(rules) {
+		return clearTCPolicy(ctx, runner, strings.TrimSpace(cfg.Interface))
 	}
 	if _, err := runner.LookPath("tc"); err != nil {
 		return fmt.Errorf("tc not found for port rate limit")
@@ -287,52 +349,248 @@ func applyRateLimitPolicy(ctx context.Context, cfg model.NetworkPolicyConfig, ru
 		return fmt.Errorf("network interface is required for port rate limit")
 	}
 	_ = runIgnoreError(ctx, runner, "tc", "qdisc", "del", "dev", iface, "root")
+	_ = runIgnoreError(ctx, runner, "tc", "qdisc", "del", "dev", iface, "ingress")
 	if _, err := runner.Run(ctx, "tc", "qdisc", "add", "dev", iface, "root", "handle", "1:", "htb", "default", "999"); err != nil {
 		return fmt.Errorf("tc qdisc add dev %s: %w", iface, err)
 	}
 	if _, err := runner.Run(ctx, "tc", "class", "add", "dev", iface, "parent", "1:", "classid", "1:999", "htb", "rate", "10000mbit", "ceil", "10000mbit"); err != nil {
 		return fmt.Errorf("tc default class dev %s: %w", iface, err)
 	}
+	if _, err := runner.Run(ctx, "tc", "qdisc", "add", "dev", iface, "handle", "ffff:", "ingress"); err != nil {
+		return fmt.Errorf("tc ingress qdisc add dev %s: %w", iface, err)
+	}
 	classID := 10
 	for _, rule := range rules {
 		if rule.RateLimitMbps <= 0 {
 			continue
 		}
-		for _, proto := range networkPolicyProtocols(rule.Protocol) {
-			id := strconv.Itoa(classID)
-			rate := fmt.Sprintf("%gmbit", rule.RateLimitMbps)
-			if _, err := runner.Run(ctx, "tc", "class", "add", "dev", iface, "parent", "1:", "classid", "1:"+id, "htb", "rate", rate, "ceil", rate); err != nil {
-				return fmt.Errorf("tc class %s/%s: %w", strconv.Itoa(rule.Port), proto, err)
-			}
-			protocolNumber := "6"
-			if proto == "udp" {
-				protocolNumber = "17"
-			}
-			if _, err := runner.Run(ctx, "tc", "filter", "add", "dev", iface, "protocol", "ip", "parent", "1:", "prio", strconv.Itoa(classID), "u32", "match", "ip", "protocol", protocolNumber, "0xff", "match", "ip", "sport", strconv.Itoa(rule.Port), "0xffff", "flowid", "1:"+id); err != nil {
-				return fmt.Errorf("tc filter %s/%s: %w", strconv.Itoa(rule.Port), proto, err)
-			}
-			classID++
+		id := strconv.Itoa(classID)
+		rate := fmt.Sprintf("%gmbit", rule.RateLimitMbps)
+		if _, err := runner.Run(ctx, "tc", "class", "add", "dev", iface, "parent", "1:", "classid", "1:"+id, "htb", "rate", rate, "ceil", rate, "burst", "15k", "cburst", "15k"); err != nil {
+			return fmt.Errorf("tc class %s: %w", strconv.Itoa(rule.Port), err)
 		}
+		rootArgs := append([]string{"filter", "add", "dev", iface, "protocol", "ip", "parent", "1:", "prio", strconv.Itoa(classID), "u32"}, tcProtocolMatchArgs(rule.Protocol)...)
+		rootArgs = append(rootArgs, "match", "ip", "sport", strconv.Itoa(rule.Port), "0xffff", "flowid", "1:"+id)
+		if _, err := runner.Run(ctx, "tc", rootArgs...); err != nil {
+			return fmt.Errorf("tc root filter %s: %w", strconv.Itoa(rule.Port), err)
+		}
+		ingressArgs := append([]string{"filter", "add", "dev", iface, "parent", "ffff:", "protocol", "ip", "prio", strconv.Itoa(classID), "u32"}, tcProtocolMatchArgs(rule.Protocol)...)
+		ingressArgs = append(ingressArgs, "match", "ip", "dport", strconv.Itoa(rule.Port), "0xffff", "action", "police", "rate", rate, "burst", "200k", "drop", "flowid", ":1")
+		if _, err := runner.Run(ctx, "tc", ingressArgs...); err != nil {
+			return fmt.Errorf("tc ingress filter %s: %w", strconv.Itoa(rule.Port), err)
+		}
+		classID++
 	}
 	_ = writeNetworkPolicyState(iface)
 	return nil
+}
+
+func tcProtocolMatchArgs(protocol string) []string {
+	switch networkPolicyProtocol(protocol) {
+	case "tcp":
+		return []string{"match", "ip", "protocol", "6", "0xff"}
+	case "udp":
+		return []string{"match", "ip", "protocol", "17", "0xff"}
+	default:
+		return nil
+	}
 }
 
 func clearTCPolicy(ctx context.Context, runner commandRunner, iface string) error {
 	if _, err := runner.LookPath("tc"); err != nil {
 		return nil
 	}
+	iface = strings.TrimSpace(iface)
 	stateIface := readNetworkPolicyStateInterface()
-	if strings.TrimSpace(stateIface) == "" {
+	if iface == "" {
+		iface = strings.TrimSpace(stateIface)
+	}
+	if iface == "" {
 		return nil
 	}
-	if strings.TrimSpace(iface) != "" && strings.TrimSpace(iface) != stateIface {
+	if strings.TrimSpace(stateIface) != "" && iface != strings.TrimSpace(stateIface) {
 		return nil
 	}
-	iface = stateIface
 	_ = runIgnoreError(ctx, runner, "tc", "qdisc", "del", "dev", iface, "root")
+	_ = runIgnoreError(ctx, runner, "tc", "qdisc", "del", "dev", iface, "ingress")
 	_ = os.Remove(networkPolicyStatePath())
 	return nil
+}
+
+func collectNetworkPolicySnapshot(ctx context.Context, cfg model.NetworkPolicyConfig) *model.NetworkPolicySnapshot {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return collectTCRateLimitSnapshot(ctx, cfg, osCommandRunner{})
+}
+
+func collectTCRateLimitSnapshot(ctx context.Context, cfg model.NetworkPolicyConfig, runner commandRunner) *model.NetworkPolicySnapshot {
+	snapshot := &model.NetworkPolicySnapshot{
+		CollectedAt:      time.Now().UTC(),
+		RateLimitBackend: "tc",
+	}
+	if _, err := runner.LookPath("tc"); err != nil {
+		return nil
+	}
+	iface := strings.TrimSpace(cfg.Interface)
+	if iface == "" {
+		iface = readNetworkPolicyStateInterface()
+	}
+	if iface == "" {
+		detected, err := defaultNetworkInterface(ctx, runner)
+		if err != nil {
+			snapshot.Error = err.Error()
+			return snapshot
+		}
+		iface = detected
+	}
+	snapshot.Interface = iface
+
+	qdiscOutput, err := runner.Run(ctx, "tc", "qdisc", "show", "dev", iface)
+	if err != nil {
+		snapshot.Error = fmt.Sprintf("tc qdisc show dev %s: %v", iface, err)
+		return snapshot
+	}
+	if !strings.Contains(string(qdiscOutput), " htb ") && !strings.Contains(string(qdiscOutput), " htb") {
+		return snapshot
+	}
+	classOutput, err := runner.Run(ctx, "tc", "class", "show", "dev", iface)
+	if err != nil {
+		snapshot.Error = fmt.Sprintf("tc class show dev %s: %v", iface, err)
+		return snapshot
+	}
+	filterOutput, err := runner.Run(ctx, "tc", "filter", "show", "dev", iface)
+	if err != nil {
+		snapshot.Error = fmt.Sprintf("tc filter show dev %s: %v", iface, err)
+		return snapshot
+	}
+	snapshot.Rules = parseTCRateLimitRules(string(classOutput), string(filterOutput))
+	return snapshot
+}
+
+var (
+	tcClassRatePattern        = regexp.MustCompile(`class\s+htb\s+1:([0-9a-fA-F]+)\b.*\brate\s+([0-9.]+)\s*([kKmMgG]?bit)`)
+	tcFilterFlowIDPattern     = regexp.MustCompile(`\bflowid\s+1:([0-9a-fA-F]+)\b`)
+	tcFilterProtocolPattern   = regexp.MustCompile(`match\s+ip\s+protocol\s+([0-9]+)\s+0xff`)
+	tcFilterPortPattern       = regexp.MustCompile(`match\s+ip\s+sport\s+([0-9]+)\s+0xffff`)
+	tcFilterHexProtocolRegexp = regexp.MustCompile(`match\s+([0-9a-fA-F]{4})0000/00ff0000\s+at\s+8`)
+	tcFilterHexPortPattern    = regexp.MustCompile(`match\s+([0-9a-fA-F]{4})0000/ffff0000\s+at\s+20`)
+)
+
+func parseTCRateLimitRules(classOutput, filterOutput string) []model.NetworkPortPolicyRule {
+	ratesByClass := parseTCClassRates(classOutput)
+	type filterRef struct {
+		classID  string
+		protocol string
+		port     int
+	}
+	refs := make([]filterRef, 0)
+	current := filterRef{}
+	flush := func() {
+		if current.classID != "" && current.port > 0 {
+			if current.protocol == "" {
+				current.protocol = "both"
+			}
+			refs = append(refs, current)
+		}
+		current = filterRef{}
+	}
+	for _, line := range strings.Split(filterOutput, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "filter ") {
+			flush()
+		}
+		if match := tcFilterFlowIDPattern.FindStringSubmatch(trimmed); len(match) == 2 {
+			current.classID = strings.ToLower(match[1])
+		}
+		if match := tcFilterProtocolPattern.FindStringSubmatch(trimmed); len(match) == 2 {
+			current.protocol = protocolNameFromNumber(match[1])
+		} else if match := tcFilterHexProtocolRegexp.FindStringSubmatch(trimmed); len(match) == 2 {
+			if parsed, err := strconv.ParseInt(match[1], 16, 64); err == nil {
+				current.protocol = protocolNameFromNumber(strconv.FormatInt(parsed, 10))
+			}
+		}
+		if match := tcFilterPortPattern.FindStringSubmatch(trimmed); len(match) == 2 {
+			current.port = intValueFromString(match[1], 10)
+		} else if match := tcFilterHexPortPattern.FindStringSubmatch(trimmed); len(match) == 2 {
+			current.port = intValueFromString(match[1], 16)
+		}
+	}
+	flush()
+
+	rules := make([]model.NetworkPortPolicyRule, 0, len(refs))
+	for _, ref := range refs {
+		if strings.EqualFold(ref.classID, "999") {
+			continue
+		}
+		rate := ratesByClass[strings.ToLower(ref.classID)]
+		if rate <= 0 {
+			continue
+		}
+		rules = append(rules, model.NetworkPortPolicyRule{
+			ID:            fmt.Sprintf("tc-%d-%s", ref.port, ref.protocol),
+			Name:          "当前 tc 限速",
+			Enabled:       true,
+			Port:          ref.port,
+			Protocol:      ref.protocol,
+			RateLimitMbps: rate,
+		})
+	}
+	rules = mergeNetworkPolicyRulesByPort(rules)
+	sort.Slice(rules, func(i, j int) bool {
+		if rules[i].Port != rules[j].Port {
+			return rules[i].Port < rules[j].Port
+		}
+		return rules[i].Protocol < rules[j].Protocol
+	})
+	return rules
+}
+
+func parseTCClassRates(output string) map[string]float64 {
+	result := make(map[string]float64)
+	for _, line := range strings.Split(output, "\n") {
+		match := tcClassRatePattern.FindStringSubmatch(line)
+		if len(match) != 4 {
+			continue
+		}
+		classID := strings.ToLower(match[1])
+		if classID == "999" {
+			continue
+		}
+		rate, err := strconv.ParseFloat(match[2], 64)
+		if err != nil {
+			continue
+		}
+		switch strings.ToLower(match[3]) {
+		case "kbit":
+			rate = rate / 1000
+		case "gbit":
+			rate = rate * 1000
+		}
+		result[classID] = rate
+	}
+	return result
+}
+
+func protocolNameFromNumber(value string) string {
+	switch strings.TrimSpace(value) {
+	case "17":
+		return "udp"
+	case "6":
+		return "tcp"
+	default:
+		return ""
+	}
+}
+
+func intValueFromString(value string, base int) int {
+	parsed, err := strconv.ParseInt(strings.TrimSpace(value), base, 64)
+	if err != nil || parsed <= 0 || parsed > 65535 {
+		return 0
+	}
+	return int(parsed)
 }
 
 func hasRateLimitRule(rules []model.NetworkPortPolicyRule) bool {
