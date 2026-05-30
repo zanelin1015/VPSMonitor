@@ -148,7 +148,7 @@ export interface AgentDetailPanelProps {
   onRenewalChange: (patch: Partial<VPSRenewalConfig>) => void
   onReturnHome: () => void
   onSaveClientBilling: (record: XUIClientView) => void
-  onSaveManagedConfigSection: (section: ConfigSectionKey) => void
+  onSaveManagedConfigSection: (section: ConfigSectionKey, draftOverride?: ManagedAgentConfig) => void
   onSavePrimaryDomain: (value: string) => void
   onSelectTag: (tag: string) => void
   onTagsChange: (values: string[]) => void

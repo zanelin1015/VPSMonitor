@@ -3,11 +3,30 @@ package client
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"bridge-core/internal/model"
 )
+
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "vpsmonitor-network-policy-*")
+	if err == nil {
+		networkPolicyStatePathValue = filepath.Join(dir, "network_policy_state.json")
+	}
+	code := m.Run()
+	if err == nil {
+		_ = os.RemoveAll(dir)
+	}
+	os.Exit(code)
+}
+
+func resetNetworkPolicyState(t *testing.T) {
+	t.Helper()
+	_ = os.Remove(networkPolicyStatePath())
+}
 
 type fakeCommandRunner struct {
 	paths    map[string]bool
@@ -55,6 +74,7 @@ func TestApplyNetworkPolicyUsesIPTablesWhitelist(t *testing.T) {
 }
 
 func TestApplyNetworkPolicyUsesTCForRateLimit(t *testing.T) {
+	resetNetworkPolicyState(t)
 	runner := &fakeCommandRunner{paths: map[string]bool{"tc": true}}
 	err := applyRateLimitPolicy(context.Background(), model.NetworkPolicyConfig{Interface: "eth0", RateLimitBackend: "tc"}, []model.NetworkPortPolicyRule{{
 		Enabled:       true,
@@ -80,6 +100,7 @@ func TestApplyNetworkPolicyUsesTCForRateLimit(t *testing.T) {
 }
 
 func TestApplyNetworkPolicyDedupesRateLimitByPort(t *testing.T) {
+	resetNetworkPolicyState(t)
 	runner := &fakeCommandRunner{paths: map[string]bool{"tc": true}}
 	rules := activeNetworkPolicyRules([]model.NetworkPortPolicyRule{
 		{Enabled: true, Port: 20002, Protocol: "tcp", RateLimitMbps: 100},
@@ -109,6 +130,7 @@ func TestApplyNetworkPolicyDedupesRateLimitByPort(t *testing.T) {
 }
 
 func TestApplyNetworkPolicyClearsTCWhenRateLimitRemoved(t *testing.T) {
+	resetNetworkPolicyState(t)
 	runner := &fakeCommandRunner{paths: map[string]bool{"tc": true}}
 	err := applyRateLimitPolicy(context.Background(), model.NetworkPolicyConfig{Interface: "eth0", RateLimitBackend: "tc"}, []model.NetworkPortPolicyRule{{
 		Enabled:      true,
@@ -125,6 +147,87 @@ func TestApplyNetworkPolicyClearsTCWhenRateLimitRemoved(t *testing.T) {
 	}
 	if !strings.Contains(joined, "tc qdisc del dev eth0 ingress") {
 		t.Fatalf("expected tc ingress qdisc to be cleared when rate limit is removed, got:\n%s", joined)
+	}
+}
+
+func TestApplyUFWPolicyReconcilesPreviousManagedRules(t *testing.T) {
+	resetNetworkPolicyState(t)
+	if err := writeNetworkPolicyState(networkPolicyState{UFWRules: []model.NetworkPortPolicyRule{{
+		Enabled:      true,
+		Port:         20010,
+		Protocol:     "tcp",
+		WhitelistIPs: []string{"1.1.1.1"},
+	}}}); err != nil {
+		t.Fatalf("write state: %v", err)
+	}
+	runner := &fakeCommandRunner{
+		paths: map[string]bool{"ufw": true},
+		outputs: map[string]string{
+			"ufw status": "Status: active",
+		},
+	}
+	err := applyUFWPolicy(context.Background(), []model.NetworkPortPolicyRule{{
+		Enabled:      true,
+		Port:         20010,
+		Protocol:     "tcp",
+		WhitelistIPs: []string{"2.2.2.2"},
+	}}, runner)
+	if err != nil {
+		t.Fatalf("applyUFWPolicy: %v", err)
+	}
+	joined := strings.Join(runner.commands, "\n")
+	for _, want := range []string{
+		"ufw delete allow proto tcp from 1.1.1.1 to any port 20010",
+		"ufw delete allow proto tcp from 2.2.2.2 to any port 20010",
+		"ufw allow proto tcp from 2.2.2.2 to any port 20010 comment VPSMonitor whitelist",
+		"ufw deny proto tcp from any to any port 20010 comment VPSMonitor whitelist default deny",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("expected command %q in:\n%s", want, joined)
+		}
+	}
+	state := readNetworkPolicyState()
+	if len(state.UFWRules) != 1 || state.UFWRules[0].Port != 20010 || state.UFWRules[0].WhitelistIPs[0] != "2.2.2.2" {
+		t.Fatalf("unexpected stored ufw state: %#v", state.UFWRules)
+	}
+}
+
+func TestApplyNetworkPolicyClearsUFWWhenWhitelistRemoved(t *testing.T) {
+	resetNetworkPolicyState(t)
+	if err := writeNetworkPolicyState(networkPolicyState{UFWRules: []model.NetworkPortPolicyRule{{
+		Enabled:      true,
+		Port:         20010,
+		Protocol:     "tcp",
+		WhitelistIPs: []string{"1.1.1.1"},
+	}}}); err != nil {
+		t.Fatalf("write state: %v", err)
+	}
+	runner := &fakeCommandRunner{
+		paths: map[string]bool{"ufw": true},
+		outputs: map[string]string{
+			"ufw status": "Status: active",
+		},
+	}
+	err := applyFirewallPolicy(context.Background(), model.NetworkPolicyConfig{FirewallBackend: "ufw"}, []model.NetworkPortPolicyRule{{
+		Enabled:       true,
+		Port:          20010,
+		Protocol:      "tcp",
+		RateLimitMbps: 50,
+	}}, runner)
+	if err != nil {
+		t.Fatalf("applyNetworkPolicy: %v", err)
+	}
+	joined := strings.Join(runner.commands, "\n")
+	for _, want := range []string{
+		"ufw delete deny proto tcp from any to any port 20010",
+		"ufw delete allow proto tcp from 1.1.1.1 to any port 20010",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("expected command %q in:\n%s", want, joined)
+		}
+	}
+	if state := readNetworkPolicyState(); len(state.UFWRules) != 0 {
+		t.Fatalf("expected ufw state to be cleared, got %#v", state.UFWRules)
 	}
 }
 

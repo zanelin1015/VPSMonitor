@@ -20,7 +20,7 @@ export interface ConfigPanelProps {
   configLoading: boolean
   configSavingSection: ConfigSectionKey | null
   configError: string
-  onSave: (section: ConfigSectionKey) => void
+  onSave: (section: ConfigSectionKey, draftOverride?: ManagedAgentConfig) => void
   onAgentNameChange: (value: string) => void
   onCustomerDisplayNameChange: (value: string) => void
   onSortOrderChange: (value: number) => void
@@ -75,6 +75,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
     section = 'all',
   } = props
   const [realmCopyTargetAgentID, setRealmCopyTargetAgentID] = useState('')
+  const [networkPolicyEditedAgentID, setNetworkPolicyEditedAgentID] = useState('')
 
   if (!selectedAgent) {
     return <Empty description="先选择一个 client" />
@@ -104,7 +105,9 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
   const observedHasWhitelist = observedNetworkRules.some((rule) => (rule.whitelist_ips || []).length > 0)
   const observedHasRateLimit = observedNetworkRules.some((rule) => Number(rule.rate_limit_mbps || 0) > 0)
   const configuredNetworkPolicy = entryConfig.network_policy || { enabled: false, interface: '', firewall_backend: 'auto', rate_limit_backend: 'auto', rules: [] }
-  const usingObservedNetworkPolicy = !hasNetworkPolicyConfig(configuredNetworkPolicy) && observedNetworkRules.length > 0
+  const configuredNetworkRules = configuredNetworkPolicy.rules || []
+  const networkPolicyEdited = networkPolicyEditedAgentID === selectedAgent.agent_id
+  const usingObservedNetworkPolicy = !networkPolicyEdited && configuredNetworkRules.length === 0 && observedNetworkRules.length > 0
   const networkPolicy = usingObservedNetworkPolicy
     ? {
         ...configuredNetworkPolicy,
@@ -112,7 +115,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
         interface: observedNetworkPolicy?.interface || configuredNetworkPolicy.interface || '',
         firewall_backend: observedHasWhitelist ? (observedNetworkPolicy?.firewall_backend || 'ufw') : configuredNetworkPolicy.firewall_backend,
         rate_limit_backend: observedHasRateLimit ? (observedNetworkPolicy?.rate_limit_backend || 'tc') : configuredNetworkPolicy.rate_limit_backend,
-        rules: dedupeNetworkPolicyRules(observedNetworkRules.map((rule) => ({ ...rule, enabled: rule.enabled !== false, whitelist_ips: rule.whitelist_ips || [] }))),
+        rules: normalizeNetworkPolicyRules(observedNetworkRules),
       }
     : configuredNetworkPolicy
   const portForwarding = entryConfig.port_forwarding || { enabled: false, backend: 'realm', binary_path: '', config_path: '', service_name: '', log_level: 'info', rules: [] }
@@ -144,32 +147,43 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
     onEntryChange({ mappings: (entryConfig.mappings || []).filter((_, currentIndex) => currentIndex !== index) })
   }
   const updateNetworkPolicy = (patch: Partial<NonNullable<AgentEntryConfig['network_policy']>>) => {
+    setNetworkPolicyEditedAgentID(selectedAgent.agent_id)
     onEntryChange({ network_policy: { ...networkPolicy, ...patch } })
   }
   const updateNetworkPolicyRule = (index: number, patch: Partial<NetworkPortPolicyRule>) => {
-    const rules = (networkPolicy.rules || []).map((rule, currentIndex) => (currentIndex === index ? { ...rule, ...patch } : rule))
+    const rules = (networkPolicy.rules || []).map((rule, currentIndex) => {
+      if (currentIndex !== index) {
+        return rule
+      }
+      const next = { ...rule, ...patch }
+      if (patch.port !== undefined && shouldUsePortAsNetworkPolicyName(rule.name, rule.port)) {
+        next.name = defaultNetworkPolicyRuleName(Number(patch.port || 0))
+      }
+      return next
+    })
     updateNetworkPolicy({ rules })
   }
   const addNetworkPolicyRule = () => {
+    const port = 443
     updateNetworkPolicy({
       enabled: true,
       rules: [
         ...(networkPolicy.rules || []),
-        { id: `rule-${Date.now()}`, enabled: true, name: '', port: 443, protocol: 'tcp', rate_limit_mbps: 0, whitelist_ips: [] },
+        { id: `rule-${Date.now()}`, enabled: true, name: defaultNetworkPolicyRuleName(port), port, protocol: 'tcp', rate_limit_mbps: 0, whitelist_ips: [] },
       ],
-    })
-  }
-  const importObservedNetworkPolicy = () => {
-    updateNetworkPolicy({
-      enabled: true,
-      interface: observedNetworkPolicy?.interface || networkPolicy.interface || '',
-      firewall_backend: observedHasWhitelist ? (observedNetworkPolicy?.firewall_backend || 'ufw') : networkPolicy.firewall_backend,
-      rate_limit_backend: observedHasRateLimit ? (observedNetworkPolicy?.rate_limit_backend || 'tc') : networkPolicy.rate_limit_backend,
-      rules: dedupeNetworkPolicyRules(observedNetworkRules.map((rule) => ({ ...rule, enabled: rule.enabled !== false, whitelist_ips: rule.whitelist_ips || [] }))),
     })
   }
   const removeNetworkPolicyRule = (index: number) => {
     updateNetworkPolicy({ rules: (networkPolicy.rules || []).filter((_, currentIndex) => currentIndex !== index) })
+  }
+  const saveNetworkPolicy = () => {
+    onSave('entry', {
+      ...managedConfig,
+      entry: {
+        ...managedConfig.entry,
+        network_policy: networkPolicy,
+      },
+    })
   }
   const updatePortForwarding = (patch: Partial<NonNullable<AgentEntryConfig['port_forwarding']>>) => {
     onEntryChange({ port_forwarding: { ...portForwarding, ...patch } })
@@ -569,7 +583,16 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
             <Button size="small" icon={<PlusOutlined />} onClick={addNetworkPolicyRule}>
               添加端口规则
             </Button>
-            {sectionSaveButton('entry', '保存端口策略')}
+            <Button
+              type="primary"
+              size="small"
+              icon={<SaveOutlined />}
+              onClick={saveNetworkPolicy}
+              loading={configSavingSection === 'entry'}
+              disabled={sectionSaving && configSavingSection !== 'entry'}
+            >
+              保存端口策略
+            </Button>
           </Space>
         </div>
         <Alert
@@ -590,25 +613,6 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
             message="已读取当前系统端口策略作为可编辑配置"
             description="可读取 VPS 当前 ufw 白名单和 tc 限速；修改下方端口策略并保存后，Client 会按托管配置重建对应规则。"
           />
-        ) : null}
-        {observedNetworkRules.length ? (
-          <Card size="small" className="subtle-card" title={`当前系统端口策略（${observedPolicySourceLabel(observedNetworkPolicy)}）`} extra={<Button size="small" onClick={importObservedNetworkPolicy}>填入托管配置</Button>}>
-            <List
-              size="small"
-              dataSource={observedNetworkRules}
-              renderItem={(rule) => (
-                <List.Item>
-                  <Space wrap>
-                    <Text strong>{rule.port}</Text>
-                    <Text>{formatNetworkPolicyProtocol(rule.protocol)}</Text>
-                    {Number(rule.rate_limit_mbps || 0) > 0 ? <Text>{rule.rate_limit_mbps || 0} Mbps</Text> : null}
-                    {(rule.whitelist_ips || []).length ? <Text>白名单 {(rule.whitelist_ips || []).join(', ')}</Text> : null}
-                    <Text type="secondary">{rule.name || '系统端口策略'}</Text>
-                  </Space>
-                </List.Item>
-              )}
-            />
-          </Card>
         ) : null}
         <Row gutter={[16, 16]}>
           <Col xs={24} md={6}>
@@ -667,7 +671,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
                     </Col>
                     <Col xs={24} md={5}>
                       <Text type="secondary">名称</Text>
-                      <Input value={rule.name || ''} placeholder="例如 HK 入站" onChange={(event) => updateNetworkPolicyRule(index, { name: event.target.value })} />
+                      <Input value={rule.name || ''} placeholder="默认使用端口号，可自定义" onChange={(event) => updateNetworkPolicyRule(index, { name: event.target.value })} />
                     </Col>
                     <Col xs={12} md={4}>
                       <Text type="secondary">端口</Text>
@@ -921,30 +925,12 @@ function isIPLike(value: string) {
   return /^\d{1,3}(\.\d{1,3}){3}$/.test(value) || (value.includes(':') && /^[0-9a-f:]+$/i.test(value))
 }
 
-function hasNetworkPolicyConfig(policy?: AgentEntryConfig['network_policy']) {
-  if (!policy) {
-    return false
-  }
-  const firewallBackend = String(policy.firewall_backend || '').trim()
-  const rateLimitBackend = String(policy.rate_limit_backend || '').trim()
-  return Boolean(
-    policy.enabled ||
-      policy.interface ||
-      (firewallBackend && firewallBackend !== 'auto') ||
-      (rateLimitBackend && rateLimitBackend !== 'auto') ||
-      (policy.rules || []).length,
-  )
-}
-
-function observedPolicySourceLabel(policy?: AgentListItem['network_policy']) {
-  const sources = [
-    policy?.firewall_backend ? `${policy.firewall_backend} 白名单` : '',
-    policy?.rate_limit_backend ? `${policy.rate_limit_backend} 限速` : '',
-  ].filter(Boolean)
-  if (!sources.length) {
-    return policy?.interface || '未知来源'
-  }
-  return [sources.join(' / '), policy?.interface].filter(Boolean).join(' · ')
+function normalizeNetworkPolicyRules(rules: NetworkPortPolicyRule[]) {
+  return dedupeNetworkPolicyRules(rules.map((rule) => ({
+    ...rule,
+    enabled: rule.enabled !== false,
+    whitelist_ips: rule.whitelist_ips || [],
+  })))
 }
 
 function dedupeNetworkPolicyRules(rules: NetworkPortPolicyRule[]) {
@@ -956,7 +942,13 @@ function dedupeNetworkPolicyRules(rules: NetworkPortPolicyRule[]) {
     }
     const existing = byPort.get(port)
     if (!existing) {
-      byPort.set(port, { ...rule, port, protocol: normalizeNetworkPolicyProtocol(rule.protocol) })
+      byPort.set(port, {
+        ...rule,
+        id: rule.id || `port-${port}`,
+        name: normalizedNetworkPolicyRuleName(rule.name, port),
+        port,
+        protocol: normalizeNetworkPolicyProtocol(rule.protocol),
+      })
       return
     }
     byPort.set(port, {
@@ -964,12 +956,32 @@ function dedupeNetworkPolicyRules(rules: NetworkPortPolicyRule[]) {
       protocol: mergeNetworkPolicyProtocol(existing.protocol, rule.protocol),
       rate_limit_mbps: mergeNetworkPolicyRate(existing.rate_limit_mbps, rule.rate_limit_mbps),
       whitelist_ips: Array.from(new Set([...(existing.whitelist_ips || []), ...(rule.whitelist_ips || [])])),
-      name: existing.name || rule.name,
+      name: shouldUsePortAsNetworkPolicyName(existing.name, port) ? normalizedNetworkPolicyRuleName(rule.name, port) : existing.name,
       id: existing.id || rule.id,
       enabled: existing.enabled !== false || rule.enabled !== false,
     })
   })
   return Array.from(byPort.values()).sort((a, b) => Number(a.port || 0) - Number(b.port || 0))
+}
+
+function defaultNetworkPolicyRuleName(port?: number) {
+  const value = Number(port || 0)
+  return value > 0 ? String(value) : ''
+}
+
+function normalizedNetworkPolicyRuleName(name: string | undefined, port: number) {
+  return shouldUsePortAsNetworkPolicyName(name, port) ? defaultNetworkPolicyRuleName(port) : String(name || '').trim()
+}
+
+function shouldUsePortAsNetworkPolicyName(name: string | undefined, port?: number) {
+  const value = String(name || '').trim()
+  if (!value) {
+    return true
+  }
+  if (port && value === String(port)) {
+    return true
+  }
+  return ['当前 ufw 白名单', '当前 tc 限速', '系统端口策略'].includes(value)
 }
 
 function normalizeNetworkPolicyProtocol(protocol?: string) {
@@ -1002,17 +1014,6 @@ function mergeNetworkPolicyRate(a?: number, b?: number) {
     return first
   }
   return Math.min(first, second)
-}
-
-function formatNetworkPolicyProtocol(protocol?: string) {
-  switch (normalizeNetworkPolicyProtocol(protocol)) {
-    case 'udp':
-      return 'UDP'
-    case 'both':
-      return 'TCP + UDP'
-    default:
-      return 'TCP'
-  }
 }
 
 function bestAgentAddress(agent?: AgentListItem) {

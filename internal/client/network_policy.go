@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"sort"
@@ -84,6 +85,7 @@ func applyNetworkPolicy(ctx context.Context, cfg model.NetworkPolicyConfig, runn
 	rules := activeNetworkPolicyRules(cfg.Rules)
 	if !cfg.Enabled || len(rules) == 0 {
 		_ = clearIPTablesPolicy(ctx, runner)
+		_ = clearUFWPolicy(ctx, runner)
 		_ = clearTCPolicy(ctx, runner, strings.TrimSpace(cfg.Interface))
 		return nil
 	}
@@ -223,6 +225,8 @@ func validNetworkPolicyIPs(items []string) []string {
 
 func applyFirewallPolicy(ctx context.Context, cfg model.NetworkPolicyConfig, rules []model.NetworkPortPolicyRule, runner commandRunner) error {
 	if !hasWhitelistRule(rules) || strings.EqualFold(cfg.FirewallBackend, "none") {
+		_ = clearIPTablesPolicy(ctx, runner)
+		_ = clearUFWPolicy(ctx, runner)
 		return nil
 	}
 	backend := strings.ToLower(strings.TrimSpace(cfg.FirewallBackend))
@@ -241,6 +245,7 @@ func applyFirewallPolicy(ctx context.Context, cfg model.NetworkPolicyConfig, rul
 	}
 	switch backend {
 	case "ufw":
+		_ = clearIPTablesPolicy(ctx, runner)
 		err := applyUFWPolicy(ctx, rules, runner)
 		if err == nil || !autoBackend {
 			return err
@@ -252,6 +257,7 @@ func applyFirewallPolicy(ctx context.Context, cfg model.NetworkPolicyConfig, rul
 		}
 		return err
 	case "iptables":
+		_ = clearUFWPolicy(ctx, runner)
 		return applyIPTablesPolicy(ctx, rules, runner)
 	default:
 		return fmt.Errorf("no supported firewall backend found")
@@ -284,15 +290,22 @@ func applyUFWPolicy(ctx context.Context, rules []model.NetworkPortPolicyRule, ru
 	if !strings.Contains(strings.ToLower(string(status)), "status: active") {
 		return fmt.Errorf("ufw is installed but inactive; enable ufw first or choose iptables backend")
 	}
-	for _, rule := range rules {
-		if len(rule.WhitelistIPs) == 0 {
-			continue
-		}
+	state := readNetworkPolicyState()
+	currentRules := networkPolicyUFWRules(rules)
+	cleanupRules := mergeNetworkPolicyRulesByPort(append(append([]model.NetworkPortPolicyRule{}, state.UFWRules...), currentRules...))
+	for _, rule := range cleanupRules {
 		for _, proto := range networkPolicyProtocols(rule.Protocol) {
 			port := strconv.Itoa(rule.Port)
 			_ = runIgnoreError(ctx, runner, "ufw", "delete", "deny", "proto", proto, "from", "any", "to", "any", "port", port)
 			for _, ip := range rule.WhitelistIPs {
 				_ = runIgnoreError(ctx, runner, "ufw", "delete", "allow", "proto", proto, "from", ip, "to", "any", "port", port)
+			}
+		}
+	}
+	for _, rule := range currentRules {
+		for _, proto := range networkPolicyProtocols(rule.Protocol) {
+			port := strconv.Itoa(rule.Port)
+			for _, ip := range rule.WhitelistIPs {
 				if _, err := runner.Run(ctx, "ufw", "allow", "proto", proto, "from", ip, "to", "any", "port", port, "comment", "VPSMonitor whitelist"); err != nil {
 					return fmt.Errorf("ufw allow %s/%s from %s: %w", port, proto, ip, err)
 				}
@@ -302,7 +315,48 @@ func applyUFWPolicy(ctx context.Context, rules []model.NetworkPortPolicyRule, ru
 			}
 		}
 	}
+	state.UFWRules = currentRules
+	_ = writeNetworkPolicyState(state)
 	return nil
+}
+
+func clearUFWPolicy(ctx context.Context, runner commandRunner) error {
+	state := readNetworkPolicyState()
+	if len(state.UFWRules) == 0 {
+		return nil
+	}
+	if _, err := runner.LookPath("ufw"); err != nil {
+		return nil
+	}
+	status, err := runner.Run(ctx, "ufw", "status")
+	if err != nil || !strings.Contains(strings.ToLower(string(status)), "status: active") {
+		return nil
+	}
+	for _, rule := range networkPolicyUFWRules(state.UFWRules) {
+		for _, proto := range networkPolicyProtocols(rule.Protocol) {
+			port := strconv.Itoa(rule.Port)
+			_ = runIgnoreError(ctx, runner, "ufw", "delete", "deny", "proto", proto, "from", "any", "to", "any", "port", port)
+			for _, ip := range rule.WhitelistIPs {
+				_ = runIgnoreError(ctx, runner, "ufw", "delete", "allow", "proto", proto, "from", ip, "to", "any", "port", port)
+			}
+		}
+	}
+	state.UFWRules = nil
+	_ = writeNetworkPolicyState(state)
+	return nil
+}
+
+func networkPolicyUFWRules(rules []model.NetworkPortPolicyRule) []model.NetworkPortPolicyRule {
+	filtered := make([]model.NetworkPortPolicyRule, 0, len(rules))
+	for _, rule := range rules {
+		rule.Protocol = networkPolicyProtocol(rule.Protocol)
+		rule.WhitelistIPs = validNetworkPolicyIPs(rule.WhitelistIPs)
+		if rule.Port <= 0 || rule.Port > 65535 || len(rule.WhitelistIPs) == 0 {
+			continue
+		}
+		filtered = append(filtered, rule)
+	}
+	return mergeNetworkPolicyRulesByPort(filtered)
 }
 
 func applyIPTablesPolicy(ctx context.Context, rules []model.NetworkPortPolicyRule, runner commandRunner) error {
@@ -401,7 +455,9 @@ func applyRateLimitPolicy(ctx context.Context, cfg model.NetworkPolicyConfig, ru
 		}
 		classID++
 	}
-	_ = writeNetworkPolicyState(iface)
+	state := readNetworkPolicyState()
+	state.Interface = iface
+	_ = writeNetworkPolicyState(state)
 	return nil
 }
 
@@ -433,7 +489,9 @@ func clearTCPolicy(ctx context.Context, runner commandRunner, iface string) erro
 	}
 	_ = runIgnoreError(ctx, runner, "tc", "qdisc", "del", "dev", iface, "root")
 	_ = runIgnoreError(ctx, runner, "tc", "qdisc", "del", "dev", iface, "ingress")
-	_ = os.Remove(networkPolicyStatePath())
+	state := readNetworkPolicyState()
+	state.Interface = ""
+	_ = writeNetworkPolicyState(state)
 	return nil
 }
 
@@ -595,7 +653,7 @@ func parseTCRateLimitRules(classOutput, filterOutput string) []model.NetworkPort
 		}
 		rules = append(rules, model.NetworkPortPolicyRule{
 			ID:            fmt.Sprintf("tc-%d-%s", ref.port, ref.protocol),
-			Name:          "当前 tc 限速",
+			Name:          strconv.Itoa(ref.port),
 			Enabled:       true,
 			Port:          ref.port,
 			Protocol:      ref.protocol,
@@ -658,7 +716,7 @@ func parseUFWWhitelistRules(output string) []model.NetworkPortPolicyRule {
 		}
 		rules = append(rules, model.NetworkPortPolicyRule{
 			ID:           fmt.Sprintf("ufw-%d-%s", port, protocol),
-			Name:         "当前 ufw 白名单",
+			Name:         strconv.Itoa(port),
 			Enabled:      true,
 			Port:         port,
 			Protocol:     protocol,
@@ -801,30 +859,51 @@ func runIgnoreError(ctx context.Context, runner commandRunner, name string, args
 	return err
 }
 
-func networkPolicyStatePath() string {
-	return "/var/lib/vpsmonitor/network_policy_state.json"
+type networkPolicyState struct {
+	Interface string                        `json:"interface,omitempty"`
+	UFWRules  []model.NetworkPortPolicyRule `json:"ufw_rules,omitempty"`
 }
 
-func writeNetworkPolicyState(iface string) error {
+var networkPolicyStatePathValue = "/var/lib/vpsmonitor/network_policy_state.json"
+
+func networkPolicyStatePath() string {
+	return networkPolicyStatePathValue
+}
+
+func writeNetworkPolicyState(state networkPolicyState) error {
+	state.Interface = strings.TrimSpace(state.Interface)
+	state.UFWRules = networkPolicyUFWRules(state.UFWRules)
 	path := networkPolicyStatePath()
-	if err := os.MkdirAll(strings.TrimSuffix(path, "/network_policy_state.json"), 0o755); err != nil {
+	if state.Interface == "" && len(state.UFWRules) == 0 {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	body, err := json.Marshal(map[string]string{"interface": iface})
+	body, err := json.Marshal(state)
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(path, body, 0o600)
 }
 
-func readNetworkPolicyStateInterface() string {
+func readNetworkPolicyState() networkPolicyState {
 	body, err := os.ReadFile(networkPolicyStatePath())
 	if err != nil {
-		return ""
+		return networkPolicyState{}
 	}
-	var state map[string]string
+	var state networkPolicyState
 	if err := json.Unmarshal(body, &state); err != nil {
-		return ""
+		return networkPolicyState{}
 	}
-	return strings.TrimSpace(state["interface"])
+	state.Interface = strings.TrimSpace(state.Interface)
+	state.UFWRules = networkPolicyUFWRules(state.UFWRules)
+	return state
+}
+
+func readNetworkPolicyStateInterface() string {
+	return readNetworkPolicyState().Interface
 }
