@@ -50,11 +50,31 @@ type commandRunner interface {
 
 type osCommandRunner struct{}
 
-func (osCommandRunner) LookPath(file string) (string, error) { return exec.LookPath(file) }
+func (osCommandRunner) LookPath(file string) (string, error) { return resolveCommandPath(file) }
 
 func (osCommandRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
+	if !strings.Contains(name, "/") {
+		if resolved, err := resolveCommandPath(name); err == nil {
+			name = resolved
+		}
+	}
 	cmd := exec.CommandContext(ctx, name, args...)
 	return cmd.CombinedOutput()
+}
+
+func resolveCommandPath(file string) (string, error) {
+	path, err := exec.LookPath(file)
+	if err == nil || strings.Contains(file, "/") {
+		return path, err
+	}
+	for _, dir := range []string{"/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"} {
+		candidate := dir + "/" + file
+		info, statErr := os.Stat(candidate)
+		if statErr == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+			return candidate, nil
+		}
+	}
+	return "", err
 }
 
 func applyNetworkPolicy(ctx context.Context, cfg model.NetworkPolicyConfig, runner commandRunner) error {
