@@ -160,6 +160,7 @@ export interface NetworkPortPolicyRule {
 export interface NetworkPolicySnapshot {
   collected_at?: string
   interface?: string
+  firewall_backend?: string
   rate_limit_backend?: string
   error?: string
   rules?: NetworkPortPolicyRule[]

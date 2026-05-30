@@ -101,6 +101,8 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
   }
   const observedNetworkPolicy = selectedAgent.network_policy
   const observedNetworkRules = observedNetworkPolicy?.rules || []
+  const observedHasWhitelist = observedNetworkRules.some((rule) => (rule.whitelist_ips || []).length > 0)
+  const observedHasRateLimit = observedNetworkRules.some((rule) => Number(rule.rate_limit_mbps || 0) > 0)
   const configuredNetworkPolicy = entryConfig.network_policy || { enabled: false, interface: '', firewall_backend: 'auto', rate_limit_backend: 'auto', rules: [] }
   const usingObservedNetworkPolicy = !hasNetworkPolicyConfig(configuredNetworkPolicy) && observedNetworkRules.length > 0
   const networkPolicy = usingObservedNetworkPolicy
@@ -108,7 +110,8 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
         ...configuredNetworkPolicy,
         enabled: true,
         interface: observedNetworkPolicy?.interface || configuredNetworkPolicy.interface || '',
-        rate_limit_backend: 'tc',
+        firewall_backend: observedHasWhitelist ? (observedNetworkPolicy?.firewall_backend || 'ufw') : configuredNetworkPolicy.firewall_backend,
+        rate_limit_backend: observedHasRateLimit ? (observedNetworkPolicy?.rate_limit_backend || 'tc') : configuredNetworkPolicy.rate_limit_backend,
         rules: dedupeNetworkPolicyRules(observedNetworkRules.map((rule) => ({ ...rule, enabled: rule.enabled !== false, whitelist_ips: rule.whitelist_ips || [] }))),
       }
     : configuredNetworkPolicy
@@ -160,7 +163,8 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
     updateNetworkPolicy({
       enabled: true,
       interface: observedNetworkPolicy?.interface || networkPolicy.interface || '',
-      rate_limit_backend: 'tc',
+      firewall_backend: observedHasWhitelist ? (observedNetworkPolicy?.firewall_backend || 'ufw') : networkPolicy.firewall_backend,
+      rate_limit_backend: observedHasRateLimit ? (observedNetworkPolicy?.rate_limit_backend || 'tc') : networkPolicy.rate_limit_backend,
       rules: dedupeNetworkPolicyRules(observedNetworkRules.map((rule) => ({ ...rule, enabled: rule.enabled !== false, whitelist_ips: rule.whitelist_ips || [] }))),
     })
   }
@@ -576,19 +580,19 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
           description="IP 白名单会优先在 Debian/Ubuntu 使用 ufw，其他系统自动回退 iptables；端口限速使用 Linux tc，对服务端出方向按源端口限速。启用前请确认防火墙不会锁死 SSH。"
         />
         {observedNetworkPolicy?.error ? (
-          <Alert type="warning" showIcon className="compact-alert" message="读取当前 tc 限速失败" description={observedNetworkPolicy.error} />
+          <Alert type="warning" showIcon className="compact-alert" message="读取当前端口策略失败" description={observedNetworkPolicy.error} />
         ) : null}
         {usingObservedNetworkPolicy ? (
           <Alert
             type="info"
             showIcon
             className="compact-alert"
-            message="已读取当前系统 tc 限速作为可编辑策略"
-            description="修改下方端口策略并保存后，Client 会重建 tc 规则；同一个端口最终只保留一组 TCP/UDP 限速规则。"
+            message="已读取当前系统端口策略作为可编辑配置"
+            description="可读取 VPS 当前 ufw 白名单和 tc 限速；修改下方端口策略并保存后，Client 会按托管配置重建对应规则。"
           />
         ) : null}
         {observedNetworkRules.length ? (
-          <Card size="small" className="subtle-card" title={`当前系统 tc 限速（${observedNetworkPolicy?.interface || '未知网卡'}）`} extra={<Button size="small" onClick={importObservedNetworkPolicy}>填入托管配置</Button>}>
+          <Card size="small" className="subtle-card" title={`当前系统端口策略（${observedPolicySourceLabel(observedNetworkPolicy)}）`} extra={<Button size="small" onClick={importObservedNetworkPolicy}>填入托管配置</Button>}>
             <List
               size="small"
               dataSource={observedNetworkRules}
@@ -597,8 +601,9 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
                   <Space wrap>
                     <Text strong>{rule.port}</Text>
                     <Text>{formatNetworkPolicyProtocol(rule.protocol)}</Text>
-                    <Text>{rule.rate_limit_mbps || 0} Mbps</Text>
-                    <Text type="secondary">{rule.name || 'tc 限速'}</Text>
+                    {Number(rule.rate_limit_mbps || 0) > 0 ? <Text>{rule.rate_limit_mbps || 0} Mbps</Text> : null}
+                    {(rule.whitelist_ips || []).length ? <Text>白名单 {(rule.whitelist_ips || []).join(', ')}</Text> : null}
+                    <Text type="secondary">{rule.name || '系统端口策略'}</Text>
                   </Space>
                 </List.Item>
               )}
@@ -929,6 +934,17 @@ function hasNetworkPolicyConfig(policy?: AgentEntryConfig['network_policy']) {
       (rateLimitBackend && rateLimitBackend !== 'auto') ||
       (policy.rules || []).length,
   )
+}
+
+function observedPolicySourceLabel(policy?: AgentListItem['network_policy']) {
+  const sources = [
+    policy?.firewall_backend ? `${policy.firewall_backend} 白名单` : '',
+    policy?.rate_limit_backend ? `${policy.rate_limit_backend} 限速` : '',
+  ].filter(Boolean)
+  if (!sources.length) {
+    return policy?.interface || '未知来源'
+  }
+  return [sources.join(' / '), policy?.interface].filter(Boolean).join(' · ')
 }
 
 function dedupeNetworkPolicyRules(rules: NetworkPortPolicyRule[]) {

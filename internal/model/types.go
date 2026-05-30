@@ -98,6 +98,7 @@ type RealmSnapshot struct {
 type NetworkPolicySnapshot struct {
 	CollectedAt      time.Time               `json:"collected_at"`
 	Interface        string                  `json:"interface,omitempty"`
+	FirewallBackend  string                  `json:"firewall_backend,omitempty"`
 	RateLimitBackend string                  `json:"rate_limit_backend,omitempty"`
 	Error            string                  `json:"error,omitempty"`
 	Rules            []NetworkPortPolicyRule `json:"rules,omitempty"`

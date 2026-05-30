@@ -423,7 +423,51 @@ func collectNetworkPolicySnapshot(ctx context.Context, cfg model.NetworkPolicyCo
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	return collectTCRateLimitSnapshot(ctx, cfg, osCommandRunner{})
+	return collectNetworkPolicySnapshotWithRunner(ctx, cfg, osCommandRunner{})
+}
+
+func collectNetworkPolicySnapshotWithRunner(ctx context.Context, cfg model.NetworkPolicyConfig, runner commandRunner) *model.NetworkPolicySnapshot {
+	var snapshot *model.NetworkPolicySnapshot
+	appendSnapshot := func(next *model.NetworkPolicySnapshot) {
+		if next == nil {
+			return
+		}
+		if snapshot == nil {
+			snapshot = &model.NetworkPolicySnapshot{CollectedAt: next.CollectedAt}
+		}
+		if snapshot.CollectedAt.IsZero() {
+			snapshot.CollectedAt = next.CollectedAt
+		}
+		if snapshot.Interface == "" {
+			snapshot.Interface = next.Interface
+		}
+		if snapshot.FirewallBackend == "" {
+			snapshot.FirewallBackend = next.FirewallBackend
+		}
+		if snapshot.RateLimitBackend == "" {
+			snapshot.RateLimitBackend = next.RateLimitBackend
+		}
+		if next.Error != "" {
+			if snapshot.Error != "" {
+				snapshot.Error += "; "
+			}
+			snapshot.Error += next.Error
+		}
+		snapshot.Rules = append(snapshot.Rules, next.Rules...)
+	}
+	appendSnapshot(collectTCRateLimitSnapshot(ctx, cfg, runner))
+	appendSnapshot(collectUFWWhitelistSnapshot(ctx, runner))
+	if snapshot == nil {
+		return nil
+	}
+	snapshot.Rules = mergeNetworkPolicyRulesByPort(snapshot.Rules)
+	sort.Slice(snapshot.Rules, func(i, j int) bool {
+		if snapshot.Rules[i].Port != snapshot.Rules[j].Port {
+			return snapshot.Rules[i].Port < snapshot.Rules[j].Port
+		}
+		return snapshot.Rules[i].Protocol < snapshot.Rules[j].Protocol
+	})
+	return snapshot
 }
 
 func collectTCRateLimitSnapshot(ctx context.Context, cfg model.NetworkPolicyConfig, runner commandRunner) *model.NetworkPolicySnapshot {
@@ -546,6 +590,119 @@ func parseTCRateLimitRules(classOutput, filterOutput string) []model.NetworkPort
 		return rules[i].Protocol < rules[j].Protocol
 	})
 	return rules
+}
+
+func collectUFWWhitelistSnapshot(ctx context.Context, runner commandRunner) *model.NetworkPolicySnapshot {
+	if _, err := runner.LookPath("ufw"); err != nil {
+		return nil
+	}
+	output, err := runner.Run(ctx, "ufw", "status", "numbered")
+	if err != nil {
+		return &model.NetworkPolicySnapshot{
+			CollectedAt:     time.Now().UTC(),
+			FirewallBackend: "ufw",
+			Error:           fmt.Sprintf("ufw status numbered: %v", err),
+		}
+	}
+	if !strings.Contains(strings.ToLower(string(output)), "status: active") {
+		return nil
+	}
+	rules := parseUFWWhitelistRules(string(output))
+	if len(rules) == 0 {
+		return &model.NetworkPolicySnapshot{
+			CollectedAt:     time.Now().UTC(),
+			FirewallBackend: "ufw",
+		}
+	}
+	return &model.NetworkPolicySnapshot{
+		CollectedAt:     time.Now().UTC(),
+		FirewallBackend: "ufw",
+		Rules:           rules,
+	}
+}
+
+func parseUFWWhitelistRules(output string) []model.NetworkPortPolicyRule {
+	rules := make([]model.NetworkPortPolicyRule, 0)
+	for _, line := range strings.Split(output, "\n") {
+		to, action, direction, from := parseUFWStatusLine(line)
+		if !strings.EqualFold(action, "ALLOW") || !strings.EqualFold(direction, "IN") {
+			continue
+		}
+		port, protocol := parseUFWToPortProtocol(to)
+		if port <= 0 {
+			continue
+		}
+		from = strings.TrimSpace(from)
+		if from == "" || strings.EqualFold(from, "Anywhere") || strings.EqualFold(from, "Anywhere (v6)") {
+			continue
+		}
+		rules = append(rules, model.NetworkPortPolicyRule{
+			ID:           fmt.Sprintf("ufw-%d-%s", port, protocol),
+			Name:         "当前 ufw 白名单",
+			Enabled:      true,
+			Port:         port,
+			Protocol:     protocol,
+			WhitelistIPs: []string{from},
+		})
+	}
+	rules = mergeNetworkPolicyRulesByPort(rules)
+	sort.Slice(rules, func(i, j int) bool {
+		if rules[i].Port != rules[j].Port {
+			return rules[i].Port < rules[j].Port
+		}
+		return rules[i].Protocol < rules[j].Protocol
+	})
+	return rules
+}
+
+func parseUFWStatusLine(line string) (to, action, direction, from string) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" || strings.HasPrefix(trimmed, "Status:") || strings.HasPrefix(trimmed, "To ") || strings.HasPrefix(trimmed, "--") {
+		return "", "", "", ""
+	}
+	if strings.HasPrefix(trimmed, "[") {
+		if end := strings.Index(trimmed, "]"); end >= 0 {
+			trimmed = strings.TrimSpace(trimmed[end+1:])
+		}
+	}
+	fields := strings.Fields(trimmed)
+	for index := 0; index+2 < len(fields); index++ {
+		if isUFWAction(fields[index]) && (strings.EqualFold(fields[index+1], "IN") || strings.EqualFold(fields[index+1], "OUT")) {
+			return strings.Join(fields[:index], " "), fields[index], fields[index+1], strings.Join(fields[index+2:], " ")
+		}
+	}
+	return "", "", "", ""
+}
+
+func isUFWAction(value string) bool {
+	switch strings.ToUpper(strings.TrimSpace(value)) {
+	case "ALLOW", "DENY", "REJECT", "LIMIT":
+		return true
+	default:
+		return false
+	}
+}
+
+func parseUFWToPortProtocol(value string) (int, string) {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.EqualFold(value, "Anywhere") || strings.Contains(value, ":") {
+		return 0, ""
+	}
+	protocol := "tcp"
+	if parts := strings.Split(value, "/"); len(parts) == 2 {
+		value = strings.TrimSpace(parts[0])
+		protocol = networkPolicyProtocol(parts[1])
+	} else if len(parts) > 2 {
+		return 0, ""
+	}
+	if strings.Contains(value, ",") {
+		return 0, ""
+	}
+	port := intValueFromString(value, 10)
+	if port <= 0 {
+		return 0, ""
+	}
+	return port, protocol
 }
 
 func parseTCClassRates(output string) map[string]float64 {

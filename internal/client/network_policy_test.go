@@ -186,3 +186,60 @@ func TestCollectTCRateLimitSnapshotParsesProtocolAgnosticPortRule(t *testing.T) 
 		t.Fatalf("unexpected parsed rule: %#v", rules[0])
 	}
 }
+
+func TestParseUFWWhitelistRulesParsesAllowRules(t *testing.T) {
+	rules := parseUFWWhitelistRules(strings.Join([]string{
+		"Status: active",
+		"[ 1] 20010/tcp                  ALLOW IN    104.194.70.102",
+		"[ 2] 20010/udp                  ALLOW IN    104.194.70.102",
+		"[ 3] 20006/tcp                  ALLOW IN    154.17.31.165",
+		"[ 4] 20006/udp                  ALLOW IN    154.17.31.165",
+		"[ 5] 20006/tcp                  DENY IN     Anywhere",
+		"[ 6] 22/tcp                     ALLOW IN    Anywhere",
+	}, "\n"))
+	if len(rules) != 2 {
+		t.Fatalf("expected 2 whitelist rules, got %#v", rules)
+	}
+	if rules[0].Port != 20006 || rules[0].Protocol != "both" || len(rules[0].WhitelistIPs) != 1 || rules[0].WhitelistIPs[0] != "154.17.31.165" {
+		t.Fatalf("unexpected 20006 rule: %#v", rules[0])
+	}
+	if rules[1].Port != 20010 || rules[1].Protocol != "both" || len(rules[1].WhitelistIPs) != 1 || rules[1].WhitelistIPs[0] != "104.194.70.102" {
+		t.Fatalf("unexpected 20010 rule: %#v", rules[1])
+	}
+}
+
+func TestCollectNetworkPolicySnapshotMergesUFWAndTC(t *testing.T) {
+	runner := &fakeCommandRunner{
+		paths: map[string]bool{"tc": true, "ufw": true},
+		outputs: map[string]string{
+			"tc qdisc show dev eth0": "qdisc htb 1: root refcnt 3 r2q 10 default 0x999 direct_packets_stat 0 direct_qlen 1000\n",
+			"tc class show dev eth0": "class htb 1:10 root prio 0 rate 50Mbit ceil 50Mbit burst 15Kb cburst 15Kb",
+			"tc filter show dev eth0": strings.Join([]string{
+				"filter protocol ip pref 10 u32 chain 0 fh 800::800 order 2048 key ht 800 bkt 0 *flowid 1:10 not_in_hw",
+				"  match 4e280000/ffff0000 at 20",
+			}, "\n"),
+			"ufw status numbered": strings.Join([]string{
+				"Status: active",
+				"[ 1] 20006/tcp                  ALLOW IN    154.17.31.165",
+				"[ 2] 20006/udp                  ALLOW IN    154.17.31.165",
+			}, "\n"),
+		},
+	}
+
+	snapshot := collectNetworkPolicySnapshotWithRunner(context.Background(), model.NetworkPolicyConfig{Interface: "eth0"}, runner)
+	if snapshot == nil {
+		t.Fatalf("expected snapshot")
+	}
+	if snapshot.FirewallBackend != "ufw" || snapshot.RateLimitBackend != "tc" {
+		t.Fatalf("unexpected backends: %#v", snapshot)
+	}
+	if len(snapshot.Rules) != 2 {
+		t.Fatalf("expected merged ufw+tc rules, got %#v", snapshot.Rules)
+	}
+	if snapshot.Rules[0].Port != 20006 || snapshot.Rules[0].Protocol != "both" || len(snapshot.Rules[0].WhitelistIPs) != 1 {
+		t.Fatalf("unexpected ufw rule: %#v", snapshot.Rules[0])
+	}
+	if snapshot.Rules[1].Port != 20008 || snapshot.Rules[1].RateLimitMbps != 50 {
+		t.Fatalf("unexpected tc rule: %#v", snapshot.Rules[1])
+	}
+}
