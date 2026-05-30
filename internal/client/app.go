@@ -65,6 +65,11 @@ func (a *App) RunOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	return a.runOnceWithConfig(ctx, effectiveConfig)
+}
+
+func (a *App) runOnceWithConfig(ctx context.Context, effectiveConfig model.ManagedAgentConfig) error {
+	effectiveConfig = normalizeManagedConfig(effectiveConfig, a.config.AgentID, a.config.AgentName)
 	effectiveConfig.Entry = mergeLocalRealmConfigIntoEntry(effectiveConfig.Entry)
 	a.applyNetworkPolicyIfNeeded(ctx, effectiveConfig.Entry.NetworkPolicy)
 	a.applyRealmForwardingIfNeeded(ctx, effectiveConfig.Entry.PortForwarding)

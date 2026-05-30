@@ -1810,7 +1810,7 @@ export default function App() {
       if (savedMissingCustomerDisplayName && payload.customer_display_name) {
         message.warning('用户展示名称已保留在当前页面；用户侧显示需要后端服务更新到新版后生效')
       } else {
-        message.success(`${configSectionLabel(section)}已保存，client 下一次轮询会自动生效`)
+        message.success(`${configSectionLabel(section)}已保存，已通过 WS 通知 Client 立即生效；离线时下次轮询生效`)
       }
       await loadAgents()
       await loadConfigAudits(selectedAgentId, { silent: true })

@@ -102,7 +102,8 @@ connected:
 	defer terminals.closeAll()
 
 	done := make(chan struct{})
-	collectNow := make(chan struct{}, 1)
+	var lastApplyConfigAt time.Time
+	var lastApplyConfigMu sync.Mutex
 	go func() {
 		defer close(done)
 		for {
@@ -110,22 +111,23 @@ connected:
 			if err := conn.ReadJSON(&message); err != nil {
 				return
 			}
-			if message.Type == model.AgentControlCollectNow {
-				select {
-				case collectNow <- struct{}{}:
-				default:
-				}
-				continue
-			}
-			if message.Type == model.AgentControlRestartXUI {
-				go a.handleRestartXUIControl(ctx, message)
-				continue
-			}
-			if message.Type == model.AgentControlExecuteXUI {
-				go a.handleExecuteXUIControl(ctx, message)
-				continue
-			}
 			switch message.Type {
+			case model.AgentControlCollectNow:
+				lastApplyConfigMu.Lock()
+				recentApplyConfig := time.Since(lastApplyConfigAt) < 3*time.Second
+				lastApplyConfigMu.Unlock()
+				if !recentApplyConfig {
+					go a.handleCollectNowControl(ctx)
+				}
+			case model.AgentControlApplyConfig:
+				lastApplyConfigMu.Lock()
+				lastApplyConfigAt = time.Now()
+				lastApplyConfigMu.Unlock()
+				go a.handleApplyConfigControl(ctx, message)
+			case model.AgentControlRestartXUI:
+				go a.handleRestartXUIControl(ctx, message)
+			case model.AgentControlExecuteXUI:
+				go a.handleExecuteXUIControl(ctx, message)
 			case model.AgentControlTerminalOpen, model.AgentControlTerminalInput, model.AgentControlTerminalResize, model.AgentControlTerminalClose:
 				terminals.handleControl(ctx, message)
 			}
@@ -153,18 +155,36 @@ connected:
 
 		select {
 		case <-ticker.C:
-		case <-collectNow:
-			if err := a.RunOnce(ctx); err != nil {
-				log.Printf("manual snapshot collection failed: %v", err)
-			} else {
-				log.Printf("manual snapshot pushed for agent %s", a.config.AgentID)
-			}
 		case <-done:
 			return fmt.Errorf("server closed realtime metrics ws")
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
+}
+
+func (a *App) handleCollectNowControl(ctx context.Context) {
+	if err := a.RunOnce(ctx); err != nil {
+		log.Printf("manual snapshot collection failed: %v", err)
+		return
+	}
+	log.Printf("manual snapshot pushed for agent %s", a.config.AgentID)
+}
+
+func (a *App) handleApplyConfigControl(ctx context.Context, message model.AgentControlMessage) {
+	var err error
+	if message.Config != nil {
+		a.runOnceMu.Lock()
+		err = a.runOnceWithConfig(ctx, *message.Config)
+		a.runOnceMu.Unlock()
+	} else {
+		err = a.RunOnce(ctx)
+	}
+	if err != nil {
+		log.Printf("apply config from websocket failed: %v", err)
+		return
+	}
+	log.Printf("config applied from websocket and snapshot pushed for agent %s", a.config.AgentID)
 }
 
 func (a *App) handleExecuteXUIControl(ctx context.Context, message model.AgentControlMessage) {

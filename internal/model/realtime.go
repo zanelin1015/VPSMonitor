@@ -21,6 +21,7 @@ type DashboardRealtimeMessage struct {
 
 const (
 	AgentControlCollectNow     = "collect_now"
+	AgentControlApplyConfig    = "apply_config"
 	AgentControlRestartXUI     = "restart_xui"
 	AgentControlExecuteXUI     = "execute_xui_action"
 	AgentControlTerminalOpen   = "terminal_open"
@@ -30,10 +31,11 @@ const (
 )
 
 type AgentControlMessage struct {
-	Type     string         `json:"type"`
-	Kind     string         `json:"kind,omitempty"`
-	ActionID int64          `json:"action_id,omitempty"`
-	Payload  map[string]any `json:"payload,omitempty"`
+	Type     string              `json:"type"`
+	Kind     string              `json:"kind,omitempty"`
+	ActionID int64               `json:"action_id,omitempty"`
+	Payload  map[string]any      `json:"payload,omitempty"`
+	Config   *ManagedAgentConfig `json:"config,omitempty"`
 }
 
 type AgentRefreshResponse struct {

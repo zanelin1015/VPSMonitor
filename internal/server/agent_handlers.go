@@ -1053,7 +1053,7 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 			return
 		}
 		a.syncAgentClientExpiryRules(record, "config_save")
-		a.requestAgentConfigApply(agentID)
+		a.requestAgentConfigApply(agentID, record.Config)
 		writeJSON(w, http.StatusOK, disableXUIAutoInstall(record.Config))
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -1125,11 +1125,15 @@ func snapshotHasRealm(snapshot *model.AgentSnapshot) bool {
 		strings.TrimSpace(realm.BinaryPath) != ""
 }
 
-func (a *App) requestAgentConfigApply(agentID string) bool {
+func (a *App) requestAgentConfigApply(agentID string, cfg model.ManagedAgentConfig) bool {
 	if a.realtime == nil {
 		return false
 	}
-	if a.realtime.sendAgentControl(agentID, model.AgentControlMessage{Type: model.AgentControlCollectNow}) {
+	cfg.AgentID = agentID
+	applySent := a.realtime.sendAgentControl(agentID, model.AgentControlMessage{Type: model.AgentControlApplyConfig, Config: &cfg})
+	// Older clients do not understand apply_config; collect_now keeps immediate apply compatible.
+	collectSent := a.realtime.sendAgentControl(agentID, model.AgentControlMessage{Type: model.AgentControlCollectNow})
+	if applySent || collectSent {
 		return true
 	}
 	log.Printf("client %s realtime connection is offline; config will apply on next poll", agentID)

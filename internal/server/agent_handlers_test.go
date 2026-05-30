@@ -339,8 +339,8 @@ func TestHandleAgentConfigUpdateRequestsImmediateClientApply(t *testing.T) {
 	}
 	select {
 	case message := <-controlSession.ch:
-		if message.Type != model.AgentControlCollectNow {
-			t.Fatalf("expected collect_now control message, got %#v", message)
+		if message.Type != model.AgentControlApplyConfig || message.Config == nil {
+			t.Fatalf("expected apply_config control message with config, got %#v", message)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("expected config update to request immediate client apply")
@@ -422,8 +422,8 @@ func TestHandleRealmConfigCopyCopiesAndAppliesToTarget(t *testing.T) {
 	}
 	select {
 	case message := <-controlSession.ch:
-		if message.Type != model.AgentControlCollectNow {
-			t.Fatalf("expected collect_now control message, got %#v", message)
+		if message.Type != model.AgentControlApplyConfig || message.Config == nil {
+			t.Fatalf("expected apply_config control message with config, got %#v", message)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("expected realm copy to request immediate client apply")
