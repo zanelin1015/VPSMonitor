@@ -283,6 +283,7 @@ func sanitizeDashboardAgentForAreaManager(agent model.DashboardAgentView, tagMap
 	agent.Entry = model.AgentEntryConfig{}
 	agent.HasConfig = false
 	agent.Summary = sanitizeAreaManagerSummary(agent.Summary)
+	agent.NetworkPolicy = nil
 	agent.Geo = nil
 	return agent
 }

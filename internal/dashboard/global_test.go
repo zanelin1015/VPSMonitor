@@ -51,6 +51,36 @@ func TestBuildGlobalDashboardWithOptionsUsesCachedGeoWithoutNetwork(t *testing.T
 	}
 }
 
+func TestBuildGlobalDashboardIncludesNetworkPolicySnapshot(t *testing.T) {
+	now := time.Now().UTC()
+	view := BuildGlobalDashboardWithOptions([]model.AgentRecord{{
+		AgentID:      "agent-a",
+		AgentName:    "Agent A",
+		RegisteredAt: now,
+		UpdatedAt:    now,
+	}}, []model.AgentSnapshot{{
+		AgentID:    "agent-a",
+		ReportedAt: now,
+		NetworkPolicy: &model.NetworkPolicySnapshot{
+			CollectedAt:     now,
+			FirewallBackend: "ufw",
+			Rules: []model.NetworkPortPolicyRule{{
+				Enabled:      true,
+				Port:         20010,
+				Protocol:     "both",
+				WhitelistIPs: []string{"104.194.70.102"},
+			}},
+		},
+	}}, GlobalDashboardOptions{IncludeTopology: false})
+
+	if len(view.Agents) != 1 || view.Agents[0].NetworkPolicy == nil {
+		t.Fatalf("expected network policy snapshot in dashboard agent, got %#v", view.Agents)
+	}
+	if got := view.Agents[0].NetworkPolicy.Rules; len(got) != 1 || got[0].Port != 20010 || len(got[0].WhitelistIPs) != 1 {
+		t.Fatalf("unexpected network policy rules: %#v", got)
+	}
+}
+
 func TestBuildGlobalDashboardMatchesCrossClientTopology(t *testing.T) {
 	now := time.Now().UTC()
 	originalLookup := topologyLookupHostIPs

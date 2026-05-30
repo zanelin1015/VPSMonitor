@@ -63,12 +63,16 @@ func BuildGlobalDashboardWithOptions(agents []model.AgentRecord, snapshots []mod
 	}
 	overviewByAgent := make(map[string]*model.XUIOverview, len(snapshots))
 	realmByAgent := make(map[string]*model.RealmSnapshot, len(snapshots))
+	networkPolicyByAgent := make(map[string]*model.NetworkPolicySnapshot, len(snapshots))
 	for _, snapshot := range snapshots {
 		if overview := BuildXUIOverviewWithOptions(snapshot, XUIOverviewOptions{Entry: entryByAgent[snapshot.AgentID]}); overview != nil {
 			overviewByAgent[snapshot.AgentID] = overview
 		}
 		if snapshot.Realm != nil {
 			realmByAgent[snapshot.AgentID] = snapshot.Realm
+		}
+		if snapshot.NetworkPolicy != nil {
+			networkPolicyByAgent[snapshot.AgentID] = snapshot.NetworkPolicy
 		}
 	}
 
@@ -108,6 +112,7 @@ func BuildGlobalDashboardWithOptions(agents []model.AgentRecord, snapshots []mod
 			LastSeenAt:          agent.LastSeenAt,
 			HasConfig:           agent.HasConfig,
 			Summary:             summary,
+			NetworkPolicy:       networkPolicyByAgent[agent.AgentID],
 		}
 		if options.IncludeGeo {
 			view.Geo = lookupAgentGeo(summary, resolver)
