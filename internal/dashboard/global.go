@@ -404,6 +404,7 @@ func buildOutboundCandidates(agentViews map[string]model.DashboardAgentView, ove
 				Target:      fmt.Sprintf("%s:%d", rule.TargetAddress, rule.TargetPort),
 				Address:     rule.TargetAddress,
 				Port:        rule.TargetPort,
+				ListenPort:  rule.ListenPort,
 				Network:     normalizeRealmForwardNetworkForTopology(rule.Network),
 				ResolvedIPs: resolvedIPs,
 			}

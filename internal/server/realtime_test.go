@@ -302,6 +302,36 @@ func TestAreaManagerClientScopeFiltersUnassignedTopologyClients(t *testing.T) {
 	}
 }
 
+func TestAreaManagerVisibleLinksKeepGrantedRealmEntry(t *testing.T) {
+	scope := areaManagerClientScope{
+		inbounds: map[string]struct{}{
+			areaClientInboundKey("hk", 1001, "HK:20001"): {},
+		},
+		realmPorts: map[string]struct{}{
+			areaRealmPortKey("gz", 20001): {},
+		},
+		agents: map[string]struct{}{
+			"gz": {},
+			"hk": {},
+		},
+	}
+	links := []model.TopologyLinkView{
+		{
+			Source: model.TopologyOutboundRef{AgentID: "gz", OutboundTag: "realm:gz-20001", Protocol: "realm", ListenPort: 20001},
+			Target: model.TopologyInboundRef{AgentID: "hk", InboundID: 1001, InboundTag: "HK:20001"},
+		},
+		{
+			Source: model.TopologyOutboundRef{AgentID: "gz", OutboundTag: "realm:gz-20002", Protocol: "realm", ListenPort: 20002},
+			Target: model.TopologyInboundRef{AgentID: "hk", InboundID: 1002, InboundTag: "HK:20002"},
+		},
+	}
+
+	filtered := filterTopologyLinksVisibleToAreaManager(links, nil, scope)
+	if len(filtered) != 1 || filtered[0].Source.ListenPort != 20001 {
+		t.Fatalf("expected only the doubly granted Realm link to remain, got %#v", filtered)
+	}
+}
+
 func TestAreaManagerXUIOverviewFiltersUnassignedClients(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "bridge.db")
 	sqliteStore, err := store.NewSQLiteStore(dbPath)
@@ -396,12 +426,15 @@ func TestAreaManagerXUIOverviewAllowsRealmForwardedClientsFromAssignedEntry(t *t
 	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "gz", AgentName: "GZ Entry"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK Exit"}); err != nil {
+		t.Fatalf("RegisterAgent hk: %v", err)
+	}
 	enabled := true
 	manager, err := sqliteStore.CreateAreaManager(model.AreaManagerAccountRequest{
 		Username: "area-gz",
 		Password: "password123",
 		Enabled:  &enabled,
-		AgentIDs: []string{"gz"},
+		AgentIDs: []string{"gz", "hk"},
 	})
 	if err != nil {
 		t.Fatalf("CreateAreaManager: %v", err)
@@ -409,11 +442,20 @@ func TestAreaManagerXUIOverviewAllowsRealmForwardedClientsFromAssignedEntry(t *t
 	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
 		AgentID:     "gz",
 		InboundID:   20001,
-		InboundTag:  "",
+		InboundTag:  "realm:gz-20001",
 		ClientEmail: "",
 		Enabled:     &enabled,
 	}); err != nil {
-		t.Fatalf("CreateAreaManagerAssignment: %v", err)
+		t.Fatalf("CreateAreaManagerAssignment realm: %v", err)
+	}
+	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+		AgentID:     "hk",
+		InboundID:   1001,
+		InboundTag:  "HK:20001",
+		ClientEmail: "",
+		Enabled:     &enabled,
+	}); err != nil {
+		t.Fatalf("CreateAreaManagerAssignment xui: %v", err)
 	}
 
 	app := &App{store: sqliteStore}
@@ -445,7 +487,7 @@ func TestAreaManagerXUIOverviewAllowsRealmForwardedClientsFromAssignedEntry(t *t
 	app.sanitizeXUIOverviewForAdmin(model.AdminUser{
 		ID:       manager.ID,
 		Role:     model.AdminRoleAreaManager,
-		AgentIDs: []string{"gz"},
+		AgentIDs: []string{"gz", "hk"},
 	}, overview)
 
 	if len(overview.Clients) != 1 || overview.Clients[0].Email != "alice@example.com" {
@@ -456,6 +498,65 @@ func TestAreaManagerXUIOverviewAllowsRealmForwardedClientsFromAssignedEntry(t *t
 	}
 	if overview.Clients[0].TotalGB != 0 || overview.Clients[0].ExpiryTime != 0 || overview.Clients[0].LastOnline != 0 {
 		t.Fatalf("expected sensitive client metrics stripped, got %#v", overview.Clients[0])
+	}
+}
+
+func TestAreaManagerXUIOverviewRejectsRealmForwardedClientsWithoutTargetGrant(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "gz", AgentName: "GZ Entry"}); err != nil {
+		t.Fatalf("RegisterAgent gz: %v", err)
+	}
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK Exit"}); err != nil {
+		t.Fatalf("RegisterAgent hk: %v", err)
+	}
+	enabled := true
+	manager, err := sqliteStore.CreateAreaManager(model.AreaManagerAccountRequest{
+		Username: "area-gz",
+		Password: "password123",
+		Enabled:  &enabled,
+		AgentIDs: []string{"gz", "hk"},
+	})
+	if err != nil {
+		t.Fatalf("CreateAreaManager: %v", err)
+	}
+	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+		AgentID:     "gz",
+		InboundID:   20001,
+		InboundTag:  "realm:gz-20001",
+		ClientEmail: "",
+		Enabled:     &enabled,
+	}); err != nil {
+		t.Fatalf("CreateAreaManagerAssignment realm: %v", err)
+	}
+
+	app := &App{store: sqliteStore}
+	overview := &model.XUIOverview{
+		AgentID: "gz",
+		Clients: []model.XUIClientView{{
+			InboundID:             20001,
+			InboundTag:            "Realm 20001 -> HK VLESS",
+			Email:                 "alice@example.com",
+			ImportURL:             "vless://uuid@gz.example.com:20001?security=reality#HK",
+			RealmSourceAgentID:    "gz",
+			RealmTargetAgentID:    "hk",
+			RealmTargetInboundID:  1001,
+			RealmTargetInboundTag: "HK:20001",
+			RealmListenPort:       20001,
+		}},
+	}
+
+	app.sanitizeXUIOverviewForAdmin(model.AdminUser{
+		ID:       manager.ID,
+		Role:     model.AdminRoleAreaManager,
+		AgentIDs: []string{"gz", "hk"},
+	}, overview)
+
+	if len(overview.Clients) != 0 {
+		t.Fatalf("expected Realm-exported client without HK x-ui grant to be hidden, got %#v", overview.Clients)
 	}
 }
 

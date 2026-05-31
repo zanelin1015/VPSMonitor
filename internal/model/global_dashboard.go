@@ -115,6 +115,7 @@ type TopologyOutboundRef struct {
 	Target        string     `json:"target,omitempty"`
 	Address       string     `json:"address,omitempty"`
 	Port          int        `json:"port,omitempty"`
+	ListenPort    int        `json:"listen_port,omitempty"`
 	Network       string     `json:"network,omitempty"`
 	Security      string     `json:"security,omitempty"`
 	TLSServerName string     `json:"tls_server_name,omitempty"`

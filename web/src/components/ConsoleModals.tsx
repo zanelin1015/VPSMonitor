@@ -9,6 +9,7 @@ import type {
   TelegramBot,
   UpdateLatestInfo,
   XUIClientView,
+  XUINodeView,
   XUIOverview,
 } from '../types'
 import type {
@@ -62,6 +63,7 @@ export interface ConsoleModalsProps {
   frontendSettingsSaving: boolean
   importURLClient: XUIClientView | null
   addClientActionForm: XUIAddClientActionForm
+  addClientActionInbounds: XUINodeView[]
   outboundActionForm: XUIOutboundActionForm
   outboundSourceLoading: boolean
   outboundSourceOverview: XUIOverview | null
@@ -145,6 +147,7 @@ export function ConsoleModals(props: ConsoleModalsProps) {
     frontendSettingsSaving,
     importURLClient,
     addClientActionForm,
+    addClientActionInbounds,
     outboundActionForm,
     outboundSourceLoading,
     outboundSourceOverview,
@@ -289,6 +292,7 @@ export function ConsoleModals(props: ConsoleModalsProps) {
         saving={xuiActionSaving}
         actionKind={xuiActionKind}
         addClientForm={addClientActionForm}
+        addClientInbounds={addClientActionInbounds}
         outboundForm={outboundActionForm}
         routingForm={routingActionForm}
         agents={agents}

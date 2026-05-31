@@ -467,6 +467,10 @@ export interface XUINodeView {
   client_count?: number
   online_count?: number
   route: XUIRouteTrace
+  realm_target_agent_id?: string
+  realm_target_agent_name?: string
+  realm_target_inbound_id?: number
+  realm_target_inbound_tag?: string
 }
 
 export interface XUIClientView {
@@ -493,6 +497,14 @@ export interface XUIClientView {
   traffic_total?: number
   last_online?: number
   route: XUIRouteTrace
+  is_realm_forwarded?: boolean
+  realm_listen_port?: number
+  realm_listen_tag?: string
+  realm_source_agent_id?: string
+  realm_target_agent_id?: string
+  realm_target_inbound_id?: number
+  realm_target_inbound_tag?: string
+  realm_target_agent_name?: string
 }
 
 export interface XUIOutboundView {
@@ -683,6 +695,7 @@ export interface TopologyOutboundRef {
   target?: string
   address?: string
   port?: number
+  listen_port?: number
   network?: string
   security?: string
   tls_server_name?: string

@@ -88,10 +88,10 @@ type XUIClientView struct {
 	IsRealmForwarded      bool   `json:"is_realm_forwarded,omitempty"`
 	RealmListenPort       int    `json:"realm_listen_port,omitempty"`
 	RealmListenTag        string `json:"realm_listen_tag,omitempty"`
-	RealmSourceAgentID    string `json:"-"`
-	RealmTargetAgentID    string `json:"-"`
-	RealmTargetInboundID  int    `json:"-"`
-	RealmTargetInboundTag string `json:"-"`
+	RealmSourceAgentID    string `json:"realm_source_agent_id,omitempty"`
+	RealmTargetAgentID    string `json:"realm_target_agent_id,omitempty"`
+	RealmTargetInboundID  int    `json:"realm_target_inbound_id,omitempty"`
+	RealmTargetInboundTag string `json:"realm_target_inbound_tag,omitempty"`
 }
 
 type XUIOutboundView struct {

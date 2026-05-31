@@ -150,7 +150,7 @@ func (a *App) sanitizeDashboardForAdmin(user model.AdminUser, view *model.Global
 	}
 	view.Links = sanitizeTopologyLinksForAreaManager(view.Links, allowed, tagMap, agentNames)
 	view.ClientChains = sanitizeClientChainsForAreaManager(view.ClientChains, allowed, tagMap, agentNames, clientScope)
-	view.Links = filterTopologyLinksUsedByChains(view.Links, view.ClientChains)
+	view.Links = filterTopologyLinksVisibleToAreaManager(view.Links, view.ClientChains, clientScope)
 	applyAreaManagerClientCounts(view, clientScope)
 	rebuildAreaManagerDashboardStats(view)
 }
@@ -218,11 +218,13 @@ func (a *App) areaManagerCanViewRealmForwardedClient(user model.AdminUser, sourc
 	if listenPort <= 0 {
 		listenPort = client.InboundID
 	}
-	if listenPort <= 0 {
+	if listenPort <= 0 || client.RealmTargetAgentID == "" || client.RealmTargetInboundID <= 0 {
 		return false
 	}
-	return clientScope.allowsClient(sourceAgentID, listenPort, client.InboundTag, client.Email) ||
-		clientScope.allowsClient(sourceAgentID, listenPort, "", client.Email)
+	if !clientScope.allowsRealmPort(sourceAgentID, listenPort) {
+		return false
+	}
+	return clientScope.allowsClient(client.RealmTargetAgentID, client.RealmTargetInboundID, client.RealmTargetInboundTag, client.Email)
 }
 
 func (a *App) sanitizeXUIOverviewForAreaAssignment(user model.AdminUser, overview *model.XUIOverview) {
@@ -397,6 +399,7 @@ func sanitizeGeoForAreaManager(geo *model.IPGeoView) *model.IPGeoView {
 type areaManagerClientScope struct {
 	exactClients map[string]struct{}
 	inbounds     map[string]struct{}
+	realmPorts   map[string]struct{}
 	agents       map[string]struct{}
 }
 
@@ -404,6 +407,7 @@ func (a *App) areaManagerClientScope(user model.AdminUser) areaManagerClientScop
 	scope := areaManagerClientScope{
 		exactClients: make(map[string]struct{}),
 		inbounds:     make(map[string]struct{}),
+		realmPorts:   make(map[string]struct{}),
 		agents:       adminAgentSet(user),
 	}
 	if !isAreaManager(user) || user.ID <= 0 {
@@ -436,6 +440,10 @@ func addAreaManagerScopeAssignment(scope *areaManagerClientScope, agentID string
 		if inboundTag != "" {
 			scope.exactClients[areaClientExactKey(agentID, inboundID, "", clientEmail)] = struct{}{}
 		}
+		return
+	}
+	if isRealmAssignmentTag(inboundTag) {
+		scope.realmPorts[areaRealmPortKey(agentID, inboundID)] = struct{}{}
 		return
 	}
 	scope.inbounds[areaClientInboundKey(agentID, inboundID, inboundTag)] = struct{}{}
@@ -483,6 +491,28 @@ func (s areaManagerClientScope) allowsInbound(agentID string, inboundID int, inb
 	return false
 }
 
+func (s areaManagerClientScope) allowsRealmPort(agentID string, listenPort int) bool {
+	if agentID == "" || listenPort <= 0 {
+		return false
+	}
+	if _, ok := s.agents[agentID]; !ok {
+		return false
+	}
+	if _, ok := s.realmPorts[areaRealmPortKey(agentID, listenPort)]; ok {
+		return true
+	}
+	for key := range s.inbounds {
+		parts := strings.Split(key, "\x00")
+		if len(parts) != 3 || !strings.EqualFold(parts[0], strings.TrimSpace(agentID)) || parts[1] != strconv.Itoa(listenPort) {
+			continue
+		}
+		if isRealmAssignmentTag(parts[2]) {
+			return true
+		}
+	}
+	return false
+}
+
 func areaClientExactKey(agentID string, inboundID int, inboundTag, email string) string {
 	return strings.Join([]string{
 		strings.TrimSpace(agentID),
@@ -500,7 +530,19 @@ func areaClientInboundKey(agentID string, inboundID int, inboundTag string) stri
 	}, "\x00")
 }
 
+func areaRealmPortKey(agentID string, listenPort int) string {
+	return strings.Join([]string{strings.TrimSpace(agentID), strconv.Itoa(listenPort)}, "\x00")
+}
+
+func isRealmAssignmentTag(tag string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(tag)), "realm:")
+}
+
 func filterTopologyLinksUsedByChains(links []model.TopologyLinkView, chains []model.ClientChainView) []model.TopologyLinkView {
+	return filterTopologyLinksVisibleToAreaManager(links, chains, areaManagerClientScope{})
+}
+
+func filterTopologyLinksVisibleToAreaManager(links []model.TopologyLinkView, chains []model.ClientChainView, clientScope areaManagerClientScope) []model.TopologyLinkView {
 	used := make(map[string]struct{})
 	for _, chain := range chains {
 		for _, step := range chain.Steps {
@@ -514,9 +556,60 @@ func filterTopologyLinksUsedByChains(links []model.TopologyLinkView, chains []mo
 	for _, link := range links {
 		if _, ok := used[outboundLinkKey(link.Source.AgentID, link.Source.OutboundTag)]; ok {
 			filtered = append(filtered, link)
+			continue
+		}
+		if areaManagerCanViewRealmLink(link, clientScope) {
+			filtered = append(filtered, link)
 		}
 	}
 	return filtered
+}
+
+func areaManagerCanViewRealmLink(link model.TopologyLinkView, clientScope areaManagerClientScope) bool {
+	if !strings.EqualFold(strings.TrimSpace(link.Source.Protocol), "realm") {
+		return false
+	}
+	listenPort := link.Source.ListenPort
+	if listenPort <= 0 {
+		listenPort = realmListenPortFromOutboundTag(link.Source.OutboundTag)
+	}
+	if listenPort <= 0 || link.Target.AgentID == "" {
+		return false
+	}
+	return clientScope.allowsRealmPort(link.Source.AgentID, listenPort) &&
+		(clientScope.allowsInbound(link.Target.AgentID, link.Target.InboundID, link.Target.InboundTag) ||
+			clientScope.hasExactClientOnInbound(link.Target.AgentID, link.Target.InboundID, link.Target.InboundTag))
+}
+
+func realmListenPortFromOutboundTag(tag string) int {
+	for _, part := range strings.FieldsFunc(tag, func(r rune) bool { return r < '0' || r > '9' }) {
+		if value, err := strconv.Atoi(part); err == nil && value > 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func (s areaManagerClientScope) hasExactClientOnInbound(agentID string, inboundID int, inboundTag string) bool {
+	if agentID == "" || inboundID <= 0 {
+		return false
+	}
+	if _, ok := s.agents[agentID]; !ok {
+		return false
+	}
+	normalizedAgentID := strings.TrimSpace(agentID)
+	normalizedInboundID := strconv.Itoa(inboundID)
+	normalizedTag := strings.ToLower(strings.TrimSpace(inboundTag))
+	for key := range s.exactClients {
+		parts := strings.Split(key, "\x00")
+		if len(parts) != 4 || !strings.EqualFold(parts[0], normalizedAgentID) || parts[1] != normalizedInboundID {
+			continue
+		}
+		if parts[2] == normalizedTag || parts[2] == "" || normalizedTag == "" {
+			return true
+		}
+	}
+	return false
 }
 
 func outboundLinkKey(agentID, outboundTag string) string {

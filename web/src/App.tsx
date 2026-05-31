@@ -48,6 +48,7 @@ import type {
   XUIAction,
   XUIClientBillingConfig,
   XUIClientView,
+  XUINodeView,
   XUIOverview,
 } from './types'
 import {
@@ -384,6 +385,8 @@ export default function App() {
   const [xuiActionModalOpen, setXUIActionModalOpen] = useState(false)
   const [xuiActionSaving, setXUIActionSaving] = useState(false)
   const [xuiActionKind, setXUIActionKind] = useState('upsert_routing_rule')
+  const [xuiActionAgentId, setXUIActionAgentId] = useState('')
+  const [addClientActionInbounds, setAddClientActionInbounds] = useState<XUINodeView[]>([])
   const [addClientActionForm, setAddClientActionForm] = useState<XUIAddClientActionForm>(() => defaultAddClientActionForm())
   const [outboundActionForm, setOutboundActionForm] = useState<XUIOutboundActionForm>(() => defaultOutboundActionForm())
   const [routingActionForm, setRoutingActionForm] = useState<XUIRoutingActionForm>(() => defaultRoutingActionForm())
@@ -1180,29 +1183,35 @@ export default function App() {
   }
 
   async function deleteXUIClient(record: XUIClientView, agentID = selectedAgentId) {
-    if (!agentID) {
+    const targetAgentID = record.realm_target_agent_id || agentID
+    const targetInboundID = record.realm_target_inbound_id || record.inbound_id
+    const targetInboundTag = record.realm_target_inbound_tag || record.inbound_tag || ''
+    if (!targetAgentID) {
       return
     }
     const key = xuiClientActionKey(record)
     setXUIClientDeleteLoadingKey(key)
     try {
-      const action = await fetchJSON<XUIAction>(`/api/v1/agents/${agentID}/xui/actions`, {
+      const action = await fetchJSON<XUIAction>(`/api/v1/agents/${targetAgentID}/xui/actions`, {
         method: 'POST',
         body: JSON.stringify({
           kind: 'delete_client',
           payload: {
-            inbound_id: record.inbound_id,
-            inbound_tag: record.inbound_tag || '',
+            inbound_id: targetInboundID,
+            inbound_tag: targetInboundTag,
             email: record.email || '',
             client_id: record.auth_uuid || record.auth_password || '',
           },
         }),
       })
       message.success(action.status === 'running' ? '已通过 WS 下发删除 Client 任务，结果会回传到操作记录' : '已创建删除 Client 任务，Client 不在线时会等待轮询执行')
-      await loadXUIActions(agentID, { silent: true })
-      scheduleXUIActionResultRefresh(agentID)
+      await loadXUIActions(targetAgentID, { silent: true })
+      scheduleXUIActionResultRefresh(targetAgentID)
       window.setTimeout(() => {
-        void loadOverview(agentID, { silent: true })
+        void loadOverview(targetAgentID, { silent: true })
+        if (selectedAgentId && targetAgentID !== selectedAgentId) {
+          void loadOverview(selectedAgentId, { silent: true })
+        }
         void loadAgents({ silent: true })
       }, 2500)
     } catch (error) {
@@ -1216,19 +1225,22 @@ export default function App() {
   }
 
   async function setXUIClientEnabled(record: XUIClientView, enabled: boolean, agentID = selectedAgentId) {
-    if (!agentID) {
+    const targetAgentID = record.realm_target_agent_id || agentID
+    const targetInboundID = record.realm_target_inbound_id || record.inbound_id
+    const targetInboundTag = record.realm_target_inbound_tag || record.inbound_tag || ''
+    if (!targetAgentID) {
       return
     }
     const key = xuiClientActionKey(record)
     setXUIClientToggleLoadingKey(key)
     try {
-      const action = await fetchJSON<XUIAction>(`/api/v1/agents/${agentID}/xui/actions`, {
+      const action = await fetchJSON<XUIAction>(`/api/v1/agents/${targetAgentID}/xui/actions`, {
         method: 'POST',
         body: JSON.stringify({
           kind: 'set_client_enabled',
           payload: {
-            inbound_id: record.inbound_id,
-            inbound_tag: record.inbound_tag || '',
+            inbound_id: targetInboundID,
+            inbound_tag: targetInboundTag,
             email: record.email || '',
             client_id: record.auth_uuid || record.auth_password || '',
             enabled,
@@ -1236,10 +1248,13 @@ export default function App() {
         }),
       })
       message.success(action.status === 'running' ? `已通过 WS 下发${enabled ? '启用' : '停用'} Client 任务，结果会回传到操作记录` : `已创建${enabled ? '启用' : '停用'} Client 任务，Client 不在线时会等待轮询执行`)
-      await loadXUIActions(agentID, { silent: true })
-      scheduleXUIActionResultRefresh(agentID)
+      await loadXUIActions(targetAgentID, { silent: true })
+      scheduleXUIActionResultRefresh(targetAgentID)
       window.setTimeout(() => {
-        void loadOverview(agentID, { silent: true })
+        void loadOverview(targetAgentID, { silent: true })
+        if (selectedAgentId && targetAgentID !== selectedAgentId) {
+          void loadOverview(selectedAgentId, { silent: true })
+        }
         void loadAgents({ silent: true })
       }, 2500)
     } catch (error) {
@@ -1719,7 +1734,8 @@ export default function App() {
   }
 
   async function createXUIAction() {
-    if (!selectedAgentId) {
+    const actionAgentID = xuiActionAgentId || selectedAgentId
+    if (!actionAgentID) {
       return
     }
     let payload: Record<string, unknown>
@@ -1735,15 +1751,15 @@ export default function App() {
     }
     setXUIActionSaving(true)
     try {
-      const action = await fetchJSON<XUIAction>(`/api/v1/agents/${selectedAgentId}/xui/actions`, {
+      const action = await fetchJSON<XUIAction>(`/api/v1/agents/${actionAgentID}/xui/actions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ kind: xuiActionKind, payload }),
       })
       setXUIActionModalOpen(false)
       message.success(action.status === 'running' ? 'x-ui 操作已通过 WS 下发，正在等待实时回传结果' : 'x-ui 操作已创建，Client 不在线时会等待轮询执行')
-      await loadXUIActions(selectedAgentId)
-      scheduleXUIActionResultRefresh(selectedAgentId)
+      await loadXUIActions(actionAgentID)
+      scheduleXUIActionResultRefresh(actionAgentID)
     } catch (error) {
       if (isUnauthorized(error)) {
         setAdminUser(null)
@@ -2225,6 +2241,7 @@ export default function App() {
           xuiActionModalOpen={xuiActionModalOpen}
           xuiActionSaving={xuiActionSaving}
           addClientActionForm={addClientActionForm}
+          addClientActionInbounds={addClientActionInbounds}
           onAccountFormChange={setAccountForm}
           onClientInstallCommandKindChange={setClientInstallCommandKind}
           onClientInstallFormChange={setClientInstallForm}
@@ -2239,7 +2256,11 @@ export default function App() {
           onCloseImportURL={() => setImportURLClient(null)}
           onCloseTelegramBot={() => setTelegramBotModalOpen(false)}
           onCloseUpdateModal={() => setUpdateModalOpen(false)}
-          onCloseXUIActionModal={() => setXUIActionModalOpen(false)}
+          onCloseXUIActionModal={() => {
+            setXUIActionModalOpen(false)
+            setXUIActionAgentId('')
+            setAddClientActionInbounds([])
+          }}
           onConfigChanged={() => loadAgents()}
           onOpenCustomerAssignment={openCustomerAssignment}
           onCopyClientInstallCommand={(command) => void copyClientInstallCommand(command)}
@@ -2331,7 +2352,7 @@ export default function App() {
             loading={agentsLoading}
             error={agentsError}
             selectedTag={selectedTag}
-            selectedAgentId={selectedAgentId}
+          selectedAgentId={xuiActionAgentId || selectedAgentId}
             tagFilterOptions={tagFilterOptions}
             viewMode={agentViewMode}
             panelExpanded={centerPanelOpen}
@@ -2469,20 +2490,33 @@ export default function App() {
                 onClientSearchChange={setClientSearch}
                 onCopyImportURL={(client) => void copyImportURL(client)}
                 onCreateRoutingAction={() => {
+                  setXUIActionAgentId(selectedAgentId)
+                  setAddClientActionInbounds([])
                   setXUIActionKind('upsert_routing_rule')
                   setAddClientActionForm(defaultAddClientActionForm())
                   setOutboundActionForm(defaultOutboundActionForm())
                   setRoutingActionForm(defaultRoutingActionForm())
                   setXUIActionModalOpen(true)
                 }}
-                onCreateNodeClientAction={(node) => {
+                onCreateNodeClientAction={(node, actionAgentID) => {
+                  const targetAgentID = actionAgentID || node.realm_target_agent_id || selectedAgentId
+                  const targetNode: XUINodeView = node.realm_target_inbound_id
+                    ? {
+                        ...node,
+                        id: node.realm_target_inbound_id,
+                        tag: node.realm_target_inbound_tag || node.tag || '',
+                        remark: node.remark || node.realm_target_inbound_tag || `Inbound #${node.realm_target_inbound_id}`,
+                      }
+                    : node
+                  setXUIActionAgentId(targetAgentID)
+                  setAddClientActionInbounds([targetNode])
                   setXUIActionKind('add_client')
                   setAddClientActionForm({
                     ...defaultAddClientActionForm(),
-                    inbound_id: node.id,
-                    inbound_tag: node.tag || '',
-                    inbound_name: node.remark || node.tag || `Inbound #${node.id}`,
-                    protocol: node.protocol || 'vless',
+                    inbound_id: targetNode.id,
+                    inbound_tag: targetNode.tag || '',
+                    inbound_name: targetNode.remark || targetNode.tag || `Inbound #${targetNode.id}`,
+                    protocol: targetNode.protocol || 'vless',
                   })
                   setXUIActionModalOpen(true)
                 }}

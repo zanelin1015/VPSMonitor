@@ -12,7 +12,7 @@ import {
   UploadOutlined,
 } from '@ant-design/icons'
 
-import type { AdminUser, AgentListItem, SystemInfo, TelegramBot, UpdateLatestInfo, XUIClientView, XUIOverview } from '../types'
+import type { AdminUser, AgentListItem, SystemInfo, TelegramBot, UpdateLatestInfo, XUIClientView, XUINodeView, XUIOverview } from '../types'
 import type {
   ClientInstallCommandForm,
   ClientInstallCommandKind,
@@ -470,6 +470,7 @@ export function XUIActionModal(props: {
   saving: boolean
   actionKind: string
   addClientForm: XUIAddClientActionForm
+  addClientInbounds?: XUINodeView[]
   outboundForm: XUIOutboundActionForm
   routingForm: XUIRoutingActionForm
   agents: AgentListItem[]
@@ -489,6 +490,7 @@ export function XUIActionModal(props: {
     saving,
     actionKind,
     addClientForm,
+    addClientInbounds,
     outboundForm,
     routingForm,
     agents,
@@ -518,11 +520,11 @@ export function XUIActionModal(props: {
           <Select style={{ width: '100%' }} value={actionKind} options={XUI_ACTION_KINDS} onChange={onActionKindChange} />
         </div>
         {actionKind === 'add_client'
-          ? renderAddClientActionForm({
-              form: addClientForm,
-              inbounds: currentOverview?.nodes || [],
-              onChange: onAddClientFormChange,
-            })
+	          ? renderAddClientActionForm({
+	              form: addClientForm,
+	              inbounds: addClientInbounds?.length ? addClientInbounds : currentOverview?.nodes || [],
+	              onChange: onAddClientFormChange,
+	            })
           : null}
         {actionKind === 'add_outbound'
           ? renderOutboundActionForm({

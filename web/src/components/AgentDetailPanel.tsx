@@ -121,7 +121,7 @@ export interface AgentDetailPanelProps {
   onClientSearchChange: (value: string) => void
   onCopyImportURL: (client: XUIClientView) => void
   onCreateRoutingAction: () => void
-  onCreateNodeClientAction: (node: XUINodeView) => void
+  onCreateNodeClientAction: (node: XUINodeView, actionAgentID?: string) => void
   onCreateTag: () => void
   onEntryAddressesTextChange: (value: string) => void
   onEntryChange: (patch: Partial<AgentEntryConfig>) => void
@@ -270,7 +270,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const currentAgentLinks = filteredTagLinks.filter((link) => link.source.agent_id === selectedAgentId || link.target.agent_id === selectedAgentId)
   const currentAgentRealmLinks = currentAgentLinks.filter((link) => link.source.agent_id === selectedAgentId && (link.source.protocol || '').toLowerCase() === 'realm')
   const realmForwardNodes = buildRealmForwardNodes(currentAgentRealmLinks, dashboardView)
-  const realmForwardClients = buildRealmForwardClients(currentAgentRealmLinks, dashboardView)
+  const realmForwardClients = buildRealmForwardClients(currentAgentRealmLinks, dashboardView, overview?.clients || [])
   const realmFilteredClients = filterRealmForwardClients(realmForwardClients, clientSearch)
   const currentAgentTagSet = new Set(selectedAgent.tags || [])
   const currentAgentDashboardView = dashboardView
@@ -685,6 +685,20 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       render: (value?: number) => <Tag>{value ?? 0}</Tag>,
     },
     {
+      title: '操作',
+      key: 'actions',
+      width: 130,
+      render: (_, record) => (
+        <Button
+          size="small"
+          disabled={!record.realm_target_agent_id || (!canManageConfig && !restrictedView)}
+          onClick={() => onCreateNodeClientAction(record, record.realm_target_agent_id)}
+        >
+          新增客户端
+        </Button>
+      ),
+    },
+    {
       title: 'Realm 来源',
       key: 'route',
       width: 260,
@@ -734,6 +748,35 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         <Space wrap size={[6, 6]}>
           <Tag color={record.enabled ? 'success' : 'default'}>{record.enabled ? '启用' : '停用'}</Tag>
         </Space>
+      ),
+    },
+    {
+      title: '导出',
+      key: 'import',
+      width: 150,
+      render: (_, record) => (
+        <Space wrap size={[6, 6]}>
+          <Button size="small" disabled={!record.import_url} onClick={() => onCopyImportURL(record)}>
+            复制
+          </Button>
+          <Button size="small" disabled={!record.import_url} onClick={() => onOpenImportURL(record)}>
+            URL
+          </Button>
+        </Space>
+      ),
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 130,
+      render: (_, record) => (
+        <Button
+          size="small"
+          disabled={!record.realm_target_agent_id || !record.realm_target_inbound_id || (!canManageConfig && !restrictedView)}
+          onClick={() => onCreateNodeClientAction(realmClientToTargetNode(record), record.realm_target_agent_id)}
+        >
+          新增客户端
+        </Button>
       ),
     },
     {
@@ -1203,7 +1246,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
             columns={realmClientColumns}
             dataSource={realmFilteredClients}
             pagination={{ pageSize: 12, hideOnSinglePage: true }}
-            scroll={{ x: 990 }}
+            scroll={{ x: 1270 }}
           />
         </Space>
       ) : (
@@ -1549,6 +1592,8 @@ function buildRealmForwardNodes(links: TopologyLinkView[], dashboardView: Global
         online_count: 0,
         realm_target_agent_id: target.agent_id,
         realm_target_agent_name: target.agent_name,
+        realm_target_inbound_id: target.inbound_id || target.port || 0,
+        realm_target_inbound_tag: target.inbound_tag || '',
         route: {
           match_scope: 'realm',
           outbound_tag: link.source.outbound_tag || link.source.target || '',
@@ -1560,12 +1605,29 @@ function buildRealmForwardNodes(links: TopologyLinkView[], dashboardView: Global
   return Array.from(nodes.values()).sort((a, b) => (a.listen || '').localeCompare(b.listen || '') || (a.port || 0) - (b.port || 0))
 }
 
-function buildRealmForwardClients(links: TopologyLinkView[], dashboardView: GlobalDashboardView | null): RealmForwardClientView[] {
-  if (!dashboardView) {
-    return []
-  }
+function buildRealmForwardClients(links: TopologyLinkView[], dashboardView: GlobalDashboardView | null, overviewClients: XUIClientView[] = []): RealmForwardClientView[] {
   const clients = new Map<string, RealmForwardClientView>()
+  const agentNameByID = new Map((dashboardView?.agents || []).map((agent) => [agent.agent_id, agent.agent_name || agent.customer_display_name || agent.agent_id]))
+  overviewClients
+    .filter((client) => client.is_realm_forwarded)
+    .forEach((client) => {
+      const targetAgentID = client.realm_target_agent_id || ''
+      const key = `${targetAgentID}:${client.realm_target_inbound_id || client.inbound_id}:${client.realm_target_inbound_tag || client.inbound_tag || ''}:${client.email || client.comment || client.import_url || ''}`
+      if (clients.has(key)) {
+        return
+      }
+      clients.set(key, {
+        ...client,
+        realm_target_agent_id: targetAgentID,
+        realm_target_agent_name: client.realm_target_agent_name || agentNameByID.get(targetAgentID) || targetAgentID,
+        realm_target_inbound_id: client.realm_target_inbound_id,
+        realm_target_inbound_tag: client.realm_target_inbound_tag,
+      })
+    })
   links.forEach((link) => {
+    if (!dashboardView) {
+      return
+    }
     const target = link.target
     dashboardView.client_chains
       .filter((chain) => chainMatchesRealmTarget(chain, target.agent_id, target.inbound_tag, target.inbound_name, target.port))
@@ -1582,8 +1644,13 @@ function buildRealmForwardClients(links: TopologyLinkView[], dashboardView: Glob
           email: chain.root_client_email || '',
           comment: chain.root_client_remark || '',
           enabled: true,
+          realm_listen_port: link.source.listen_port || 0,
+          realm_listen_tag: link.source.outbound_tag || '',
+          realm_source_agent_id: link.source.agent_id,
           realm_target_agent_id: target.agent_id,
           realm_target_agent_name: target.agent_name,
+          realm_target_inbound_id: target.inbound_id || target.port || 0,
+          realm_target_inbound_tag: target.inbound_tag || '',
           route: {
             match_scope: 'realm',
             outbound_tag: link.source.outbound_tag || link.source.target || '',
@@ -1593,6 +1660,23 @@ function buildRealmForwardClients(links: TopologyLinkView[], dashboardView: Glob
       })
   })
   return Array.from(clients.values()).sort((a, b) => (a.inbound_remark || '').localeCompare(b.inbound_remark || '') || (a.email || '').localeCompare(b.email || ''))
+}
+
+function realmClientToTargetNode(client: RealmForwardClientView): XUINodeView {
+  const targetInboundID = client.realm_target_inbound_id || client.inbound_id || 0
+  const targetInboundTag = client.realm_target_inbound_tag || client.inbound_tag || ''
+  return {
+    id: targetInboundID,
+    tag: targetInboundTag,
+    remark: client.inbound_remark || targetInboundTag || `Inbound #${targetInboundID}`,
+    protocol: client.protocol || 'vless',
+    enabled: true,
+    route: client.route,
+    realm_target_agent_id: client.realm_target_agent_id,
+    realm_target_agent_name: client.realm_target_agent_name,
+    realm_target_inbound_id: targetInboundID,
+    realm_target_inbound_tag: targetInboundTag,
+  }
 }
 
 function filterRealmForwardClients(clients: RealmForwardClientView[], search: string): RealmForwardClientView[] {

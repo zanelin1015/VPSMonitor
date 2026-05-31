@@ -54,6 +54,7 @@ interface AreaManagerFormState {
 interface AreaBatchAssignmentFormState {
   manager_id: number | null
   agent_id: string
+  xui_agent_id: string
   selected_realm_keys: string[]
   selected_xui_keys: string[]
 }
@@ -91,6 +92,7 @@ const emptyAreaManagerForm: AreaManagerFormState = {
 const emptyAreaBatchAssignmentForm: AreaBatchAssignmentFormState = {
   manager_id: null,
   agent_id: '',
+  xui_agent_id: '',
   selected_realm_keys: [],
   selected_xui_keys: [],
 }
@@ -285,13 +287,14 @@ export function CustomerManagementModal(props: {
   }, [assignmentForm.agent_id])
 
   useEffect(() => {
-    if (!areaBatchForm.agent_id) {
+    const xuiAgentID = areaBatchForm.xui_agent_id || areaBatchForm.agent_id
+    if (!xuiAgentID) {
       setAreaBatchOverview(null)
       return
     }
     let cancelled = false
     setAreaBatchOverviewLoading(true)
-    void fetchJSON<XUIOverview>(`/api/v1/agents/${areaBatchForm.agent_id}/xui/overview?assignment_scope=1`)
+    void fetchJSON<XUIOverview>(`/api/v1/agents/${xuiAgentID}/xui/overview?assignment_scope=1`)
       .then((data) => {
         if (!cancelled) {
           setAreaBatchOverview(data)
@@ -311,7 +314,7 @@ export function CustomerManagementModal(props: {
     return () => {
       cancelled = true
     }
-  }, [areaBatchForm.agent_id])
+  }, [areaBatchForm.agent_id, areaBatchForm.xui_agent_id])
 
   useEffect(() => {
     if (!areaManagerForm.grant_agent_id) {
@@ -760,8 +763,13 @@ export function CustomerManagementModal(props: {
       message.warning('请选择区域账号')
       return
     }
-    if (!areaBatchForm.agent_id) {
-      message.warning('请选择入口 Client')
+    const xuiAgentID = areaBatchForm.xui_agent_id || areaBatchForm.agent_id
+    if (areaBatchForm.selected_realm_keys.length && !areaBatchForm.agent_id) {
+      message.warning('请选择 Realm 入口 Client')
+      return
+    }
+    if (areaBatchForm.selected_xui_keys.length && !xuiAgentID) {
+      message.warning('请选择 x-ui 出口 Client')
       return
     }
     if (!areaBatchForm.selected_realm_keys.length && !areaBatchForm.selected_xui_keys.length) {
@@ -777,7 +785,7 @@ export function CustomerManagementModal(props: {
       }),
       ...areaBatchForm.selected_xui_keys.flatMap((key) => {
         const option = xuiOptionMap.get(key)
-        return option ? [areaAssignmentDraftFromTargetOption(areaBatchForm.agent_id, option, agents)] : []
+        return option ? [areaAssignmentDraftFromTargetOption(xuiAgentID, option, agents)] : []
       }),
     ]
     if (!assignments.length) {
@@ -1180,8 +1188,8 @@ export function CustomerManagementModal(props: {
       <Card size="small" style={{ marginTop: 14 }} bordered={false}>
         <div className="customer-admin-card-head">
           <div>
-            <Title level={5}>批量授权客户端 / 节点</Title>
-            <Text type="secondary">把某个入口 Client 下的 x-ui 客户端或整个节点授权给区域账号使用。</Text>
+            <Title level={5}>批量授权入口 / 出口</Title>
+            <Text type="secondary">Realm 入口端口与 x-ui 出口节点可分别选择；广州入口转发 HK 时，先授权 GZ Realm 端口，再授权 HK x-ui 节点或客户端。</Text>
           </div>
           <Button
             type="primary"
@@ -1193,7 +1201,7 @@ export function CustomerManagementModal(props: {
           </Button>
         </div>
         <Row gutter={[12, 12]}>
-          <Col xs={24} md={6}>
+          <Col xs={24} md={5}>
             <Text type="secondary">区域账号</Text>
             <Select
               style={{ width: '100%' }}
@@ -1205,19 +1213,31 @@ export function CustomerManagementModal(props: {
               onChange={(value) => setAreaBatchForm((current) => ({ ...current, manager_id: value }))}
             />
           </Col>
-          <Col xs={24} md={6}>
-            <Text type="secondary">入口 Client</Text>
+          <Col xs={24} md={5}>
+            <Text type="secondary">Realm 入口 Client</Text>
             <Select
               style={{ width: '100%' }}
               showSearch
-              placeholder="选择 Client"
+              placeholder="选择 GZ 入口"
               value={areaBatchForm.agent_id || undefined}
               options={agentOptions}
               optionFilterProp="label"
-              onChange={(value) => setAreaBatchForm((current) => ({ ...current, agent_id: value, selected_realm_keys: [], selected_xui_keys: [] }))}
+              onChange={(value) => setAreaBatchForm((current) => ({ ...current, agent_id: value, selected_realm_keys: [] }))}
             />
           </Col>
-          <Col xs={24} md={6}>
+          <Col xs={24} md={5}>
+            <Text type="secondary">x-ui 出口 Client</Text>
+            <Select
+              style={{ width: '100%' }}
+              showSearch
+              placeholder="选择 HK 出口"
+              value={(areaBatchForm.xui_agent_id || areaBatchForm.agent_id) || undefined}
+              options={agentOptions}
+              optionFilterProp="label"
+              onChange={(value) => setAreaBatchForm((current) => ({ ...current, xui_agent_id: value, selected_xui_keys: [] }))}
+            />
+          </Col>
+          <Col xs={24} md={4}>
             <Space style={{ width: '100%', justifyContent: 'space-between' }}>
               <Text type="secondary">Realm 端口</Text>
               <Button size="small" disabled={!areaBatchForm.agent_id || !areaBatchRealmOptions.length} onClick={() => setAreaBatchForm((current) => ({ ...current, selected_realm_keys: areaBatchRealmOptions.map((option) => option.value) }))}>全选</Button>
@@ -1235,10 +1255,10 @@ export function CustomerManagementModal(props: {
               onChange={(values) => setAreaBatchForm((current) => ({ ...current, selected_realm_keys: values }))}
             />
           </Col>
-          <Col xs={24} md={6}>
+          <Col xs={24} md={5}>
             <Space style={{ width: '100%', justifyContent: 'space-between' }}>
               <Text type="secondary">x-ui 客户端 / 节点</Text>
-              <Button size="small" disabled={!areaBatchForm.agent_id || !areaBatchClientOptions.length} onClick={() => setAreaBatchForm((current) => ({ ...current, selected_xui_keys: areaBatchClientOptions.map((option) => option.value) }))}>全选</Button>
+              <Button size="small" disabled={!(areaBatchForm.xui_agent_id || areaBatchForm.agent_id) || !areaBatchClientOptions.length} onClick={() => setAreaBatchForm((current) => ({ ...current, selected_xui_keys: areaBatchClientOptions.map((option) => option.value) }))}>全选</Button>
             </Space>
             <Select
               mode="multiple"
@@ -1247,7 +1267,7 @@ export function CustomerManagementModal(props: {
               placeholder="选择 x-ui 客户端或节点"
               value={areaBatchForm.selected_xui_keys}
               loading={areaBatchOverviewLoading}
-              disabled={!areaBatchForm.agent_id}
+              disabled={!(areaBatchForm.xui_agent_id || areaBatchForm.agent_id)}
               options={areaBatchClientOptions.map(({ value, label }) => ({ value, label }))}
               optionFilterProp="label"
               maxTagCount="responsive"
@@ -1436,11 +1456,11 @@ export function CustomerManagementModal(props: {
               </div>
             </Col>
             <Col xs={24} md={8}>
-              <Text type="secondary">入口 Client</Text>
+              <Text type="secondary">授权 Client</Text>
               <Select
                 style={{ width: '100%' }}
                 showSearch
-                placeholder="选择 Client"
+                placeholder="选择 Client（可先选入口授 Realm，再选出口授 x-ui）"
                 options={agentOptions}
                 value={areaManagerForm.grant_agent_id || undefined}
                 optionFilterProp="label"
