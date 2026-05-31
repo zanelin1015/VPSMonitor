@@ -3,7 +3,7 @@ import { Alert, App as AntdApp, Button, Card, Col, Empty, Input, InputNumber, Mo
 import type { ColumnsType } from 'antd/es/table'
 import { DeleteOutlined, EditOutlined, ExportOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SyncOutlined } from '@ant-design/icons'
 
-import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, DashboardAgentView, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
+import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, DashboardAgentView, RealmForwardRule, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
 import { fetchJSON } from '../lib/appHelpers'
 import { REVENUE_CURRENCIES } from '../lib/currency'
 
@@ -54,7 +54,8 @@ interface AreaManagerFormState {
 interface AreaBatchAssignmentFormState {
   manager_id: number | null
   agent_id: string
-  selected_keys: string[]
+  selected_realm_keys: string[]
+  selected_xui_keys: string[]
 }
 
 const emptyCustomerForm: CustomerFormState = {
@@ -90,7 +91,8 @@ const emptyAreaManagerForm: AreaManagerFormState = {
 const emptyAreaBatchAssignmentForm: AreaBatchAssignmentFormState = {
   manager_id: null,
   agent_id: '',
-  selected_keys: [],
+  selected_realm_keys: [],
+  selected_xui_keys: [],
 }
 
 function isAreaManagerAdminUser(user: AdminUser | null): boolean {
@@ -185,7 +187,9 @@ export function CustomerManagementModal(props: {
     return [...clients, ...nodes]
   }, [overview])
   const areaBatchClientOptions = useMemo(() => buildAssignmentTargetOptions(areaBatchOverview), [areaBatchOverview])
+  const areaBatchRealmOptions = useMemo(() => buildRealmGrantOptions(areaBatchForm.agent_id, agents), [areaBatchForm.agent_id, agents])
   const areaManagerGrantOptions = useMemo(() => buildAssignmentTargetOptions(areaManagerOverview), [areaManagerOverview])
+  const areaManagerRealmGrantOptions = useMemo(() => buildRealmGrantOptions(areaManagerForm.grant_agent_id, agents), [areaManagerForm.grant_agent_id, agents])
 
   useEffect(() => {
     if (active) {
@@ -760,40 +764,22 @@ export function CustomerManagementModal(props: {
       message.warning('请选择入口 Client')
       return
     }
-    if (!areaBatchForm.selected_keys.length) {
-      message.warning('请选择要批量授权的客户端 / 节点')
+    if (!areaBatchForm.selected_realm_keys.length && !areaBatchForm.selected_xui_keys.length) {
+      message.warning('请选择要批量授权的 Realm 端口或 x-ui 客户端 / 节点')
       return
     }
-    const optionMap = new Map(areaBatchClientOptions.map((option) => [option.value, option]))
-    const assignments = areaBatchForm.selected_keys.flatMap((key) => {
-      const option = optionMap.get(key)
-      if (!option) {
-        return []
-      }
-      if (option.client) {
-        const client = option.client
-        return [{
-          agent_id: areaBatchForm.agent_id,
-          inbound_id: client.inbound_id,
-          inbound_tag: client.inbound_tag || '',
-          client_email: client.email || '',
-          public_client_name: defaultPublicClientName(client, areaBatchForm.agent_id, agents),
-          enabled: true,
-        }]
-      }
-      if (option.node) {
-        const node = option.node
-        return [{
-          agent_id: areaBatchForm.agent_id,
-          inbound_id: node.id,
-          inbound_tag: node.tag || '',
-          client_email: '',
-          public_client_name: defaultPublicNodeName(node, areaBatchForm.agent_id, agents),
-          enabled: true,
-        }]
-      }
-      return []
-    })
+    const xuiOptionMap = new Map(areaBatchClientOptions.map((option) => [option.value, option]))
+    const realmOptionMap = new Map(areaBatchRealmOptions.map((option) => [option.value, option]))
+    const assignments = [
+      ...areaBatchForm.selected_realm_keys.flatMap((key) => {
+        const option = realmOptionMap.get(key)
+        return option ? [option.assignment] : []
+      }),
+      ...areaBatchForm.selected_xui_keys.flatMap((key) => {
+        const option = xuiOptionMap.get(key)
+        return option ? [areaAssignmentDraftFromTargetOption(areaBatchForm.agent_id, option, agents)] : []
+      }),
+    ]
     if (!assignments.length) {
       message.warning('没有可授权的选择项')
       return
@@ -805,8 +791,8 @@ export function CustomerManagementModal(props: {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ assignments }),
       })
-      message.success(`已批量授权 ${assignments.length} 条客户端 / 节点`)
-      setAreaBatchForm((current) => ({ ...current, selected_keys: [] }))
+      message.success(`已批量授权 ${assignments.length} 条范围`)
+      setAreaBatchForm((current) => ({ ...current, selected_realm_keys: [], selected_xui_keys: [] }))
       await loadAreaManagers()
     } catch (error) {
       message.error(error instanceof Error ? error.message : '批量授权失败')
@@ -1133,17 +1119,35 @@ export function CustomerManagementModal(props: {
     const nextForAgent = keys
       .map((key) => optionMap.get(key))
       .filter((item): item is AreaManagerAssignmentDraft => Boolean(item))
-    setAreaManagerForm((current) => ({
-      ...current,
-      assignments: [
-        ...current.assignments.filter((assignment) => assignment.agent_id !== agentID),
-        ...nextForAgent,
-      ],
-      agent_ids: uniqueStrings([
-        ...current.assignments.filter((assignment) => assignment.agent_id !== agentID).map((assignment) => assignment.agent_id),
-        ...nextForAgent.map((assignment) => assignment.agent_id),
-      ]),
-    }))
+    setAreaManagerForm((current) => {
+      const otherAssignments = current.assignments.filter((assignment) => assignment.agent_id !== agentID || isRealmAssignmentDraft(assignment, agents))
+      const assignments = [...otherAssignments, ...nextForAgent]
+      return {
+        ...current,
+        assignments,
+        agent_ids: uniqueStrings(assignments.map((assignment) => assignment.agent_id)),
+      }
+    })
+  }
+
+  function updateAreaManagerRealmGrantTargets(keys: string[]) {
+    const agentID = areaManagerForm.grant_agent_id
+    if (!agentID) {
+      return
+    }
+    const optionMap = new Map(areaManagerRealmGrantOptions.map((option) => [option.value, option.assignment]))
+    const nextForAgent = keys
+      .map((key) => optionMap.get(key))
+      .filter((item): item is AreaManagerAssignmentDraft => Boolean(item))
+    setAreaManagerForm((current) => {
+      const otherAssignments = current.assignments.filter((assignment) => assignment.agent_id !== agentID || !isRealmAssignmentDraft(assignment, agents))
+      const assignments = [...otherAssignments, ...nextForAgent]
+      return {
+        ...current,
+        assignments,
+        agent_ids: uniqueStrings(assignments.map((assignment) => assignment.agent_id)),
+      }
+    })
   }
 
   function removeAreaManagerGrant(key: string) {
@@ -1210,23 +1214,44 @@ export function CustomerManagementModal(props: {
               value={areaBatchForm.agent_id || undefined}
               options={agentOptions}
               optionFilterProp="label"
-              onChange={(value) => setAreaBatchForm((current) => ({ ...current, agent_id: value, selected_keys: [] }))}
+              onChange={(value) => setAreaBatchForm((current) => ({ ...current, agent_id: value, selected_realm_keys: [], selected_xui_keys: [] }))}
             />
           </Col>
-          <Col xs={24} md={12}>
-            <Text type="secondary">客户端 / 节点</Text>
+          <Col xs={24} md={6}>
+            <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+              <Text type="secondary">Realm 端口</Text>
+              <Button size="small" disabled={!areaBatchForm.agent_id || !areaBatchRealmOptions.length} onClick={() => setAreaBatchForm((current) => ({ ...current, selected_realm_keys: areaBatchRealmOptions.map((option) => option.value) }))}>全选</Button>
+            </Space>
             <Select
               mode="multiple"
               style={{ width: '100%' }}
               showSearch
-              placeholder="选择要授权给区域账号的 x-ui 客户端或节点"
-              value={areaBatchForm.selected_keys}
+              placeholder="选择 Realm 中转端口"
+              value={areaBatchForm.selected_realm_keys}
+              disabled={!areaBatchForm.agent_id}
+              options={areaBatchRealmOptions.map(({ value, label }) => ({ value, label }))}
+              optionFilterProp="label"
+              maxTagCount="responsive"
+              onChange={(values) => setAreaBatchForm((current) => ({ ...current, selected_realm_keys: values }))}
+            />
+          </Col>
+          <Col xs={24} md={6}>
+            <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+              <Text type="secondary">x-ui 客户端 / 节点</Text>
+              <Button size="small" disabled={!areaBatchForm.agent_id || !areaBatchClientOptions.length} onClick={() => setAreaBatchForm((current) => ({ ...current, selected_xui_keys: areaBatchClientOptions.map((option) => option.value) }))}>全选</Button>
+            </Space>
+            <Select
+              mode="multiple"
+              style={{ width: '100%' }}
+              showSearch
+              placeholder="选择 x-ui 客户端或节点"
+              value={areaBatchForm.selected_xui_keys}
               loading={areaBatchOverviewLoading}
               disabled={!areaBatchForm.agent_id}
               options={areaBatchClientOptions.map(({ value, label }) => ({ value, label }))}
               optionFilterProp="label"
               maxTagCount="responsive"
-              onChange={(values) => setAreaBatchForm((current) => ({ ...current, selected_keys: values }))}
+              onChange={(values) => setAreaBatchForm((current) => ({ ...current, selected_xui_keys: values }))}
             />
           </Col>
         </Row>
@@ -1422,15 +1447,44 @@ export function CustomerManagementModal(props: {
                 onChange={(value) => setAreaManagerForm((current) => ({ ...current, grant_agent_id: value }))}
               />
             </Col>
-            <Col xs={24} md={16}>
-              <Text type="secondary">允许管理的节点 / 客户端</Text>
+            <Col xs={24} md={8}>
+              <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                <Text type="secondary">Realm 端口授权</Text>
+                <Button size="small" disabled={!areaManagerForm.grant_agent_id || !areaManagerRealmGrantOptions.length} onClick={() => updateAreaManagerRealmGrantTargets(areaManagerRealmGrantOptions.map((option) => option.value))}>全选</Button>
+              </Space>
+              <Select
+                mode="multiple"
+                style={{ width: '100%' }}
+                showSearch
+                placeholder="选择 Realm 中转端口"
+                value={areaManagerForm.assignments
+                  .filter((assignment) => assignment.agent_id === areaManagerForm.grant_agent_id && isRealmAssignmentDraft(assignment, agents))
+                  .map(areaAssignmentKey)}
+                disabled={!areaManagerForm.grant_agent_id}
+                options={areaManagerRealmGrantOptions.map((option) => ({ value: option.value, label: option.label }))}
+                optionFilterProp="label"
+                maxTagCount="responsive"
+                onChange={(values) => updateAreaManagerRealmGrantTargets(values)}
+              />
+            </Col>
+            <Col xs={24} md={8}>
+              <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                <Text type="secondary">x-ui 节点 / 客户端授权</Text>
+                <Button
+                  size="small"
+                  disabled={!areaManagerForm.grant_agent_id || !areaManagerGrantOptions.length}
+                  onClick={() => updateAreaManagerGrantTargets(areaManagerGrantOptions.map((option) => areaAssignmentKey(areaAssignmentDraftFromTargetOption(areaManagerForm.grant_agent_id, option, agents))))}
+                >
+                  全选
+                </Button>
+              </Space>
               <Select
                 mode="multiple"
                 style={{ width: '100%' }}
                 showSearch
                 placeholder="先选择入口 Client，再选择具体节点或客户端"
                 value={areaManagerForm.assignments
-                  .filter((assignment) => assignment.agent_id === areaManagerForm.grant_agent_id)
+                  .filter((assignment) => assignment.agent_id === areaManagerForm.grant_agent_id && !isRealmAssignmentDraft(assignment, agents))
                   .map(areaAssignmentKey)}
                 loading={areaManagerOverviewLoading}
                 disabled={!areaManagerForm.grant_agent_id}
@@ -1651,6 +1705,41 @@ function buildAssignmentTargetOptions(overview: XUIOverview | null) {
   return [...clients, ...nodes]
 }
 
+function buildRealmGrantOptions(agentID: string, agents: DashboardAgentView[]) {
+  const agent = agents.find((item) => item.agent_id === agentID)
+  const rules = agent?.entry?.port_forwarding?.rules || []
+  return rules
+    .filter((rule) => rule.enabled !== false && Number(rule.listen_port || 0) > 0)
+    .map((rule) => {
+      const assignment = areaAssignmentDraftFromRealmRule(agentID, rule, agents)
+      return {
+        value: areaAssignmentKey(assignment),
+        label: realmGrantLabel(rule),
+        assignment,
+        rule,
+      }
+    })
+}
+
+function areaAssignmentDraftFromRealmRule(agentID: string, rule: RealmForwardRule, agents: DashboardAgentView[]): AreaManagerAssignmentDraft {
+  const listenPort = Number(rule.listen_port || 0)
+  return {
+    agent_id: agentID,
+    inbound_id: listenPort,
+    inbound_tag: `realm:${rule.id || listenPort}`,
+    client_email: '',
+    public_client_name: `${agentName(agentID, agents)} / Realm ${listenPort}`,
+    enabled: true,
+  }
+}
+
+function realmGrantLabel(rule: RealmForwardRule) {
+  const listen = rule.listen_port || '-'
+  const target = [rule.target_address, rule.target_port].filter(Boolean).join(':') || rule.target_agent_id || '-'
+  const name = rule.name || rule.note || rule.id || `Realm ${listen}`
+  return `Realm: ${listen} -> ${target} / ${name}`
+}
+
 function areaAssignmentDraftFromTargetOption(
   agentID: string,
   option: { client?: XUIClientView; node?: XUINodeView },
@@ -1703,6 +1792,17 @@ function normalizeAreaManagerAssignmentDrafts(items: Array<AreaManagerAssignment
   return result
 }
 
+function isRealmAssignmentDraft(item: { agent_id: string; inbound_id: number; inbound_tag?: string; client_email?: string }, agents: DashboardAgentView[]) {
+  if (item.client_email) {
+    return false
+  }
+  if ((item.inbound_tag || '').startsWith('realm:')) {
+    return true
+  }
+  const rules = agents.find((agent) => agent.agent_id === item.agent_id)?.entry?.port_forwarding?.rules || []
+  return rules.some((rule) => Number(rule.listen_port || 0) === Number(item.inbound_id || 0))
+}
+
 function areaAssignmentKey(item: { agent_id: string; inbound_id: number; inbound_tag?: string; client_email?: string }): string {
   return [
     item.agent_id || '',
@@ -1713,6 +1813,9 @@ function areaAssignmentKey(item: { agent_id: string; inbound_id: number; inbound
 }
 
 function areaAssignmentLabel(item: { agent_id: string; inbound_id: number; inbound_tag?: string; client_email?: string; public_client_name?: string }, agents: DashboardAgentView[]): string {
+  if (isRealmAssignmentDraft(item, agents)) {
+    return `${agentName(item.agent_id, agents)} / ${item.public_client_name || `Realm ${item.inbound_id}`} / 端口 ${item.inbound_id}`
+  }
   const scope = item.client_email ? item.client_email : '整个节点'
   const name = item.public_client_name || item.inbound_tag || `Inbound #${item.inbound_id}`
   return `${agentName(item.agent_id, agents)} / ${name} / ${scope}`
