@@ -141,3 +141,55 @@ func TestAreaManagerXUIActionAllowedIncludesAddClient(t *testing.T) {
 		t.Fatal("expected remote command to remain root-only")
 	}
 }
+
+func TestAreaManagerXUIActionAllowedUsesAssignmentScopeWhenAgentListIsStale(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "gz", AgentName: "GZ Entry"}); err != nil {
+		t.Fatalf("RegisterAgent gz: %v", err)
+	}
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK Exit"}); err != nil {
+		t.Fatalf("RegisterAgent hk: %v", err)
+	}
+	enabled := true
+	manager, err := sqliteStore.CreateAreaManager(model.AreaManagerAccountRequest{
+		Username: "area-stale",
+		Password: "password123",
+		Enabled:  &enabled,
+		AgentIDs: []string{"gz"},
+	})
+	if err != nil {
+		t.Fatalf("CreateAreaManager: %v", err)
+	}
+	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+		AgentID:     "hk",
+		InboundID:   1001,
+		InboundTag:  "HK:20001",
+		ClientEmail: "",
+		Enabled:     &enabled,
+	}); err != nil {
+		t.Fatalf("CreateAreaManagerAssignment: %v", err)
+	}
+
+	app := &App{store: sqliteStore}
+	// Simulate a session/user payload that was created before hk was added to area_manager_agents.
+	user := model.AdminUser{ID: manager.ID, Role: model.AdminRoleAreaManager, AgentIDs: []string{"gz"}}
+	if !app.adminCanAccessAgent(user, "hk") {
+		t.Fatal("expected x-ui assignment to grant target agent access even when the session agent list is stale")
+	}
+	if !app.areaManagerXUIActionAllowed(user, "hk", model.XUIActionRequest{
+		Kind: model.XUIActionAddClient,
+		Payload: map[string]any{
+			"inbound_id":  1001,
+			"inbound_tag": "HK:20001",
+			"client": map[string]any{
+				"email": "alice@example.com",
+			},
+		},
+	}) {
+		t.Fatal("expected area manager to add client on the assigned HK node")
+	}
+}

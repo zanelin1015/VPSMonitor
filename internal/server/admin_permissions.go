@@ -39,6 +39,11 @@ func (a *App) adminCanAccessAgent(user model.AdminUser, agentID string) bool {
 			return true
 		}
 	}
+	if isAreaManager(user) && user.ID > 0 {
+		if _, ok := a.areaManagerClientScope(user).agents[agentID]; ok {
+			return true
+		}
+	}
 	return false
 }
 
@@ -435,6 +440,7 @@ func addAreaManagerScopeAssignment(scope *areaManagerClientScope, agentID string
 	if scope == nil || !enabled || agentID == "" {
 		return
 	}
+	scope.agents[agentID] = struct{}{}
 	if clientEmail != "" {
 		scope.exactClients[areaClientExactKey(agentID, inboundID, inboundTag, clientEmail)] = struct{}{}
 		if inboundTag != "" {
