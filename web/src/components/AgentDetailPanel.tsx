@@ -648,6 +648,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const visibleClientColumns = restrictedView
     ? clientColumns.filter((column) => !['protocol', 'status', 'billing', 'expiry', 'last_online', 'route'].includes(String(column.key || '')))
     : clientColumns
+  const hierarchyClientColumns = visibleClientColumns.filter((column) => String(column.key || '') !== 'inbound')
   const realmNodeColumns: ColumnsType<RealmForwardNodeView> = [
     {
       title: '命中节点',
@@ -786,6 +787,10 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       render: (_, record) => <RouteBadge route={record.route} onJumpOutbound={onJumpOutbound} onJumpRule={onJumpRule} />,
     },
   ]
+  const visibleRealmClientColumns = restrictedView
+    ? realmClientColumns.filter((column) => !['target_agent', 'inbound'].includes(String(column.key || '')))
+    : realmClientColumns
+  const hierarchyRealmClientColumns = visibleRealmClientColumns.filter((column) => String(column.key || '') !== 'inbound')
 
   const routingColumns: ColumnsType<XUIRoutingRuleView> = [
     {
@@ -1139,7 +1144,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
               新增客户端
             </Button>
           </Space>
-          <Table rowKey={(record) => `${record.inbound_tag}-${record.email}`} columns={visibleClientColumns} dataSource={filteredClients} pagination={{ pageSize: 12, hideOnSinglePage: true }} scroll={{ x: restrictedView ? 980 : 1780 }} />
+          {renderClientHierarchySections(filteredClients, hierarchyClientColumns, selectedAgent.customer_display_name || selectedAgent.agent_name || selectedAgent.agent_id, restrictedView ? 800 : 1600)}
         </Space>
       ) : (
         <Empty description="暂无客户端数据" />
@@ -1241,13 +1246,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       children: realmForwardClients.length ? (
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
           <Input.Search allowClear style={{ minWidth: 280 }} placeholder="按邮箱、备注、节点标签筛选 Realm 命中客户端" value={clientSearch} onChange={(event) => onClientSearchChange(event.target.value)} />
-          <Table
-            rowKey={(record) => `${record.realm_target_agent_id || ''}-${record.inbound_id}-${record.inbound_tag || ''}-${record.email || record.comment || ''}`}
-            columns={realmClientColumns}
-            dataSource={realmFilteredClients}
-            pagination={{ pageSize: 12, hideOnSinglePage: true }}
-            scroll={{ x: 1270 }}
-          />
+          {renderClientHierarchySections(realmFilteredClients, hierarchyRealmClientColumns, selectedAgent.customer_display_name || selectedAgent.agent_name || selectedAgent.agent_id, restrictedView ? 760 : 1120)}
         </Space>
       ) : (
         <Empty description="暂无通过 Realm 转发命中的客户端" />
@@ -1843,6 +1842,55 @@ function normalizeTerminalInput(data: string, shell: string): string {
   }
   const normalizedShell = String(shell || '').toLowerCase()
   return normalizedShell === 'powershell' || normalizedShell === 'pwsh' || normalizedShell === 'cmd' ? '\r\n' : '\n'
+}
+
+function renderClientHierarchySections(
+  clients: XUIClientView[],
+  columns: ColumnsType<XUIClientView>,
+  agentLabel: string,
+  scrollX: number,
+) {
+  if (!clients.length) {
+    return <Empty description="暂无客户端数据" />
+  }
+  const groups = new Map<string, XUIClientView[]>()
+  for (const client of clients) {
+    const key = `${client.inbound_id || 0}\x00${client.inbound_tag || ''}\x00${client.inbound_remark || ''}`
+    if (!groups.has(key)) {
+      groups.set(key, [])
+    }
+    groups.get(key)!.push(client)
+  }
+  return (
+    <Space direction="vertical" style={{ width: '100%' }} size="middle">
+      {Array.from(groups.entries()).map(([key, group]) => {
+        const first = group[0]
+        const nodeLabel = first?.inbound_remark || first?.inbound_tag || `Inbound #${first?.inbound_id || 0}`
+        return (
+          <Card
+            key={key}
+            size="small"
+            title={(
+              <Space size={[6, 6]} wrap>
+                <Tag color="purple">Client：{agentLabel}</Tag>
+                <Tag color="blue">节点：{nodeLabel}</Tag>
+                <Tag>客户端 {group.length}</Tag>
+              </Space>
+            )}
+          >
+            <Table
+              size="small"
+              rowKey={(record) => `${record.realm_target_agent_id || ''}-${record.inbound_id}-${record.inbound_tag || ''}-${record.email || record.comment || record.sub_id || ''}`}
+              columns={columns}
+              dataSource={group}
+              pagination={false}
+              scroll={{ x: scrollX }}
+            />
+          </Card>
+        )
+      })}
+    </Space>
+  )
 }
 
 function buildPrimaryDomainOptions(certificates: XUILocalCertificate[]) {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, App as AntdApp, Button, Card, Col, Empty, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Spin, Switch, Table, Tabs, Tag, Typography } from 'antd'
+import { Alert, App as AntdApp, Button, Card, Col, Empty, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Spin, Switch, Table, Tabs, Tag, TreeSelect, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { DeleteOutlined, EditOutlined, ExportOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SyncOutlined } from '@ant-design/icons'
 
@@ -48,6 +48,7 @@ interface AreaManagerFormState {
   enabled: boolean
   agent_ids: string[]
   grant_agent_id: string
+  xui_grant_agent_id: string
   assignments: AreaManagerAssignmentDraft[]
 }
 
@@ -86,6 +87,7 @@ const emptyAreaManagerForm: AreaManagerFormState = {
   enabled: true,
   agent_ids: [],
   grant_agent_id: '',
+  xui_grant_agent_id: '',
   assignments: [],
 }
 
@@ -188,9 +190,13 @@ export function CustomerManagementModal(props: {
     }))
     return [...clients, ...nodes]
   }, [overview])
+  const clientTreeData = useMemo(() => buildClientAssignmentTreeData(assignmentForm.agent_id, overview, agents), [assignmentForm.agent_id, overview, agents])
   const areaBatchClientOptions = useMemo(() => buildAssignmentTargetOptions(areaBatchOverview), [areaBatchOverview])
+  const areaBatchClientTreeData = useMemo(() => buildAreaAssignmentTreeData(areaBatchForm.xui_agent_id || areaBatchForm.agent_id, areaBatchOverview, agents), [areaBatchForm.agent_id, areaBatchForm.xui_agent_id, areaBatchOverview, agents])
   const areaBatchRealmOptions = useMemo(() => buildRealmGrantOptions(areaBatchForm.agent_id, agents), [areaBatchForm.agent_id, agents])
+  const areaManagerXUIGrantAgentID = areaManagerForm.xui_grant_agent_id || areaManagerForm.grant_agent_id
   const areaManagerGrantOptions = useMemo(() => buildAssignmentTargetOptions(areaManagerOverview), [areaManagerOverview])
+  const areaManagerGrantTreeData = useMemo(() => buildAreaAssignmentTreeData(areaManagerXUIGrantAgentID, areaManagerOverview, agents), [areaManagerXUIGrantAgentID, areaManagerOverview, agents])
   const areaManagerRealmGrantOptions = useMemo(() => buildRealmGrantOptions(areaManagerForm.grant_agent_id, agents), [areaManagerForm.grant_agent_id, agents])
 
   useEffect(() => {
@@ -317,13 +323,13 @@ export function CustomerManagementModal(props: {
   }, [areaBatchForm.agent_id, areaBatchForm.xui_agent_id])
 
   useEffect(() => {
-    if (!areaManagerForm.grant_agent_id) {
+    if (!areaManagerXUIGrantAgentID) {
       setAreaManagerOverview(null)
       return
     }
     let cancelled = false
     setAreaManagerOverviewLoading(true)
-    void fetchJSON<XUIOverview>(`/api/v1/agents/${areaManagerForm.grant_agent_id}/xui/overview?assignment_scope=1`)
+    void fetchJSON<XUIOverview>(`/api/v1/agents/${areaManagerXUIGrantAgentID}/xui/overview?assignment_scope=1`)
       .then((data) => {
         if (!cancelled) {
           setAreaManagerOverview(data)
@@ -343,7 +349,7 @@ export function CustomerManagementModal(props: {
     return () => {
       cancelled = true
     }
-  }, [areaManagerForm.grant_agent_id])
+  }, [areaManagerXUIGrantAgentID])
 
   const assignmentColumns: ColumnsType<CustomerAssignment> = [
     {
@@ -353,14 +359,9 @@ export function CustomerManagementModal(props: {
       render: (value?: string) => <Text strong>{value || '-'}</Text>,
     },
     {
-      title: 'Client / 节点',
-      width: 260,
-      render: (_, record) => (
-        <div>
-          <Text>{agentName(record.agent_id, agents)}</Text>
-          <div className="muted-line">{record.inbound_tag || `Inbound #${record.inbound_id}`} / {record.client_email || '未指定客户端'}</div>
-        </div>
-      ),
+      title: 'Client / 节点 / 客户端',
+      width: 320,
+      render: (_, record) => renderAssignmentHierarchy([record], agents),
     },
     {
       title: '用户备注',
@@ -423,15 +424,7 @@ export function CustomerManagementModal(props: {
       title: '链路',
       render: (_, record) => {
         const assignments = record.assignments || []
-        return assignments.length ? (
-          <Space size={[4, 4]} wrap>
-            {assignments.map((assignment) => (
-              <Tag key={assignment.id}>
-                {agentName(assignment.agent_id, agents)} / {assignment.public_client_name || assignment.client_email || assignment.inbound_tag || `#${assignment.inbound_id}`}
-              </Tag>
-            ))}
-          </Space>
-        ) : <Tag>未分配</Tag>
+        return renderAssignmentHierarchy(assignments, agents)
       },
     },
     {
@@ -471,7 +464,7 @@ export function CustomerManagementModal(props: {
       render: (_, record) => {
         const ownedCustomers = record.customers || []
         const assignmentCount = ownedCustomers.reduce((sum, customer) => sum + (customer.assignments?.length || 0), 0)
-        const directCount = record.assignments?.length || 0
+        const directCount = normalizeAreaManagerAssignmentDrafts(record.assignments || []).length
         return (
           <Space size={6}>
             <Tag color="geekblue">{ownedCustomers.length} 用户</Tag>
@@ -484,17 +477,9 @@ export function CustomerManagementModal(props: {
     {
       title: '可管理节点',
       render: (_, record) => {
-        const assignments = record.assignments || []
+        const assignments = normalizeAreaManagerAssignmentDrafts(record.assignments || [])
         if (assignments.length) {
-          return (
-            <Space size={[4, 4]} wrap>
-              {assignments.map((assignment) => (
-                <Tag key={assignment.id}>
-                  {areaAssignmentLabel(assignment, agents)}
-                </Tag>
-              ))}
-            </Space>
-          )
+          return renderAssignmentHierarchy(assignments, agents)
         }
         const agentIDs = record.agent_ids || []
         return agentIDs.length ? (
@@ -573,18 +558,8 @@ export function CustomerManagementModal(props: {
 
   const areaAssignmentColumns: ColumnsType<AreaManagerAssignment> = [
     {
-      title: '已授权客户端 / 节点',
-      render: (_, record) => (
-        <div>
-          <Text>{agentName(record.agent_id, agents)}</Text>
-          <div className="muted-line">{record.public_client_name || record.client_email || record.inbound_tag || `#${record.inbound_id}`}</div>
-        </div>
-      ),
-    },
-    {
-      title: '范围',
-      width: 180,
-      render: (_, record) => `${record.inbound_tag || `Inbound #${record.inbound_id}`} / ${record.client_email || '整个节点'}`,
+      title: '已授权 Client / 节点 / 客户端',
+      render: (_, record) => renderAssignmentHierarchy([record], agents),
     },
     {
       title: '操作',
@@ -827,7 +802,8 @@ export function CustomerManagementModal(props: {
       display_name: record.display_name || record.username,
       enabled: record.enabled,
       agent_ids: record.agent_ids || [],
-      grant_agent_id: record.assignments?.[0]?.agent_id || record.agent_ids?.[0] || '',
+      grant_agent_id: firstRealmAssignmentAgentID(record.assignments || [], agents) || record.assignments?.[0]?.agent_id || record.agent_ids?.[0] || '',
+      xui_grant_agent_id: firstXUIAssignmentAgentID(record.assignments || [], agents) || record.assignments?.[0]?.agent_id || record.agent_ids?.[0] || '',
       assignments: normalizeAreaManagerAssignmentDrafts(record.assignments || []),
     })
     setAreaManagerModalOpen(true)
@@ -1116,7 +1092,7 @@ export function CustomerManagementModal(props: {
   }
 
   function updateAreaManagerGrantTargets(keys: string[]) {
-    const agentID = areaManagerForm.grant_agent_id
+    const agentID = areaManagerXUIGrantAgentID
     if (!agentID) {
       return
     }
@@ -1258,20 +1234,22 @@ export function CustomerManagementModal(props: {
           <Col xs={24} md={5}>
             <Space style={{ width: '100%', justifyContent: 'space-between' }}>
               <Text type="secondary">x-ui 客户端 / 节点</Text>
-              <Button size="small" disabled={!(areaBatchForm.xui_agent_id || areaBatchForm.agent_id) || !areaBatchClientOptions.length} onClick={() => setAreaBatchForm((current) => ({ ...current, selected_xui_keys: areaBatchClientOptions.map((option) => option.value) }))}>全选</Button>
+              <Button size="small" disabled={!(areaBatchForm.xui_agent_id || areaBatchForm.agent_id) || !areaBatchClientOptions.length} onClick={() => setAreaBatchForm((current) => ({ ...current, selected_xui_keys: assignmentNodeKeys(areaBatchForm.xui_agent_id || areaBatchForm.agent_id, areaBatchOverview, agents) }))}>全选</Button>
             </Space>
-            <Select
-              mode="multiple"
+            <TreeSelect
+              multiple
+              treeCheckable
               style={{ width: '100%' }}
               showSearch
-              placeholder="选择 x-ui 客户端或节点"
+              placeholder="按 Client / 节点 / 客户端授权"
               value={areaBatchForm.selected_xui_keys}
               loading={areaBatchOverviewLoading}
               disabled={!(areaBatchForm.xui_agent_id || areaBatchForm.agent_id)}
-              options={areaBatchClientOptions.map(({ value, label }) => ({ value, label }))}
-              optionFilterProp="label"
+              treeData={areaBatchClientTreeData}
+              treeDefaultExpandAll
+              showCheckedStrategy={TreeSelect.SHOW_PARENT}
               maxTagCount="responsive"
-              onChange={(values) => setAreaBatchForm((current) => ({ ...current, selected_xui_keys: values }))}
+              onChange={(values) => setAreaBatchForm((current) => ({ ...current, selected_xui_keys: values as string[] }))}
             />
           </Col>
         </Row>
@@ -1340,17 +1318,18 @@ export function CustomerManagementModal(props: {
             />
           </Col>
           <Col xs={24} md={10}>
-            <Text type="secondary">节点 / 客户端</Text>
-            <Select
+            <Text type="secondary">Client / 节点 / 客户端</Text>
+            <TreeSelect
               style={{ width: '100%' }}
               showSearch
-              placeholder="选择 x-ui 客户端"
+              placeholder="按 Client / 节点 / 客户端选择"
               value={assignmentForm.client_key || undefined}
               loading={overviewLoading}
               disabled={!assignmentForm.agent_id}
-              options={clientOptions.map(({ value, label }) => ({ value, label }))}
-              optionFilterProp="label"
-              onChange={selectClient}
+              treeData={clientTreeData}
+              treeDefaultExpandAll
+              allowClear
+              onChange={(value) => selectClient(String(value || ''))}
             />
           </Col>
           <Col xs={24} md={6}>
@@ -1432,7 +1411,7 @@ export function CustomerManagementModal(props: {
               </Button>
             </Space>
           )}
-          width={760}
+          width={860}
           destroyOnClose
         >
           <Row gutter={[12, 12]}>
@@ -1455,19 +1434,31 @@ export function CustomerManagementModal(props: {
                 <Text>{areaManagerForm.enabled ? '启用' : '停用'}</Text>
               </div>
             </Col>
-            <Col xs={24} md={8}>
-              <Text type="secondary">授权 Client</Text>
+            <Col xs={24} md={12}>
+              <Text type="secondary">Realm 入口 Client</Text>
               <Select
                 style={{ width: '100%' }}
                 showSearch
-                placeholder="选择 Client（可先选入口授 Realm，再选出口授 x-ui）"
+                placeholder="选择 GZ 入口 Client"
                 options={agentOptions}
                 value={areaManagerForm.grant_agent_id || undefined}
                 optionFilterProp="label"
                 onChange={(value) => setAreaManagerForm((current) => ({ ...current, grant_agent_id: value }))}
               />
             </Col>
-            <Col xs={24} md={8}>
+            <Col xs={24} md={12}>
+              <Text type="secondary">x-ui 出口 Client</Text>
+              <Select
+                style={{ width: '100%' }}
+                showSearch
+                placeholder="选择 HK 出口 Client"
+                options={agentOptions}
+                value={areaManagerXUIGrantAgentID || undefined}
+                optionFilterProp="label"
+                onChange={(value) => setAreaManagerForm((current) => ({ ...current, xui_grant_agent_id: value }))}
+              />
+            </Col>
+            <Col xs={24} md={12}>
               <Space style={{ width: '100%', justifyContent: 'space-between' }}>
                 <Text type="secondary">Realm 端口授权</Text>
                 <Button size="small" disabled={!areaManagerForm.grant_agent_id || !areaManagerRealmGrantOptions.length} onClick={() => updateAreaManagerRealmGrantTargets(areaManagerRealmGrantOptions.map((option) => option.value))}>全选</Button>
@@ -1487,51 +1478,39 @@ export function CustomerManagementModal(props: {
                 onChange={(values) => updateAreaManagerRealmGrantTargets(values)}
               />
             </Col>
-            <Col xs={24} md={8}>
+            <Col xs={24} md={12}>
               <Space style={{ width: '100%', justifyContent: 'space-between' }}>
                 <Text type="secondary">x-ui 节点 / 客户端授权</Text>
                 <Button
                   size="small"
-                  disabled={!areaManagerForm.grant_agent_id || !areaManagerGrantOptions.length}
-                  onClick={() => updateAreaManagerGrantTargets(areaManagerGrantOptions.map((option) => areaAssignmentKey(areaAssignmentDraftFromTargetOption(areaManagerForm.grant_agent_id, option, agents))))}
+                  disabled={!areaManagerXUIGrantAgentID || !areaManagerGrantOptions.length}
+                  onClick={() => updateAreaManagerGrantTargets(assignmentNodeKeys(areaManagerXUIGrantAgentID, areaManagerOverview, agents))}
                 >
                   全选
                 </Button>
               </Space>
-              <Select
-                mode="multiple"
+              <TreeSelect
+                multiple
+                treeCheckable
                 style={{ width: '100%' }}
                 showSearch
-                placeholder="先选择入口 Client，再选择具体节点或客户端"
+                placeholder="按 Client / 节点 / 客户端授权"
                 value={areaManagerForm.assignments
-                  .filter((assignment) => assignment.agent_id === areaManagerForm.grant_agent_id && !isRealmAssignmentDraft(assignment, agents))
+                  .filter((assignment) => assignment.agent_id === areaManagerXUIGrantAgentID && !isRealmAssignmentDraft(assignment, agents))
                   .map(areaAssignmentKey)}
                 loading={areaManagerOverviewLoading}
-                disabled={!areaManagerForm.grant_agent_id}
-                options={areaManagerGrantOptions.map((option) => {
-                  const draft = areaAssignmentDraftFromTargetOption(areaManagerForm.grant_agent_id, option, agents)
-                  return { value: areaAssignmentKey(draft), label: option.label }
-                })}
-                optionFilterProp="label"
+                disabled={!areaManagerXUIGrantAgentID}
+                treeData={areaManagerGrantTreeData}
+                treeDefaultExpandAll
+                showCheckedStrategy={TreeSelect.SHOW_PARENT}
                 maxTagCount="responsive"
-                onChange={(values) => updateAreaManagerGrantTargets(values)}
+                onChange={(values) => updateAreaManagerGrantTargets(values as string[])}
               />
             </Col>
             <Col xs={24}>
               <Text type="secondary">已授权范围</Text>
               <div style={{ marginTop: 6 }}>
-                {areaManagerForm.assignments.length ? (
-                  <Space size={[6, 6]} wrap>
-                    {areaManagerForm.assignments.map((assignment) => {
-                      const key = areaAssignmentKey(assignment)
-                      return (
-                        <Tag key={key} closable onClose={() => removeAreaManagerGrant(key)}>
-                          {areaAssignmentLabel(assignment, agents)}
-                        </Tag>
-                      )
-                    })}
-                  </Space>
-                ) : <Tag>未选择节点</Tag>}
+                {areaManagerForm.assignments.length ? renderAssignmentHierarchy(areaManagerForm.assignments, agents, removeAreaManagerGrant) : <Tag>未选择节点</Tag>}
               </div>
             </Col>
           </Row>
@@ -1710,12 +1689,14 @@ function clientKey(client: XUIClientView): string {
 }
 
 function buildAssignmentTargetOptions(overview: XUIOverview | null) {
-  const clients = (overview?.clients || []).map((client) => ({
-    value: clientKey(client),
-    label: clientLabel(client),
-    client,
-    node: undefined as XUINodeView | undefined,
-  }))
+  const clients = (overview?.clients || [])
+    .filter((client) => !isRealmForwardedClientOption(client))
+    .map((client) => ({
+      value: clientKey(client),
+      label: clientLabel(client),
+      client,
+      node: undefined as XUINodeView | undefined,
+    }))
   const nodes = (overview?.nodes || []).map((node) => ({
     value: nodeKey(node),
     label: nodeLabel(node),
@@ -1725,11 +1706,88 @@ function buildAssignmentTargetOptions(overview: XUIOverview | null) {
   return [...clients, ...nodes]
 }
 
+function buildClientAssignmentTreeData(agentID: string, overview: XUIOverview | null, agents: DashboardAgentView[]) {
+  if (!agentID || !overview) {
+    return []
+  }
+  return [{
+    title: agentName(agentID, agents),
+    value: `agent:${agentID}`,
+    selectable: false,
+    children: overviewNodeGroups(overview, false).map(({ node, clients }) => ({
+      title: nodeLabel(node),
+      value: nodeKey(node),
+      children: clients.map((client) => ({
+        title: clientTreeTitle(client),
+        value: clientKey(client),
+      })),
+    })),
+  }]
+}
+
+function buildAreaAssignmentTreeData(agentID: string, overview: XUIOverview | null, agents: DashboardAgentView[]) {
+  if (!agentID || !overview) {
+    return []
+  }
+  return [{
+    title: agentName(agentID, agents),
+    value: `agent:${agentID}`,
+    selectable: false,
+    children: overviewNodeGroups(overview, true).map(({ node, clients }) => ({
+      title: nodeLabel(node),
+      value: areaAssignmentKey(areaAssignmentDraftFromTargetOption(agentID, { node }, agents)),
+      children: clients.map((client) => ({
+        title: clientTreeTitle(client),
+        value: areaAssignmentKey(areaAssignmentDraftFromTargetOption(agentID, { client }, agents)),
+      })),
+    })),
+  }]
+}
+
+function overviewNodeGroups(overview: XUIOverview | null, excludeRealmForwarded: boolean) {
+  const nodes = [...(overview?.nodes || [])]
+  const clients = (overview?.clients || []).filter((client) => !excludeRealmForwarded || !isRealmForwardedClientOption(client))
+  const nodeIDs = new Set(nodes.map((node) => Number(node.id || 0)))
+  for (const client of clients) {
+    if (!nodeIDs.has(Number(client.inbound_id || 0))) {
+      nodes.push({
+        id: client.inbound_id,
+        tag: client.inbound_tag || '',
+        remark: client.inbound_remark || client.inbound_tag || `Inbound #${client.inbound_id}`,
+        protocol: client.protocol || '',
+        enabled: client.enabled !== false,
+        route: client.route,
+      })
+      nodeIDs.add(Number(client.inbound_id || 0))
+    }
+  }
+  return nodes.map((node) => ({
+    node,
+    clients: clients.filter((client) => Number(client.inbound_id || 0) === Number(node.id || 0)),
+  }))
+}
+
+function assignmentNodeKeys(agentID: string, overview: XUIOverview | null, agents: DashboardAgentView[]): string[] {
+  if (!agentID) {
+    return []
+  }
+  return (overview?.nodes || []).map((node) => areaAssignmentKey(areaAssignmentDraftFromTargetOption(agentID, { node }, agents)))
+}
+
 function buildRealmGrantOptions(agentID: string, agents: DashboardAgentView[]) {
   const agent = agents.find((item) => item.agent_id === agentID)
   const rules = agent?.entry?.port_forwarding?.rules || []
+  const seenPorts = new Set<number>()
   return rules
     .filter((rule) => rule.enabled !== false && Number(rule.listen_port || 0) > 0)
+    .filter((rule) => {
+      const port = Number(rule.listen_port || 0)
+      if (seenPorts.has(port)) {
+        return false
+      }
+      seenPorts.add(port)
+      return true
+    })
     .map((rule) => {
       const assignment = areaAssignmentDraftFromRealmRule(agentID, rule, agents)
       return {
@@ -1746,7 +1804,7 @@ function areaAssignmentDraftFromRealmRule(agentID: string, rule: RealmForwardRul
   return {
     agent_id: agentID,
     inbound_id: listenPort,
-    inbound_tag: `realm:${rule.id || listenPort}`,
+    inbound_tag: `realm:${listenPort}`,
     client_email: '',
     public_client_name: `${agentName(agentID, agents)} / Realm ${listenPort}`,
     enabled: true,
@@ -1755,9 +1813,7 @@ function areaAssignmentDraftFromRealmRule(agentID: string, rule: RealmForwardRul
 
 function realmGrantLabel(rule: RealmForwardRule) {
   const listen = rule.listen_port || '-'
-  const target = [rule.target_address, rule.target_port].filter(Boolean).join(':') || rule.target_agent_id || '-'
-  const name = rule.name || rule.note || rule.id || `Realm ${listen}`
-  return `Realm: ${listen} -> ${target} / ${name}`
+  return `Realm 端口 ${listen}`
 }
 
 function areaAssignmentDraftFromTargetOption(
@@ -1791,6 +1847,9 @@ function normalizeAreaManagerAssignmentDrafts(items: Array<AreaManagerAssignment
   const result: AreaManagerAssignmentDraft[] = []
   const seen = new Set<string>()
   for (const item of items || []) {
+    if (isLegacyRealmForwardedClientAssignment(item)) {
+      continue
+    }
     const draft: AreaManagerAssignmentDraft = {
       agent_id: item.agent_id,
       inbound_id: Number(item.inbound_id || 0),
@@ -1802,6 +1861,10 @@ function normalizeAreaManagerAssignmentDrafts(items: Array<AreaManagerAssignment
     if (!draft.agent_id || !draft.inbound_id) {
       continue
     }
+    if (!draft.client_email && isRealmAssignmentTagValue(draft.inbound_tag)) {
+      draft.inbound_tag = `realm:${draft.inbound_id}`
+      draft.public_client_name = `Realm ${draft.inbound_id}`
+    }
     const key = areaAssignmentKey(draft)
     if (seen.has(key)) {
       continue
@@ -1812,11 +1875,40 @@ function normalizeAreaManagerAssignmentDrafts(items: Array<AreaManagerAssignment
   return result
 }
 
+function firstRealmAssignmentAgentID(items: AreaManagerAssignment[], agents: DashboardAgentView[]): string {
+  return normalizeAreaManagerAssignmentDrafts(items).find((item) => isRealmAssignmentDraft(item, agents))?.agent_id || ''
+}
+
+function firstXUIAssignmentAgentID(items: AreaManagerAssignment[], agents: DashboardAgentView[]): string {
+  return normalizeAreaManagerAssignmentDrafts(items).find((item) => !isRealmAssignmentDraft(item, agents))?.agent_id || ''
+}
+
+function isRealmForwardedClientOption(client: XUIClientView): boolean {
+  return Boolean(
+    client.is_realm_forwarded ||
+    client.realm_source_agent_id ||
+    client.realm_target_agent_id ||
+    looksLikeRealmForwardedInboundTag(client.inbound_tag || '') ||
+    looksLikeRealmForwardedInboundTag(client.inbound_remark || ''),
+  )
+}
+
+function isLegacyRealmForwardedClientAssignment(item: { inbound_tag?: string; client_email?: string; public_client_name?: string }): boolean {
+  if (!item.client_email) {
+    return false
+  }
+  return looksLikeRealmForwardedInboundTag(item.inbound_tag || '') || looksLikeRealmForwardedInboundTag(item.public_client_name || '')
+}
+
+function looksLikeRealmForwardedInboundTag(value: string): boolean {
+  return /^realm\s+\d+\s*->/i.test(value.trim())
+}
+
 function isRealmAssignmentDraft(item: { agent_id: string; inbound_id: number; inbound_tag?: string; client_email?: string }, agents: DashboardAgentView[]) {
   if (item.client_email) {
     return false
   }
-  if ((item.inbound_tag || '').startsWith('realm:')) {
+  if (isRealmAssignmentTagValue(item.inbound_tag || '')) {
     return true
   }
   const rules = agents.find((agent) => agent.agent_id === item.agent_id)?.entry?.port_forwarding?.rules || []
@@ -1834,11 +1926,75 @@ function areaAssignmentKey(item: { agent_id: string; inbound_id: number; inbound
 
 function areaAssignmentLabel(item: { agent_id: string; inbound_id: number; inbound_tag?: string; client_email?: string; public_client_name?: string }, agents: DashboardAgentView[]): string {
   if (isRealmAssignmentDraft(item, agents)) {
-    return `${agentName(item.agent_id, agents)} / ${item.public_client_name || `Realm ${item.inbound_id}`} / 端口 ${item.inbound_id}`
+    return `${agentName(item.agent_id, agents)} / Realm 端口 ${item.inbound_id}`
   }
   const scope = item.client_email ? item.client_email : '整个节点'
   const name = item.public_client_name || item.inbound_tag || `Inbound #${item.inbound_id}`
   return `${agentName(item.agent_id, agents)} / ${name} / ${scope}`
+}
+
+function renderAssignmentHierarchy(
+  items: Array<{ agent_id: string; inbound_id: number; inbound_tag?: string; client_email?: string; public_client_name?: string }>,
+  agents: DashboardAgentView[],
+  onRemove?: (key: string) => void,
+) {
+  if (!items.length) {
+    return <Tag>未分配</Tag>
+  }
+  const grouped = new Map<string, Map<string, Array<{ key: string; label: string; nodeLabel: string }>>>()
+  for (const item of items) {
+    const agentID = item.agent_id || ''
+    const realm = isRealmAssignmentDraft(item, agents)
+    const nodeLabelText = realm ? `Realm 端口 ${item.inbound_id}` : item.inbound_tag || `Inbound #${item.inbound_id}`
+    const nodeKeyText = `${item.inbound_id}\x00${nodeLabelText}`
+    const clientLabelText = realm ? '端口授权' : item.client_email || '整个节点'
+    if (!grouped.has(agentID)) {
+      grouped.set(agentID, new Map())
+    }
+    const nodeMap = grouped.get(agentID)!
+    if (!nodeMap.has(nodeKeyText)) {
+      nodeMap.set(nodeKeyText, [])
+    }
+    nodeMap.get(nodeKeyText)!.push({
+      key: areaAssignmentKey(item),
+      label: clientLabelText,
+      nodeLabel: nodeLabelText,
+    })
+  }
+  return (
+    <Space direction="vertical" size={4} style={{ width: '100%' }}>
+      {Array.from(grouped.entries()).map(([agentID, nodeMap]) => (
+        <div key={agentID}>
+          <Text strong>{agentName(agentID, agents)}</Text>
+          <Space direction="vertical" size={3} style={{ width: '100%', marginTop: 4, paddingLeft: 10 }}>
+            {Array.from(nodeMap.entries()).map(([nodeKeyText, clients]) => (
+              <div key={nodeKeyText}>
+                <Tag color="blue">{clients[0]?.nodeLabel || '-'}</Tag>
+                <Space size={[4, 4]} wrap>
+                  {clients.map((client) => (
+                    <Tag
+                      key={client.key}
+                      closable={Boolean(onRemove)}
+                      onClose={(event) => {
+                        event.preventDefault()
+                        onRemove?.(client.key)
+                      }}
+                    >
+                      {client.label}
+                    </Tag>
+                  ))}
+                </Space>
+              </div>
+            ))}
+          </Space>
+        </div>
+      ))}
+    </Space>
+  )
+}
+
+function isRealmAssignmentTagValue(value: string): boolean {
+  return value.trim().toLowerCase().startsWith('realm:')
 }
 
 function uniqueStrings(values: string[]): string[] {
@@ -1851,6 +2007,10 @@ function clientLabel(client: XUIClientView): string {
   return `客户端：${inbound} / ${email}`
 }
 
+function clientTreeTitle(client: XUIClientView): string {
+  return ['客户端', client.email || '未指定客户端', client.comment || client.sub_id || ''].filter(Boolean).join(' / ')
+}
+
 function nodeKey(node: XUINodeView): string {
   return `node:${node.id}::`
 }
@@ -1861,7 +2021,8 @@ function nodeLabel(node: XUINodeView): string {
 
 function defaultPublicClientName(client: XUIClientView, agentID: string, agents: DashboardAgentView[]): string {
   const agent = customerAgentName(agentID, agents)
-  return [agent, client.email || client.inbound_remark || client.inbound_tag].filter(Boolean).join(' - ')
+  const node = client.inbound_remark || client.inbound_tag || `Inbound #${client.inbound_id}`
+  return [agent, node, client.email || client.comment || client.sub_id].filter(Boolean).join(' - ')
 }
 
 function defaultPublicNodeName(node: XUINodeView, agentID: string, agents: DashboardAgentView[]): string {
