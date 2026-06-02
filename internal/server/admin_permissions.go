@@ -618,6 +618,10 @@ func (s areaManagerClientScope) hasExactClientOnInbound(agentID string, inboundI
 	return false
 }
 
+func (s areaManagerClientScope) allowsManageInbound(agentID string, inboundID int, inboundTag string) bool {
+	return s.allowsInbound(agentID, inboundID, inboundTag) || s.hasExactClientOnInbound(agentID, inboundID, inboundTag)
+}
+
 func outboundLinkKey(agentID, outboundTag string) string {
 	return strings.TrimSpace(agentID) + "::" + strings.TrimSpace(outboundTag)
 }
@@ -827,7 +831,7 @@ func (a *App) areaManagerAddClientPayloadAllowed(user model.AdminUser, agentID s
 	if strings.TrimSpace(stringFromAny(client["email"])) == "" {
 		return false
 	}
-	return a.areaManagerClientScope(user).allowsInbound(agentID, inboundID, inboundTag)
+	return a.areaManagerClientScope(user).allowsManageInbound(agentID, inboundID, inboundTag)
 }
 
 func (a *App) areaManagerDeleteClientPayloadAllowed(user model.AdminUser, agentID string, payload map[string]any) bool {

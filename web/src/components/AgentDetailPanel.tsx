@@ -648,7 +648,6 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const visibleClientColumns = restrictedView
     ? clientColumns.filter((column) => !['protocol', 'status', 'billing', 'expiry', 'last_online', 'route'].includes(String(column.key || '')))
     : clientColumns
-  const hierarchyClientColumns = visibleClientColumns.filter((column) => String(column.key || '') !== 'inbound')
   const realmNodeColumns: ColumnsType<RealmForwardNodeView> = [
     {
       title: '命中节点',
@@ -776,7 +775,6 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const visibleRealmClientColumns = restrictedView
     ? realmClientColumns.filter((column) => !['target_agent', 'inbound'].includes(String(column.key || '')))
     : realmClientColumns
-  const hierarchyRealmClientColumns = visibleRealmClientColumns.filter((column) => String(column.key || '') !== 'inbound')
 
   const routingColumns: ColumnsType<XUIRoutingRuleView> = [
     {
@@ -1053,6 +1051,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
           onSelectTag: (value) => onSelectTag(value),
           scopeAgentID: selectedAgentId,
           scopeAgentName: selectedAgent.agent_name || selectedAgent.agent_id,
+          showRealm: featureEnabled.realm,
           showMatchedLinks: featureEnabled.xui,
         })}
       </Space>
@@ -1105,11 +1104,13 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
           overview.nodes,
           filteredClients,
           nodeColumns,
-          hierarchyClientColumns,
           selectedAgent.customer_display_name || selectedAgent.agent_name || selectedAgent.agent_id,
           selectedAgentId,
           selectedNodeAnchor,
           restrictedView ? 800 : 1600,
+          'clients',
+          onActiveTabChange,
+          onClientSearchChange,
         )
       ) : (
         <Empty description="暂无 x-ui 节点数据" />
@@ -1216,11 +1217,13 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
           realmForwardNodes,
           realmFilteredClients,
           realmNodeColumns as ColumnsType<XUINodeView>,
-          hierarchyRealmClientColumns as ColumnsType<XUIClientView>,
           selectedAgent.customer_display_name || selectedAgent.agent_name || selectedAgent.agent_id,
           selectedAgentId,
           selectedNodeAnchor,
           restrictedView ? 760 : 1120,
+          'realm-clients',
+          onActiveTabChange,
+          onClientSearchChange,
         )
       ) : (
         <Empty description="暂无通过 Realm 转发命中的节点" />
@@ -1686,6 +1689,9 @@ function filterRealmForwardClients(clients: RealmForwardClientView[], search: st
     client.comment,
     client.inbound_tag,
     client.inbound_remark,
+    client.inbound_id,
+    client.realm_target_inbound_id,
+    client.realm_target_inbound_tag,
     client.realm_target_agent_id,
     client.realm_target_agent_name,
     client.protocol,
@@ -1861,11 +1867,13 @@ function renderNodeClientHierarchySections(
   nodes: XUINodeView[],
   clients: XUIClientView[],
   nodeColumns: ColumnsType<XUINodeView>,
-  clientColumns: ColumnsType<XUIClientView>,
   agentLabel: string,
   selectedAgentID: string,
   selectedNodeAnchor: string,
   scrollX: number,
+  clientTabKey: string,
+  onActiveTabChange: (key: string) => void,
+  onClientSearchChange: (value: string) => void,
 ) {
   if (!nodes.length) {
     return <Empty description="暂无节点数据" />
@@ -1890,35 +1898,37 @@ function renderNodeClientHierarchySections(
               <Space size={[6, 6]} wrap>
                 <Tag color="purple">Client：{agentLabel}</Tag>
                 <Tag color="blue">节点：{nodeLabel}</Tag>
-                <Tag>客户端 {group.length}</Tag>
+                <Button
+                  size="small"
+                  type="link"
+                  onClick={() => {
+                    onClientSearchChange(nodeClientSearchValue(node))
+                    onActiveTabChange(clientTabKey)
+                  }}
+                >
+                  查看客户端 {group.length}
+                </Button>
               </Space>
             )}
           >
-            <Space direction="vertical" style={{ width: '100%' }} size="small">
-              <Table
-                size="small"
-                rowKey={(record) => realmForwardNodeKey(record)}
-                columns={nodeColumns}
-                dataSource={[displayNode]}
-                pagination={false}
-                scroll={{ x: scrollX }}
-                rowClassName={() => (selectedNodeAnchor === anchor ? 'node-row-selected' : '')}
-              />
-              <Table
-                size="small"
-                rowKey={(record) => `${record.realm_target_agent_id || ''}-${record.inbound_id}-${record.inbound_tag || ''}-${record.email || record.comment || record.sub_id || ''}`}
-                columns={clientColumns}
-                dataSource={group}
-                pagination={false}
-                locale={{ emptyText: '该节点暂无客户端' }}
-                scroll={{ x: scrollX }}
-              />
-            </Space>
+            <Table
+              size="small"
+              rowKey={(record) => realmForwardNodeKey(record)}
+              columns={nodeColumns}
+              dataSource={[displayNode]}
+              pagination={false}
+              scroll={{ x: scrollX }}
+              rowClassName={() => (selectedNodeAnchor === anchor ? 'node-row-selected' : '')}
+            />
           </Card>
         )
       })}
     </Space>
   )
+}
+
+function nodeClientSearchValue(node: XUINodeView): string {
+  return String(node.tag || node.remark || node.realm_target_inbound_tag || node.realm_target_inbound_id || node.id || '').trim()
 }
 
 function nodeMatchesClient(node: XUINodeView, client: XUIClientView): boolean {

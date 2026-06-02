@@ -13,9 +13,10 @@ export function renderGlobalOverviewPanel(props: {
   onSelectTag: (value: string) => void
   scopeAgentID?: string
   scopeAgentName?: string
+  showRealm?: boolean
   showMatchedLinks?: boolean
 }) {
-  const { dashboardView, selectedTag, links, onSelectTag, scopeAgentID, scopeAgentName, showMatchedLinks = true } = props
+  const { dashboardView, selectedTag, links, onSelectTag, scopeAgentID, scopeAgentName, showRealm = true, showMatchedLinks = true } = props
 
   if (!dashboardView) {
     return <Empty description="暂无总览数据" />
@@ -23,9 +24,15 @@ export function renderGlobalOverviewPanel(props: {
   const scoped = Boolean(scopeAgentName)
   const scopedAgent = scopeAgentID ? dashboardView.agents.find((agent) => agent.agent_id === scopeAgentID) : undefined
   const scopedRealmRules = (scopedAgent?.entry?.port_forwarding?.rules || []).filter((rule) => rule.enabled !== false)
-  const scopedDescription = showMatchedLinks
+  const showRealmMatchedLinks = showRealm && showMatchedLinks
+  const scopedDescription = !showRealm
+    ? `这里显示当前选中 Client 的基础链路概览。页面会每 ${Math.floor(DASHBOARD_AUTO_REFRESH_MS / 1000)} 秒自动刷新一次统计结果。`
+    : showRealmMatchedLinks
     ? `这里显示当前选中 Client 相关的 Realm 原始转发和已匹配链路。页面会每 ${Math.floor(DASHBOARD_AUTO_REFRESH_MS / 1000)} 秒自动刷新一次统计与匹配结果。`
     : `这里显示当前选中 Client 相关的 Realm 原始转发。页面会每 ${Math.floor(DASHBOARD_AUTO_REFRESH_MS / 1000)} 秒自动刷新一次统计与匹配结果。`
+  const globalDescription = showRealmMatchedLinks
+    ? `这里保留标签分组、已自动匹配链路和客户端转发链明细。页面会每 ${Math.floor(DASHBOARD_AUTO_REFRESH_MS / 1000)} 秒自动刷新一次统计与匹配结果。`
+    : `这里保留标签分组和客户端概览。页面会每 ${Math.floor(DASHBOARD_AUTO_REFRESH_MS / 1000)} 秒自动刷新一次统计结果。`
 
   return (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -33,7 +40,7 @@ export function renderGlobalOverviewPanel(props: {
         type="info"
         showIcon
         message={scoped ? `${scopeAgentName} 链路明细` : '链路明细'}
-        description={scoped ? scopedDescription : `这里保留标签分组、已自动匹配链路和客户端转发链明细。页面会每 ${Math.floor(DASHBOARD_AUTO_REFRESH_MS / 1000)} 秒自动刷新一次统计与匹配结果。`}
+        description={scoped ? scopedDescription : globalDescription}
       />
 
       {!scoped ? (
@@ -56,7 +63,7 @@ export function renderGlobalOverviewPanel(props: {
         </Card>
       ) : null}
 
-      {scoped ? (
+      {scoped && showRealm ? (
         <Card className="config-section-card" bordered={false}>
           <Title level={4}>当前 Client Realm 原始转发</Title>
           {scopedRealmRules.length ? (
@@ -89,7 +96,7 @@ export function renderGlobalOverviewPanel(props: {
         </Card>
       ) : null}
 
-      {showMatchedLinks ? (
+      {showRealmMatchedLinks ? (
         <Card className="config-section-card" bordered={false}>
           <Title level={4}>{scoped ? '当前 Client 已匹配链路' : '跨 Client 已匹配链路'}</Title>
           {links.length ? (

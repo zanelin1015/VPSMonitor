@@ -115,6 +115,27 @@ func TestAreaManagerXUIActionAllowedIncludesAddClient(t *testing.T) {
 	}) {
 		t.Fatal("expected area manager to be allowed to delete a client under a node")
 	}
+	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+		AgentID:     "agent-1",
+		InboundID:   8,
+		InboundTag:  "node-8",
+		ClientEmail: "seed@example.com",
+		Enabled:     &enabled,
+	}); err != nil {
+		t.Fatalf("CreateAreaManagerAssignment exact client: %v", err)
+	}
+	if !app.areaManagerXUIActionAllowed(user, "agent-1", model.XUIActionRequest{
+		Kind: model.XUIActionAddClient,
+		Payload: map[string]any{
+			"inbound_id":  8,
+			"inbound_tag": "node-8",
+			"client": map[string]any{
+				"email": "new@example.com",
+			},
+		},
+	}) {
+		t.Fatal("expected exact client authorization to allow adding a client under the same node")
+	}
 	if !app.areaManagerXUIActionAllowed(user, "agent-1", model.XUIActionRequest{
 		Kind: model.XUIActionSetClientEnabled,
 		Payload: map[string]any{

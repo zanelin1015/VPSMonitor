@@ -1928,7 +1928,7 @@ export default function App() {
         if (!deferredClientSearch) {
           return true
         }
-        const haystack = [client.email, client.comment, client.inbound_tag, client.inbound_remark]
+        const haystack = [client.email, client.comment, client.inbound_tag, client.inbound_remark, client.inbound_id]
           .filter(Boolean)
           .join(' ')
           .toLowerCase()
