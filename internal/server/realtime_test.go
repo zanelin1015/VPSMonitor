@@ -357,6 +357,16 @@ func TestAreaManagerXUIOverviewFiltersUnassignedClients(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAreaManager: %v", err)
 	}
+	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+		AgentID:          "hk",
+		InboundID:        1001,
+		InboundTag:       "HK:20001",
+		ClientEmail:      "",
+		PublicClientName: "Accidental whole node",
+		Enabled:          &enabled,
+	}); err != nil {
+		t.Fatalf("CreateAreaManagerAssignment: %v", err)
+	}
 	customer, err := sqliteStore.CreateCustomerForOwner(model.CustomerAccountRequest{
 		Username: "customer-hk",
 		Password: "password123",
@@ -392,6 +402,12 @@ func TestAreaManagerXUIOverviewFiltersUnassignedClients(t *testing.T) {
 			{InboundID: 1001, InboundTag: "HK:20001", Email: "hidden@example.com"},
 			{InboundID: 1002, InboundTag: "HK:20002", Email: "other@example.com"},
 		},
+		RoutingRules: []model.XUIRoutingRuleView{
+			{Index: 1, Users: []string{"assigned@example.com"}, OutboundTag: "assigned-out", Summary: "user=assigned@example.com | outbound=assigned-out"},
+			{Index: 2, Users: []string{"hidden@example.com"}, OutboundTag: "hidden-out", Summary: "user=hidden@example.com | outbound=hidden-out"},
+			{Index: 3, Users: []string{"assigned@example.com", "hidden@example.com"}, OutboundTag: "mixed-out", Summary: "user=assigned@example.com,hidden@example.com | outbound=mixed-out"},
+			{Index: 4, InboundTags: []string{"HK:20002"}, OutboundTag: "other-inbound", Summary: "inbound=HK:20002 | outbound=other-inbound"},
+		},
 	}
 
 	app.sanitizeXUIOverviewForAdmin(model.AdminUser{
@@ -414,6 +430,15 @@ func TestAreaManagerXUIOverviewFiltersUnassignedClients(t *testing.T) {
 	}
 	if overview.Nodes[0].ClientCount != 0 || overview.Nodes[0].Up != 0 || overview.BaseURL != "" {
 		t.Fatalf("expected node metrics and base URL sanitized, got node=%#v base=%q", overview.Nodes[0], overview.BaseURL)
+	}
+	if len(overview.RoutingRules) != 2 {
+		t.Fatalf("expected only assigned routing rules, got %#v", overview.RoutingRules)
+	}
+	if overview.RoutingRules[0].Index != 1 || overview.RoutingRules[0].Users[0] != "assigned@example.com" {
+		t.Fatalf("expected assigned user rule to remain, got %#v", overview.RoutingRules[0])
+	}
+	if overview.RoutingRules[1].Index != 3 || len(overview.RoutingRules[1].Users) != 1 || overview.RoutingRules[1].Users[0] != "assigned@example.com" || overview.RoutingRules[1].Summary != "" {
+		t.Fatalf("expected mixed user rule to be sanitized, got %#v", overview.RoutingRules[1])
 	}
 }
 

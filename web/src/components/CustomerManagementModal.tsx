@@ -764,7 +764,7 @@ export function CustomerManagementModal(props: {
       const assignment = xuiOptionMap.get(key)
       return assignment ? [assignment] : []
     })
-    const inferredRealmTargetAssignments = await inferRealmTargetXUIAssignments(areaBatchForm.selected_realm_keys, areaBatchRealmOptions)
+    const inferredRealmTargetAssignments = await inferRealmTargetXUIAssignments(areaBatchForm.selected_realm_keys, areaBatchRealmOptions, xuiAssignments)
     const assignments = dedupeAreaManagerAssignmentDrafts([
       ...realmAssignments,
       ...inferredRealmTargetAssignments,
@@ -1130,7 +1130,8 @@ export function CustomerManagementModal(props: {
     const nextForAgent = keys
       .map((key) => optionMap.get(key))
       .filter((item): item is AreaManagerAssignmentDraft => Boolean(item))
-    const inferredTargetAssignments = await inferRealmTargetXUIAssignments(keys, areaManagerRealmGrantOptions)
+    const existingXUIAssignments = areaManagerForm.assignments.filter((assignment) => !isRealmAssignmentDraft(assignment, agents))
+    const inferredTargetAssignments = await inferRealmTargetXUIAssignments(keys, areaManagerRealmGrantOptions, existingXUIAssignments)
     setAreaManagerForm((current) => {
       const otherAssignments = current.assignments.filter((assignment) => assignment.agent_id !== agentID || !isRealmAssignmentDraft(assignment, agents))
       const assignments = dedupeAreaManagerAssignmentDrafts([...otherAssignments, ...nextForAgent, ...inferredTargetAssignments])
@@ -1145,6 +1146,7 @@ export function CustomerManagementModal(props: {
   async function inferRealmTargetXUIAssignments(
     selectedRealmKeys: string[],
     options: ReturnType<typeof buildRealmGrantOptions>,
+    excludedTargetAssignments: AreaManagerAssignmentDraft[] = [],
   ): Promise<AreaManagerAssignmentDraft[]> {
     const selected = new Set(selectedRealmKeys)
     const overviewCache = new Map<string, XUIOverview | null>()
@@ -1168,6 +1170,9 @@ export function CustomerManagementModal(props: {
       }
       const node = findRealmTargetNode(targetOverview, option.rule)
       if (!node) {
+        continue
+      }
+      if (excludedTargetAssignments.some((item) => assignmentMatchesInbound(item, targetAgentID, node.id, node.tag))) {
         continue
       }
       inferred.push(areaAssignmentDraftFromTargetOption(targetAgentID, { node }, agents))
@@ -1997,13 +2002,17 @@ function normalizeAreaManagerAssignmentDrafts(items: Array<AreaManagerAssignment
     seen.add(key)
     result.push(draft)
   }
-  return result
+  return dedupeAreaManagerAssignmentDrafts(result)
 }
 
 function dedupeAreaManagerAssignmentDrafts(items: AreaManagerAssignmentDraft[]): AreaManagerAssignmentDraft[] {
   const result: AreaManagerAssignmentDraft[] = []
   const seen = new Set<string>()
+  const exactClientAssignments = items.filter((item) => item.client_email && !isRealmAssignmentTagValue(item.inbound_tag || ''))
   for (const item of items) {
+    if (!item.client_email && !isRealmAssignmentTagValue(item.inbound_tag || '') && exactClientAssignments.some((exact) => assignmentMatchesInbound(exact, item.agent_id, item.inbound_id, item.inbound_tag))) {
+      continue
+    }
     const key = areaAssignmentKey(item)
     if (seen.has(key)) {
       continue
@@ -2012,6 +2021,15 @@ function dedupeAreaManagerAssignmentDrafts(items: AreaManagerAssignmentDraft[]):
     result.push(item)
   }
   return result
+}
+
+function assignmentMatchesInbound(item: { agent_id: string; inbound_id: number; inbound_tag?: string }, agentID: string, inboundID: number, inboundTag?: string): boolean {
+  if ((item.agent_id || '') !== agentID || Number(item.inbound_id || 0) !== Number(inboundID || 0)) {
+    return false
+  }
+  const leftTag = (item.inbound_tag || '').trim().toLowerCase()
+  const rightTag = (inboundTag || '').trim().toLowerCase()
+  return !leftTag || !rightTag || leftTag === rightTag
 }
 
 function firstRealmAssignmentAgentID(items: AreaManagerAssignment[], agents: DashboardAgentView[]): string {

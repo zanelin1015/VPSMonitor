@@ -205,11 +205,70 @@ func (a *App) sanitizeXUIOverviewForAdmin(user model.AdminUser, overview *model.
 	}
 	overview.Nodes = filteredNodes
 	overview.NodeCount = len(filteredNodes)
+	overview.RoutingRules = filterRoutingRulesForAreaManager(overview.RoutingRules, overview.AgentID, filteredClients, filteredNodes, clientScope)
 	for index := range overview.Outbounds {
 		overview.Outbounds[index].Address = redactEndpointIP(overview.Outbounds[index].Address)
 		overview.Outbounds[index].Target = redactEndpointIP(overview.Outbounds[index].Target)
 		overview.Outbounds[index].SendThrough = ""
 	}
+}
+
+func filterRoutingRulesForAreaManager(rules []model.XUIRoutingRuleView, agentID string, visibleClients []model.XUIClientView, visibleNodes []model.XUINodeView, clientScope areaManagerClientScope) []model.XUIRoutingRuleView {
+	if len(rules) == 0 {
+		return rules
+	}
+	allowedUsers := make(map[string]struct{})
+	visibleInboundTags := make(map[string]struct{})
+	for _, client := range visibleClients {
+		if email := strings.ToLower(strings.TrimSpace(client.Email)); email != "" {
+			allowedUsers[email] = struct{}{}
+		}
+		if tag := strings.TrimSpace(client.InboundTag); tag != "" {
+			visibleInboundTags[strings.ToLower(tag)] = struct{}{}
+		}
+	}
+	for _, node := range visibleNodes {
+		if !clientScope.allowsInbound(agentID, node.ID, node.Tag) && !clientScope.hasExactClientOnInbound(agentID, node.ID, node.Tag) {
+			continue
+		}
+		if tag := strings.TrimSpace(node.Tag); tag != "" {
+			visibleInboundTags[strings.ToLower(tag)] = struct{}{}
+		}
+	}
+
+	filtered := make([]model.XUIRoutingRuleView, 0, len(rules))
+	for _, rule := range rules {
+		next := rule
+		if len(next.Users) > 0 {
+			next.Users = filterStringsBySet(next.Users, allowedUsers)
+			if len(next.Users) == 0 {
+				continue
+			}
+		}
+		if len(next.InboundTags) > 0 {
+			next.InboundTags = filterStringsBySet(next.InboundTags, visibleInboundTags)
+			if len(next.InboundTags) == 0 {
+				continue
+			}
+		}
+		// Rebuild the frontend summary from sanitized fields to avoid leaking hidden users.
+		next.Summary = ""
+		filtered = append(filtered, next)
+	}
+	return filtered
+}
+
+func filterStringsBySet(values []string, allowed map[string]struct{}) []string {
+	if len(values) == 0 {
+		return values
+	}
+	filtered := make([]string, 0, len(values))
+	for _, value := range values {
+		if _, ok := allowed[strings.ToLower(strings.TrimSpace(value))]; ok {
+			filtered = append(filtered, value)
+		}
+	}
+	return filtered
 }
 
 func (a *App) areaManagerCanViewRealmForwardedClient(user model.AdminUser, sourceAgentID string, client model.XUIClientView, clientScope areaManagerClientScope) bool {
@@ -446,15 +505,38 @@ func addAreaManagerScopeAssignment(scope *areaManagerClientScope, agentID string
 		if inboundTag != "" {
 			scope.exactClients[areaClientExactKey(agentID, inboundID, "", clientEmail)] = struct{}{}
 		}
+		removeAreaManagerInboundGrant(scope, agentID, inboundID, inboundTag)
 		return
 	}
 	if isRealmAssignmentTag(inboundTag) {
 		scope.realmPorts[areaRealmPortKey(agentID, inboundID)] = struct{}{}
 		return
 	}
+	if scope.hasExactClientOnInbound(agentID, inboundID, inboundTag) {
+		return
+	}
 	scope.inbounds[areaClientInboundKey(agentID, inboundID, inboundTag)] = struct{}{}
 	if inboundTag != "" {
 		scope.inbounds[areaClientInboundKey(agentID, inboundID, "")] = struct{}{}
+	}
+}
+
+func removeAreaManagerInboundGrant(scope *areaManagerClientScope, agentID string, inboundID int, inboundTag string) {
+	if scope == nil {
+		return
+	}
+	delete(scope.inbounds, areaClientInboundKey(agentID, inboundID, inboundTag))
+	if inboundTag != "" {
+		delete(scope.inbounds, areaClientInboundKey(agentID, inboundID, ""))
+		return
+	}
+	normalizedAgentID := strings.TrimSpace(agentID)
+	normalizedInboundID := strconv.Itoa(inboundID)
+	for key := range scope.inbounds {
+		parts := strings.Split(key, "\x00")
+		if len(parts) == 3 && strings.EqualFold(parts[0], normalizedAgentID) && parts[1] == normalizedInboundID {
+			delete(scope.inbounds, key)
+		}
 	}
 }
 
