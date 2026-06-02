@@ -1801,19 +1801,30 @@ function buildRealmGrantOptions(agentID: string, agents: DashboardAgentView[]) {
 
 function areaAssignmentDraftFromRealmRule(agentID: string, rule: RealmForwardRule, agents: DashboardAgentView[]): AreaManagerAssignmentDraft {
   const listenPort = Number(rule.listen_port || 0)
+  const label = realmGrantLabel(rule)
   return {
     agent_id: agentID,
     inbound_id: listenPort,
     inbound_tag: `realm:${listenPort}`,
     client_email: '',
-    public_client_name: `${agentName(agentID, agents)} / Realm ${listenPort}`,
+    public_client_name: `${agentName(agentID, agents)} / ${label}`,
     enabled: true,
   }
 }
 
 function realmGrantLabel(rule: RealmForwardRule) {
   const listen = rule.listen_port || '-'
-  return `Realm 端口 ${listen}`
+  const name = (rule.name || '').trim()
+  return name ? `${name} (${listen})` : `Realm 端口 ${listen}`
+}
+
+function realmAssignmentDisplayName(item: { agent_id: string; inbound_id: number; public_client_name?: string }, agents: DashboardAgentView[]): string {
+  const agentPrefix = `${agentName(item.agent_id, agents)} / `
+  const publicName = (item.public_client_name || '').trim()
+  if (publicName) {
+    return publicName.startsWith(agentPrefix) ? publicName : `${agentPrefix}${publicName}`
+  }
+  return `${agentPrefix}Realm 端口 ${item.inbound_id}`
 }
 
 function areaAssignmentDraftFromTargetOption(
@@ -1863,7 +1874,7 @@ function normalizeAreaManagerAssignmentDrafts(items: Array<AreaManagerAssignment
     }
     if (!draft.client_email && isRealmAssignmentTagValue(draft.inbound_tag)) {
       draft.inbound_tag = `realm:${draft.inbound_id}`
-      draft.public_client_name = `Realm ${draft.inbound_id}`
+      draft.public_client_name = draft.public_client_name || `Realm ${draft.inbound_id}`
     }
     const key = areaAssignmentKey(draft)
     if (seen.has(key)) {
@@ -1926,7 +1937,7 @@ function areaAssignmentKey(item: { agent_id: string; inbound_id: number; inbound
 
 function areaAssignmentLabel(item: { agent_id: string; inbound_id: number; inbound_tag?: string; client_email?: string; public_client_name?: string }, agents: DashboardAgentView[]): string {
   if (isRealmAssignmentDraft(item, agents)) {
-    return `${agentName(item.agent_id, agents)} / Realm 端口 ${item.inbound_id}`
+    return realmAssignmentDisplayName(item, agents)
   }
   const scope = item.client_email ? item.client_email : '整个节点'
   const name = item.public_client_name || item.inbound_tag || `Inbound #${item.inbound_id}`
@@ -1945,7 +1956,7 @@ function renderAssignmentHierarchy(
   for (const item of items) {
     const agentID = item.agent_id || ''
     const realm = isRealmAssignmentDraft(item, agents)
-    const nodeLabelText = realm ? `Realm 端口 ${item.inbound_id}` : item.inbound_tag || `Inbound #${item.inbound_id}`
+    const nodeLabelText = realm ? realmAssignmentDisplayName(item, agents) : item.inbound_tag || `Inbound #${item.inbound_id}`
     const nodeKeyText = `${item.inbound_id}\x00${nodeLabelText}`
     const clientLabelText = realm ? '端口授权' : item.client_email || '整个节点'
     if (!grouped.has(agentID)) {

@@ -803,6 +803,9 @@ func findRealmTargetAgentID(rule model.RealmForwardRule, agentMap map[string]mod
 }
 
 func realmForwardedInboundTag(rule model.RealmForwardRule, client model.XUIClientView) string {
+	if name := strings.TrimSpace(rule.Name); name != "" {
+		return name
+	}
 	target := firstNonEmptyString(client.InboundRemark, client.InboundTag, fmt.Sprintf(":%d", rule.TargetPort))
 	return fmt.Sprintf("Realm %d -> %s", rule.ListenPort, target)
 }

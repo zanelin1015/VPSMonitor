@@ -61,6 +61,7 @@ func MergeSnapshotIntoForwardConfig(cfg model.RealmForwardConfig, snapshot *mode
 			continue
 		}
 		if existing, exists := existingByListen[listenKey(normalized)]; exists {
+			normalized.Name = firstNonEmpty(existing.Name, normalized.Name)
 			normalized.TargetAgentID = firstNonEmpty(normalized.TargetAgentID, existing.TargetAgentID)
 			normalized.Note = firstNonEmpty(normalized.Note, existing.Note)
 			if isGeneratedRealmRuleID(normalized.ID) && strings.TrimSpace(existing.ID) != "" {
