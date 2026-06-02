@@ -225,10 +225,9 @@ func (c *XUIClient) collectAuthenticated(ctx context.Context, snapshot *model.XU
 	snapshot.RoutingRules = extractRoutingRules(configJSON["routing"])
 
 	outboundTraffic, err := c.getJSONList(ctx, "/panel/xray/getOutboundsTraffic")
-	if err != nil {
-		return err
+	if err == nil {
+		snapshot.OutboundTraffic = outboundTraffic
 	}
-	snapshot.OutboundTraffic = outboundTraffic
 	return nil
 }
 

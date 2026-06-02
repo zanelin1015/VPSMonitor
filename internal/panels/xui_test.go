@@ -146,6 +146,43 @@ func TestXUIClientUsesBearerAPIToken(t *testing.T) {
 	}
 }
 
+func TestXUICollectIgnoresInvalidOutboundTrafficResponse(t *testing.T) {
+	client, err := NewXUIClient(config.XUIConfig{
+		Enabled:  true,
+		BaseURL:  "https://xui.local",
+		Username: "admin",
+		Password: "pass",
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewXUIClient: %v", err)
+	}
+	loginCount := 0
+	client.client = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: xuiCollectTransport(t, &loginCount, func(req *http.Request) *http.Response {
+			if req.URL.Path != "/panel/xray/getOutboundsTraffic" {
+				return nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/html"}},
+				Body:       io.NopCloser(strings.NewReader("<html>not json</html>")),
+				Request:    req,
+			}
+		}),
+	}
+	snapshot := client.Collect(context.Background())
+	if snapshot.Error != "" {
+		t.Fatalf("Collect returned error: %s", snapshot.Error)
+	}
+	if got := len(snapshot.Inbounds); got != 0 {
+		t.Fatalf("expected normal collection to continue, got %d inbounds", got)
+	}
+	if got := len(snapshot.OutboundTraffic); got != 0 {
+		t.Fatalf("expected outbound traffic to be skipped, got %d", got)
+	}
+}
+
 func TestXUICollectFallsBackToXrayTemplateWhenServerConfigIsEmpty(t *testing.T) {
 	client, err := NewXUIClient(config.XUIConfig{
 		Enabled:  true,
