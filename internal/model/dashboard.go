@@ -58,6 +58,11 @@ type XUINodeView struct {
 	OnlineCount        int           `json:"online_count,omitempty"`
 	Route              XUIRouteTrace `json:"route"`
 	AuthKeys           []string      `json:"-"`
+
+	RealmTargetAgentID    string `json:"realm_target_agent_id,omitempty"`
+	RealmTargetAgentName  string `json:"realm_target_agent_name,omitempty"`
+	RealmTargetInboundID  int    `json:"realm_target_inbound_id,omitempty"`
+	RealmTargetInboundTag string `json:"realm_target_inbound_tag,omitempty"`
 }
 
 type XUIClientView struct {
@@ -90,6 +95,7 @@ type XUIClientView struct {
 	RealmListenTag        string `json:"realm_listen_tag,omitempty"`
 	RealmSourceAgentID    string `json:"realm_source_agent_id,omitempty"`
 	RealmTargetAgentID    string `json:"realm_target_agent_id,omitempty"`
+	RealmTargetAgentName  string `json:"realm_target_agent_name,omitempty"`
 	RealmTargetInboundID  int    `json:"realm_target_inbound_id,omitempty"`
 	RealmTargetInboundTag string `json:"realm_target_inbound_tag,omitempty"`
 }

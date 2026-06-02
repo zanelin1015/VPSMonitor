@@ -682,6 +682,10 @@ func (a *App) appendRealmForwardedImportURLs(agentID string, overview *model.XUI
 		return
 	}
 	added := 0
+	realmNodes := make(map[string]int)
+	for index, node := range overview.Nodes {
+		realmNodes[overviewInboundKey(node.ID, node.Tag)] = index
+	}
 	targetOverviewByAgent := make(map[string]*model.XUIOverview)
 	for _, rule := range sourceAgent.Entry.PortForwarding.Rules {
 		if !rule.Enabled || rule.ListenPort <= 0 || rule.TargetPort <= 0 {
@@ -729,16 +733,31 @@ func (a *App) appendRealmForwardedImportURLs(agentID string, overview *model.XUI
 			sourceClient.RealmListenTag = sourceClient.InboundTag
 			sourceClient.RealmSourceAgentID = agentID
 			sourceClient.RealmTargetAgentID = targetAgentID
+			sourceClient.RealmTargetAgentName = agentMap[targetAgentID].AgentName
 			sourceClient.RealmTargetInboundID = client.InboundID
 			sourceClient.RealmTargetInboundTag = client.InboundTag
 			sourceClient.RealmListenPort = rule.ListenPort
 			sourceClient.Route.Note = fmt.Sprintf("Realm 入口 %s:%d -> %s:%d", host, rule.ListenPort, firstNonEmptyString(agentMap[targetAgentID].AgentName, targetAgentID), rule.TargetPort)
 			overview.Clients = append(overview.Clients, sourceClient)
+			nodeKey := overviewInboundKey(rule.ListenPort, sourceClient.InboundTag)
+			if nodeIndex, exists := realmNodes[nodeKey]; exists {
+				overview.Nodes[nodeIndex].ClientCount++
+			} else {
+				overview.Nodes = append(overview.Nodes, realmForwardedNodeView(sourceClient, rule, agentMap[targetAgentID]))
+				realmNodes[nodeKey] = len(overview.Nodes) - 1
+			}
 			added++
 		}
 	}
 	if added > 0 {
 		sortXUIClients(overview.Clients)
+		sort.SliceStable(overview.Nodes, func(i, j int) bool {
+			if overview.Nodes[i].Port != overview.Nodes[j].Port {
+				return overview.Nodes[i].Port < overview.Nodes[j].Port
+			}
+			return overview.Nodes[i].Tag < overview.Nodes[j].Tag
+		})
+		overview.NodeCount = len(overview.Nodes)
 		overview.ClientCount = len(overview.Clients)
 		overview.OnlineClientCount = countOnlineXUIClients(overview.Clients)
 	}
@@ -808,6 +827,28 @@ func realmForwardedInboundTag(rule model.RealmForwardRule, client model.XUIClien
 	}
 	target := firstNonEmptyString(client.InboundRemark, client.InboundTag, fmt.Sprintf(":%d", rule.TargetPort))
 	return fmt.Sprintf("Realm %d -> %s", rule.ListenPort, target)
+}
+
+func realmForwardedNodeView(client model.XUIClientView, rule model.RealmForwardRule, targetAgent model.DashboardAgentView) model.XUINodeView {
+	route := client.Route
+	route.MatchScope = firstNonEmptyString(route.MatchScope, "realm")
+	route.Note = firstNonEmptyString(route.Note, fmt.Sprintf("Realm %d -> %s:%d", rule.ListenPort, firstNonEmptyString(targetAgent.AgentName, targetAgent.AgentID), rule.TargetPort))
+	return model.XUINodeView{
+		ID:                    rule.ListenPort,
+		Tag:                   client.InboundTag,
+		Remark:                firstNonEmptyString(client.InboundRemark, client.InboundTag),
+		Protocol:              client.Protocol,
+		Listen:                firstNonEmptyString(rule.ListenAddress, "0.0.0.0"),
+		Port:                  rule.ListenPort,
+		Network:               rule.Network,
+		Enabled:               rule.Enabled,
+		ClientCount:           1,
+		Route:                 route,
+		RealmTargetAgentID:    client.RealmTargetAgentID,
+		RealmTargetAgentName:  client.RealmTargetAgentName,
+		RealmTargetInboundID:  client.RealmTargetInboundID,
+		RealmTargetInboundTag: client.RealmTargetInboundTag,
+	}
 }
 
 func realmForwardedInboundRemark(sourceAgent model.DashboardAgentView, targetAgent model.DashboardAgentView, rule model.RealmForwardRule, client model.XUIClientView) string {

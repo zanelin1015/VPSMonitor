@@ -269,7 +269,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const [terminalExpanded, setTerminalExpanded] = useState(false)
   const currentAgentLinks = filteredTagLinks.filter((link) => link.source.agent_id === selectedAgentId || link.target.agent_id === selectedAgentId)
   const currentAgentRealmLinks = currentAgentLinks.filter((link) => link.source.agent_id === selectedAgentId && (link.source.protocol || '').toLowerCase() === 'realm')
-  const realmForwardNodes = buildRealmForwardNodes(currentAgentRealmLinks, dashboardView)
+  const realmForwardNodes = buildRealmForwardNodes(currentAgentRealmLinks, dashboardView, overview?.nodes || [])
   const realmForwardClients = buildRealmForwardClients(currentAgentRealmLinks, dashboardView, overview?.clients || [])
   const realmFilteredClients = filterRealmForwardClients(realmForwardClients, clientSearch)
   const currentAgentTagSet = new Set(selectedAgent.tags || [])
@@ -767,20 +767,6 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       ),
     },
     {
-      title: '操作',
-      key: 'actions',
-      width: 130,
-      render: (_, record) => (
-        <Button
-          size="small"
-          disabled={!record.realm_target_agent_id || !record.realm_target_inbound_id || (!canManageConfig && !restrictedView)}
-          onClick={() => onCreateNodeClientAction(realmClientToTargetNode(record), record.realm_target_agent_id)}
-        >
-          新增客户端
-        </Button>
-      ),
-    },
-    {
       title: 'Realm 来源',
       key: 'route',
       width: 280,
@@ -1115,20 +1101,16 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       key: 'nodes',
       label: `节点 (${overview?.nodes.length || 0})`,
       children: overview ? (
-        <Table
-          rowKey={(record) => record.tag || String(record.id)}
-          columns={nodeColumns}
-          dataSource={overview.nodes}
-          pagination={false}
-          scroll={{ x: 1000 }}
-          onRow={(record) => {
-            const anchor = nodeElementId(selectedAgentId, record.remark || record.tag || String(record.id))
-            return {
-              id: anchor,
-              className: selectedNodeAnchor === anchor ? 'node-row-selected' : '',
-            }
-          }}
-        />
+        renderNodeClientHierarchySections(
+          overview.nodes,
+          filteredClients,
+          nodeColumns,
+          hierarchyClientColumns,
+          selectedAgent.customer_display_name || selectedAgent.agent_name || selectedAgent.agent_id,
+          selectedAgentId,
+          selectedNodeAnchor,
+          restrictedView ? 800 : 1600,
+        )
       ) : (
         <Empty description="暂无 x-ui 节点数据" />
       ),
@@ -1138,13 +1120,14 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       label: `客户端 (${overview?.clients.length || 0})`,
       children: overview ? (
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
-          <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
-            <Input.Search allowClear style={{ minWidth: 280, flex: 1 }} placeholder="按邮箱、备注、节点标签筛选客户端" value={clientSearch} onChange={(event) => onClientSearchChange(event.target.value)} />
-            <Button type="primary" disabled={!overview.nodes.length || (!canManageConfig && !restrictedView)} onClick={() => onCreateNodeClientAction(overview.nodes[0])}>
-              新增客户端
-            </Button>
-          </Space>
-          {renderClientHierarchySections(filteredClients, hierarchyClientColumns, selectedAgent.customer_display_name || selectedAgent.agent_name || selectedAgent.agent_id, restrictedView ? 800 : 1600)}
+          <Input.Search allowClear style={{ minWidth: 280 }} placeholder="按邮箱、备注、节点标签筛选客户端" value={clientSearch} onChange={(event) => onClientSearchChange(event.target.value)} />
+          <Table
+            rowKey={(record) => `${record.realm_target_agent_id || ''}-${record.inbound_id}-${record.inbound_tag || ''}-${record.email || record.comment || record.sub_id || ''}`}
+            columns={visibleClientColumns}
+            dataSource={filteredClients}
+            pagination={false}
+            scroll={{ x: restrictedView ? 900 : 1700 }}
+          />
         </Space>
       ) : (
         <Empty description="暂无客户端数据" />
@@ -1229,13 +1212,16 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       key: 'realm-nodes',
       label: `节点 (${realmForwardNodes.length})`,
       children: realmForwardNodes.length ? (
-        <Table
-          rowKey={(record) => `${record.listen || ''}-${record.id}-${record.tag || ''}-${record.port || 0}`}
-          columns={realmNodeColumns}
-          dataSource={realmForwardNodes}
-          pagination={false}
-          scroll={{ x: 1060 }}
-        />
+        renderNodeClientHierarchySections(
+          realmForwardNodes,
+          realmFilteredClients,
+          realmNodeColumns as ColumnsType<XUINodeView>,
+          hierarchyRealmClientColumns as ColumnsType<XUIClientView>,
+          selectedAgent.customer_display_name || selectedAgent.agent_name || selectedAgent.agent_id,
+          selectedAgentId,
+          selectedNodeAnchor,
+          restrictedView ? 760 : 1120,
+        )
       ) : (
         <Empty description="暂无通过 Realm 转发命中的节点" />
       ),
@@ -1246,7 +1232,13 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       children: realmForwardClients.length ? (
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
           <Input.Search allowClear style={{ minWidth: 280 }} placeholder="按邮箱、备注、节点标签筛选 Realm 命中客户端" value={clientSearch} onChange={(event) => onClientSearchChange(event.target.value)} />
-          {renderClientHierarchySections(realmFilteredClients, hierarchyRealmClientColumns, selectedAgent.customer_display_name || selectedAgent.agent_name || selectedAgent.agent_id, restrictedView ? 760 : 1120)}
+          <Table
+            rowKey={(record) => `${record.realm_target_agent_id || ''}-${record.inbound_id}-${record.inbound_tag || ''}-${record.email || record.comment || record.sub_id || ''}`}
+            columns={visibleRealmClientColumns}
+            dataSource={realmFilteredClients}
+            pagination={false}
+            scroll={{ x: restrictedView ? 760 : 1120 }}
+          />
         </Space>
       ) : (
         <Empty description="暂无通过 Realm 转发命中的客户端" />
@@ -1568,20 +1560,43 @@ function FeatureSwitch({ label, checked, onChange }: { label: string; checked: b
   )
 }
 
-function buildRealmForwardNodes(links: TopologyLinkView[], dashboardView: GlobalDashboardView | null): RealmForwardNodeView[] {
+function buildRealmForwardNodes(
+  links: TopologyLinkView[],
+  dashboardView: GlobalDashboardView | null,
+  overviewNodes: XUINodeView[] = [],
+): RealmForwardNodeView[] {
   const nodes = new Map<string, RealmForwardNodeView>()
+  const agentNameByID = new Map((dashboardView?.agents || []).map((agent) => [agent.agent_id, agent.agent_name || agent.customer_display_name || agent.agent_id]))
+  overviewNodes
+    .filter((node) => node.realm_target_agent_id || node.route?.match_scope === 'realm')
+    .forEach((node) => {
+      const key = realmForwardNodeIdentityKey(node)
+      nodes.set(key, {
+        ...node,
+        realm_target_agent_name: node.realm_target_agent_name || agentNameByID.get(node.realm_target_agent_id || '') || node.realm_target_agent_id,
+      })
+    })
   links.forEach((link, index) => {
     const target = link.target
-    const key = realmTargetKey(target.agent_id, target.inbound_id, target.inbound_tag, target.port)
+    const targetInboundID = target.inbound_id || target.port || 0
+    const sourceListenPort = link.source.listen_port || target.port || targetInboundID || index + 1
+    const sourceTag = link.source.outbound_tag || target.inbound_tag || ''
+    const key = realmForwardNodeIdentityKey({
+      id: sourceListenPort,
+      tag: sourceTag,
+      realm_target_agent_id: target.agent_id,
+      realm_target_inbound_id: targetInboundID,
+      realm_target_inbound_tag: target.inbound_tag || '',
+    } as XUINodeView)
     const clientCount = countRealmTargetClients(dashboardView, target.agent_id, target.inbound_tag, target.inbound_name, target.port)
     if (!nodes.has(key)) {
       nodes.set(key, {
-        id: target.inbound_id || target.port || index + 1,
-        tag: target.inbound_tag || '',
+        id: sourceListenPort,
+        tag: sourceTag,
         remark: target.inbound_name || target.inbound_tag || `${target.agent_name || target.agent_id}:${target.port || '-'}`,
         protocol: target.protocol || '',
         listen: target.agent_name || target.agent_id,
-        port: target.port || 0,
+        port: sourceListenPort,
         network: target.network || '',
         security: target.security || '',
         ws_path: target.ws_path || '',
@@ -1591,7 +1606,7 @@ function buildRealmForwardNodes(links: TopologyLinkView[], dashboardView: Global
         online_count: 0,
         realm_target_agent_id: target.agent_id,
         realm_target_agent_name: target.agent_name,
-        realm_target_inbound_id: target.inbound_id || target.port || 0,
+        realm_target_inbound_id: targetInboundID,
         realm_target_inbound_tag: target.inbound_tag || '',
         route: {
           match_scope: 'realm',
@@ -1661,23 +1676,6 @@ function buildRealmForwardClients(links: TopologyLinkView[], dashboardView: Glob
   return Array.from(clients.values()).sort((a, b) => (a.inbound_remark || '').localeCompare(b.inbound_remark || '') || (a.email || '').localeCompare(b.email || ''))
 }
 
-function realmClientToTargetNode(client: RealmForwardClientView): XUINodeView {
-  const targetInboundID = client.realm_target_inbound_id || client.inbound_id || 0
-  const targetInboundTag = client.realm_target_inbound_tag || client.inbound_tag || ''
-  return {
-    id: targetInboundID,
-    tag: targetInboundTag,
-    remark: client.inbound_remark || targetInboundTag || `Inbound #${targetInboundID}`,
-    protocol: client.protocol || 'vless',
-    enabled: true,
-    route: client.route,
-    realm_target_agent_id: client.realm_target_agent_id,
-    realm_target_agent_name: client.realm_target_agent_name,
-    realm_target_inbound_id: targetInboundID,
-    realm_target_inbound_tag: targetInboundTag,
-  }
-}
-
 function filterRealmForwardClients(clients: RealmForwardClientView[], search: string): RealmForwardClientView[] {
   const keyword = search.trim().toLowerCase()
   if (!keyword) {
@@ -1715,8 +1713,23 @@ function chainMatchesRealmTarget(chain: GlobalDashboardView['client_chains'][num
   ))
 }
 
-function realmTargetKey(agentID: string, inboundID?: number, inboundTag?: string, port?: number): string {
-  return [agentID, inboundID || 0, inboundTag || '', port || 0].join(':')
+function realmForwardNodeKey(node: Pick<XUINodeView, 'id' | 'tag' | 'port' | 'realm_target_agent_id' | 'realm_target_inbound_id' | 'realm_target_inbound_tag'>): string {
+  return [
+    node.id || node.port || 0,
+    node.tag || '',
+    node.realm_target_agent_id || '',
+    node.realm_target_inbound_id || 0,
+    node.realm_target_inbound_tag || '',
+  ].join(':')
+}
+
+function realmForwardNodeIdentityKey(node: Pick<XUINodeView, 'id' | 'port' | 'realm_target_agent_id' | 'realm_target_inbound_id' | 'realm_target_inbound_tag'>): string {
+  return [
+    node.id || node.port || 0,
+    node.realm_target_agent_id || '',
+    node.realm_target_inbound_id || 0,
+    node.realm_target_inbound_tag || '',
+  ].join(':')
 }
 
 function RemoteTTYTerminal(props: { agentID: string; shell: string; active: boolean; fontSize: number; expanded: boolean }) {
@@ -1844,32 +1857,35 @@ function normalizeTerminalInput(data: string, shell: string): string {
   return normalizedShell === 'powershell' || normalizedShell === 'pwsh' || normalizedShell === 'cmd' ? '\r\n' : '\n'
 }
 
-function renderClientHierarchySections(
+function renderNodeClientHierarchySections(
+  nodes: XUINodeView[],
   clients: XUIClientView[],
-  columns: ColumnsType<XUIClientView>,
+  nodeColumns: ColumnsType<XUINodeView>,
+  clientColumns: ColumnsType<XUIClientView>,
   agentLabel: string,
+  selectedAgentID: string,
+  selectedNodeAnchor: string,
   scrollX: number,
 ) {
-  if (!clients.length) {
-    return <Empty description="暂无客户端数据" />
-  }
-  const groups = new Map<string, XUIClientView[]>()
-  for (const client of clients) {
-    const key = `${client.inbound_id || 0}\x00${client.inbound_tag || ''}\x00${client.inbound_remark || ''}`
-    if (!groups.has(key)) {
-      groups.set(key, [])
-    }
-    groups.get(key)!.push(client)
+  if (!nodes.length) {
+    return <Empty description="暂无节点数据" />
   }
   return (
     <Space direction="vertical" style={{ width: '100%' }} size="middle">
-      {Array.from(groups.entries()).map(([key, group]) => {
-        const first = group[0]
-        const nodeLabel = first?.inbound_remark || first?.inbound_tag || `Inbound #${first?.inbound_id || 0}`
+      {nodes.map((node) => {
+        const group = clients.filter((client) => nodeMatchesClient(node, client))
+        const nodeLabel = node.remark || node.tag || `Inbound #${node.id || 0}`
+        const anchor = nodeElementId(selectedAgentID, nodeLabel)
+        const displayNode: XUINodeView = {
+          ...node,
+          client_count: Math.max(Number(node.client_count || 0), group.length),
+        }
         return (
           <Card
-            key={key}
+            key={realmForwardNodeKey(node)}
+            id={anchor}
             size="small"
+            className={selectedNodeAnchor === anchor ? 'node-row-selected' : undefined}
             title={(
               <Space size={[6, 6]} wrap>
                 <Tag color="purple">Client：{agentLabel}</Tag>
@@ -1878,19 +1894,58 @@ function renderClientHierarchySections(
               </Space>
             )}
           >
-            <Table
-              size="small"
-              rowKey={(record) => `${record.realm_target_agent_id || ''}-${record.inbound_id}-${record.inbound_tag || ''}-${record.email || record.comment || record.sub_id || ''}`}
-              columns={columns}
-              dataSource={group}
-              pagination={false}
-              scroll={{ x: scrollX }}
-            />
+            <Space direction="vertical" style={{ width: '100%' }} size="small">
+              <Table
+                size="small"
+                rowKey={(record) => realmForwardNodeKey(record)}
+                columns={nodeColumns}
+                dataSource={[displayNode]}
+                pagination={false}
+                scroll={{ x: scrollX }}
+                rowClassName={() => (selectedNodeAnchor === anchor ? 'node-row-selected' : '')}
+              />
+              <Table
+                size="small"
+                rowKey={(record) => `${record.realm_target_agent_id || ''}-${record.inbound_id}-${record.inbound_tag || ''}-${record.email || record.comment || record.sub_id || ''}`}
+                columns={clientColumns}
+                dataSource={group}
+                pagination={false}
+                locale={{ emptyText: '该节点暂无客户端' }}
+                scroll={{ x: scrollX }}
+              />
+            </Space>
           </Card>
         )
       })}
     </Space>
   )
+}
+
+function nodeMatchesClient(node: XUINodeView, client: XUIClientView): boolean {
+  if (sameInboundIdentity(node.id, node.tag, client.inbound_id, client.inbound_tag)) {
+    return true
+  }
+  const nodeTargetAgentID = node.realm_target_agent_id || ''
+  const clientTargetAgentID = client.realm_target_agent_id || ''
+  if (nodeTargetAgentID && clientTargetAgentID && nodeTargetAgentID !== clientTargetAgentID) {
+    return false
+  }
+  return sameInboundIdentity(
+    node.realm_target_inbound_id || 0,
+    node.realm_target_inbound_tag || '',
+    client.realm_target_inbound_id || client.inbound_id,
+    client.realm_target_inbound_tag || client.inbound_tag,
+  )
+}
+
+function sameInboundIdentity(expectedID?: number, expectedTag?: string, actualID?: number, actualTag?: string): boolean {
+  if (expectedID && actualID && expectedID !== actualID) {
+    return false
+  }
+  if (expectedTag && actualTag && expectedTag !== actualTag) {
+    return false
+  }
+  return Boolean((expectedID && actualID && expectedID === actualID) || (expectedTag && actualTag && expectedTag === actualTag))
 }
 
 function buildPrimaryDomainOptions(certificates: XUILocalCertificate[]) {
