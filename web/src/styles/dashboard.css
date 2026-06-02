@@ -871,6 +871,14 @@
   min-height: 124px;
 }
 
+.client-internal-overview-grid {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.client-internal-traffic-card {
+  grid-column: span 2;
+}
+
 .overview-stat-card {
   position: relative;
   display: grid;

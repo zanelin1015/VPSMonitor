@@ -29,7 +29,7 @@ import type {
 import type { ConfigSectionKey } from '../lib/appHelpers'
 import type { CurrencyCode } from '../lib/currency'
 import { REVENUE_CURRENCIES } from '../lib/currency'
-import { clientTrafficTotal, formatBytes } from '../lib/traffic'
+import { clientTrafficTotal, formatBytes, formatSpeed } from '../lib/traffic'
 import {
   actionKindLabel,
   actionStatusColor,
@@ -297,6 +297,67 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const realmRuleCount = managedConfig?.entry?.port_forwarding?.rules?.length || selectedAgent.entry?.port_forwarding?.rules?.length || 0
   const natMappingCount = managedConfig?.entry?.mappings?.length || selectedAgent.entry?.mappings?.length || 0
   const portPolicyCount = managedConfig?.entry?.network_policy?.rules?.length || selectedAgent.entry?.network_policy?.rules?.length || selectedAgent.network_policy?.rules?.length || 0
+  const internalNodeCount = overview?.nodes.length ?? selectedAgent.node_count ?? 0
+  const internalClientCount = overview?.clients.length ?? selectedAgent.client_count ?? 0
+  const internalOnlineClientCount = overview?.online_client_count ?? selectedAgent.online_client_count ?? 0
+  const internalTrafficSent = Number(selectedAgent.summary.net_traffic_sent || 0)
+  const internalTrafficRecv = Number(selectedAgent.summary.net_traffic_recv || 0)
+  const internalTrafficTotal = internalTrafficSent + internalTrafficRecv
+  const internalTrafficMax = Math.max(1, internalTrafficSent, internalTrafficRecv)
+  const internalOverviewStats = (
+    <div className="overview-stat-grid client-internal-overview-grid">
+      {featureEnabled.xui ? (
+        <section className="overview-stat-card overview-stat-blue">
+          <div className="overview-stat-title">x-ui 节点</div>
+          <div className="overview-stat-value"><span className="overview-stat-dot" /><strong>{internalNodeCount}</strong></div>
+          <div className="overview-stat-foot">客户端 {internalClientCount} · 在线 {internalOnlineClientCount}</div>
+        </section>
+      ) : null}
+      {featureEnabled.xui ? (
+        <section className="overview-stat-card overview-network-card">
+          <div className="overview-stat-title">实时速度</div>
+          <div className="overview-network-total">
+            <span className="network-up">↑ {formatSpeed(Number(selectedAgent.summary.net_io_up || 0))}</span>
+            <span className="network-down">↓ {formatSpeed(Number(selectedAgent.summary.net_io_down || 0))}</span>
+          </div>
+          <div className="overview-stat-foot">总速 {formatSpeed(Number(selectedAgent.summary.net_io_up || 0) + Number(selectedAgent.summary.net_io_down || 0))}</div>
+        </section>
+      ) : null}
+      {featureEnabled.realm && realmRuleCount > 0 ? (
+        <section className="overview-stat-card overview-stat-green">
+          <div className="overview-stat-title">Realm 转发</div>
+          <div className="overview-stat-value"><span className="overview-stat-dot" /><strong>{realmRuleCount}</strong></div>
+          <div className="overview-stat-foot">当前 Client 已启用转发规则</div>
+        </section>
+      ) : null}
+      {featureEnabled.port_policy && portPolicyCount > 0 ? (
+        <section className="overview-stat-card overview-stat-red">
+          <div className="overview-stat-title">端口策略</div>
+          <div className="overview-stat-value"><span className="overview-stat-dot" /><strong>{portPolicyCount}</strong></div>
+          <div className="overview-stat-foot">端口限速 / 白名单策略数量</div>
+        </section>
+      ) : null}
+      <section className="overview-stat-card overview-traffic-chart-card client-internal-traffic-card">
+        <div className="overview-stat-title">已用流量图</div>
+        <div className="overview-network-total">
+          <span className="network-up">{formatBytes(internalTrafficTotal)}</span>
+          <span className="network-down">↑{formatBytes(internalTrafficSent)} · ↓{formatBytes(internalTrafficRecv)}</span>
+        </div>
+        <div className="overview-traffic-bars">
+          <div className="overview-traffic-row">
+            <span>上传</span>
+            <div><i style={{ width: `${Math.max(4, Math.min(100, (internalTrafficSent / internalTrafficMax) * 100))}%` }} /></div>
+            <strong>{formatBytes(internalTrafficSent)}</strong>
+          </div>
+          <div className="overview-traffic-row">
+            <span>下载</span>
+            <div><i style={{ width: `${Math.max(4, Math.min(100, (internalTrafficRecv / internalTrafficMax) * 100))}%` }} /></div>
+            <strong>{formatBytes(internalTrafficRecv)}</strong>
+          </div>
+        </div>
+      </section>
+    </div>
+  )
 
   useEffect(() => {
     setPrimaryDomainDraft(currentPrimaryDomain)
@@ -1044,6 +1105,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     children: (
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         {featureSwitchPanel}
+        {internalOverviewStats}
         {renderGlobalOverviewPanel({
           dashboardView: currentAgentDashboardView,
           selectedTag,
