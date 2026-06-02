@@ -1932,15 +1932,8 @@ func TestXUIExecuteAddClientUsesAddClientAPI(t *testing.T) {
 			case "/login":
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
 			case "/panel/api/inbounds/list":
-				return jsonResponse(t, req, map[string]any{
-					"success": true,
-					"obj": []map[string]any{{
-						"id":       7,
-						"tag":      "in-a",
-						"protocol": "vless",
-						"settings": `{"clients":[{"id":"uuid-1","email":"alice@example.com"}]}`,
-					}},
-				}), nil
+				t.Fatalf("inbound_id add should not require listing inbounds")
+				return nil, nil
 			case "/panel/api/clients/add":
 				addCalled = true
 				var body map[string]any

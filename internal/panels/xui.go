@@ -567,6 +567,12 @@ func (c *XUIClient) addClient(ctx context.Context, payload map[string]any) (map[
 		return nil, fmt.Errorf("client.email is required")
 	}
 
+	if inboundID > 0 {
+		if result, err := c.addClientViaAPI(ctx, inboundID, client); err == nil {
+			return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": false}, nil
+		}
+	}
+
 	inbounds, err := c.getJSONList(ctx, "/panel/api/inbounds/list")
 	if err != nil {
 		return nil, err
@@ -586,11 +592,8 @@ func (c *XUIClient) addClient(ctx context.Context, payload map[string]any) (map[
 		return nil, fmt.Errorf("inbound not found for new client %s", email)
 	}
 	inboundID = intValue(inbound["id"])
-	if result, err := c.postJSON(ctx, "/panel/api/clients/add", map[string]any{
-		"client":     client,
-		"inboundIds": []int{inboundID},
-	}); err == nil {
-		return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID}, nil
+	if result, err := c.addClientViaAPI(ctx, inboundID, client); err == nil {
+		return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": false}, nil
 	}
 
 	settings, settingsText, err := decodeInboundSettings(inbound["settings"])
@@ -628,6 +631,13 @@ func (c *XUIClient) addClient(ctx context.Context, payload map[string]any) (map[
 		return nil, err
 	}
 	return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": false}, nil
+}
+
+func (c *XUIClient) addClientViaAPI(ctx context.Context, inboundID int, client map[string]any) (xuiEnvelope, error) {
+	return c.postJSON(ctx, "/panel/api/clients/add", map[string]any{
+		"client":     client,
+		"inboundIds": []int{inboundID},
+	})
 }
 
 func (c *XUIClient) updateV3Client(ctx context.Context, email string, mutate func(map[string]any) map[string]any) (xuiEnvelope, error) {
