@@ -404,7 +404,7 @@ func calculateClientBillingExpireTime(startMillis int64, cycle string, autoRenew
 	if startMillis <= 0 {
 		return 0
 	}
-	periodStart := startOfLocalDay(time.UnixMilli(startMillis))
+	periodStart := time.UnixMilli(startMillis)
 	nextStart := addClientBillingCycle(periodStart, cycle)
 	periodEnd := nextStart.Add(-time.Second)
 	for autoRenew && !periodEnd.After(now) {
@@ -413,11 +413,6 @@ func calculateClientBillingExpireTime(startMillis int64, cycle string, autoRenew
 		periodEnd = nextStart.Add(-time.Second)
 	}
 	return periodEnd.UnixMilli()
-}
-
-func startOfLocalDay(value time.Time) time.Time {
-	local := value.Local()
-	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, local.Location())
 }
 
 func addClientBillingCycle(value time.Time, cycle string) time.Time {

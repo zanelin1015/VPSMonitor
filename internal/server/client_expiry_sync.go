@@ -119,7 +119,7 @@ func calculateClientBillingExpiryMillis(startMillis int64, cycle string, autoRen
 	if startMillis <= 0 {
 		return 0
 	}
-	periodStart := startOfClientBillingDay(time.UnixMilli(startMillis))
+	periodStart := time.UnixMilli(startMillis)
 	nextStart := addClientExpireCycle(periodStart, cycle)
 	periodEnd := nextStart.Add(-time.Second)
 	for autoRenew && !periodEnd.After(now) {
@@ -128,11 +128,6 @@ func calculateClientBillingExpiryMillis(startMillis int64, cycle string, autoRen
 		periodEnd = nextStart.Add(-time.Second)
 	}
 	return periodEnd.UnixMilli()
-}
-
-func startOfClientBillingDay(value time.Time) time.Time {
-	local := value.Local()
-	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, local.Location())
 }
 
 func expiryMillisClose(current int64, expected int64) bool {

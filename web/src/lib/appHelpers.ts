@@ -381,7 +381,7 @@ function defaultAddClientActionForm(): XUIAddClientActionForm {
     inbound_name: '',
     protocol: 'vless',
     client: defaultInboundClientForm(),
-    restart: true,
+    restart: false,
   }
 }
 
@@ -536,7 +536,7 @@ function buildAddClientActionPayload(form: XUIAddClientActionForm): Record<strin
     inbound_tag: form.inbound_tag.trim(),
     protocol,
     client,
-    restart: form.restart,
+    restart: false,
   }
 }
 

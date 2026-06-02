@@ -1867,13 +1867,13 @@ function renderNodeClientHierarchySections(
   nodes: XUINodeView[],
   clients: XUIClientView[],
   nodeColumns: ColumnsType<XUINodeView>,
-  agentLabel: string,
+  _agentLabel: string,
   selectedAgentID: string,
   selectedNodeAnchor: string,
   scrollX: number,
-  clientTabKey: string,
-  onActiveTabChange: (key: string) => void,
-  onClientSearchChange: (value: string) => void,
+  _clientTabKey: string,
+  _onActiveTabChange: (key: string) => void,
+  _onClientSearchChange: (value: string) => void,
 ) {
   if (!nodes.length) {
     return <Empty description="暂无节点数据" />
@@ -1894,22 +1894,6 @@ function renderNodeClientHierarchySections(
             id={anchor}
             size="small"
             className={selectedNodeAnchor === anchor ? 'node-row-selected' : undefined}
-            title={(
-              <Space size={[6, 6]} wrap>
-                <Tag color="purple">Client：{agentLabel}</Tag>
-                <Tag color="blue">节点：{nodeLabel}</Tag>
-                <Button
-                  size="small"
-                  type="link"
-                  onClick={() => {
-                    onClientSearchChange(nodeClientSearchValue(node))
-                    onActiveTabChange(clientTabKey)
-                  }}
-                >
-                  查看客户端 {group.length}
-                </Button>
-              </Space>
-            )}
           >
             <Table
               size="small"

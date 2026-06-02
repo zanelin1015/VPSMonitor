@@ -980,6 +980,10 @@ textarea,
     grid-template-columns: 1fr;
   }
 
+  .overview-traffic-chart-card {
+    grid-column: span 1;
+  }
+
   .entry-mapping-list,
   .ant-table-wrapper {
     overflow-x: auto;

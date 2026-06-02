@@ -609,10 +609,7 @@ func (c *XUIClient) addClient(ctx context.Context, payload map[string]any) (map[
 		"id":       inboundID,
 		"settings": string(clientSettings),
 	}); err == nil {
-		if err := c.restartXrayService(ctx); err != nil {
-			return nil, err
-		}
-		return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": true}, nil
+		return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": false}, nil
 	}
 
 	clients = append(clients, client)
@@ -630,10 +627,7 @@ func (c *XUIClient) addClient(ctx context.Context, payload map[string]any) (map[
 	if err != nil {
 		return nil, err
 	}
-	if err := c.restartXrayService(ctx); err != nil {
-		return nil, err
-	}
-	return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": true}, nil
+	return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": false}, nil
 }
 
 func (c *XUIClient) updateV3Client(ctx context.Context, email string, mutate func(map[string]any) map[string]any) (xuiEnvelope, error) {
@@ -1266,10 +1260,7 @@ func (c *XUIClient) updateClientExpiry(ctx context.Context, payload map[string]a
 			if err != nil {
 				return nil, err
 			}
-			if err := c.restartXrayService(ctx); err != nil {
-				return nil, err
-			}
-			return map[string]any{"message": result.Msg, "email": email, "expiry_time": expiryTime, "enabled": updatedClient["enable"], "routing_refs": routingRefsUpdated, "restarted": true}, nil
+			return map[string]any{"message": result.Msg, "email": email, "expiry_time": expiryTime, "enabled": updatedClient["enable"], "routing_refs": routingRefsUpdated, "restarted": false}, nil
 		}
 	}
 
@@ -1291,10 +1282,7 @@ func (c *XUIClient) updateClientExpiry(ctx context.Context, payload map[string]a
 	if err != nil {
 		return nil, err
 	}
-	if err := c.restartXrayService(ctx); err != nil {
-		return nil, err
-	}
-	return map[string]any{"message": result.Msg, "email": email, "expiry_time": expiryTime, "enabled": updatedClient["enable"], "routing_refs": routingRefsUpdated, "restarted": true}, nil
+	return map[string]any{"message": result.Msg, "email": email, "expiry_time": expiryTime, "enabled": updatedClient["enable"], "routing_refs": routingRefsUpdated, "restarted": false}, nil
 }
 
 func (c *XUIClient) setClientEnabled(ctx context.Context, payload map[string]any) (map[string]any, error) {
@@ -1378,10 +1366,7 @@ func (c *XUIClient) setClientEnabled(ctx context.Context, payload map[string]any
 			"id":       inboundID,
 			"settings": string(clientSettings),
 		}); err == nil {
-			if err := c.restartXrayService(ctx); err != nil {
-				return nil, err
-			}
-			return map[string]any{"message": result.Msg, "email": email, "client_id": updateID, "inbound_id": inboundID, "enabled": updatedClient["enable"], "restarted": true}, nil
+			return map[string]any{"message": result.Msg, "email": email, "client_id": updateID, "inbound_id": inboundID, "enabled": updatedClient["enable"], "restarted": false}, nil
 		}
 	}
 
@@ -1399,10 +1384,7 @@ func (c *XUIClient) setClientEnabled(ctx context.Context, payload map[string]any
 	if err != nil {
 		return nil, err
 	}
-	if err := c.restartXrayService(ctx); err != nil {
-		return nil, err
-	}
-	return map[string]any{"message": result.Msg, "email": email, "client_id": clientID, "inbound_id": inboundID, "enabled": updatedClient["enable"], "restarted": true}, nil
+	return map[string]any{"message": result.Msg, "email": email, "client_id": clientID, "inbound_id": inboundID, "enabled": updatedClient["enable"], "restarted": false}, nil
 }
 
 func boolPayloadValue(payload map[string]any, key string) (bool, bool) {
@@ -1512,10 +1494,7 @@ func (c *XUIClient) deleteClient(ctx context.Context, payload map[string]any) (m
 	if removedClientID != "" {
 		path := fmt.Sprintf("/panel/api/inbounds/%d/delClient/%s", inboundID, url.PathEscape(removedClientID))
 		if result, err := c.postJSON(ctx, path, map[string]any{}); err == nil {
-			if err := c.restartXrayService(ctx); err != nil {
-				return nil, err
-			}
-			return map[string]any{"message": result.Msg, "email": email, "client_id": removedClientID, "inbound_id": inboundID, "routing_refs": routingRefsUpdated, "restarted": true}, nil
+			return map[string]any{"message": result.Msg, "email": email, "client_id": removedClientID, "inbound_id": inboundID, "routing_refs": routingRefsUpdated, "restarted": false}, nil
 		}
 	}
 
@@ -1534,10 +1513,7 @@ func (c *XUIClient) deleteClient(ctx context.Context, payload map[string]any) (m
 	if err != nil {
 		return nil, err
 	}
-	if err := c.restartXrayService(ctx); err != nil {
-		return nil, err
-	}
-	return map[string]any{"message": result.Msg, "email": email, "client_id": removedClientID, "inbound_id": inboundID, "routing_refs": routingRefsUpdated, "restarted": true}, nil
+	return map[string]any{"message": result.Msg, "email": email, "client_id": removedClientID, "inbound_id": inboundID, "routing_refs": routingRefsUpdated, "restarted": false}, nil
 }
 
 func (c *XUIClient) removeRoutingUserReferences(ctx context.Context, email string) (int, error) {
@@ -2631,11 +2607,7 @@ func (c *XUIClient) restartIfRequested(ctx context.Context, payload map[string]a
 
 func (c *XUIClient) restartXrayService(ctx context.Context) error {
 	if err := c.postFormAction(ctx, "/panel/api/server/restartXrayService", url.Values{}); err != nil {
-		localErr := restartLocalXUIService(ctx)
-		if localErr == nil {
-			return nil
-		}
-		return fmt.Errorf("%w (local x-ui restart fallback failed: %v)", err, localErr)
+		return err
 	}
 	return nil
 }

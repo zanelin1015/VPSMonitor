@@ -2022,7 +2022,8 @@ func TestXUIExecuteAddClientFallsBackToInboundUpdate(t *testing.T) {
 				}
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "updated"}), nil
 			case "/panel/api/server/restartXrayService":
-				return jsonResponse(t, req, map[string]any{"success": true, "msg": "restarted"}), nil
+				t.Fatalf("add_client must not restart xray")
+				return nil, nil
 			default:
 				t.Fatalf("unexpected path: %s", req.URL.Path)
 				return nil, nil
@@ -2105,7 +2106,8 @@ func TestXUIExecuteDeleteClientFallsBackToInboundUpdate(t *testing.T) {
 				}
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "updated"}), nil
 			case "/panel/api/server/restartXrayService":
-				return jsonResponse(t, req, map[string]any{"success": true, "msg": "restarted"}), nil
+				t.Fatalf("delete_client must not restart xray")
+				return nil, nil
 			default:
 				t.Fatalf("unexpected path: %s", req.URL.Path)
 				return nil, nil

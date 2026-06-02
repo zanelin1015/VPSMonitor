@@ -749,6 +749,45 @@ function percentOf(value: number, maxValue: number): number {
   return clampMetricPercent((value / maxValue) * 100)
 }
 
+function countRealmForwardRules(agents: DashboardAgentView[]): number {
+  return agents.reduce((total, agent) => {
+    const config = agent.entry?.port_forwarding
+    if (!config || config.enabled === false) {
+      return total
+    }
+    return total + (config.rules || []).filter((rule) => rule.enabled !== false && Number(rule.listen_port || 0) > 0).length
+  }, 0)
+}
+
+function countPortPolicyRules(agents: DashboardAgentView[]): number {
+  return agents.reduce((total, agent) => {
+    const rules = [
+      ...(agent.entry?.network_policy?.enabled === false ? [] : agent.entry?.network_policy?.rules || []),
+      ...(agent.network_policy?.rules || []),
+    ]
+    const seen = new Set<string>()
+    for (const rule of rules) {
+      const port = Number(rule.port || 0)
+      if (!port || rule.enabled === false) {
+        continue
+      }
+      seen.add(`${port}:${rule.protocol || 'both'}`)
+    }
+    return total + seen.size
+  }, 0)
+}
+
+function buildOverviewTrafficRows(agents: DashboardAgentView[]): Array<{ agentID: string; name: string; used: number }> {
+  return agents
+    .map((agent) => ({
+      agentID: agent.agent_id,
+      name: agentWorkbenchName(agent),
+      used: calculateTrafficStatus(agent).total.used,
+    }))
+    .filter((row) => row.used > 0)
+    .sort((left, right) => right.used - left.used)
+}
+
 export function OverviewSummaryCard(props: {
   dashboardView: GlobalDashboardView | null
   scopedAgentCount: number
@@ -760,7 +799,7 @@ export function OverviewSummaryCard(props: {
   costCurrency: CurrencyCode
   currencyOptions: CurrencyCode[]
   monthlyFinance: { profitTotal: number; revenueTotal: number; costTotal: number }
-  financeAgents: AgentListItem[]
+  financeAgents: DashboardAgentView[]
   financeChains: ClientChainView[]
   exchangeRates: ExchangeRatesState
   selectedTag: string
@@ -1002,75 +1041,79 @@ export function OverviewSummaryCard(props: {
     },
   ]
 
+  const scopedClientCount = financeAgents.reduce((total, agent) => total + Number(agent.client_count || 0), 0) || dashboardView?.totals.client_count || 0
+  const scopedOnlineClientCount = financeAgents.reduce((total, agent) => total + Number(agent.online_client_count || 0), 0) || dashboardView?.totals.online_client_count || 0
+  const hasXUI = scopedNodeCount > 0 || scopedClientCount > 0 || financeAgents.some((agent) => Number(agent.outbound_count || 0) > 0 || Number(agent.routing_rule_count || 0) > 0 || Number(agent.summary.inbound_count || 0) > 0)
+  const realmForwardCount = countRealmForwardRules(financeAgents)
+  const portPolicyCount = countPortPolicyRules(financeAgents)
+  const trafficRows = buildOverviewTrafficRows(financeAgents).slice(0, compact ? 4 : 6)
+  const maxTrafficUsed = Math.max(1, ...trafficRows.map((row) => row.used))
+  const totalTrafficUsed = scopedNetwork.sent + scopedNetwork.recv
+
   return (
     <Card className={`surface-card summary-card${compact ? ' compact-summary-card' : ''}`} bordered={false}>
       {dashboardView ? (
         <>
-            <div className="overview-stat-grid">
-              <section className="overview-stat-card overview-stat-blue">
-                <div className="overview-stat-title">服务器总数</div>
-                <div className="overview-stat-value">
-                  <span className="overview-stat-dot" />
-                  <strong>{scopedAgentCount}</strong>
-                </div>
-                <div className="overview-stat-foot">节点 {scopedNodeCount} · 标签 {dashboardView.totals.tagged_agent_count}</div>
-              </section>
-              <section className="overview-stat-card overview-stat-green">
-                <div className="overview-stat-title">Client 状态</div>
+            <div className="overview-stat-grid overview-capability-grid">
+              {hasXUI ? (
+                <section className="overview-stat-card overview-stat-blue">
+                  <div className="overview-stat-title">x-ui 节点</div>
+                  <div className="overview-stat-value">
+                    <span className="overview-stat-dot" />
+                    <strong>{scopedNodeCount}</strong>
+                  </div>
+                  <div className="overview-stat-foot">客户端 {scopedClientCount} · 在线 {scopedOnlineClientCount}</div>
+                </section>
+              ) : null}
+              {hasXUI ? (
+                <section className="overview-stat-card overview-network-card">
+                  <div className="overview-stat-title">实时速度</div>
+                  <div className="overview-network-total">
+                    <span className="network-up">↑ {formatSpeed(scopedNetwork.up)}</span>
+                    <span className="network-down">↓ {formatSpeed(scopedNetwork.down)}</span>
+                  </div>
+                  <div className="overview-stat-foot">总速 {formatSpeed(scopedNetwork.up + scopedNetwork.down)} · x-ui 异常 {xuiErrorAgentCount}</div>
+                </section>
+              ) : null}
+              {realmForwardCount > 0 ? (
+                <section className="overview-stat-card overview-stat-green">
+                  <div className="overview-stat-title">Realm 转发</div>
+                  <div className="overview-stat-value">
+                    <span className="overview-stat-dot" />
+                    <strong>{realmForwardCount}</strong>
+                  </div>
+                  <div className="overview-stat-foot">当前筛选范围内已启用转发规则</div>
+                </section>
+              ) : null}
+              {portPolicyCount > 0 ? (
+                <section className="overview-stat-card overview-stat-red">
+                  <div className="overview-stat-title">端口策略</div>
+                  <div className="overview-stat-value">
+                    <span className="overview-stat-dot" />
+                    <strong>{portPolicyCount}</strong>
+                  </div>
+                  <div className="overview-stat-foot">端口限速 / 白名单策略数量</div>
+                </section>
+              ) : null}
+              <section className="overview-stat-card overview-traffic-chart-card">
+                <div className="overview-stat-title">已用流量图</div>
                 <div className="overview-network-total">
-                  <span className="network-down">在线 {onlineAgentCount}</span>
-                  <span className="network-up">离线 {offlineAgentCount}</span>
+                  <span className="network-up">{formatBytes(totalTrafficUsed)}</span>
+                  {!restrictedView ? <span className="network-down">↑{formatBytes(scopedNetwork.sent)} · ↓{formatBytes(scopedNetwork.recv)}</span> : null}
                 </div>
-                <div className="overview-stat-foot">
-                  {restrictedView ? `仅显示已授权 Client · 链路 ${dashboardView.totals.chain_count}` : `x-ui 异常 ${xuiErrorAgentCount} · 出站 ${dashboardView.totals.outbound_count} · 规则 ${dashboardView.totals.routing_rule_count}`}
+                <div className="overview-traffic-bars">
+                  {trafficRows.length ? trafficRows.map((row) => (
+                    <div className="overview-traffic-row" key={row.agentID}>
+                      <span>{row.name}</span>
+                      <div><i style={{ width: `${Math.max(4, Math.min(100, (row.used / maxTrafficUsed) * 100))}%` }} /></div>
+                      <strong>{formatBytes(row.used)}</strong>
+                    </div>
+                  )) : <div className="overview-stat-foot">暂无流量数据</div>}
                 </div>
               </section>
-              <section className="overview-stat-card overview-network-card">
-                <div className="overview-stat-title">{restrictedView ? '周期已用流量' : '本周期流量'}</div>
-                <div className="overview-network-total">
-                  {restrictedView ? <span className="network-up">{formatBytes(scopedNetwork.sent + scopedNetwork.recv)}</span> : <span className="network-up">↑{formatBytes(scopedNetwork.sent)}</span>}
-                  {!restrictedView ? <span className="network-down">↓{formatBytes(scopedNetwork.recv)}</span> : null}
-                </div>
-                {!restrictedView ? <div className="overview-network-speed">
-                  <span>⬆ {formatSpeed(scopedNetwork.up)}</span>
-                  <span>⬇ {formatSpeed(scopedNetwork.down)}</span>
-                </div> : <div className="overview-stat-foot">不展示总额度，仅展示授权范围内已用总量</div>}
-              </section>
-              {!restrictedView ? <section
-                className="overview-stat-card overview-cost-card overview-cost-card-clickable"
-                role="button"
-                tabIndex={0}
-                aria-expanded={financeDetailOpen}
-                title={financeDetailOpen ? '点击收起成本与收入明细' : '点击查看成本与收入明细'}
-                onClick={() => setFinanceDetailOpen((open) => !open)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault()
-                    setFinanceDetailOpen((open) => !open)
-                  }
-                }}
-              >
-                <div className="overview-stat-title overview-cost-title">
-                  <span>财务月览</span>
-                  <Select
-                    className="overview-currency-select"
-                    size="small"
-                    value={costCurrency}
-                    options={currencyOptions.map((currency) => ({ value: currency, label: currency }))}
-                    popupMatchSelectWidth={96}
-                    onClick={(event) => event.stopPropagation()}
-                    onKeyDown={(event) => event.stopPropagation()}
-                    onChange={(value) => onCostCurrencyChange(value as CurrencyCode)}
-                  />
-                </div>
-                <div className="overview-cost-value">{formatMoney(monthlyFinance.profitTotal, costCurrency)}</div>
-                <div className="overview-stat-foot">
-                  营收 {formatMoney(monthlyFinance.revenueTotal, costCurrency)} · 花销 {formatMoney(monthlyFinance.costTotal, costCurrency)}
-                </div>
-                {exchangeRates.error ? <div className="overview-stat-foot">汇率加载失败：{exchangeRates.error}</div> : null}
-              </section> : null}
             </div>
             <div className="overview-summary-strip">
+              <span>Client · {onlineAgentCount} 在线 / {offlineAgentCount} 离线</span>
               <span>已匹配链路 · {dashboardView.totals.link_count}</span>
               <span>前端客户端链路 · {dashboardView.totals.chain_count}</span>
               <span>标签视图 · {selectedTag || '全部'}</span>
