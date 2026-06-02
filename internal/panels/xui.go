@@ -43,6 +43,7 @@ var defaultXUIDBPaths = []string{
 	"/etc/x-ui/x-ui.db",
 	"/etc/x-ui/3x-ui.db",
 	"/usr/local/x-ui/x-ui.db",
+	"/opt/1panel/docker/compose/3x-ui/db/x-ui.db",
 }
 
 type xuiEnvelope struct {
@@ -214,6 +215,9 @@ func (c *XUIClient) collectAuthenticated(ctx context.Context, snapshot *model.XU
 	if err != nil {
 		return err
 	}
+	if clients, err := c.getJSONList(ctx, "/panel/api/clients/list"); err == nil {
+		inbounds = mergeXUIClientsIntoInbounds(inbounds, clients)
+	}
 	snapshot.Inbounds = inbounds
 
 	configJSON, err := c.collectXrayConfig(ctx)
@@ -285,6 +289,196 @@ func mergeRicherXrayConfig(primary map[string]any, fallback map[string]any) map[
 		merged["routing"] = fallback["routing"]
 	}
 	return merged
+}
+
+func mergeXUIClientsIntoInbounds(inbounds []map[string]any, clients []map[string]any) []map[string]any {
+	if len(inbounds) == 0 || len(clients) == 0 {
+		return inbounds
+	}
+	byID := make(map[int]map[string]any, len(inbounds))
+	for _, inbound := range inbounds {
+		if id := intValue(inbound["id"]); id > 0 {
+			byID[id] = inbound
+		}
+	}
+	for _, rawClient := range clients {
+		inboundIDs := xuiClientInboundIDs(rawClient)
+		if len(inboundIDs) == 0 {
+			continue
+		}
+		for _, inboundID := range inboundIDs {
+			inbound := byID[inboundID]
+			if inbound == nil {
+				continue
+			}
+			appendClientToInbound(inbound, rawClient)
+		}
+	}
+	return inbounds
+}
+
+func xuiClientInboundIDs(client map[string]any) []int {
+	keys := []string{"inboundIds", "inbound_ids", "inboundIDs", "inbounds"}
+	var result []int
+	for _, key := range keys {
+		result = append(result, intSliceValue(client[key])...)
+	}
+	for _, key := range []string{"inboundId", "inbound_id"} {
+		if id := intValue(client[key]); id > 0 {
+			result = append(result, id)
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	seen := make(map[int]struct{}, len(result))
+	unique := result[:0]
+	for _, id := range result {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+	return unique
+}
+
+func intSliceValue(raw any) []int {
+	switch value := raw.(type) {
+	case []int:
+		return append([]int(nil), value...)
+	case []int64:
+		result := make([]int, 0, len(value))
+		for _, item := range value {
+			result = append(result, int(item))
+		}
+		return result
+	case []float64:
+		result := make([]int, 0, len(value))
+		for _, item := range value {
+			result = append(result, int(item))
+		}
+		return result
+	case []any:
+		result := make([]int, 0, len(value))
+		for _, item := range value {
+			if id := intValue(item); id > 0 {
+				result = append(result, id)
+			}
+		}
+		return result
+	default:
+		if id := intValue(raw); id > 0 {
+			return []int{id}
+		}
+		return nil
+	}
+}
+
+func appendClientToInbound(inbound map[string]any, rawClient map[string]any) {
+	settings, settingsText, err := decodeInboundSettings(inbound["settings"])
+	if err != nil {
+		return
+	}
+	clients := objectSlice(settings["clients"])
+	client := normalizeXUIV3ClientForInbound(rawClient)
+	if !containsXUIClient(clients, client) {
+		clients = append(clients, client)
+		settings["clients"] = clients
+		if settingsText {
+			if data, err := json.Marshal(settings); err == nil {
+				inbound["settings"] = string(data)
+			}
+		} else {
+			inbound["settings"] = settings
+		}
+	}
+	stats := objectSlice(inbound["clientStats"])
+	stat := xuiV3ClientTrafficStat(rawClient, intValue(inbound["id"]))
+	if !containsXUIClientStat(stats, stat) {
+		stats = append(stats, stat)
+		inbound["clientStats"] = stats
+	}
+}
+
+func normalizeXUIV3ClientForInbound(raw map[string]any) map[string]any {
+	client := make(map[string]any, len(raw))
+	for key, value := range raw {
+		switch key {
+		case "inboundIds", "inbound_ids", "inboundIDs", "inbounds", "inboundId", "inbound_id":
+			continue
+		default:
+			client[key] = value
+		}
+	}
+	copyAlias(client, "id", "uuid")
+	copyAlias(client, "subId", "sub_id")
+	copyAlias(client, "tgId", "tg_id")
+	copyAlias(client, "limitIp", "limit_ip")
+	copyAlias(client, "totalGB", "total")
+	copyAlias(client, "expiryTime", "expiry_time")
+	copyAlias(client, "lastOnline", "last_online")
+	copyAlias(client, "createdAt", "created_at")
+	copyAlias(client, "updatedAt", "updated_at")
+	if _, ok := client["enable"]; !ok {
+		copyAlias(client, "enable", "enabled")
+	}
+	return client
+}
+
+func xuiV3ClientTrafficStat(raw map[string]any, inboundID int) map[string]any {
+	stat := make(map[string]any)
+	for _, key := range []string{"id", "email", "up", "down", "allTime", "expiryTime", "total", "reset", "lastOnline", "enable"} {
+		if value, ok := raw[key]; ok {
+			stat[key] = value
+		}
+	}
+	for _, key := range []string{"all_time", "expiry_time", "last_online"} {
+		if value, ok := raw[key]; ok {
+			stat[key] = value
+		}
+	}
+	stat["inboundId"] = inboundID
+	copyAlias(stat, "allTime", "all_time")
+	copyAlias(stat, "expiryTime", "expiry_time")
+	copyAlias(stat, "lastOnline", "last_online")
+	return stat
+}
+
+func copyAlias(target map[string]any, preferred, fallback string) {
+	if _, ok := target[preferred]; ok {
+		return
+	}
+	if value, ok := target[fallback]; ok {
+		target[preferred] = value
+	}
+}
+
+func containsXUIClient(clients []map[string]any, candidate map[string]any) bool {
+	email := strings.TrimSpace(stringValue(candidate["email"]))
+	id := clientPrimaryID(candidate)
+	for _, client := range clients {
+		if email != "" && strings.EqualFold(strings.TrimSpace(stringValue(client["email"])), email) {
+			return true
+		}
+		if id != "" && clientPrimaryID(client) == id {
+			return true
+		}
+	}
+	return false
+}
+
+func containsXUIClientStat(stats []map[string]any, candidate map[string]any) bool {
+	email := strings.TrimSpace(stringValue(candidate["email"]))
+	for _, stat := range stats {
+		if email != "" && strings.EqualFold(strings.TrimSpace(stringValue(stat["email"])), email) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *XUIClient) ExecuteAction(ctx context.Context, action model.XUIAction) (map[string]any, error) {
@@ -391,6 +585,13 @@ func (c *XUIClient) addClient(ctx context.Context, payload map[string]any) (map[
 	if inbound == nil {
 		return nil, fmt.Errorf("inbound not found for new client %s", email)
 	}
+	inboundID = intValue(inbound["id"])
+	if result, err := c.postJSON(ctx, "/panel/api/clients/add", map[string]any{
+		"client":     client,
+		"inboundIds": []int{inboundID},
+	}); err == nil {
+		return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID}, nil
+	}
 
 	settings, settingsText, err := decodeInboundSettings(inbound["settings"])
 	if err != nil {
@@ -403,8 +604,6 @@ func (c *XUIClient) addClient(ctx context.Context, payload map[string]any) (map[
 		}
 	}
 	normalizeInboundClient(client, stringValue(inbound["protocol"]))
-	inboundID = intValue(inbound["id"])
-
 	clientSettings, _ := json.Marshal(map[string]any{"clients": []map[string]any{client}})
 	if result, err := c.postJSON(ctx, "/panel/api/inbounds/addClient", map[string]any{
 		"id":       inboundID,
@@ -435,6 +634,26 @@ func (c *XUIClient) addClient(ctx context.Context, payload map[string]any) (map[
 		return nil, err
 	}
 	return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": true}, nil
+}
+
+func (c *XUIClient) updateV3Client(ctx context.Context, email string, mutate func(map[string]any) map[string]any) (xuiEnvelope, error) {
+	var empty xuiEnvelope
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return empty, fmt.Errorf("email is required")
+	}
+	client, err := c.getJSONObject(ctx, "/panel/api/clients/get/"+url.PathEscape(email))
+	if err != nil {
+		return empty, err
+	}
+	updated := normalizeXUIV3ClientForInbound(client)
+	if mutate != nil {
+		updated = mutate(updated)
+	}
+	for _, key := range []string{"rowId", "inboundIds", "inbound_ids", "inboundIDs", "inbounds", "inboundId", "inbound_id"} {
+		delete(updated, key)
+	}
+	return c.postJSON(ctx, "/panel/api/clients/update/"+url.PathEscape(email), updated)
 }
 
 func (c *XUIClient) addOutbound(ctx context.Context, payload map[string]any) (map[string]any, error) {
@@ -979,6 +1198,20 @@ func (c *XUIClient) updateClientExpiry(ctx context.Context, payload map[string]a
 	if expiryTime <= 0 {
 		return nil, fmt.Errorf("expiry_time is required")
 	}
+	if result, err := c.updateV3Client(ctx, lookupEmail, func(client map[string]any) map[string]any {
+		client["email"] = email
+		client["expiryTime"] = expiryTime
+		if hasEnabled {
+			client["enable"] = enabled
+		}
+		return client
+	}); err == nil {
+		routingRefsUpdated, err := c.replaceRoutingUserReferences(ctx, previousEmail, email)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"message": result.Msg, "email": email, "expiry_time": expiryTime, "enabled": enabled, "routing_refs": routingRefsUpdated}, nil
+	}
 
 	inbounds, err := c.getJSONList(ctx, "/panel/api/inbounds/list")
 	if err != nil {
@@ -1086,6 +1319,14 @@ func (c *XUIClient) setClientEnabled(ctx context.Context, payload map[string]any
 	}
 	if !hasEnabled {
 		return nil, fmt.Errorf("enabled is required")
+	}
+	if email != "" {
+		if result, err := c.updateV3Client(ctx, email, func(client map[string]any) map[string]any {
+			client["enable"] = enabled
+			return client
+		}); err == nil {
+			return map[string]any{"message": result.Msg, "email": email, "client_id": clientID, "inbound_id": inboundID, "enabled": enabled}, nil
+		}
 	}
 
 	inbounds, err := c.getJSONList(ctx, "/panel/api/inbounds/list")
@@ -1206,6 +1447,15 @@ func (c *XUIClient) deleteClient(ctx context.Context, payload map[string]any) (m
 	}
 	if email == "" && clientID == "" {
 		return nil, fmt.Errorf("email or client_id is required")
+	}
+	if email != "" {
+		routingRefsUpdated, err := c.removeRoutingUserReferences(ctx, email)
+		if err != nil {
+			return nil, err
+		}
+		if result, err := c.postJSON(ctx, "/panel/api/clients/del/"+url.PathEscape(email), map[string]any{}); err == nil {
+			return map[string]any{"message": result.Msg, "email": email, "client_id": clientID, "inbound_id": inboundID, "routing_refs": routingRefsUpdated}, nil
+		}
 	}
 
 	inbounds, err := c.getJSONList(ctx, "/panel/api/inbounds/list")
@@ -1454,7 +1704,7 @@ func (c *XUIClient) collectLocal(ctx context.Context, snapshot *model.XUISnapsho
 }
 
 func (c *XUIClient) enrichLocalXrayConfig(ctx context.Context, localConfig map[string]any) map[string]any {
-	if !xrayConfigNeedsFallback(localConfig) || c.baseURL == "" || c.config.Username == "" || c.config.Password == "" {
+	if !xrayConfigNeedsFallback(localConfig) || c.baseURL == "" || (!c.hasAPIToken() && c.config.Username == "" && c.config.Password == "") {
 		return localConfig
 	}
 	if err := c.ensureLogin(ctx); err != nil {
@@ -1587,9 +1837,16 @@ func readLocalInbounds(ctx context.Context, db *sql.DB) ([]map[string]any, error
 	if err != nil {
 		return nil, err
 	}
+	clientsByInbound, err := readLocalClients(ctx, db)
+	if err != nil {
+		return nil, err
+	}
 	for _, inbound := range inbounds {
 		id := intValue(inbound["id"])
 		inbound["clientStats"] = stats[id]
+		for _, client := range clientsByInbound[id] {
+			appendClientToInbound(inbound, client)
+		}
 	}
 	return inbounds, nil
 }
@@ -1643,6 +1900,147 @@ func readLocalClientStats(ctx context.Context, db *sql.DB) (map[int][]map[string
 			"reset":      reset,
 			"lastOnline": lastOnline,
 		})
+	}
+	return result, rows.Err()
+}
+
+func readLocalClients(ctx context.Context, db *sql.DB) (map[int][]map[string]any, error) {
+	columns, err := sqliteTableColumns(ctx, db, "clients")
+	if err != nil {
+		return map[int][]map[string]any{}, nil
+	}
+	query := fmt.Sprintf(`
+		SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+		       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+		       %s, %s, %s
+		FROM clients
+		ORDER BY id`,
+		sqliteColumnExpr(columns, "id", "0", "row_id"),
+		sqliteColumnExpr(columns, "email", "''", "email"),
+		sqliteColumnExpr(columns, "uuid", "''", "uuid"),
+		sqliteColumnExpr(columns, "password", "''", "password"),
+		sqliteColumnExpr(columns, "auth", "''", "auth"),
+		sqliteColumnExpr(columns, "flow", "''", "flow"),
+		sqliteColumnExpr(columns, "security", "''", "security"),
+		sqliteColumnExpr(columns, "enable", "1", "enable"),
+		sqliteColumnExpr(columns, "total", "0", "total"),
+		sqliteColumnExpr(columns, "expiry_time", "0", "expiry_time"),
+		sqliteColumnExpr(columns, "reset", "0", "reset"),
+		sqliteColumnExpr(columns, "limit_ip", "0", "limit_ip"),
+		sqliteColumnExpr(columns, "tg_id", "0", "tg_id"),
+		sqliteColumnExpr(columns, "sub_id", "''", "sub_id"),
+		sqliteColumnExpr(columns, "group_name", "''", "group_name"),
+		sqliteColumnExpr(columns, "comment", "''", "comment"),
+		sqliteColumnExpr(columns, "up", "0", "up"),
+		sqliteColumnExpr(columns, "down", "0", "down"),
+		sqliteColumnExpr(columns, "all_time", "0", "all_time"),
+		sqliteColumnExpr(columns, "last_online", "0", "last_online"),
+		sqliteColumnExpr(columns, "created_at", "0", "created_at"),
+		sqliteColumnExpr(columns, "updated_at", "0", "updated_at"),
+		sqliteColumnExpr(columns, "reverse", "''", "reverse"),
+	)
+	rows, err := db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	inboundMap, err := readLocalClientInboundMap(ctx, db, columns)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[int][]map[string]any)
+	for rows.Next() {
+		var rowID, reset, limitIP int
+		var enable bool
+		var total, expiryTime, tgID, up, down, allTime, lastOnline, createdAt, updatedAt int64
+		var email, uuid, password, auth, flow, security, subID, group, comment, reverse sql.NullString
+		if err := rows.Scan(
+			&rowID, &email, &uuid, &password, &auth, &flow, &security, &enable, &total, &expiryTime,
+			&reset, &limitIP, &tgID, &subID, &group, &comment, &up, &down, &allTime, &lastOnline,
+			&createdAt, &updatedAt, &reverse,
+		); err != nil {
+			return nil, err
+		}
+		client := map[string]any{
+			"rowId":      rowID,
+			"email":      nullString(email),
+			"id":         nullString(uuid),
+			"password":   nullString(password),
+			"auth":       nullString(auth),
+			"flow":       nullString(flow),
+			"security":   nullString(security),
+			"enable":     enable,
+			"totalGB":    total,
+			"expiryTime": expiryTime,
+			"reset":      reset,
+			"limitIp":    limitIP,
+			"tgId":       tgID,
+			"subId":      nullString(subID),
+			"group":      nullString(group),
+			"comment":    nullString(comment),
+			"up":         up,
+			"down":       down,
+			"allTime":    allTime,
+			"lastOnline": lastOnline,
+			"createdAt":  createdAt,
+			"updatedAt":  updatedAt,
+		}
+		if rawReverse := strings.TrimSpace(nullString(reverse)); rawReverse != "" {
+			var parsed any
+			if err := json.Unmarshal([]byte(rawReverse), &parsed); err == nil {
+				client["reverse"] = parsed
+			} else {
+				client["reverse"] = rawReverse
+			}
+		}
+		for _, inboundID := range inboundMap[rowID] {
+			result[inboundID] = append(result[inboundID], client)
+		}
+	}
+	return result, rows.Err()
+}
+
+func readLocalClientInboundMap(ctx context.Context, db *sql.DB, clientColumns map[string]struct{}) (map[int][]int, error) {
+	result := make(map[int][]int)
+	if _, ok := clientColumns["inbound_id"]; ok {
+		rows, err := db.QueryContext(ctx, `SELECT id, inbound_id FROM clients WHERE inbound_id > 0`)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var clientID, inboundID int
+			if err := rows.Scan(&clientID, &inboundID); err != nil {
+				return nil, err
+			}
+			result[clientID] = append(result[clientID], inboundID)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	linkColumns, err := sqliteTableColumns(ctx, db, "client_inbounds")
+	if err != nil {
+		return result, nil
+	}
+	query := fmt.Sprintf(`SELECT %s, %s FROM client_inbounds ORDER BY client_id, inbound_id`,
+		sqliteColumnExpr(linkColumns, "client_id", "0", "client_id"),
+		sqliteColumnExpr(linkColumns, "inbound_id", "0", "inbound_id"),
+	)
+	rows, err := db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var clientID, inboundID int
+		if err := rows.Scan(&clientID, &inboundID); err != nil {
+			return nil, err
+		}
+		if clientID > 0 && inboundID > 0 {
+			result[clientID] = append(result[clientID], inboundID)
+		}
 	}
 	return result, rows.Err()
 }

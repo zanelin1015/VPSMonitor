@@ -31,6 +31,9 @@ func (a *App) hydrateRealmForwardTargets(cfg model.ManagedAgentConfig) model.Man
 }
 
 func preferredRealmForwardTargetAddress(agent model.AgentRecord) string {
+	if strings.TrimSpace(agent.Config.Entry.ImportDomain) != "" {
+		return strings.TrimSpace(agent.Config.Entry.ImportDomain)
+	}
 	for _, address := range agent.Config.Entry.Addresses {
 		if strings.TrimSpace(address) != "" {
 			return strings.TrimSpace(address)
