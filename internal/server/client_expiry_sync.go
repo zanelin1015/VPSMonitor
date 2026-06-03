@@ -74,6 +74,11 @@ func buildClientExpirySyncAction(agentID string, billing model.XUIClientBillingC
 	if billing.Email == "" || (billing.InboundID <= 0 && billing.InboundTag == "") {
 		return model.XUIActionRequest{}, false
 	}
+	// Only records with an explicit start time are authoritative for x-ui expiry sync.
+	// This prevents historical x-ui expiry values saved for billing display from disabling clients.
+	if billing.StartTime <= 0 {
+		return model.XUIActionRequest{}, false
+	}
 	expiryMillis := expectedClientBillingExpiryMillis(billing, now)
 	if expiryMillis <= 0 {
 		return model.XUIActionRequest{}, false

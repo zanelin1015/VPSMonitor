@@ -1350,7 +1350,7 @@ function defaultClientBilling(client: XUIClientView): XUIClientBillingConfig {
     revenue_currency: 'CNY',
     revenue_cycle: 'month',
     start_time: 0,
-    expire_time: Math.max(0, Number(client.expiry_time || 0)),
+    expire_time: 0,
     expire_cycle: 'month',
     expire_auto_renew: false,
   }

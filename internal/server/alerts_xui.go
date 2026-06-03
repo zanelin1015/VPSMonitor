@@ -69,7 +69,7 @@ func (s *alertService) evaluateXUIClientExpiryRenewals(agent model.AgentRecord, 
 	}
 	now := time.Now()
 	for _, billing := range agent.Config.Renewal.ClientBillings {
-		if !billing.ExpireAutoRenew {
+		if !billing.ExpireAutoRenew || billing.StartTime <= 0 {
 			continue
 		}
 		client := findOverviewClient(overview.Clients, billing)

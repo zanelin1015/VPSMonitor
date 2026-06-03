@@ -414,7 +414,11 @@ func normalizeXUIV3ClientForInbound(raw map[string]any) map[string]any {
 			client[key] = value
 		}
 	}
-	copyAlias(client, "id", "uuid")
+	if uuid := strings.TrimSpace(stringValue(client["uuid"])); uuid != "" {
+		client["id"] = uuid
+	} else {
+		copyAlias(client, "id", "uuid")
+	}
 	copyAlias(client, "subId", "sub_id")
 	copyAlias(client, "tgId", "tg_id")
 	copyAlias(client, "limitIp", "limit_ip")

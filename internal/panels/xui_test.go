@@ -1870,6 +1870,7 @@ func TestXUIExecuteSetClientEnabledUsesUpdateClientAPI(t *testing.T) {
 				return jsonResponse(t, req, map[string]any{
 					"success": true,
 					"obj": map[string]any{
+						"id":         42,
 						"email":      "alice@example.com",
 						"uuid":       "uuid-1",
 						"enable":     true,
@@ -1885,6 +1886,9 @@ func TestXUIExecuteSetClientEnabledUsesUpdateClientAPI(t *testing.T) {
 				}
 				if client["enable"] != false || int64Value(client["expiryTime"]) == 0 {
 					t.Fatalf("expected enable=false while preserving client fields, got %#v", client)
+				}
+				if client["id"] != "uuid-1" {
+					t.Fatalf("expected auth uuid to be preserved as id, got %#v", client["id"])
 				}
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "updated"}), nil
 			default:

@@ -50,6 +50,26 @@ func TestBuildClientExpirySyncActionUsesStartTimeAsPeriodStart(t *testing.T) {
 	}
 }
 
+func TestBuildClientExpirySyncActionSkipsBillingWithoutStartTime(t *testing.T) {
+	_, ok := buildClientExpirySyncAction("agent-1", model.XUIClientBillingConfig{
+		InboundID:       20001,
+		InboundTag:      "inbound-20001",
+		Email:           "alice@example.com",
+		RevenueCycle:    "quarter",
+		ExpireTime:      time.Date(2026, 4, 1, 15, 59, 59, 0, time.UTC).UnixMilli(),
+		ExpireCycle:     "quarter",
+		ExpireAutoRenew: false,
+	}, []model.XUIClientView{{
+		InboundID:  20001,
+		InboundTag: "inbound-20001",
+		Email:      "alice@example.com",
+		Enabled:    true,
+	}}, time.Date(2026, 6, 2, 0, 0, 0, 0, time.UTC), "test")
+	if ok {
+		t.Fatal("expected billing without start_time to be ignored for expiry sync")
+	}
+}
+
 func TestHasClientUpdateAsset(t *testing.T) {
 	assets := []string{
 		"VPSMonitor-server-linux-amd64.tar.gz",
