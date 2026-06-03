@@ -513,6 +513,43 @@ func TestXUICollectNormalizesPanelBaseURLBeforeLogin(t *testing.T) {
 	}
 }
 
+func TestNormalizeXUIBaseURLKeepsConfiguredWebPath(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{
+			name: "native x-ui web path",
+			raw:  "http://xui.local:20000/xui/",
+			want: "http://xui.local:20000/xui",
+		},
+		{
+			name: "native x-ui panel page",
+			raw:  "http://xui.local:20000/xui/panel/inbounds",
+			want: "http://xui.local:20000/xui",
+		},
+		{
+			name: "1panel custom web path",
+			raw:  "http://127.0.0.1:20000/HK/panel/inbounds",
+			want: "http://127.0.0.1:20000/HK",
+		},
+		{
+			name: "root panel page",
+			raw:  "http://xui.local:20000/panel/inbounds",
+			want: "http://xui.local:20000",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := normalizeXUIBaseURL(tc.raw); got != tc.want {
+				t.Fatalf("normalizeXUIBaseURL(%q) = %q, want %q", tc.raw, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestXUICollectReloginsAfterAuthFailure(t *testing.T) {
 	client, err := NewXUIClient(config.XUIConfig{
 		Enabled:  true,

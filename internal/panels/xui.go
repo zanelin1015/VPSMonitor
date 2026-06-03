@@ -131,7 +131,7 @@ func normalizeXUIBaseURL(raw string) string {
 			continue
 		}
 		lower := strings.ToLower(part)
-		if lower == "panel" || lower == "xui" || lower == "login" {
+		if lower == "panel" || lower == "login" {
 			break
 		}
 		keep = append(keep, part)
