@@ -1318,10 +1318,10 @@ function normalizeClientBillings(items: XUIClientBillingConfig[]): XUIClientBill
       revenue_cycle: billingCycle,
       start_time: startTime,
       expire_time: startTime > 0
-        ? calculateClientBillingExpiryTime(startTime, billingCycle, Boolean(item.expire_auto_renew))
+        ? calculateClientBillingExpiryTime(startTime, billingCycle)
         : Math.max(0, Number(item.expire_time || 0)),
       expire_cycle: billingCycle,
-      expire_auto_renew: Boolean(item.expire_auto_renew),
+      expire_auto_renew: startTime > 0,
     }
     const key = clientBillingKey(billing)
     if (seen.has(key)) {
@@ -1381,7 +1381,7 @@ function clientBillingCycle(billing: Pick<XUIClientBillingConfig, 'revenue_cycle
   return normalizeClientExpireCycle(billing.revenue_cycle || billing.expire_cycle)
 }
 
-function calculateClientBillingExpiryTime(startTime: number, cycle?: string, autoRenew = false, now = Date.now()): number {
+function calculateClientBillingExpiryTime(startTime: number, cycle?: string, now = Date.now()): number {
   if (!startTime) {
     return 0
   }
@@ -1391,7 +1391,7 @@ function calculateClientBillingExpiryTime(startTime: number, cycle?: string, aut
   }
   let nextStart = addRenewalCycle(periodStart, normalizeClientExpireCycle(cycle))
   let periodEnd = new Date(nextStart.getTime() - 1000)
-  while (autoRenew && periodEnd.getTime() <= now) {
+  while (periodEnd.getTime() <= now) {
     periodStart = nextStart
     nextStart = addRenewalCycle(periodStart, normalizeClientExpireCycle(cycle))
     periodEnd = new Date(nextStart.getTime() - 1000)
@@ -1422,7 +1422,7 @@ function effectiveClientBillingStartTime(billing: XUIClientBillingConfig, fallba
 function effectiveClientBillingExpiryTime(billing: XUIClientBillingConfig, fallbackExpiry = 0): number {
   const startTime = Math.max(0, Number(billing.start_time || 0))
   if (startTime > 0) {
-    return calculateClientBillingExpiryTime(startTime, clientBillingCycle(billing), Boolean(billing.expire_auto_renew))
+    return calculateClientBillingExpiryTime(startTime, clientBillingCycle(billing))
   }
   return Math.max(0, Number(billing.expire_time || fallbackExpiry || 0))
 }
@@ -1438,13 +1438,14 @@ function dateInputToStartMillis(value: string): number {
   return date.getTime()
 }
 
-function clientBillingPatchFromStart(startTime: number, cycle?: string, autoRenew = false): Pick<XUIClientBillingConfig, 'start_time' | 'expire_time' | 'expire_cycle' | 'expire_auto_renew'> {
+function clientBillingPatchFromStart(startTime: number, cycle?: string): Pick<XUIClientBillingConfig, 'start_time' | 'expire_time' | 'expire_cycle' | 'expire_auto_renew'> {
   const normalizedCycle = normalizeClientExpireCycle(cycle)
+  const normalizedStart = Math.max(0, Number(startTime || 0))
   return {
-    start_time: Math.max(0, Number(startTime || 0)),
-    expire_time: calculateClientBillingExpiryTime(Math.max(0, Number(startTime || 0)), normalizedCycle, autoRenew),
+    start_time: normalizedStart,
+    expire_time: calculateClientBillingExpiryTime(normalizedStart, normalizedCycle),
     expire_cycle: normalizedCycle,
-    expire_auto_renew: autoRenew,
+    expire_auto_renew: normalizedStart > 0,
   }
 }
 

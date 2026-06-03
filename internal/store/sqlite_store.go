@@ -388,7 +388,8 @@ func normalizeClientBillings(items []model.XUIClientBillingConfig) []model.XUICl
 		// Client time periods follow the price cycle so billing and expiry stay in sync.
 		item.ExpireCycle = item.RevenueCycle
 		if item.StartTime > 0 {
-			item.ExpireTime = calculateClientBillingExpireTime(item.StartTime, item.RevenueCycle, item.ExpireAutoRenew, time.Now())
+			item.ExpireAutoRenew = true
+			item.ExpireTime = calculateClientBillingExpireTime(item.StartTime, item.RevenueCycle, time.Now())
 		}
 		key := fmt.Sprintf("%d\x00%s\x00%s", item.InboundID, item.InboundTag, item.Email)
 		if _, ok := seen[key]; ok {
@@ -400,14 +401,14 @@ func normalizeClientBillings(items []model.XUIClientBillingConfig) []model.XUICl
 	return normalized
 }
 
-func calculateClientBillingExpireTime(startMillis int64, cycle string, autoRenew bool, now time.Time) int64 {
+func calculateClientBillingExpireTime(startMillis int64, cycle string, now time.Time) int64 {
 	if startMillis <= 0 {
 		return 0
 	}
 	periodStart := time.UnixMilli(startMillis)
 	nextStart := addClientBillingCycle(periodStart, cycle)
 	periodEnd := nextStart.Add(-time.Second)
-	for autoRenew && !periodEnd.After(now) {
+	for !periodEnd.After(now) {
 		periodStart = nextStart
 		nextStart = addClientBillingCycle(periodStart, cycle)
 		periodEnd = nextStart.Add(-time.Second)

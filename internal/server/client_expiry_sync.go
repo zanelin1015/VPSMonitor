@@ -84,11 +84,7 @@ func buildClientExpirySyncAction(agentID string, billing model.XUIClientBillingC
 		return model.XUIActionRequest{}, false
 	}
 	client := findOverviewClient(clients, billing)
-	expired := !billing.ExpireAutoRenew && !time.UnixMilli(expiryMillis).After(now)
 	needsUpdate := client == nil || !expiryMillisClose(client.ExpiryTime, expiryMillis)
-	if expired && client != nil && client.Enabled {
-		needsUpdate = true
-	}
 	if !needsUpdate {
 		return model.XUIActionRequest{}, false
 	}
@@ -98,7 +94,7 @@ func buildClientExpirySyncAction(agentID string, billing model.XUIClientBillingC
 		"email":             billing.Email,
 		"expiry_time":       expiryMillis,
 		"expire_cycle":      normalizeClientExpireCycle(billing.ExpireCycle),
-		"expire_auto_renew": billing.ExpireAutoRenew,
+		"expire_auto_renew": true,
 		"sync_reason":       reason,
 	}
 	if agentID != "" {
@@ -107,27 +103,24 @@ func buildClientExpirySyncAction(agentID string, billing model.XUIClientBillingC
 	if billing.StartTime > 0 {
 		payload["start_time"] = billing.StartTime
 	}
-	if expired {
-		payload["enabled"] = false
-	}
 	return model.XUIActionRequest{Kind: model.XUIActionUpdateClientExpiry, Payload: payload}, true
 }
 
 func expectedClientBillingExpiryMillis(billing model.XUIClientBillingConfig, now time.Time) int64 {
 	if billing.StartTime > 0 {
-		return calculateClientBillingExpiryMillis(billing.StartTime, normalizeClientExpireCycle(billing.ExpireCycle), billing.ExpireAutoRenew, now)
+		return calculateClientBillingExpiryMillis(billing.StartTime, normalizeClientExpireCycle(billing.ExpireCycle), now)
 	}
 	return billing.ExpireTime
 }
 
-func calculateClientBillingExpiryMillis(startMillis int64, cycle string, autoRenew bool, now time.Time) int64 {
+func calculateClientBillingExpiryMillis(startMillis int64, cycle string, now time.Time) int64 {
 	if startMillis <= 0 {
 		return 0
 	}
 	periodStart := time.UnixMilli(startMillis)
 	nextStart := addClientExpireCycle(periodStart, cycle)
 	periodEnd := nextStart.Add(-time.Second)
-	for autoRenew && !periodEnd.After(now) {
+	for !periodEnd.After(now) {
 		periodStart = nextStart
 		nextStart = addClientExpireCycle(periodStart, cycle)
 		periodEnd = nextStart.Add(-time.Second)
