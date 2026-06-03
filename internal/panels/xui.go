@@ -576,7 +576,10 @@ func (c *XUIClient) addClient(ctx context.Context, payload map[string]any) (map[
 		if result, err := c.addClientViaAPI(ctx, inboundID, client); err == nil {
 			return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": false}, nil
 		}
-		if result, err := c.addClientViaInboundAPI(ctx, inboundID, protocol, client); err == nil {
+		if result, err := c.addClientViaInboundDirectAPI(ctx, inboundID, protocol, client); err == nil {
+			return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": false}, nil
+		}
+		if result, err := c.addClientViaInboundSettingsAPI(ctx, inboundID, protocol, client); err == nil {
 			return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": false}, nil
 		}
 	}
@@ -597,7 +600,10 @@ func (c *XUIClient) addClient(ctx context.Context, payload map[string]any) (map[
 	if result, err := c.addClientViaAPI(ctx, inboundID, client); err == nil {
 		return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": false}, nil
 	}
-	if result, err := c.addClientViaInboundAPI(ctx, inboundID, firstNonEmptyString(protocol, stringValue(inbound["protocol"])), client); err == nil {
+	if result, err := c.addClientViaInboundDirectAPI(ctx, inboundID, firstNonEmptyString(protocol, stringValue(inbound["protocol"])), client); err == nil {
+		return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": false}, nil
+	}
+	if result, err := c.addClientViaInboundSettingsAPI(ctx, inboundID, firstNonEmptyString(protocol, stringValue(inbound["protocol"])), client); err == nil {
 		return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": false}, nil
 	}
 
@@ -645,7 +651,15 @@ func (c *XUIClient) addClientViaAPI(ctx context.Context, inboundID int, client m
 	})
 }
 
-func (c *XUIClient) addClientViaInboundAPI(ctx context.Context, inboundID int, protocol string, client map[string]any) (xuiEnvelope, error) {
+func (c *XUIClient) addClientViaInboundDirectAPI(ctx context.Context, inboundID int, protocol string, client map[string]any) (xuiEnvelope, error) {
+	normalizeInboundClient(client, protocol)
+	return c.postJSON(ctx, "/panel/api/inbounds/addClient", map[string]any{
+		"inboundId": inboundID,
+		"client":    client,
+	})
+}
+
+func (c *XUIClient) addClientViaInboundSettingsAPI(ctx context.Context, inboundID int, protocol string, client map[string]any) (xuiEnvelope, error) {
 	normalizeInboundClient(client, protocol)
 	clientSettings, _ := json.Marshal(map[string]any{"clients": []map[string]any{client}})
 	return c.postJSON(ctx, "/panel/api/inbounds/addClient", map[string]any{

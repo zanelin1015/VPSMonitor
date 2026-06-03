@@ -2066,12 +2066,12 @@ func TestXUIExecuteAddClientUsesInboundAddClientBeforeList(t *testing.T) {
 				if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 					t.Fatalf("decode addClient body: %v", err)
 				}
-				if intValue(body["id"]) != 7 {
-					t.Fatalf("expected inbound id 7, got %#v", body["id"])
+				if intValue(body["inboundId"]) != 7 {
+					t.Fatalf("expected inbound id 7, got %#v", body["inboundId"])
 				}
-				settingsText, ok := body["settings"].(string)
-				if !ok || !strings.Contains(settingsText, "bob@example.com") {
-					t.Fatalf("unexpected settings: %#v", body["settings"])
+				added, ok := body["client"].(map[string]any)
+				if !ok || added["email"] != "bob@example.com" {
+					t.Fatalf("unexpected client payload: %#v", body["client"])
 				}
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "added"}), nil
 			case "/panel/api/inbounds/list":
