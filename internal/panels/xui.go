@@ -566,33 +566,34 @@ func (c *XUIClient) addClient(ctx context.Context, payload map[string]any) (map[
 	if email == "" {
 		return nil, fmt.Errorf("client.email is required")
 	}
+	protocol := strings.TrimSpace(stringFromMap(payload, "protocol"))
 
 	if inboundID > 0 {
 		if result, err := c.addClientViaAPI(ctx, inboundID, client); err == nil {
+			return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": false}, nil
+		}
+		if result, err := c.addClientViaInboundAPI(ctx, inboundID, protocol, client); err == nil {
 			return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": false}, nil
 		}
 	}
 
 	inbounds, err := c.getJSONList(ctx, "/panel/api/inbounds/list")
 	if err != nil {
-		return nil, err
-	}
-	var inbound map[string]any
-	for _, item := range inbounds {
-		if inboundID > 0 && intValue(item["id"]) == inboundID {
-			inbound = item
-			break
+		localInbounds, localErr := c.readLocalInbounds(ctx)
+		if localErr != nil {
+			return nil, err
 		}
-		if inboundTag != "" && stringValue(item["tag"]) == inboundTag {
-			inbound = item
-			break
-		}
+		inbounds = localInbounds
 	}
+	inbound := findInboundForAction(inbounds, inboundID, inboundTag)
 	if inbound == nil {
 		return nil, fmt.Errorf("inbound not found for new client %s", email)
 	}
 	inboundID = intValue(inbound["id"])
 	if result, err := c.addClientViaAPI(ctx, inboundID, client); err == nil {
+		return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": false}, nil
+	}
+	if result, err := c.addClientViaInboundAPI(ctx, inboundID, firstNonEmptyString(protocol, stringValue(inbound["protocol"])), client); err == nil {
 		return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": false}, nil
 	}
 
@@ -638,6 +639,51 @@ func (c *XUIClient) addClientViaAPI(ctx context.Context, inboundID int, client m
 		"client":     client,
 		"inboundIds": []int{inboundID},
 	})
+}
+
+func (c *XUIClient) addClientViaInboundAPI(ctx context.Context, inboundID int, protocol string, client map[string]any) (xuiEnvelope, error) {
+	normalizeInboundClient(client, protocol)
+	clientSettings, _ := json.Marshal(map[string]any{"clients": []map[string]any{client}})
+	return c.postJSON(ctx, "/panel/api/inbounds/addClient", map[string]any{
+		"id":       inboundID,
+		"settings": string(clientSettings),
+	})
+}
+
+func (c *XUIClient) readLocalInbounds(ctx context.Context) ([]map[string]any, error) {
+	dbPath, _, err := c.resolveLocalDBPath()
+	if err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("sqlite", sqliteReadOnlyDSN(dbPath))
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	if err := db.PingContext(ctx); err != nil {
+		return nil, err
+	}
+	return readLocalInbounds(ctx, db)
+}
+
+func findInboundForAction(inbounds []map[string]any, inboundID int, inboundTag string) map[string]any {
+	inboundTag = strings.TrimSpace(inboundTag)
+	for _, item := range inbounds {
+		if inboundID > 0 && intValue(item["id"]) == inboundID {
+			return item
+		}
+		if inboundTag != "" && stringValue(item["tag"]) == inboundTag {
+			return item
+		}
+	}
+	for _, item := range inbounds {
+		if inboundID > 0 && intValue(item["port"]) == inboundID {
+			if inboundTag == "" || stringValue(item["tag"]) == inboundTag {
+				return item
+			}
+		}
+	}
+	return nil
 }
 
 func (c *XUIClient) updateV3Client(ctx context.Context, email string, mutate func(map[string]any) map[string]any) (xuiEnvelope, error) {

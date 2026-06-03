@@ -1977,6 +1977,144 @@ func TestXUIExecuteAddClientUsesAddClientAPI(t *testing.T) {
 	}
 }
 
+func TestXUIExecuteAddClientUsesInboundAddClientBeforeList(t *testing.T) {
+	client, err := NewXUIClient(config.XUIConfig{
+		Enabled:  true,
+		BaseURL:  "https://xui.local",
+		Username: "admin",
+		Password: "pass",
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewXUIClient: %v", err)
+	}
+
+	addClientCalled := false
+	client.client = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/login":
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
+			case "/panel/api/clients/add":
+				return jsonResponse(t, req, map[string]any{"success": false, "msg": "v3 add unavailable"}), nil
+			case "/panel/api/inbounds/addClient":
+				addClientCalled = true
+				var body map[string]any
+				if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+					t.Fatalf("decode addClient body: %v", err)
+				}
+				if intValue(body["id"]) != 7 {
+					t.Fatalf("expected inbound id 7, got %#v", body["id"])
+				}
+				settingsText, ok := body["settings"].(string)
+				if !ok || !strings.Contains(settingsText, "bob@example.com") {
+					t.Fatalf("unexpected settings: %#v", body["settings"])
+				}
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "added"}), nil
+			case "/panel/api/inbounds/list":
+				t.Fatalf("old addClient fallback should not require listing inbounds")
+				return nil, nil
+			default:
+				t.Fatalf("unexpected path: %s", req.URL.Path)
+				return nil, nil
+			}
+		}),
+	}
+
+	result, err := client.ExecuteAction(context.Background(), model.XUIAction{
+		Kind: model.XUIActionAddClient,
+		Payload: map[string]any{
+			"inbound_id": 7,
+			"protocol":   "vless",
+			"client": map[string]any{
+				"email":  "bob@example.com",
+				"enable": true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteAction: %v", err)
+	}
+	if result["email"] != "bob@example.com" {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+	if !addClientCalled {
+		t.Fatalf("expected inbound addClient API to be called")
+	}
+}
+
+func TestXUIExecuteAddClientResolvesLocalInboundWhenList404(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "x-ui.db")
+	createLocalXUITestDB(t, dbPath)
+
+	client, err := NewXUIClient(config.XUIConfig{
+		Enabled:  true,
+		BaseURL:  "https://xui.local",
+		Username: "admin",
+		Password: "pass",
+		DBPath:   dbPath,
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewXUIClient: %v", err)
+	}
+
+	resolvedAddCalled := false
+	client.client = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/login":
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
+			case "/panel/api/clients/add":
+				var body map[string]any
+				if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+					t.Fatalf("decode add body: %v", err)
+				}
+				inboundIDs := body["inboundIds"].([]any)
+				if len(inboundIDs) == 1 && intValue(inboundIDs[0]) == 1 {
+					resolvedAddCalled = true
+					return jsonResponse(t, req, map[string]any{"success": true, "msg": "added"}), nil
+				}
+				return jsonResponse(t, req, map[string]any{"success": false, "msg": "bad inbound id"}), nil
+			case "/panel/api/inbounds/addClient":
+				return jsonResponse(t, req, map[string]any{"success": false, "msg": "bad inbound id"}), nil
+			case "/panel/api/inbounds/list":
+				return &http.Response{
+					StatusCode: http.StatusNotFound,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(bytes.NewReader([]byte("404 page not found"))),
+					Request:    req,
+				}, nil
+			default:
+				t.Fatalf("unexpected path: %s", req.URL.Path)
+				return nil, nil
+			}
+		}),
+	}
+
+	result, err := client.ExecuteAction(context.Background(), model.XUIAction{
+		Kind: model.XUIActionAddClient,
+		Payload: map[string]any{
+			"inbound_id":  443,
+			"inbound_tag": "inbound-443",
+			"protocol":    "vless",
+			"client": map[string]any{
+				"email":  "bob@example.com",
+				"enable": true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteAction: %v", err)
+	}
+	if result["inbound_id"] != 1 {
+		t.Fatalf("expected resolved inbound id 1, got %#v", result)
+	}
+	if !resolvedAddCalled {
+		t.Fatalf("expected local DB resolved add to be called")
+	}
+}
+
 func TestXUIExecuteAddClientFallsBackToInboundUpdate(t *testing.T) {
 	client, err := NewXUIClient(config.XUIConfig{
 		Enabled:  true,
