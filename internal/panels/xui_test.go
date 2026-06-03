@@ -1917,6 +1917,65 @@ func TestXUIExecuteSetClientEnabledUsesUpdateClientAPI(t *testing.T) {
 	}
 }
 
+func TestXUIUpdateV3ClientPreservesImmutableAuthFields(t *testing.T) {
+	client, err := NewXUIClient(config.XUIConfig{
+		Enabled:  true,
+		BaseURL:  "https://xui.local",
+		Username: "admin",
+		Password: "pass",
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewXUIClient: %v", err)
+	}
+
+	client.client = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/login":
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
+			case "/panel/api/clients/get/alice@example.com":
+				return jsonResponse(t, req, map[string]any{
+					"success": true,
+					"obj": map[string]any{
+						"id":       42,
+						"uuid":     "uuid-original",
+						"password": "password-original",
+						"email":    "alice@example.com",
+						"enable":   true,
+					},
+				}), nil
+			case "/panel/api/clients/update/alice@example.com":
+				var body map[string]any
+				if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+					t.Fatalf("decode update body: %v", err)
+				}
+				if body["id"] != "uuid-original" || body["uuid"] != "uuid-original" || body["password"] != "password-original" {
+					t.Fatalf("auth fields must be immutable, got %#v", body)
+				}
+				if body["enable"] != false {
+					t.Fatalf("expected mutable field to be updated, got %#v", body)
+				}
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "updated"}), nil
+			default:
+				t.Fatalf("unexpected path: %s", req.URL.Path)
+				return nil, nil
+			}
+		}),
+	}
+
+	_, err = client.updateV3Client(context.Background(), "alice@example.com", func(value map[string]any) map[string]any {
+		value["id"] = "uuid-wrong"
+		value["uuid"] = "uuid-wrong"
+		value["password"] = "password-wrong"
+		value["enable"] = false
+		return value
+	})
+	if err != nil {
+		t.Fatalf("updateV3Client: %v", err)
+	}
+}
+
 func TestXUIExecuteAddClientUsesAddClientAPI(t *testing.T) {
 	client, err := NewXUIClient(config.XUIConfig{
 		Enabled:  true,

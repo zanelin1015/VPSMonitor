@@ -701,13 +701,37 @@ func (c *XUIClient) updateV3Client(ctx context.Context, email string, mutate fun
 		return empty, err
 	}
 	updated := normalizeXUIV3ClientForInbound(client)
+	original := cloneStringAnyMap(updated)
 	if mutate != nil {
 		updated = mutate(updated)
 	}
+	restoreImmutableClientAuth(original, updated)
 	for _, key := range []string{"rowId", "inboundIds", "inbound_ids", "inboundIDs", "inbounds", "inboundId", "inbound_id"} {
 		delete(updated, key)
 	}
 	return c.postJSON(ctx, "/panel/api/clients/update/"+url.PathEscape(email), updated)
+}
+
+func restoreImmutableClientAuth(original map[string]any, updated map[string]any) {
+	if updated == nil {
+		return
+	}
+	for _, key := range []string{"id", "uuid", "password"} {
+		if value := strings.TrimSpace(stringValue(original[key])); value != "" {
+			updated[key] = value
+		}
+	}
+}
+
+func cloneStringAnyMap(source map[string]any) map[string]any {
+	if source == nil {
+		return nil
+	}
+	result := make(map[string]any, len(source))
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
 }
 
 func (c *XUIClient) addOutbound(ctx context.Context, payload map[string]any) (map[string]any, error) {
