@@ -111,7 +111,9 @@ func buildTrafficAlert(agent model.AgentRecord, summary model.VPSSummary) alertM
 	if currentTotal == 0 {
 		currentTotal = summary.NetTrafficSent + summary.NetTrafficRecv
 	}
-	used := periodTrafficUsed(currentTotal, cfg.TrafficBaselineBytes)
+	uploadUsed := periodTrafficUsed(summary.NetTrafficSent, cfg.TrafficSentBaselineBytes)
+	downloadUsed := periodTrafficUsed(summary.NetTrafficRecv, cfg.TrafficRecvBaselineBytes)
+	used := accountedTrafficUsed(cfg, periodTrafficUsed(currentTotal, cfg.TrafficBaselineBytes), uploadUsed, downloadUsed)
 	percent := float64(used) / float64(cfg.TrafficLimitBytes) * 100
 	if percent < 75 {
 		return alertMessage{}
@@ -124,7 +126,7 @@ func buildTrafficAlert(agent model.AgentRecord, summary model.VPSSummary) alertM
 		fingerprint = "traffic-critical"
 		title = "周期流量即将用尽"
 	}
-	detail := fmt.Sprintf("当前周期已用 %.1f%%（%s / %s），上传 %s，下载 %s。", percent, formatBytes(used), formatBytes(cfg.TrafficLimitBytes), formatBytes(periodTrafficUsed(summary.NetTrafficSent, cfg.TrafficSentBaselineBytes)), formatBytes(periodTrafficUsed(summary.NetTrafficRecv, cfg.TrafficRecvBaselineBytes)))
+	detail := fmt.Sprintf("当前周期已用 %.1f%%（%s / %s），计算方式：%s，上传 %s，下载 %s。", percent, formatBytes(used), formatBytes(cfg.TrafficLimitBytes), trafficAccountingModeLabel(cfg), formatBytes(uploadUsed), formatBytes(downloadUsed))
 	return newAgentAlert(agent, "traffic", severity, title, fingerprint, detail)
 }
 
@@ -243,6 +245,37 @@ func periodTrafficUsed(current, baseline uint64) uint64 {
 		return current - baseline
 	}
 	return current
+}
+
+func accountedTrafficUsed(cfg model.VPSRenewalConfig, totalUsed, uploadUsed, downloadUsed uint64) uint64 {
+	if normalizeTrafficAccountingMode(cfg) == "single_direction" {
+		if uploadUsed == 0 && downloadUsed == 0 {
+			return totalUsed
+		}
+		if uploadUsed >= downloadUsed {
+			return uploadUsed
+		}
+		return downloadUsed
+	}
+	directionalTotal := uploadUsed + downloadUsed
+	if directionalTotal > 0 {
+		return directionalTotal
+	}
+	return totalUsed
+}
+
+func normalizeTrafficAccountingMode(cfg model.VPSRenewalConfig) string {
+	if strings.EqualFold(strings.TrimSpace(cfg.TrafficAccountingMode), "single_direction") {
+		return "single_direction"
+	}
+	return "bidirectional"
+}
+
+func trafficAccountingModeLabel(cfg model.VPSRenewalConfig) string {
+	if normalizeTrafficAccountingMode(cfg) == "single_direction" {
+		return "单向（取上传/下载较大值）"
+	}
+	return "双向（上传+下载）"
 }
 
 func formatBytes(value uint64) string {

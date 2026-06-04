@@ -410,6 +410,18 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
             />
           </Col>
           <Col xs={24} md={8}>
+            <Text type="secondary">流量计算方式</Text>
+            <Select
+              style={{ width: '100%' }}
+              value={managedConfig.renewal?.traffic_accounting_mode || 'bidirectional'}
+              options={[
+                { value: 'bidirectional', label: '双向：上传 + 下载' },
+                { value: 'single_direction', label: '单向：取较大方向' },
+              ]}
+              onChange={(value) => onRenewalChange({ traffic_accounting_mode: value })}
+            />
+          </Col>
+          <Col xs={24} md={8}>
             <Text type="secondary">带宽大小 (Mbps)</Text>
             <InputNumber
               style={{ width: '100%' }}

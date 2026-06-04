@@ -81,7 +81,6 @@ export interface ConsoleModalsProps {
   updateLatestLoading: boolean
   updateLoading: boolean
   updateModalOpen: boolean
-  force3XUIUpdate: boolean
   xuiActionKind: string
   xuiActionModalOpen: boolean
   xuiActionSaving: boolean
@@ -113,8 +112,6 @@ export interface ConsoleModalsProps {
   onTelegramBotEditIDChange: Dispatch<SetStateAction<number | null>>
   onTestTelegramBot: (id: number) => void
   onUpdateAllClients: () => void
-  onUpdateAll3XUI: () => void
-  onForce3XUIUpdateChange: Dispatch<SetStateAction<boolean>>
   onUpdateFrontendSettingsFormChange: Dispatch<SetStateAction<FrontendSettingsForm>>
   onUpdateAddClientActionForm: Dispatch<SetStateAction<XUIAddClientActionForm>>
   onUpdateOutboundActionForm: Dispatch<SetStateAction<XUIOutboundActionForm>>
@@ -165,7 +162,6 @@ export function ConsoleModals(props: ConsoleModalsProps) {
     updateLatestLoading,
     updateLoading,
     updateModalOpen,
-    force3XUIUpdate,
     xuiActionKind,
     xuiActionModalOpen,
     xuiActionSaving,
@@ -197,8 +193,6 @@ export function ConsoleModals(props: ConsoleModalsProps) {
     onTelegramBotEditIDChange,
     onTestTelegramBot,
     onUpdateAllClients,
-    onUpdateAll3XUI,
-    onForce3XUIUpdateChange,
     onUpdateFrontendSettingsFormChange,
     onUpdateAddClientActionForm,
     onUpdateOutboundActionForm,
@@ -220,9 +214,6 @@ export function ConsoleModals(props: ConsoleModalsProps) {
         onRefreshLatest={onRefreshLatestUpdate}
         onUpdateServer={onUpdateServer}
         onUpdateClients={onUpdateAllClients}
-        onUpdate3XUI={onUpdateAll3XUI}
-        force3XUIUpdate={force3XUIUpdate}
-        onForce3XUIUpdateChange={onForce3XUIUpdateChange}
       />
 
       <ClientInstallModal

@@ -672,7 +672,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
           ) : null}
           <Popconfirm
             title="删除这个 Client？"
-            description={`将从 x-ui 入站 ${record.inbound_remark || record.inbound_tag || record.inbound_id} 删除 ${record.email || '该客户端'}，删除后会重启 Xray。`}
+            description={`将从 x-ui 入站 ${record.inbound_remark || record.inbound_tag || record.inbound_id} 删除 ${record.email || '该客户端'}，不会重启 Xray。`}
             okText="删除"
             cancelText="取消"
             okButtonProps={{ danger: true }}

@@ -56,6 +56,7 @@ type VPSRenewalConfig struct {
 	CostCycle                  string                   `json:"cost_cycle,omitempty"`
 	ClientBillings             []XUIClientBillingConfig `json:"client_billings,omitempty"`
 	TrafficLimitBytes          uint64                   `json:"traffic_limit_bytes,omitempty"`
+	TrafficAccountingMode       string                   `json:"traffic_accounting_mode,omitempty"`
 	BandwidthMbps              float64                  `json:"bandwidth_mbps,omitempty"`
 	TrafficBaselineBytes       uint64                   `json:"traffic_baseline_bytes,omitempty"`
 	TrafficSentBaselineBytes   uint64                   `json:"traffic_sent_baseline_bytes,omitempty"`

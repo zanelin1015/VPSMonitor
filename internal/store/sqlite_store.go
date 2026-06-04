@@ -346,6 +346,11 @@ func normalizeRenewalConfig(cfg model.VPSRenewalConfig) model.VPSRenewalConfig {
 		cfg.TrafficRecvBaselineBytes = 0
 		cfg.TrafficBaselinePeriodStart = ""
 	}
+	if strings.EqualFold(strings.TrimSpace(cfg.TrafficAccountingMode), "single_direction") {
+		cfg.TrafficAccountingMode = "single_direction"
+	} else {
+		cfg.TrafficAccountingMode = "bidirectional"
+	}
 	if cfg.BandwidthMbps < 0 {
 		cfg.BandwidthMbps = 0
 	}

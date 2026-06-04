@@ -1295,6 +1295,7 @@ function normalizeRenewalConfig(config?: VPSRenewalConfig): VPSRenewalConfig {
     cost_cycle: costCycle,
     client_billings: normalizeClientBillings(config?.client_billings || []),
     traffic_limit_bytes: trafficLimitBytes,
+    traffic_accounting_mode: config?.traffic_accounting_mode === 'single_direction' ? 'single_direction' : 'bidirectional',
     bandwidth_mbps: Math.max(0, Number(config?.bandwidth_mbps || 0)),
     traffic_baseline_bytes: trafficLimitBytes > 0 ? Math.max(0, Number(config?.traffic_baseline_bytes || 0)) : 0,
     traffic_sent_baseline_bytes: trafficLimitBytes > 0 ? Math.max(0, Number(config?.traffic_sent_baseline_bytes || 0)) : 0,
@@ -1499,10 +1500,11 @@ function calculateRenewalStatus(config?: VPSRenewalConfig): {
 
 function formatRenewalHint(config?: VPSRenewalConfig): string {
   const status = calculateRenewalStatus(config)
+  const trafficMode = config?.traffic_accounting_mode === 'single_direction' ? '单向取上传/下载较大值' : '双向按上传+下载'
   if (!status) {
-    return '设置后会在 Client 卡片上展示到期、周期刷新、总/上传/下载流量配额和带宽信息。'
+    return `设置后会在 Client 卡片上展示到期、周期刷新、流量配额和带宽信息；当前流量计算：${trafficMode}。`
   }
-  return `当前周期${status.remainingLabel}，${status.endLabel}，${status.autoRenew ? '到期后自动刷新下一周期，并重新计算总/上传/下载流量' : '到期后不自动刷新'}。`
+  return `当前周期${status.remainingLabel}，${status.endLabel}，流量计算：${trafficMode}；${status.autoRenew ? '到期后自动刷新下一周期，并重置流量基线' : '到期后不自动刷新'}。`
 }
 
 function calculateRenewalPeriod(config: VPSRenewalConfig): { start: Date; end: Date } | null {
@@ -1677,6 +1679,7 @@ function createEmptyManagedConfig(agentID: string, agentName?: string): ManagedA
       cost_cycle: 'month',
       client_billings: [],
       traffic_limit_bytes: 0,
+      traffic_accounting_mode: 'bidirectional',
       bandwidth_mbps: 0,
       traffic_baseline_bytes: 0,
       traffic_sent_baseline_bytes: 0,

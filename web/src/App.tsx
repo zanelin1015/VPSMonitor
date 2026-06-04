@@ -359,7 +359,6 @@ export default function App() {
   const [updateLatestLoading, setUpdateLatestLoading] = useState(false)
   const [updateLatestInfo, setUpdateLatestInfo] = useState<UpdateLatestInfo | null>(null)
   const [updateLatestError, setUpdateLatestError] = useState('')
-  const [force3XUIUpdate, setForce3XUIUpdate] = useState(false)
   const [reloadToken, setReloadToken] = useState(0)
   const [activeTabKey, setActiveTabKey] = useState('overview')
   const [topologyVisible, setTopologyVisible] = useState(false)
@@ -1201,6 +1200,7 @@ export default function App() {
             inbound_tag: targetInboundTag,
             email: record.email || '',
             client_id: record.auth_uuid || record.auth_password || '',
+            restart: false,
           },
         }),
       })
@@ -1244,6 +1244,7 @@ export default function App() {
             email: record.email || '',
             client_id: record.auth_uuid || record.auth_password || '',
             enabled,
+            restart: false,
           },
         }),
       })
@@ -1622,42 +1623,6 @@ export default function App() {
         setAdminUser(null)
       }
       message.error(error instanceof Error ? error.message : '下发 Client 升级失败')
-    } finally {
-      setUpdateLoading(false)
-    }
-  }
-
-  async function updateAll3XUIOnline(force = force3XUIUpdate) {
-    setUpdateLoading(true)
-    try {
-      let latest: UpdateLatestInfo | null = null
-      try {
-        latest = await fetchJSON<UpdateLatestInfo>('/api/v1/admin/updates/latest')
-        setUpdateLatestInfo(latest)
-      } catch (error) {
-        if (!force) {
-          throw error
-        }
-        message.warning('检查最新版本失败，将按强制升级模式直接下发 3x-ui update.sh')
-      }
-      const updateCount = Number(latest?.xui_update_available_count || 0)
-      const unknownCount = Number(latest?.unknown_xui_count || 0)
-      if (!force && updateCount <= 0 && unknownCount <= 0) {
-        message.info(latest?.latest_3xui_error ? `暂时无法检测 3x-ui 最新版本：${latest.latest_3xui_error}` : '没有需要升级的 3x-ui')
-        return
-      }
-      const result = await fetchJSON<UpdateResponse>('/api/v1/admin/updates/3xui', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ version: latest?.latest_3xui_tag || latest?.latest_3xui_version || '', force }),
-      })
-      message.success(`${force ? '已强制下发' : '已下发'} 3x-ui 升级任务：${result.count || 0} 台，跳过 ${result.skipped || 0} 台`)
-      await loadUpdateLatestInfo()
-    } catch (error) {
-      if (isUnauthorized(error)) {
-        setAdminUser(null)
-      }
-      message.error(error instanceof Error ? error.message : '下发 3x-ui 升级失败')
     } finally {
       setUpdateLoading(false)
     }
@@ -2236,7 +2201,6 @@ export default function App() {
           updateLatestLoading={updateLatestLoading}
           updateLoading={updateLoading}
           updateModalOpen={updateModalOpen}
-          force3XUIUpdate={force3XUIUpdate}
           xuiActionKind={xuiActionKind}
           xuiActionModalOpen={xuiActionModalOpen}
           xuiActionSaving={xuiActionSaving}
@@ -2277,8 +2241,6 @@ export default function App() {
           onTelegramBotEditIDChange={setEditingTelegramBotId}
           onTestTelegramBot={(id) => void testTelegramBot(id)}
           onUpdateAllClients={() => void updateAllClientsOnline()}
-          onUpdateAll3XUI={() => void updateAll3XUIOnline(force3XUIUpdate)}
-          onForce3XUIUpdateChange={setForce3XUIUpdate}
           onUpdateFrontendSettingsFormChange={setFrontendSettingsForm}
           onUpdateAddClientActionForm={setAddClientActionForm}
           onUpdateOutboundActionForm={setOutboundActionForm}

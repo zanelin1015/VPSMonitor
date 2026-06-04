@@ -9,11 +9,14 @@ export interface TrafficMeterStatus {
 }
 
 export interface AgentNetworkSummary {
+  used: number
   sent: number
   recv: number
   up: number
   down: number
 }
+
+export type TrafficAccountingMode = 'bidirectional' | 'single_direction'
 
 export function calculateTrafficStatus(agent: AgentListItem): {
   isPeriod: boolean
@@ -28,9 +31,13 @@ export function calculateTrafficStatus(agent: AgentListItem): {
   const baselineTotal = Number(agent.renewal?.traffic_baseline_bytes || 0)
   const baselineUpload = Number(agent.renewal?.traffic_sent_baseline_bytes || 0)
   const baselineDownload = Number(agent.renewal?.traffic_recv_baseline_bytes || 0)
-  const totalUsed = periodTrafficUsed(currentTotal || currentUpload + currentDownload, baselineTotal)
   const uploadUsed = periodTrafficUsed(currentUpload, baselineUpload)
   const downloadUsed = periodTrafficUsed(currentDownload, baselineDownload)
+  const totalUsed = calculateAccountedTrafficUsed(agent.renewal, {
+    total: periodTrafficUsed(currentTotal || currentUpload + currentDownload, baselineTotal),
+    upload: uploadUsed,
+    download: downloadUsed,
+  })
   return {
     isPeriod: usesRenewalTrafficCycle(agent.renewal),
     total: buildTrafficMeter(totalUsed, limit),
@@ -46,6 +53,18 @@ function usesRenewalTrafficCycle(config?: VPSRenewalConfig): boolean {
       config?.cycle &&
       (config?.start_date || config?.expire_date),
   )
+}
+
+function normalizeTrafficAccountingMode(config?: VPSRenewalConfig): TrafficAccountingMode {
+  return config?.traffic_accounting_mode === 'single_direction' ? 'single_direction' : 'bidirectional'
+}
+
+function calculateAccountedTrafficUsed(config: VPSRenewalConfig | undefined, used: { total: number; upload: number; download: number }): number {
+  const directionalTotal = used.upload + used.download
+  if (normalizeTrafficAccountingMode(config) === 'single_direction') {
+    return Math.max(used.upload, used.download, directionalTotal > 0 ? 0 : used.total)
+  }
+  return directionalTotal || used.total
 }
 
 export function clientTrafficTotal(client: XUIClientView): number {
@@ -86,13 +105,14 @@ export function summarizeAgentNetwork(agents: AgentListItem[]): AgentNetworkSumm
   return agents.reduce<AgentNetworkSummary>(
     (summary, agent) => {
       const trafficStatus = calculateTrafficStatus(agent)
+      summary.used += trafficStatus.total.used
       summary.sent += trafficStatus.upload.used
       summary.recv += trafficStatus.download.used
       summary.up += Number(agent.summary.net_io_up || 0)
       summary.down += Number(agent.summary.net_io_down || 0)
       return summary
     },
-    { sent: 0, recv: 0, up: 0, down: 0 },
+    { used: 0, sent: 0, recv: 0, up: 0, down: 0 },
   )
 }
 

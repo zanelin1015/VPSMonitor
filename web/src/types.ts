@@ -69,6 +69,7 @@ export interface VPSRenewalConfig {
   cost_cycle?: 'month' | 'quarter' | 'year' | ''
   client_billings?: XUIClientBillingConfig[]
   traffic_limit_bytes?: number
+  traffic_accounting_mode?: 'bidirectional' | 'single_direction' | ''
   bandwidth_mbps?: number
   traffic_baseline_bytes?: number
   traffic_sent_baseline_bytes?: number

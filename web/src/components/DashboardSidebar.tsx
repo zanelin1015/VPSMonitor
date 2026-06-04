@@ -21,6 +21,7 @@ import {
   xrayIssueLabel,
 } from '../lib/appHelpers'
 import {
+  type AgentNetworkSummary,
   calculateDiskPercent,
   calculateMemoryPercent,
   calculateTrafficStatus,
@@ -95,7 +96,7 @@ export function AdminWorkbenchDashboard(props: {
   agents: DashboardAgentView[]
   dashboardView: GlobalDashboardView | null
   selectedTag: string
-  scopedNetwork: { sent: number; recv: number; up: number; down: number }
+  scopedNetwork: AgentNetworkSummary
   monthlyFinance: MonthlyFinanceSummary
   costCurrency: CurrencyCode
   restrictedView?: boolean
@@ -176,7 +177,7 @@ export function AdminWorkbenchDashboard(props: {
         <WorkbenchKpi label="服务器在线率" value={`${onlinePercent.toFixed(0)}%`} note={`${onlineRows.length}/${totalAgents} 在线`} tone={offlineRows.length ? 'warn' : 'ok'} />
         <WorkbenchKpi label="客户端在线率" value={`${clientOnlinePercent.toFixed(0)}%`} note={`${scopedOnlineClientCount}/${scopedClientCount} 在线`} tone={scopedClientCount && scopedOnlineClientCount < scopedClientCount ? 'warn' : 'ok'} />
         <WorkbenchRealtimeKpi up={scopedNetwork.up} down={scopedNetwork.down} />
-        <WorkbenchKpi label={restrictedView ? '授权周期已用' : '周期总流量'} value={formatBytes(scopedNetwork.sent + scopedNetwork.recv)} note={restrictedView ? '仅统计有权限的 Client' : `↑${formatBytes(scopedNetwork.sent)} · ↓${formatBytes(scopedNetwork.recv)}`} tone="traffic" />
+        <WorkbenchKpi label={restrictedView ? '授权周期已用' : '周期总流量'} value={formatBytes(scopedNetwork.used)} note={restrictedView ? '仅统计有权限的 Client' : `↑${formatBytes(scopedNetwork.sent)} · ↓${formatBytes(scopedNetwork.recv)}`} tone="traffic" />
         {!restrictedView ? <WorkbenchKpi label="续费风险" value={`${renewalRiskCount}`} note={`30天内 ${renewalWithin30Count}`} tone={renewalRiskCount ? 'bad' : 'ok'} /> : null}
         {!restrictedView ? <WorkbenchKpi label="本月利润" value={formatMoney(monthlyFinance.profitTotal, costCurrency)} note={`收入 ${formatMoney(monthlyFinance.revenueTotal, costCurrency)}`} tone={monthlyFinance.profitTotal >= 0 ? 'profit' : 'bad'} /> : null}
         <Button size="small" onClick={onOpenTopology} icon={<ApartmentOutlined />}>拓扑</Button>
@@ -795,7 +796,7 @@ export function OverviewSummaryCard(props: {
   onlineAgentCount: number
   offlineAgentCount: number
   xuiErrorAgentCount: number
-  scopedNetwork: { sent: number; recv: number; up: number; down: number }
+  scopedNetwork: AgentNetworkSummary
   costCurrency: CurrencyCode
   currencyOptions: CurrencyCode[]
   monthlyFinance: { profitTotal: number; revenueTotal: number; costTotal: number }
@@ -1067,7 +1068,7 @@ export function OverviewSummaryCard(props: {
               <section className="overview-stat-card overview-network-card">
                 <div className="overview-stat-title">{restrictedView ? '周期已用流量' : '本周期流量'}</div>
                 <div className="overview-network-total">
-                  {restrictedView ? <span className="network-up">{formatBytes(scopedNetwork.sent + scopedNetwork.recv)}</span> : <span className="network-up">↑{formatBytes(scopedNetwork.sent)}</span>}
+                  {restrictedView ? <span className="network-up">{formatBytes(scopedNetwork.used)}</span> : <span className="network-up">↑{formatBytes(scopedNetwork.sent)}</span>}
                   {!restrictedView ? <span className="network-down">↓{formatBytes(scopedNetwork.recv)}</span> : null}
                 </div>
                 {!restrictedView ? <div className="overview-network-speed">

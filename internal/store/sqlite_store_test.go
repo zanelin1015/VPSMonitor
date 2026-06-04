@@ -599,11 +599,12 @@ func TestSQLiteStoreRenewalTrafficBaselineResetsByCycle(t *testing.T) {
 		AgentID:   "traffic-01",
 		AgentName: "Traffic 01",
 		Renewal: model.VPSRenewalConfig{
-			Enabled:           true,
-			StartDate:         startDate,
-			Cycle:             "month",
-			AutoRenew:         true,
-			TrafficLimitBytes: 1024,
+			Enabled:               true,
+			StartDate:             startDate,
+			Cycle:                 "month",
+			AutoRenew:             true,
+			TrafficLimitBytes:     1024,
+			TrafficAccountingMode: "SINGLE_DIRECTION",
 		},
 	})
 	if err != nil {
@@ -617,6 +618,9 @@ func TestSQLiteStoreRenewalTrafficBaselineResetsByCycle(t *testing.T) {
 	}
 	if updated.Config.Renewal.TrafficSentBaselineBytes != 200 || updated.Config.Renewal.TrafficRecvBaselineBytes != 300 {
 		t.Fatalf("unexpected upload/download baselines: %#v", updated.Config.Renewal)
+	}
+	if updated.Config.Renewal.TrafficAccountingMode != "single_direction" {
+		t.Fatalf("expected normalized traffic accounting mode, got %q", updated.Config.Renewal.TrafficAccountingMode)
 	}
 
 	nextPeriod := start.AddDate(0, 1, 1)

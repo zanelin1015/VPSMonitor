@@ -36,3 +36,19 @@ func TestBuildXUIClientExpiryAlerts(t *testing.T) {
 		t.Fatalf("expected safe client to resolve alert, got %q", alerts[3].key)
 	}
 }
+
+func TestAccountedTrafficUsedModes(t *testing.T) {
+	bidirectional := model.VPSRenewalConfig{TrafficAccountingMode: "bidirectional"}
+	if got := accountedTrafficUsed(bidirectional, 90, 40, 50); got != 90 {
+		t.Fatalf("bidirectional should sum upload and download, got %d", got)
+	}
+
+	singleDirection := model.VPSRenewalConfig{TrafficAccountingMode: "single_direction"}
+	if got := accountedTrafficUsed(singleDirection, 90, 40, 50); got != 50 {
+		t.Fatalf("single direction should use max(upload, download), got %d", got)
+	}
+
+	if got := accountedTrafficUsed(singleDirection, 90, 0, 0); got != 90 {
+		t.Fatalf("single direction should fallback to total when directional data is unavailable, got %d", got)
+	}
+}

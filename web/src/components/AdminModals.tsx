@@ -513,7 +513,7 @@ export function XUIActionModal(props: {
           type="info"
           showIcon
           message="执行方式"
-          description="server 只保存任务；client 下一次轮询领取后，使用已托管的 x-ui 账号密码调用 3x-ui API 执行。支持在节点下新增客户端、导入内部 Client 出站，以及配置转发规则。"
+          description="server 只保存任务；client 下一次轮询领取后，使用已托管的 x-ui 配置执行。客户端新增 / 启停 / 删除 / 到期调整不会重启 Xray；新增或修改出站、转发规则会重启 Xray 生效。"
         />
         <div>
           <Text type="secondary">操作类型</Text>
@@ -609,19 +609,12 @@ export function SystemUpdateModal(props: {
   onRefreshLatest: () => void
   onUpdateServer: () => void
   onUpdateClients: () => void
-  onUpdate3XUI: () => void
-  force3XUIUpdate: boolean
-  onForce3XUIUpdateChange: (value: boolean) => void
 }) {
-  const { open, loading, latestLoading, latestInfo, latestError, systemInfo, onClose, onRefreshLatest, onUpdateServer, onUpdateClients, onUpdate3XUI, force3XUIUpdate, onForce3XUIUpdateChange } = props
+  const { open, loading, latestLoading, latestInfo, latestError, systemInfo, onClose, onRefreshLatest, onUpdateServer, onUpdateClients } = props
   const serverUpdateAvailable = Boolean(latestInfo?.server_update_available)
   const clientUpdateCount = Number(latestInfo?.client_update_available_count || 0)
-  const xuiUpdateCount = Number(latestInfo?.xui_update_available_count || 0)
-  const xuiUnknownCount = Number(latestInfo?.unknown_xui_count || 0)
-  const canSubmit3XUIUpdate = force3XUIUpdate || xuiUpdateCount > 0 || xuiUnknownCount > 0
   const latestServerVersion = latestInfo?.latest_server_version || latestInfo?.latest_version || '-'
   const latestClientVersion = latestInfo?.latest_client_version || latestInfo?.latest_version || '-'
-  const latest3XUIVersion = latestInfo?.latest_3xui_version || '-'
 
   return (
     <Modal title="在线升级" open={open} onCancel={onClose} footer={null} width={760}>
@@ -634,12 +627,11 @@ export function SystemUpdateModal(props: {
           description="在线升级会复用现有 install.sh / install.ps1。server 会保留 server.json、数据库和 data；client 会保留 client.json。升级完成后服务会自动重启。"
         />
         {latestError ? <Alert type="error" showIcon message="获取最新版本失败" description={latestError} /> : null}
-        {latestInfo?.latest_3xui_error ? <Alert type="warning" showIcon message="获取 3x-ui 最新版本失败" description={latestInfo.latest_3xui_error} /> : null}
         {latestInfo ? (
           <Alert
-            type={serverUpdateAvailable || clientUpdateCount > 0 || xuiUpdateCount > 0 ? 'success' : 'info'}
+            type={serverUpdateAvailable || clientUpdateCount > 0 ? 'success' : 'info'}
             showIcon
-            message={`最新版本：Server v${latestServerVersion} · Client v${latestClientVersion} · 3x-ui v${latest3XUIVersion}`}
+            message={`最新版本：Server v${latestServerVersion} · Client v${latestClientVersion}`}
             description={`当前 Server：v${latestInfo.current_server_version || systemInfo?.version || '-'}${systemInfo?.git_commit ? ` · 构建提交：${systemInfo.git_commit}` : ''}`}
           />
         ) : null}
@@ -654,10 +646,6 @@ export function SystemUpdateModal(props: {
               <Tag color={clientUpdateCount ? 'blue' : 'default'}>{clientUpdateCount ? `${clientUpdateCount} 台到 v${latestClientVersion}` : '0 台'}</Tag>
             </div>
             <div className="update-status-card">
-              <Text type="secondary">3x-ui 可升级</Text>
-              <Tag color={xuiUpdateCount ? 'blue' : 'default'}>{xuiUpdateCount ? `${xuiUpdateCount} 台到 v${latest3XUIVersion}` : '0 台'}</Tag>
-            </div>
-            <div className="update-status-card">
               <Text type="secondary">已识别系统</Text>
               <Tag color="blue">{latestInfo.supported_client_count} 台</Tag>
             </div>
@@ -665,12 +653,6 @@ export function SystemUpdateModal(props: {
               <Text type="secondary">未知/不支持</Text>
               <Tag color={latestInfo.unknown_client_count || latestInfo.unsupported_client_count ? 'orange' : 'default'}>
                 {latestInfo.unknown_client_count + latestInfo.unsupported_client_count} 台
-              </Tag>
-            </div>
-            <div className="update-status-card">
-              <Text type="secondary">3x-ui 未识别</Text>
-              <Tag color={latestInfo.unknown_xui_count || latestInfo.unsupported_xui_count ? 'orange' : 'default'}>
-                {latestInfo.unknown_xui_count + latestInfo.unsupported_xui_count} 台
               </Tag>
             </div>
           </div>
@@ -685,13 +667,8 @@ export function SystemUpdateModal(props: {
           <Button onClick={onRefreshLatest} loading={latestLoading}>检查最新版本</Button>
           <Button type="primary" disabled={!serverUpdateAvailable} loading={loading} onClick={onUpdateServer}>升级当前 Server</Button>
           <Button disabled={clientUpdateCount <= 0} loading={loading} onClick={onUpdateClients}>下发升级到可升级 Client</Button>
-          <Button disabled={!canSubmit3XUIUpdate} loading={loading} onClick={onUpdate3XUI}>{force3XUIUpdate ? '强制批量升级 3x-ui' : '批量升级 3x-ui'}</Button>
-          <Space size={8}>
-            <Switch checked={force3XUIUpdate} onChange={onForce3XUIUpdateChange} />
-            <Text type="secondary">强制升级 3x-ui</Text>
-          </Space>
         </Space>
-        <Text type="secondary">Client 升级前会确认系统和架构；3x-ui 点击升级时会重新检测 GitHub 最新版本，任务执行时 Client 会再次读取本机 3x-ui 版本并比较；开启强制升级后不比较版本，直接执行官方 update.sh。</Text>
+        <Text type="secondary">Client 升级前会确认系统和架构，避免向不匹配的系统下发安装包。</Text>
         </Space>
       </Spin>
     </Modal>
