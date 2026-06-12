@@ -538,6 +538,7 @@ func (c *XUIClient) addInbound(ctx context.Context, payload map[string]any, loca
 	if err != nil {
 		return nil, err
 	}
+	normalizeInboundPayloadClients(inbound)
 	resolvedCertificate, err := injectLocalCertificate(inbound, payload, localCertificates)
 	if err != nil {
 		return nil, err
@@ -563,6 +564,8 @@ func (c *XUIClient) addClient(ctx context.Context, payload map[string]any) (map[
 	if err != nil {
 		return nil, err
 	}
+	protocol := strings.TrimSpace(stringFromMap(payload, "protocol"))
+	normalizeInboundClient(client, protocol)
 	email := strings.TrimSpace(stringFromMap(client, "email"))
 	if inboundID <= 0 && inboundTag == "" {
 		return nil, fmt.Errorf("inbound_id or inbound_tag is required")
@@ -570,7 +573,6 @@ func (c *XUIClient) addClient(ctx context.Context, payload map[string]any) (map[
 	if email == "" {
 		return nil, fmt.Errorf("client.email is required")
 	}
-	protocol := strings.TrimSpace(stringFromMap(payload, "protocol"))
 
 	if inboundID > 0 {
 		if result, err := c.addClientViaAPI(ctx, inboundID, client); err == nil {
@@ -1678,9 +1680,55 @@ func normalizeInboundClient(client map[string]any, protocol string) {
 		}
 		return
 	}
-	if id := strings.TrimSpace(stringValue(client["id"])); id == "" || id == "00000000-0000-0000-0000-000000000001" || id == "00000000-0000-0000-0000-000000000000" {
+	if id := strings.TrimSpace(stringValue(client["id"])); shouldGenerateInboundClientUUID(id) {
 		client["id"] = randomUUIDString()
 	}
+}
+
+func normalizeInboundPayloadClients(inbound map[string]any) {
+	protocol := strings.TrimSpace(stringValue(inbound["protocol"]))
+	settings, settingsText, err := decodeInboundSettings(inbound["settings"])
+	if err != nil {
+		return
+	}
+	clients := objectSlice(settings["clients"])
+	if len(clients) == 0 {
+		return
+	}
+	for _, client := range clients {
+		normalizeInboundClient(client, protocol)
+	}
+	settings["clients"] = clients
+	if settingsText {
+		if data, err := json.Marshal(settings); err == nil {
+			inbound["settings"] = string(data)
+		}
+		return
+	}
+	inbound["settings"] = settings
+}
+
+func shouldGenerateInboundClientUUID(id string) bool {
+	id = strings.TrimSpace(id)
+	if id == "" || id == "00000000-0000-0000-0000-000000000000" {
+		return true
+	}
+	if strings.HasPrefix(id, "00000000-0000-0000-0000-") {
+		suffix := strings.TrimPrefix(id, "00000000-0000-0000-0000-")
+		if len(suffix) == 12 {
+			allDigits := true
+			for _, ch := range suffix {
+				if ch < '0' || ch > '9' {
+					allDigits = false
+					break
+				}
+			}
+			if allDigits {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func clientPrimaryID(client map[string]any) string {

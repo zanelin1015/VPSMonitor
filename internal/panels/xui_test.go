@@ -2048,6 +2048,9 @@ func TestXUIExecuteAddClientUsesAddClientAPI(t *testing.T) {
 				if added["email"] != "bob@example.com" {
 					t.Fatalf("unexpected added client: %#v", added)
 				}
+				if !looksLikeUUID(stringValue(added["id"])) || shouldGenerateInboundClientUUID(stringValue(added["id"])) {
+					t.Fatalf("expected random client uuid, got %#v", added["id"])
+				}
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "added"}), nil
 			default:
 				t.Fatalf("unexpected path: %s", req.URL.Path)
@@ -2074,6 +2077,28 @@ func TestXUIExecuteAddClientUsesAddClientAPI(t *testing.T) {
 	}
 	if !addCalled {
 		t.Fatalf("expected v3 add client API to be called")
+	}
+}
+
+func TestNormalizeInboundClientReplacesDeterministicUUID(t *testing.T) {
+	client := map[string]any{
+		"id":    "00000000-0000-0000-0000-000000000001",
+		"email": "bob@example.com",
+	}
+	normalizeInboundClient(client, "vless")
+	id := stringValue(client["id"])
+	if id == "00000000-0000-0000-0000-000000000001" || !looksLikeUUID(id) {
+		t.Fatalf("expected deterministic placeholder uuid to be replaced, got %q", id)
+	}
+
+	existingID := "11111111-2222-4333-8444-555555555555"
+	client = map[string]any{
+		"id":    existingID,
+		"email": "alice@example.com",
+	}
+	normalizeInboundClient(client, "vless")
+	if got := stringValue(client["id"]); got != existingID {
+		t.Fatalf("expected existing uuid to be preserved, got %q", got)
 	}
 }
 
@@ -2141,6 +2166,24 @@ func TestXUIExecuteAddClientUsesInboundAddClientBeforeList(t *testing.T) {
 	if !addClientCalled {
 		t.Fatalf("expected inbound addClient API to be called")
 	}
+}
+
+func looksLikeUUID(value string) bool {
+	if len(value) != 36 {
+		return false
+	}
+	for i, ch := range value {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if ch != '-' {
+				return false
+			}
+			continue
+		}
+		if !((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')) {
+			return false
+		}
+	}
+	return true
 }
 
 func TestXUIExecuteAddClientResolvesLocalInboundWhenList404(t *testing.T) {

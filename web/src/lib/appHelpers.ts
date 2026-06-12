@@ -650,8 +650,8 @@ function buildInboundClientPayload(client: XUIInboundClientForm, protocol: strin
 
   if (protocol === 'trojan') {
     payload.password = client.password.trim() || `trojan-${index + 1}`
-  } else {
-    payload.id = client.uuid.trim() || `00000000-0000-0000-0000-${String(index + 1).padStart(12, '0')}`
+  } else if (client.uuid.trim()) {
+    payload.id = client.uuid.trim()
   }
   return payload
 }
