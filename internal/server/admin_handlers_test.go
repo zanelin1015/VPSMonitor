@@ -294,3 +294,54 @@ func TestAreaManagerXUIActionAllowedUsesAssignmentScopeWhenAgentListIsStale(t *t
 		t.Fatal("expected area manager to add client on the assigned HK node")
 	}
 }
+
+func TestAreaManagerDashboardFiltersUseAssignmentScopeWhenAgentListIsStale(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "gz", AgentName: "GZ Entry"}); err != nil {
+		t.Fatalf("RegisterAgent gz: %v", err)
+	}
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK Exit"}); err != nil {
+		t.Fatalf("RegisterAgent hk: %v", err)
+	}
+	enabled := true
+	manager, err := sqliteStore.CreateAreaManager(model.AreaManagerAccountRequest{
+		Username: "area-filter",
+		Password: "password123",
+		Enabled:  &enabled,
+		AgentIDs: []string{"gz"},
+	})
+	if err != nil {
+		t.Fatalf("CreateAreaManager: %v", err)
+	}
+	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+		AgentID:    "hk",
+		InboundID:  1001,
+		InboundTag: "HK:20001",
+		Enabled:    &enabled,
+	}); err != nil {
+		t.Fatalf("CreateAreaManagerAssignment: %v", err)
+	}
+
+	app := &App{store: sqliteStore}
+	user := model.AdminUser{ID: manager.ID, Role: model.AdminRoleAreaManager, AgentIDs: []string{"gz"}}
+	agents := app.filterAgentRecordsForAdmin(user, []model.AgentRecord{
+		{AgentID: "gz"},
+		{AgentID: "hk"},
+		{AgentID: "hidden"},
+	})
+	if len(agents) != 2 || agents[0].AgentID != "gz" || agents[1].AgentID != "hk" {
+		t.Fatalf("expected dashboard agent filter to include assignment-scoped agent, got %#v", agents)
+	}
+	snapshots := app.filterSnapshotsForAdmin(user, []model.AgentSnapshot{
+		{AgentID: "gz"},
+		{AgentID: "hk"},
+		{AgentID: "hidden"},
+	})
+	if len(snapshots) != 2 || snapshots[0].AgentID != "gz" || snapshots[1].AgentID != "hk" {
+		t.Fatalf("expected dashboard snapshot filter to include assignment-scoped agent, got %#v", snapshots)
+	}
+}

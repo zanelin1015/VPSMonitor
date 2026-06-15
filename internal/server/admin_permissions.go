@@ -51,7 +51,7 @@ func (a *App) filterAgentRecordsForAdmin(user model.AdminUser, agents []model.Ag
 	if isRootAdmin(user) {
 		return agents
 	}
-	allowed := adminAgentSet(user)
+	allowed := a.adminVisibleAgentSet(user)
 	filtered := make([]model.AgentRecord, 0, len(agents))
 	for _, agent := range agents {
 		if _, ok := allowed[agent.AgentID]; ok {
@@ -65,7 +65,7 @@ func (a *App) filterSnapshotsForAdmin(user model.AdminUser, snapshots []model.Ag
 	if isRootAdmin(user) {
 		return snapshots
 	}
-	allowed := adminAgentSet(user)
+	allowed := a.adminVisibleAgentSet(user)
 	filtered := make([]model.AgentSnapshot, 0, len(snapshots))
 	for _, snapshot := range snapshots {
 		if _, ok := allowed[snapshot.AgentID]; ok {
@@ -79,7 +79,7 @@ func (a *App) filterRealtimeMetricsForAdmin(user model.AdminUser, metrics []mode
 	if isRootAdmin(user) {
 		return metrics
 	}
-	allowed := adminAgentSet(user)
+	allowed := a.adminVisibleAgentSet(user)
 	filtered := make([]model.AgentRealtimeMetrics, 0, len(metrics))
 	for _, metric := range metrics {
 		if _, ok := allowed[metric.AgentID]; ok {
@@ -146,8 +146,8 @@ func (a *App) sanitizeDashboardForAdmin(user model.AdminUser, view *model.Global
 		return
 	}
 	tagMap, _ := a.store.ListAreaManagerAgentTags(user.ID)
-	allowed := adminAgentSet(user)
 	clientScope := a.areaManagerClientScope(user)
+	allowed := clientScope.agents
 	agentNames := make(map[string]string, len(view.Agents))
 	for index := range view.Agents {
 		view.Agents[index] = sanitizeDashboardAgentForAreaManager(view.Agents[index], tagMap)
@@ -972,4 +972,11 @@ func adminAgentSet(user model.AdminUser) map[string]struct{} {
 		}
 	}
 	return set
+}
+
+func (a *App) adminVisibleAgentSet(user model.AdminUser) map[string]struct{} {
+	if isAreaManager(user) && user.ID > 0 && a != nil && a.store != nil {
+		return a.areaManagerClientScope(user).agents
+	}
+	return adminAgentSet(user)
 }

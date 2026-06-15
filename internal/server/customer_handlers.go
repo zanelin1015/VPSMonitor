@@ -192,17 +192,10 @@ func (a *App) customerOverview(user model.CustomerUser) (model.CustomerOverviewR
 	if err != nil {
 		return model.CustomerOverviewResponse{}, err
 	}
-	agents, err := a.store.ListAgents()
+	view, agents, snapshots, err := a.customerOverviewContext()
 	if err != nil {
 		return model.CustomerOverviewResponse{}, err
 	}
-	snapshots := a.store.ListLatest()
-	view := dashboard.BuildGlobalDashboardWithOptions(agents, snapshots, dashboard.GlobalDashboardOptions{
-		IncludeTopology:    true,
-		IncludeGeo:         true,
-		AllowNetworkLookup: false,
-		ResolverData:       a.dashboardTopologyResolverData(),
-	})
 	a.realtime.applyToDashboard(&view)
 	clientMap := buildCustomerClientMap(snapshots, agents)
 	chainMap := make(map[string]model.ClientChainView, len(view.ClientChains))
@@ -223,6 +216,60 @@ func (a *App) customerOverview(user model.CustomerUser) (model.CustomerOverviewR
 		GeneratedAt: time.Now().UTC(),
 		Links:       links,
 	}, nil
+}
+
+func (a *App) customerOverviewContext() (model.GlobalDashboardView, []model.AgentRecord, []model.AgentSnapshot, error) {
+	now := time.Now()
+	a.dashboardCacheMu.Lock()
+	if a.customerViewCache == nil {
+		a.customerViewCache = make(map[string]customerOverviewCacheEntry)
+	}
+	if entry, ok := a.customerViewCache["global"]; ok && now.Before(entry.expiresAt) {
+		view, agents, snapshots, err := cloneCustomerOverviewContext(entry)
+		a.dashboardCacheMu.Unlock()
+		return view, agents, snapshots, err
+	}
+	a.dashboardCacheMu.Unlock()
+
+	agents, err := a.store.ListAgents()
+	if err != nil {
+		return model.GlobalDashboardView{}, nil, nil, err
+	}
+	snapshots := a.store.ListLatest()
+	view := dashboard.BuildGlobalDashboardWithOptions(agents, snapshots, dashboard.GlobalDashboardOptions{
+		IncludeTopology:    true,
+		IncludeGeo:         true,
+		AllowNetworkLookup: false,
+		ResolverData:       a.dashboardTopologyResolverData(),
+	})
+
+	entry := customerOverviewCacheEntry{
+		expiresAt: time.Now().Add(customerOverviewCacheTTL),
+		view:      view,
+		agents:    agents,
+		snapshots: snapshots,
+	}
+	if cachedView, cachedAgents, cachedSnapshots, err := cloneCustomerOverviewContext(entry); err == nil {
+		a.dashboardCacheMu.Lock()
+		a.customerViewCache["global"] = customerOverviewCacheEntry{
+			expiresAt: entry.expiresAt,
+			view:      cachedView,
+			agents:    cachedAgents,
+			snapshots: cachedSnapshots,
+		}
+		a.dashboardCacheMu.Unlock()
+	}
+	return view, agents, snapshots, nil
+}
+
+func cloneCustomerOverviewContext(entry customerOverviewCacheEntry) (model.GlobalDashboardView, []model.AgentRecord, []model.AgentSnapshot, error) {
+	view, err := cloneDashboardView(entry.view)
+	if err != nil {
+		return model.GlobalDashboardView{}, nil, nil, err
+	}
+	agents := append([]model.AgentRecord(nil), entry.agents...)
+	snapshots := append([]model.AgentSnapshot(nil), entry.snapshots...)
+	return view, agents, snapshots, nil
 }
 
 type customerClientRef struct {

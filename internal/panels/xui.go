@@ -538,7 +538,11 @@ func (c *XUIClient) addInbound(ctx context.Context, payload map[string]any, loca
 	if err != nil {
 		return nil, err
 	}
-	normalizeInboundPayloadClients(inbound)
+	inbounds, err := c.loadInboundsForAction(ctx)
+	if err != nil {
+		return nil, err
+	}
+	normalizeNewInboundPayloadClients(inbound, collectInboundClientUUIDs(inbounds))
 	resolvedCertificate, err := injectLocalCertificate(inbound, payload, localCertificates)
 	if err != nil {
 		return nil, err
@@ -565,7 +569,6 @@ func (c *XUIClient) addClient(ctx context.Context, payload map[string]any) (map[
 		return nil, err
 	}
 	protocol := strings.TrimSpace(stringFromMap(payload, "protocol"))
-	normalizeInboundClient(client, protocol)
 	email := strings.TrimSpace(stringFromMap(client, "email"))
 	if inboundID <= 0 && inboundTag == "" {
 		return nil, fmt.Errorf("inbound_id or inbound_tag is required")
@@ -574,38 +577,24 @@ func (c *XUIClient) addClient(ctx context.Context, payload map[string]any) (map[
 		return nil, fmt.Errorf("client.email is required")
 	}
 
-	if inboundID > 0 {
-		if result, err := c.addClientViaAPI(ctx, inboundID, client); err == nil {
-			return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": false}, nil
-		}
-		if result, err := c.addClientViaInboundDirectAPI(ctx, inboundID, protocol, client); err == nil {
-			return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": false}, nil
-		}
-		if result, err := c.addClientViaInboundSettingsAPI(ctx, inboundID, protocol, client); err == nil {
-			return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": false}, nil
-		}
-	}
-
-	inbounds, err := c.getJSONList(ctx, "/panel/api/inbounds/list")
+	inbounds, err := c.loadInboundsForAction(ctx)
 	if err != nil {
-		localInbounds, localErr := c.readLocalInbounds(ctx)
-		if localErr != nil {
-			return nil, err
-		}
-		inbounds = localInbounds
+		return nil, err
 	}
 	inbound := findInboundForAction(inbounds, inboundID, inboundTag)
 	if inbound == nil {
 		return nil, fmt.Errorf("inbound not found for new client %s", email)
 	}
 	inboundID = intValue(inbound["id"])
+	effectiveProtocol := firstNonEmptyString(protocol, stringValue(inbound["protocol"]))
+	ensureNewInboundClientAuth(client, effectiveProtocol, collectInboundClientUUIDs(inbounds))
 	if result, err := c.addClientViaAPI(ctx, inboundID, client); err == nil {
 		return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": false}, nil
 	}
-	if result, err := c.addClientViaInboundDirectAPI(ctx, inboundID, firstNonEmptyString(protocol, stringValue(inbound["protocol"])), client); err == nil {
+	if result, err := c.addClientViaInboundDirectAPI(ctx, inboundID, effectiveProtocol, client); err == nil {
 		return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": false}, nil
 	}
-	if result, err := c.addClientViaInboundSettingsAPI(ctx, inboundID, firstNonEmptyString(protocol, stringValue(inbound["protocol"])), client); err == nil {
+	if result, err := c.addClientViaInboundSettingsAPI(ctx, inboundID, effectiveProtocol, client); err == nil {
 		return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": false}, nil
 	}
 
@@ -619,7 +608,6 @@ func (c *XUIClient) addClient(ctx context.Context, payload map[string]any) (map[
 			return nil, fmt.Errorf("client already exists in inbound: %s", email)
 		}
 	}
-	normalizeInboundClient(client, stringValue(inbound["protocol"]))
 	clientSettings, _ := json.Marshal(map[string]any{"clients": []map[string]any{client}})
 	if result, err := c.postJSON(ctx, "/panel/api/inbounds/addClient", map[string]any{
 		"id":       inboundID,
@@ -654,7 +642,6 @@ func (c *XUIClient) addClientViaAPI(ctx context.Context, inboundID int, client m
 }
 
 func (c *XUIClient) addClientViaInboundDirectAPI(ctx context.Context, inboundID int, protocol string, client map[string]any) (xuiEnvelope, error) {
-	normalizeInboundClient(client, protocol)
 	return c.postJSON(ctx, "/panel/api/inbounds/addClient", map[string]any{
 		"inboundId": inboundID,
 		"client":    client,
@@ -662,7 +649,6 @@ func (c *XUIClient) addClientViaInboundDirectAPI(ctx context.Context, inboundID 
 }
 
 func (c *XUIClient) addClientViaInboundSettingsAPI(ctx context.Context, inboundID int, protocol string, client map[string]any) (xuiEnvelope, error) {
-	normalizeInboundClient(client, protocol)
 	clientSettings, _ := json.Marshal(map[string]any{"clients": []map[string]any{client}})
 	return c.postJSON(ctx, "/panel/api/inbounds/addClient", map[string]any{
 		"id":       inboundID,
@@ -684,6 +670,18 @@ func (c *XUIClient) readLocalInbounds(ctx context.Context) ([]map[string]any, er
 		return nil, err
 	}
 	return readLocalInbounds(ctx, db)
+}
+
+func (c *XUIClient) loadInboundsForAction(ctx context.Context) ([]map[string]any, error) {
+	inbounds, err := c.getJSONList(ctx, "/panel/api/inbounds/list")
+	if err == nil {
+		return inbounds, nil
+	}
+	localInbounds, localErr := c.readLocalInbounds(ctx)
+	if localErr != nil {
+		return nil, err
+	}
+	return localInbounds, nil
 }
 
 func findInboundForAction(inbounds []map[string]any, inboundID int, inboundTag string) map[string]any {
@@ -1685,7 +1683,23 @@ func normalizeInboundClient(client map[string]any, protocol string) {
 	}
 }
 
-func normalizeInboundPayloadClients(inbound map[string]any) {
+func ensureNewInboundClientAuth(client map[string]any, protocol string, usedUUIDs map[string]struct{}) {
+	if _, ok := client["enable"]; !ok {
+		client["enable"] = true
+	}
+	if strings.TrimSpace(stringValue(client["subId"])) == "" {
+		client["subId"] = randomHexString(8)
+	}
+	if strings.EqualFold(protocol, "trojan") {
+		if strings.TrimSpace(stringValue(client["password"])) == "" {
+			client["password"] = randomHexString(16)
+		}
+		return
+	}
+	client["id"] = generateUniqueInboundClientUUID(usedUUIDs)
+}
+
+func normalizeNewInboundPayloadClients(inbound map[string]any, usedUUIDs map[string]struct{}) {
 	protocol := strings.TrimSpace(stringValue(inbound["protocol"]))
 	settings, settingsText, err := decodeInboundSettings(inbound["settings"])
 	if err != nil {
@@ -1696,7 +1710,7 @@ func normalizeInboundPayloadClients(inbound map[string]any) {
 		return
 	}
 	for _, client := range clients {
-		normalizeInboundClient(client, protocol)
+		ensureNewInboundClientAuth(client, protocol, usedUUIDs)
 	}
 	settings["clients"] = clients
 	if settingsText {
@@ -1729,6 +1743,40 @@ func shouldGenerateInboundClientUUID(id string) bool {
 		}
 	}
 	return false
+}
+
+func collectInboundClientUUIDs(inbounds []map[string]any) map[string]struct{} {
+	used := make(map[string]struct{})
+	for _, inbound := range inbounds {
+		settings, _, err := decodeInboundSettings(inbound["settings"])
+		if err != nil {
+			continue
+		}
+		for _, client := range objectSlice(settings["clients"]) {
+			for _, key := range []string{"id", "uuid"} {
+				id := strings.ToLower(strings.TrimSpace(stringValue(client[key])))
+				if id != "" {
+					used[id] = struct{}{}
+				}
+			}
+		}
+	}
+	return used
+}
+
+func generateUniqueInboundClientUUID(used map[string]struct{}) string {
+	if used == nil {
+		used = make(map[string]struct{})
+	}
+	for {
+		id := randomUUIDString()
+		key := strings.ToLower(id)
+		if _, exists := used[key]; exists {
+			continue
+		}
+		used[key] = struct{}{}
+		return id
+	}
 }
 
 func clientPrimaryID(client map[string]any) string {

@@ -81,6 +81,7 @@ func (a *App) handleRealmConfigCopy(w http.ResponseWriter, r *http.Request, sour
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	a.clearCustomerOverviewCache()
 	applySent := a.requestAgentConfigApply(targetAgentID, record.Config)
 	writeJSON(w, http.StatusOK, realmConfigCopyResponse{
 		SourceAgentID: sourceAgentID,

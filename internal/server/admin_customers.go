@@ -279,6 +279,9 @@ func (a *App) syncCustomerAssignmentRevenue(req model.CustomerAssignmentRequest,
 		cfg.Renewal.ClientBillings = append(cfg.Renewal.ClientBillings, billing)
 	}
 	_, err = a.store.UpdateAgentConfigWithActor(req.AgentID, cfg, actor)
+	if err == nil {
+		a.clearCustomerOverviewCache()
+	}
 	return err
 }
 

@@ -52,6 +52,7 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	observedIP := requestObservedIP(r)
+	a.clearCustomerOverviewCache()
 	go a.refreshTopologyLookupCacheFromRegister(req, observedIP)
 	writeJSON(w, http.StatusOK, result)
 }
@@ -384,6 +385,12 @@ func (a *App) refreshTopologyLookupCache(agentID string, values []string) {
 func (a *App) clearDashboardTopologyCache() {
 	a.dashboardCacheMu.Lock()
 	a.topologyCache = make(map[string]dashboardCacheEntry)
+	a.dashboardCacheMu.Unlock()
+}
+
+func (a *App) clearCustomerOverviewCache() {
+	a.dashboardCacheMu.Lock()
+	a.customerViewCache = make(map[string]customerOverviewCacheEntry)
 	a.dashboardCacheMu.Unlock()
 }
 
@@ -1097,6 +1104,7 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 			return
 		}
 		a.syncAgentClientExpiryRules(record, "config_save")
+		a.clearCustomerOverviewCache()
 		a.requestAgentConfigApply(agentID, record.Config)
 		writeJSON(w, http.StatusOK, disableXUIAutoInstall(record.Config))
 	default:
@@ -1295,6 +1303,7 @@ func (a *App) handleHeartbeat(w http.ResponseWriter, r *http.Request, agentID st
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	a.clearCustomerOverviewCache()
 	go a.refreshTopologyLookupCacheFromSnapshot(agentID, snapshot)
 	a.syncRealmConfigFromSnapshot(agentID, snapshot.Realm)
 	go a.alerts.EvaluateAgent(agentID)

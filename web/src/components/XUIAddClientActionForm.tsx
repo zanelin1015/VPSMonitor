@@ -66,12 +66,7 @@ export function renderAddClientActionForm(props: {
               <Text type="secondary">密码</Text>
               <Input value={form.client.password} placeholder="留空自动生成" onChange={(event) => updateClient({ password: event.target.value })} />
             </Col>
-          ) : (
-            <Col xs={24} md={12}>
-              <Text type="secondary">UUID</Text>
-              <Input value={form.client.uuid} placeholder="留空自动生成" onChange={(event) => updateClient({ uuid: event.target.value })} />
-            </Col>
-          )}
+          ) : null}
           <Col xs={24} md={12}>
             <Text type="secondary">Sub ID</Text>
             <Input value={form.client.sub_id} placeholder="留空自动生成" onChange={(event) => updateClient({ sub_id: event.target.value })} />

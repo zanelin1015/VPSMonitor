@@ -228,12 +228,7 @@ export function renderInboundActionForm(props: {
                     <Text type="secondary">密码</Text>
                     <Input value={client.password} onChange={(event) => updateClient(index, { password: event.target.value })} />
                   </Col>
-                ) : (
-                  <Col xs={24} md={12}>
-                    <Text type="secondary">UUID</Text>
-                    <Input value={client.uuid} onChange={(event) => updateClient(index, { uuid: event.target.value })} />
-                  </Col>
-                )}
+                ) : null}
                 <Col xs={24} md={12}>
                   <Text type="secondary">Sub ID</Text>
                   <Input value={client.sub_id} onChange={(event) => updateClient(index, { sub_id: event.target.value })} />

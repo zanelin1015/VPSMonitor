@@ -1,4 +1,4 @@
-import { startTransition, useDeferredValue, useEffect, useRef, useState } from 'react'
+import { lazy, startTransition, Suspense, useDeferredValue, useEffect, useRef, useState } from 'react'
 import {
   Alert,
   App as AntdApp,
@@ -66,6 +66,7 @@ import {
 import {
   summarizeAgentNetwork,
 } from './lib/traffic'
+import { useCurrentAgentRequest } from './hooks/useCurrentAgentRequest'
 
 import type {
   AgentViewMode,
@@ -82,12 +83,8 @@ import {
   FrontendSettingsPanel,
   PersonalCenterDropdown,
 } from './components/AdminModals'
-import { CustomerManagementModal } from './components/CustomerManagementModal'
 import { renderCNFlowPanel } from './components/DashboardTopologyPanels'
-import { AgentDetailPanel } from './components/AgentDetailPanel'
-import { ConsoleModals } from './components/ConsoleModals'
 import { AgentRail, AdminWorkbenchDashboard, OverviewSummaryCard } from './components/DashboardSidebar'
-import { CustomerPortal } from './components/CustomerPortal'
 import { LoginScreen } from './components/LoginScreen'
 import { VisualEffects, applyCustomFrontendCode } from './components/VisualEffects'
 import { useAppTheme, type ThemeMode } from './theme'
@@ -292,6 +289,11 @@ function isAreaManagerAdminUser(user: AdminUser | null): boolean {
   return Boolean((user.agent_ids || []).length || (user.id && user.id !== 1))
 }
 
+const AgentDetailPanel = lazy(() => import('./components/AgentDetailPanel').then((module) => ({ default: module.AgentDetailPanel })))
+const ConsoleModals = lazy(() => import('./components/ConsoleModals').then((module) => ({ default: module.ConsoleModals })))
+const CustomerManagementModal = lazy(() => import('./components/CustomerManagementModal').then((module) => ({ default: module.CustomerManagementModal })))
+const CustomerPortal = lazy(() => import('./components/CustomerPortal').then((module) => ({ default: module.CustomerPortal })))
+
 export default function App() {
   const { message } = AntdApp.useApp()
   const { mode: themeMode, effectiveMode, setMode: setThemeMode } = useAppTheme()
@@ -397,9 +399,12 @@ export default function App() {
   const applyingRouteRef = useRef(false)
   const lastAdminURLRef = useRef('')
   const inFlightRequestsRef = useRef<Set<string>>(new Set())
+  const lastDetailAgentIdRef = useRef('')
+  const isCurrentAgentRequest = useCurrentAgentRequest(selectedAgentId)
 
   const selectedAgent = agents.find((item) => item.agent_id === selectedAgentId)
-  const selectedSummary = overview?.summary || selectedAgent?.summary || {}
+  const currentOverview = overview?.agent_id === selectedAgentId ? overview : null
+  const selectedSummary = currentOverview?.summary || selectedAgent?.summary || {}
   const centerPanelOpen = topologyVisible || Boolean(selectedAgent)
   const topologyScopeLabel = selectedAgentId ? selectedAgent?.agent_name || selectedAgentId : selectedTag ? `${selectedTag} 标签` : '全部 Client'
   const heroTitle = '南风VPS监控'
@@ -585,6 +590,7 @@ export default function App() {
       return
     }
     if (!selectedAgentId) {
+      lastDetailAgentIdRef.current = ''
       setActiveTabKey((current) => (current === 'config' ? 'overview' : current))
       setOverview(null)
       setManagedConfig(null)
@@ -600,6 +606,25 @@ export default function App() {
       return
     }
 
+    if (lastDetailAgentIdRef.current !== selectedAgentId) {
+      lastDetailAgentIdRef.current = selectedAgentId
+      setOverview(null)
+      setManagedConfig(null)
+      setSavedManagedConfig(null)
+      managedConfigDirtyRef.current = false
+      setEntryAddressInputText('')
+      setOverviewError('')
+      setConfigError('')
+      setXUIActions([])
+      setAgentLogs(null)
+      setAgentLogsError('')
+      setConfigAudits([])
+      setClientSearch('')
+      setSelectedOutboundTag('')
+      setSelectedRuleIndex(null)
+      setSelectedNodeAnchor('')
+    }
+
     void loadOverview(selectedAgentId)
     void loadManagedConfig(selectedAgentId)
     void loadXUIActions(selectedAgentId)
@@ -613,8 +638,8 @@ export default function App() {
       setOutboundSourceLoading(false)
       return
     }
-    if (overview && outboundActionForm.source_agent_id === overview.agent_id) {
-      setOutboundSourceOverview(overview)
+    if (currentOverview && outboundActionForm.source_agent_id === currentOverview.agent_id) {
+      setOutboundSourceOverview(currentOverview)
       setOutboundSourceLoading(false)
       return
     }
@@ -640,7 +665,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [adminUser, outboundActionForm.source_agent_id, overview])
+  }, [adminUser, outboundActionForm.source_agent_id, currentOverview])
 
   useEffect(() => {
     if (!agents.length || (selectedAgentId && !agents.some((item) => item.agent_id === selectedAgentId))) {
@@ -941,6 +966,9 @@ export default function App() {
     }
     try {
       const data = await fetchJSON<XUIOverview>(`/api/v1/agents/${agentID}/xui/overview`)
+      if (!isCurrentAgentRequest(agentID)) {
+        return
+      }
       setOverview(normalizeXUIOverview(data))
       setOverviewError('')
       setSelectedOutboundTag('')
@@ -948,12 +976,12 @@ export default function App() {
     } catch (error) {
       if (isUnauthorized(error)) {
         setAdminUser(null)
-      } else if (!silent) {
+      } else if (!silent && isCurrentAgentRequest(agentID)) {
         setOverview(null)
         setOverviewError(error instanceof Error ? error.message : '加载 x-ui 概览失败')
       }
     } finally {
-      if (!silent) {
+      if (!silent && isCurrentAgentRequest(agentID)) {
         setOverviewLoading(false)
       }
       inFlightRequestsRef.current.delete(requestKey)
@@ -973,11 +1001,15 @@ export default function App() {
     }
     try {
       const data = await fetchJSON<ManagedAgentConfig>(`/api/v1/agents/${agentID}/config`)
+      if (!isCurrentAgentRequest(agentID)) {
+        return
+      }
       const cachedName = cachedCustomerDisplayName(agentID)
       const dataWithCustomerName = !hasCustomerDisplayNameField(data) && cachedName !== undefined
         ? { ...data, customer_display_name: cachedName }
         : data
-      const normalized = normalizeManagedConfig(dataWithCustomerName, agentID, selectedAgent?.agent_name)
+      const agentName = agents.find((item) => item.agent_id === agentID)?.agent_name
+      const normalized = normalizeManagedConfig(dataWithCustomerName, agentID, agentName)
       rememberCustomerDisplayName(agentID, normalized.customer_display_name || '')
       setSavedManagedConfig(normalized)
       if (silent && managedConfigDirtyRef.current) {
@@ -991,8 +1023,9 @@ export default function App() {
     } catch (error) {
       if (isUnauthorized(error)) {
         setAdminUser(null)
-      } else if (!silent) {
-        const emptyConfig = createEmptyManagedConfig(agentID, selectedAgent?.agent_name)
+      } else if (!silent && isCurrentAgentRequest(agentID)) {
+        const agentName = agents.find((item) => item.agent_id === agentID)?.agent_name
+        const emptyConfig = createEmptyManagedConfig(agentID, agentName)
         managedConfigDirtyRef.current = false
         setSavedManagedConfig(emptyConfig)
         setManagedConfig(emptyConfig)
@@ -1000,7 +1033,7 @@ export default function App() {
         setConfigError(error instanceof Error ? error.message : '加载托管配置失败')
       }
     } finally {
-      if (!silent) {
+      if (!silent && isCurrentAgentRequest(agentID)) {
         setConfigLoading(false)
       }
       inFlightRequestsRef.current.delete(requestKey)
@@ -1023,15 +1056,18 @@ export default function App() {
     }
     try {
       const data = await fetchJSON<XUIAction[]>(`/api/v1/agents/${agentID}/xui/actions?limit=30`)
+      if (!isCurrentAgentRequest(agentID)) {
+        return
+      }
       setXUIActions(Array.isArray(data) ? data : [])
     } catch (error) {
       if (isUnauthorized(error)) {
         setAdminUser(null)
-      } else if (!silent) {
+      } else if (!silent && isCurrentAgentRequest(agentID)) {
         message.error(error instanceof Error ? error.message : '加载 x-ui 操作记录失败')
       }
     } finally {
-      if (!silent) {
+      if (!silent && isCurrentAgentRequest(agentID)) {
         setXUIActionsLoading(false)
       }
       inFlightRequestsRef.current.delete(requestKey)
@@ -1056,17 +1092,20 @@ export default function App() {
     }
     try {
       const data = await fetchJSON<AgentLogsResponse>(`/api/v1/agents/${agentID}/logs`)
+      if (!isCurrentAgentRequest(agentID)) {
+        return
+      }
       setAgentLogs({ ...data, logs: Array.isArray(data.logs) ? data.logs : [] })
       setAgentLogsError('')
     } catch (error) {
       if (isUnauthorized(error)) {
         setAdminUser(null)
-      } else if (!silent) {
+      } else if (!silent && isCurrentAgentRequest(agentID)) {
         setAgentLogs(null)
         setAgentLogsError(error instanceof Error ? error.message : '加载日志失败')
       }
     } finally {
-      if (!silent) {
+      if (!silent && isCurrentAgentRequest(agentID)) {
         setAgentLogsLoading(false)
       }
       inFlightRequestsRef.current.delete(requestKey)
@@ -1340,15 +1379,18 @@ export default function App() {
     }
     try {
       const data = await fetchJSON<ConfigAuditLog[]>(`/api/v1/admin/audit?agent_id=${encodeURIComponent(agentID)}&limit=8`)
+      if (!isCurrentAgentRequest(agentID)) {
+        return
+      }
       setConfigAudits(Array.isArray(data) ? data : [])
     } catch (error) {
       if (isUnauthorized(error)) {
         setAdminUser(null)
-      } else if (!silent) {
+      } else if (!silent && isCurrentAgentRequest(agentID)) {
         message.error(error instanceof Error ? error.message : '加载配置修改记录失败')
       }
     } finally {
-      if (!silent) {
+      if (!silent && isCurrentAgentRequest(agentID)) {
         setConfigAuditsLoading(false)
       }
     }
@@ -1888,8 +1930,8 @@ export default function App() {
     }
   }, [activeTabKey, adminUser, selectedAgentId])
 
-  const filteredClients = overview
-    ? overview.clients.filter((client) => {
+  const filteredClients = currentOverview
+    ? currentOverview.clients.filter((client) => {
         if (!deferredClientSearch) {
           return true
         }
@@ -1917,7 +1959,11 @@ export default function App() {
   const filteredChains = (dashboardView?.client_chains || []).filter((chain) => chainMatchesSelectedTag(chain, selectedTag))
 
   if (customerMode) {
-    return <CustomerPortal />
+    return (
+      <Suspense fallback={<div className="login-shell"><Spin size="large" /></div>}>
+        <CustomerPortal />
+      </Suspense>
+    )
   }
 
   if (sessionLoading) {
@@ -1948,6 +1994,14 @@ export default function App() {
   const clientInstallCommand = buildClientInstallCommand(clientInstallForm)
   const clientWindowsPowerShellCommand = buildWindowsPowerShellInstallCommand(clientInstallForm)
   const clientWindowsCMDCommand = buildWindowsCMDInstallCommand(clientInstallForm)
+  const consoleModalOpen = accountModalOpen ||
+    clientInstallModalOpen ||
+    customerModalOpen ||
+    frontendSettingsModalOpen ||
+    Boolean(importURLClient) ||
+    telegramBotModalOpen ||
+    updateModalOpen ||
+    xuiActionModalOpen
   const showWorkbenchDashboard = activeAdminPage === 'dashboard' && !topologyVisible
   const serverVersionLabel = `V${systemInfo?.version || '-'}`
   return (
@@ -2162,104 +2216,108 @@ export default function App() {
           </div>
         </header>
 
-        <ConsoleModals
-          accountForm={accountForm}
-          accountModalOpen={accountModalOpen}
-          accountSaving={accountSaving}
-          agents={agents}
-          adminUser={adminUser}
-          clientInstallCommandKind={clientInstallCommandKind}
-          clientInstallForm={clientInstallForm}
-          clientInstallLoading={clientInstallLoading}
-          clientInstallModalOpen={clientInstallModalOpen}
-          clientInstallSaving={clientInstallSaving}
-          clientInstallLinuxCommand={clientInstallCommand}
-          clientInstallWindowsCMDCommand={clientWindowsCMDCommand}
-          clientInstallWindowsPowerShellCommand={clientWindowsPowerShellCommand}
-          customerModalOpen={customerModalOpen}
-          customerAssignmentDraft={customerAssignmentDraft}
-          editingTelegramBotId={editingTelegramBotId}
-          frontendSettingsForm={frontendSettingsForm}
-          frontendSettingsLoading={frontendSettingsLoading}
-          frontendSettingsModalOpen={frontendSettingsModalOpen}
-          frontendSettingsSaving={frontendSettingsSaving}
-          importURLClient={importURLClient}
-          outboundActionForm={outboundActionForm}
-          outboundSourceLoading={outboundSourceLoading}
-          outboundSourceOverview={outboundSourceOverview}
-          overview={overview}
-          routingActionForm={routingActionForm}
-          selectedAgentId={selectedAgentId}
-          systemInfo={systemInfo}
-          telegramBotForm={telegramBotForm}
-          telegramBotModalOpen={telegramBotModalOpen}
-          telegramBotSaving={telegramBotSaving}
-          telegramBots={telegramBots}
-          telegramBotsLoading={telegramBotsLoading}
-          updateLatestError={updateLatestError}
-          updateLatestInfo={updateLatestInfo}
-          updateLatestLoading={updateLatestLoading}
-          updateLoading={updateLoading}
-          updateModalOpen={updateModalOpen}
-          xuiActionKind={xuiActionKind}
-          xuiActionModalOpen={xuiActionModalOpen}
-          xuiActionSaving={xuiActionSaving}
-          addClientActionForm={addClientActionForm}
-          addClientActionInbounds={addClientActionInbounds}
-          onAccountFormChange={setAccountForm}
-          onClientInstallCommandKindChange={setClientInstallCommandKind}
-          onClientInstallFormChange={setClientInstallForm}
-          onCloseAccount={() => setAccountModalOpen(false)}
-          onCloseClientInstall={() => setClientInstallModalOpen(false)}
-          onCloseCustomerModal={() => {
-            setCustomerModalOpen(false)
-            setCustomerAssignmentDraft(null)
-          }}
-          onCustomerAssignmentDraftApplied={() => setCustomerAssignmentDraft(null)}
-          onCloseFrontendSettings={() => setFrontendSettingsModalOpen(false)}
-          onCloseImportURL={() => setImportURLClient(null)}
-          onCloseTelegramBot={() => setTelegramBotModalOpen(false)}
-          onCloseUpdateModal={() => setUpdateModalOpen(false)}
-          onCloseXUIActionModal={() => {
-            setXUIActionModalOpen(false)
-            setXUIActionAgentId('')
-            setAddClientActionInbounds([])
-          }}
-          onConfigChanged={() => loadAgents()}
-          onOpenCustomerAssignment={openCustomerAssignment}
-          onCopyClientInstallCommand={(command) => void copyClientInstallCommand(command)}
-          onCopyImportURL={(client) => void copyImportURL(client)}
-          onDeleteTelegramBot={(id) => void deleteTelegramBot(id)}
-          onRefreshLatestUpdate={() => void loadUpdateLatestInfo()}
-          onRefreshTelegramBots={() => void loadTelegramBots()}
-          onSaveAccount={() => void saveAccount()}
-          onSaveClientInstallSettings={() => void saveClientInstallSettings()}
-          onSaveFrontendSettings={() => void saveFrontendSettings()}
-          onSaveTelegramBot={saveTelegramBot}
-          onSubmitXUIAction={() => void createXUIAction()}
-          onTelegramBotFormChange={setTelegramBotForm}
-          onTelegramBotEditIDChange={setEditingTelegramBotId}
-          onTestTelegramBot={(id) => void testTelegramBot(id)}
-          onUpdateAllClients={() => void updateAllClientsOnline()}
-          onUpdateFrontendSettingsFormChange={setFrontendSettingsForm}
-          onUpdateAddClientActionForm={setAddClientActionForm}
-          onUpdateOutboundActionForm={setOutboundActionForm}
-          onUpdateRoutingActionForm={setRoutingActionForm}
-          onUpdateServer={() => void updateServerOnline()}
-          onXUIActionKindChange={setXUIActionKind}
-        />
+        {consoleModalOpen ? <Suspense fallback={null}>
+          <ConsoleModals
+            accountForm={accountForm}
+            accountModalOpen={accountModalOpen}
+            accountSaving={accountSaving}
+            agents={agents}
+            adminUser={adminUser}
+            clientInstallCommandKind={clientInstallCommandKind}
+            clientInstallForm={clientInstallForm}
+            clientInstallLoading={clientInstallLoading}
+            clientInstallModalOpen={clientInstallModalOpen}
+            clientInstallSaving={clientInstallSaving}
+            clientInstallLinuxCommand={clientInstallCommand}
+            clientInstallWindowsCMDCommand={clientWindowsCMDCommand}
+            clientInstallWindowsPowerShellCommand={clientWindowsPowerShellCommand}
+            customerModalOpen={customerModalOpen}
+            customerAssignmentDraft={customerAssignmentDraft}
+            editingTelegramBotId={editingTelegramBotId}
+            frontendSettingsForm={frontendSettingsForm}
+            frontendSettingsLoading={frontendSettingsLoading}
+            frontendSettingsModalOpen={frontendSettingsModalOpen}
+            frontendSettingsSaving={frontendSettingsSaving}
+            importURLClient={importURLClient}
+            outboundActionForm={outboundActionForm}
+            outboundSourceLoading={outboundSourceLoading}
+            outboundSourceOverview={outboundSourceOverview}
+            overview={overview}
+            routingActionForm={routingActionForm}
+            selectedAgentId={selectedAgentId}
+            systemInfo={systemInfo}
+            telegramBotForm={telegramBotForm}
+            telegramBotModalOpen={telegramBotModalOpen}
+            telegramBotSaving={telegramBotSaving}
+            telegramBots={telegramBots}
+            telegramBotsLoading={telegramBotsLoading}
+            updateLatestError={updateLatestError}
+            updateLatestInfo={updateLatestInfo}
+            updateLatestLoading={updateLatestLoading}
+            updateLoading={updateLoading}
+            updateModalOpen={updateModalOpen}
+            xuiActionKind={xuiActionKind}
+            xuiActionModalOpen={xuiActionModalOpen}
+            xuiActionSaving={xuiActionSaving}
+            addClientActionForm={addClientActionForm}
+            addClientActionInbounds={addClientActionInbounds}
+            onAccountFormChange={setAccountForm}
+            onClientInstallCommandKindChange={setClientInstallCommandKind}
+            onClientInstallFormChange={setClientInstallForm}
+            onCloseAccount={() => setAccountModalOpen(false)}
+            onCloseClientInstall={() => setClientInstallModalOpen(false)}
+            onCloseCustomerModal={() => {
+              setCustomerModalOpen(false)
+              setCustomerAssignmentDraft(null)
+            }}
+            onCustomerAssignmentDraftApplied={() => setCustomerAssignmentDraft(null)}
+            onCloseFrontendSettings={() => setFrontendSettingsModalOpen(false)}
+            onCloseImportURL={() => setImportURLClient(null)}
+            onCloseTelegramBot={() => setTelegramBotModalOpen(false)}
+            onCloseUpdateModal={() => setUpdateModalOpen(false)}
+            onCloseXUIActionModal={() => {
+              setXUIActionModalOpen(false)
+              setXUIActionAgentId('')
+              setAddClientActionInbounds([])
+            }}
+            onConfigChanged={() => loadAgents()}
+            onOpenCustomerAssignment={openCustomerAssignment}
+            onCopyClientInstallCommand={(command) => void copyClientInstallCommand(command)}
+            onCopyImportURL={(client) => void copyImportURL(client)}
+            onDeleteTelegramBot={(id) => void deleteTelegramBot(id)}
+            onRefreshLatestUpdate={() => void loadUpdateLatestInfo()}
+            onRefreshTelegramBots={() => void loadTelegramBots()}
+            onSaveAccount={() => void saveAccount()}
+            onSaveClientInstallSettings={() => void saveClientInstallSettings()}
+            onSaveFrontendSettings={() => void saveFrontendSettings()}
+            onSaveTelegramBot={saveTelegramBot}
+            onSubmitXUIAction={() => void createXUIAction()}
+            onTelegramBotFormChange={setTelegramBotForm}
+            onTelegramBotEditIDChange={setEditingTelegramBotId}
+            onTestTelegramBot={(id) => void testTelegramBot(id)}
+            onUpdateAllClients={() => void updateAllClientsOnline()}
+            onUpdateFrontendSettingsFormChange={setFrontendSettingsForm}
+            onUpdateAddClientActionForm={setAddClientActionForm}
+            onUpdateOutboundActionForm={setOutboundActionForm}
+            onUpdateRoutingActionForm={setRoutingActionForm}
+            onUpdateServer={() => void updateServerOnline()}
+            onXUIActionKindChange={setXUIActionKind}
+          />
+        </Suspense> : null}
 
         {activeAdminPage === 'customers' ? (
           <main className="admin-content-page">
-            <CustomerManagementModal
-              embedded
-              agents={agents}
-              adminUser={adminUser}
-              initialAssignment={customerAssignmentDraft}
-              onInitialAssignmentApplied={() => setCustomerAssignmentDraft(null)}
-              onConfigChanged={() => loadAgents()}
-              onOpenAssignment={openCustomerAssignment}
-            />
+            <Suspense fallback={<Spin size="large" />}>
+              <CustomerManagementModal
+                embedded
+                agents={agents}
+                adminUser={adminUser}
+                initialAssignment={customerAssignmentDraft}
+                onInitialAssignmentApplied={() => setCustomerAssignmentDraft(null)}
+                onConfigChanged={() => loadAgents()}
+                onOpenAssignment={openCustomerAssignment}
+              />
+            </Suspense>
           </main>
         ) : activeAdminPage === 'settings' ? (
           <main className="admin-content-page">
@@ -2314,7 +2372,7 @@ export default function App() {
             loading={agentsLoading}
             error={agentsError}
             selectedTag={selectedTag}
-          selectedAgentId={xuiActionAgentId || selectedAgentId}
+          selectedAgentId={selectedAgentId}
             tagFilterOptions={tagFilterOptions}
             viewMode={agentViewMode}
             panelExpanded={centerPanelOpen}
@@ -2405,7 +2463,9 @@ export default function App() {
             ) : null}
 
             {selectedAgent && !topologyVisible ? (
-              <AgentDetailPanel
+              <Suspense fallback={<Spin size="large" />}>
+                <AgentDetailPanel
+                  key={selectedAgentId}
                 activeTabKey={activeTabKey}
                 agentLogs={agentLogs}
                 agentLogsError={agentLogsError}
@@ -2432,7 +2492,7 @@ export default function App() {
                 filteredTagLinks={filteredTagLinks}
                 managedConfig={managedConfig}
                 newTagName={newTagName}
-                overview={overview}
+                overview={currentOverview}
                 overviewError={overviewError}
                 overviewLoading={overviewLoading}
                 selectedAgent={selectedAgent}
@@ -2529,7 +2589,8 @@ export default function App() {
                 onUpdateClientBillingDraft={updateClientBillingDraft}
                 onXUIChange={(patch) => updateManagedConfig((current) => ({ ...current, xui: { ...current.xui, ...patch } }))}
                 onFeatureChange={(feature, enabled) => updateManagedConfig((current) => ({ ...current, features: { ...current.features, [feature]: enabled } }))}
-              />
+                />
+              </Suspense>
             ) : null}
           </main>
         </div>

@@ -2032,8 +2032,15 @@ func TestXUIExecuteAddClientUsesAddClientAPI(t *testing.T) {
 			case "/login":
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
 			case "/panel/api/inbounds/list":
-				t.Fatalf("inbound_id add should not require listing inbounds")
-				return nil, nil
+				return jsonResponse(t, req, map[string]any{
+					"success": true,
+					"obj": []map[string]any{{
+						"id":       7,
+						"tag":      "in-a",
+						"protocol": "vless",
+						"settings": `{"clients":[{"id":"11111111-2222-4333-8444-555555555555","email":"alice@example.com"}]}`,
+					}},
+				}), nil
 			case "/panel/api/clients/add":
 				addCalled = true
 				var body map[string]any
@@ -2051,6 +2058,9 @@ func TestXUIExecuteAddClientUsesAddClientAPI(t *testing.T) {
 				if !looksLikeUUID(stringValue(added["id"])) || shouldGenerateInboundClientUUID(stringValue(added["id"])) {
 					t.Fatalf("expected random client uuid, got %#v", added["id"])
 				}
+				if added["id"] == "11111111-2222-4333-8444-555555555555" {
+					t.Fatalf("expected duplicate submitted uuid to be replaced, got %#v", added["id"])
+				}
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "added"}), nil
 			default:
 				t.Fatalf("unexpected path: %s", req.URL.Path)
@@ -2066,6 +2076,7 @@ func TestXUIExecuteAddClientUsesAddClientAPI(t *testing.T) {
 			"client": map[string]any{
 				"email":  "bob@example.com",
 				"enable": true,
+				"id":     "11111111-2222-4333-8444-555555555555",
 			},
 		},
 	})
@@ -2100,6 +2111,12 @@ func TestNormalizeInboundClientReplacesDeterministicUUID(t *testing.T) {
 	if got := stringValue(client["id"]); got != existingID {
 		t.Fatalf("expected existing uuid to be preserved, got %q", got)
 	}
+
+	used := map[string]struct{}{strings.ToLower(existingID): {}}
+	ensureNewInboundClientAuth(client, "vless", used)
+	if got := stringValue(client["id"]); got == existingID || !looksLikeUUID(got) {
+		t.Fatalf("expected new client auth to force a unique system uuid, got %q", got)
+	}
 }
 
 func TestXUIExecuteAddClientUsesInboundAddClientBeforeList(t *testing.T) {
@@ -2120,6 +2137,16 @@ func TestXUIExecuteAddClientUsesInboundAddClientBeforeList(t *testing.T) {
 			switch req.URL.Path {
 			case "/login":
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
+			case "/panel/api/inbounds/list":
+				return jsonResponse(t, req, map[string]any{
+					"success": true,
+					"obj": []map[string]any{{
+						"id":       7,
+						"tag":      "in-a",
+						"protocol": "vless",
+						"settings": `{"clients":[{"id":"uuid-1","email":"alice@example.com"}]}`,
+					}},
+				}), nil
 			case "/panel/api/clients/add":
 				return jsonResponse(t, req, map[string]any{"success": false, "msg": "v3 add unavailable"}), nil
 			case "/panel/api/inbounds/addClient":
@@ -2135,10 +2162,10 @@ func TestXUIExecuteAddClientUsesInboundAddClientBeforeList(t *testing.T) {
 				if !ok || added["email"] != "bob@example.com" {
 					t.Fatalf("unexpected client payload: %#v", body["client"])
 				}
+				if !looksLikeUUID(stringValue(added["id"])) {
+					t.Fatalf("expected random client uuid, got %#v", added["id"])
+				}
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "added"}), nil
-			case "/panel/api/inbounds/list":
-				t.Fatalf("old addClient fallback should not require listing inbounds")
-				return nil, nil
 			default:
 				t.Fatalf("unexpected path: %s", req.URL.Path)
 				return nil, nil

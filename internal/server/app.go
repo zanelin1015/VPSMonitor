@@ -24,6 +24,7 @@ type App struct {
 	dashboardCacheMu   sync.Mutex
 	dashboardCache     map[string]dashboardCacheEntry
 	topologyCache      map[string]dashboardCacheEntry
+	customerViewCache  map[string]customerOverviewCacheEntry
 	topologyBuilds     map[string]chan struct{}
 	lookupCacheMu      sync.Mutex
 	updateLatestMu     sync.Mutex
@@ -37,12 +38,20 @@ const (
 	customerSessionTTL        = 7 * 24 * time.Hour
 	dashboardCacheTTL         = 10 * time.Second
 	topologyCacheTTL          = 45 * time.Second
+	customerOverviewCacheTTL  = 10 * time.Second
 	updateLatestCacheTTL      = 10 * time.Minute
 )
 
 type dashboardCacheEntry struct {
 	expiresAt time.Time
 	view      model.GlobalDashboardView
+}
+
+type customerOverviewCacheEntry struct {
+	expiresAt time.Time
+	view      model.GlobalDashboardView
+	agents    []model.AgentRecord
+	snapshots []model.AgentSnapshot
 }
 
 type updateLatestCacheEntry struct {
@@ -92,6 +101,7 @@ func New(cfg config.ServerConfig) (*App, error) {
 		demoDataSource:    demoDataSource,
 		dashboardCache:    make(map[string]dashboardCacheEntry),
 		topologyCache:     make(map[string]dashboardCacheEntry),
+		customerViewCache: make(map[string]customerOverviewCacheEntry),
 		topologyBuilds:    make(map[string]chan struct{}),
 		updateLatestCache: make(map[string]updateLatestCacheEntry),
 	}
