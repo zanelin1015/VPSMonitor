@@ -445,8 +445,15 @@ WantedBy=multi-user.target
 EOF
 
   systemctl daemon-reload
-  systemctl enable "$service_name" >/dev/null
+  systemctl unmask "$service_name" >/dev/null 2>&1 || true
+  systemctl enable --now "$service_name" >/dev/null
   systemctl restart "$service_name"
+  if ! systemctl is-enabled "$service_name" >/dev/null 2>&1; then
+    die "failed to enable $service_name for startup after boot."
+  fi
+  if ! systemctl is-active "$service_name" >/dev/null 2>&1; then
+    die "failed to start $service_name after installation."
+  fi
 }
 
 install_openrc_service() {
@@ -483,6 +490,9 @@ EOF
     rc-service "$service_name" restart
   else
     rc-service "$service_name" start
+  fi
+  if ! rc-update show default | grep -Eq "(^|[[:space:]])${service_name}([[:space:]]|$)"; then
+    die "failed to enable $service_name in OpenRC default runlevel."
   fi
 }
 

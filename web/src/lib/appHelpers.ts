@@ -1610,11 +1610,7 @@ function hasSelectedTag(tags: string[] | undefined, selectedTag: string): boolea
 }
 
 function isAgentRunning(agent: AgentListItem): boolean {
-  const seenAt = Date.parse(agent.realtime_at || agent.last_seen_at || agent.reported_at || '')
-  if (Number.isNaN(seenAt)) {
-    return false
-  }
-  return Date.now() - seenAt <= 5 * 60 * 1000
+  return isRecentTimestamp(agent.realtime_at || agent.last_seen_at || agent.reported_at, 5 * 60 * 1000)
 }
 
 function topologyMatchesSelectedTag(link: TopologyLinkView, selectedTag: string): boolean {
@@ -1822,6 +1818,10 @@ function formatDateTime(value?: string): string {
   if (!value) {
     return '-'
   }
+  const parsed = parseTimestampMillis(value)
+  if (!Number.isFinite(parsed)) {
+    return '-'
+  }
   return new Intl.DateTimeFormat('zh-CN', {
     year: 'numeric',
     month: '2-digit',
@@ -1829,7 +1829,7 @@ function formatDateTime(value?: string): string {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-  }).format(new Date(value))
+  }).format(new Date(parsed))
 }
 
 function formatRelativeTime(value?: number): string {
@@ -1859,8 +1859,50 @@ function isClientOnline(lastOnline?: number, reportedAt?: string): boolean {
   if (!lastOnline) {
     return false
   }
-  const compareAt = reportedAt ? new Date(reportedAt).getTime() : Date.now()
+  const compareAt = reportedAt ? parseTimestampMillis(reportedAt) : Date.now()
+  if (!Number.isFinite(compareAt)) {
+    return false
+  }
   return compareAt - lastOnline <= 5 * 60 * 1000
+}
+
+function parseTimestampMillis(value?: string): number {
+  const candidates = parseTimestampMillisCandidates(value)
+  return candidates.length ? candidates[0] : Number.NaN
+}
+
+function isRecentTimestamp(value: string | undefined, ttlMs: number): boolean {
+  const now = Date.now()
+  return parseTimestampMillisCandidates(value).some((seenAt) => {
+    const diff = now - seenAt
+    return diff >= -60_000 && diff <= ttlMs
+  })
+}
+
+function parseTimestampMillisCandidates(value?: string): number[] {
+  const text = String(value || '').trim()
+  if (!text) {
+    return []
+  }
+  const candidates: number[] = []
+  const add = (candidate: string) => {
+    const parsed = Date.parse(candidate)
+    if (Number.isFinite(parsed) && !candidates.includes(parsed)) {
+      candidates.push(parsed)
+    }
+  }
+
+  add(text)
+
+  // Some old records/proxies may strip RFC3339 timezone suffixes. Try a UTC
+  // interpretation as well so online checks are not affected by browser/VPS TZ.
+  const normalized = text.replace(/^(\d{4})\/(\d{2})\/(\d{2})/, '$1-$2-$3').replace(' ', 'T')
+  const hasTime = /T\d{2}:\d{2}/.test(normalized)
+  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized)
+  if (hasTime && !hasTimezone) {
+    add(`${normalized}Z`)
+  }
+  return candidates
 }
 
 function scopeLabel(scope?: string): string {
