@@ -34,6 +34,30 @@ func TestRealtimeHubAgentControlLifecycle(t *testing.T) {
 	}
 }
 
+func TestRealtimeHubUsesServerReceiveTime(t *testing.T) {
+	hub := newRealtimeHub()
+	clientTime := time.Now().UTC().Add(-30 * time.Minute)
+	before := time.Now().UTC().Add(-time.Second)
+
+	hub.update(model.AgentRealtimeMetrics{
+		AgentID:    "drifted-agent",
+		ReportedAt: clientTime,
+	})
+	after := time.Now().UTC().Add(time.Second)
+
+	snapshot := hub.snapshot()
+	if len(snapshot) != 1 {
+		t.Fatalf("expected one realtime metric, got %d", len(snapshot))
+	}
+	reportedAt := snapshot[0].ReportedAt
+	if reportedAt.Before(before) || reportedAt.After(after) {
+		t.Fatalf("expected server receive time between %s and %s, got %s", before, after, reportedAt)
+	}
+	if reportedAt.Equal(clientTime) {
+		t.Fatalf("expected client reported time to be ignored")
+	}
+}
+
 func TestDispatchXUIActionRealtimeSendsUpdateClient(t *testing.T) {
 	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
 	if err != nil {

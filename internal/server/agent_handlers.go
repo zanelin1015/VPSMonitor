@@ -1286,6 +1286,8 @@ func (a *App) handleHeartbeat(w http.ResponseWriter, r *http.Request, agentID st
 		writeError(w, http.StatusBadRequest, "agent id mismatch")
 		return
 	}
+	// Online freshness must be based on the server receive time; VPS clocks can drift.
+	snapshot.ReportedAt = time.Now().UTC()
 	if serverSeenIP := requestObservedIP(r); isUsableObservedIP(serverSeenIP) {
 		snapshot.Summary.ServerSeenIP = serverSeenIP
 	}

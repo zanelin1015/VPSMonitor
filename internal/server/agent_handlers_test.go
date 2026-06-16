@@ -120,6 +120,54 @@ func TestHandleRegisterDoesNotSeedLinuxXUIDBPathForWindows(t *testing.T) {
 	}
 }
 
+func TestHandleHeartbeatUsesServerReceiveTime(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+
+	registerResp, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "drifted-agent", AgentName: "Drifted Agent"})
+	if err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	app := &App{store: sqliteStore}
+
+	clientTime := time.Now().UTC().Add(-30 * time.Minute)
+	body, err := json.Marshal(model.AgentSnapshot{
+		AgentID:    "drifted-agent",
+		AgentName:  "Drifted Agent",
+		ReportedAt: clientTime,
+		Summary: model.VPSSummary{
+			Hostname: "drifted-host",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal heartbeat body: %v", err)
+	}
+	before := time.Now().UTC().Add(-time.Second)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/drifted-agent/heartbeat", bytes.NewReader(body))
+	req.Header.Set("X-Agent-Token", registerResp.AgentToken)
+	rec := httptest.NewRecorder()
+
+	app.handleHeartbeat(rec, req, "drifted-agent")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("handleHeartbeat status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	after := time.Now().UTC().Add(time.Second)
+
+	latest, found := sqliteStore.GetLatest("drifted-agent")
+	if !found {
+		t.Fatalf("expected latest snapshot")
+	}
+	if latest.ReportedAt.Before(before) || latest.ReportedAt.After(after) {
+		t.Fatalf("expected server receive time between %s and %s, got %s", before, after, latest.ReportedAt)
+	}
+	if latest.ReportedAt.Equal(clientTime) {
+		t.Fatalf("expected client reported time to be ignored")
+	}
+}
+
 func TestHandleAgentConfigMergesCollectedRealmSnapshotForAdmin(t *testing.T) {
 	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
 	if err != nil {

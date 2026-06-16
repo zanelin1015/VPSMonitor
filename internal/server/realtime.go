@@ -71,11 +71,8 @@ func (h *realtimeHub) update(metric model.AgentRealtimeMetrics) {
 	if metric.AgentID == "" {
 		return
 	}
-	if metric.ReportedAt.IsZero() {
-		metric.ReportedAt = time.Now().UTC()
-	} else {
-		metric.ReportedAt = metric.ReportedAt.UTC()
-	}
+	// Realtime freshness is measured by server receipt time, not the client clock.
+	metric.ReportedAt = time.Now().UTC()
 
 	h.mu.Lock()
 	h.metrics[metric.AgentID] = metric
