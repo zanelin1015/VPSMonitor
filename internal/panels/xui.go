@@ -1290,21 +1290,6 @@ func (c *XUIClient) updateClientExpiry(ctx context.Context, payload map[string]a
 	if expiryTime <= 0 {
 		return nil, fmt.Errorf("expiry_time is required")
 	}
-	if result, err := c.updateV3Client(ctx, lookupEmail, func(client map[string]any) map[string]any {
-		client["email"] = email
-		client["expiryTime"] = expiryTime
-		if hasEnabled {
-			client["enable"] = enabled
-		}
-		return client
-	}); err == nil {
-		routingRefsUpdated, err := c.replaceRoutingUserReferences(ctx, previousEmail, email)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"message": result.Msg, "email": email, "expiry_time": expiryTime, "enabled": enabled, "routing_refs": routingRefsUpdated}, nil
-	}
-
 	inbounds, err := c.getJSONList(ctx, "/panel/api/inbounds/list")
 	if err != nil {
 		return nil, err
@@ -1406,15 +1391,6 @@ func (c *XUIClient) setClientEnabled(ctx context.Context, payload map[string]any
 	if !hasEnabled {
 		return nil, fmt.Errorf("enabled is required")
 	}
-	if email != "" {
-		if result, err := c.updateV3Client(ctx, email, func(client map[string]any) map[string]any {
-			client["enable"] = enabled
-			return client
-		}); err == nil {
-			return map[string]any{"message": result.Msg, "email": email, "client_id": clientID, "inbound_id": inboundID, "enabled": enabled}, nil
-		}
-	}
-
 	inbounds, err := c.getJSONList(ctx, "/panel/api/inbounds/list")
 	if err != nil {
 		return nil, err

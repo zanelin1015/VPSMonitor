@@ -1885,7 +1885,7 @@ func TestXUIExecuteDeleteClientUsesDeleteAPI(t *testing.T) {
 	}
 }
 
-func TestXUIExecuteSetClientEnabledUsesUpdateClientAPI(t *testing.T) {
+func TestXUIExecuteSetClientEnabledUsesInboundUpdateClientAPI(t *testing.T) {
 	client, err := NewXUIClient(config.XUIConfig{
 		Enabled:  true,
 		BaseURL:  "https://xui.local",
@@ -1903,29 +1903,33 @@ func TestXUIExecuteSetClientEnabledUsesUpdateClientAPI(t *testing.T) {
 			switch req.URL.Path {
 			case "/login":
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
-			case "/panel/api/clients/get/alice@example.com":
+			case "/panel/api/clients/update/alice@example.com":
+				t.Fatalf("must not call 3x-ui client update API because some versions reset UUIDs")
+				return nil, nil
+			case "/panel/api/inbounds/list":
 				return jsonResponse(t, req, map[string]any{
 					"success": true,
-					"obj": map[string]any{
-						"id":         42,
-						"email":      "alice@example.com",
-						"uuid":       "uuid-1",
-						"enable":     true,
-						"expiryTime": int64(1893456000000),
-						"inboundIds": []int{7},
+					"obj": []map[string]any{
+						{
+							"id":       7,
+							"tag":      "in-vless-443",
+							"protocol": "vless",
+							"settings": `{"clients":[{"id":"uuid-1","email":"alice@example.com","enable":true,"expiryTime":1893456000000}]}`,
+						},
 					},
 				}), nil
-			case "/panel/api/clients/update/alice@example.com":
+			case "/panel/api/inbounds/updateClient/uuid-1":
 				updateCalled = true
-				var client map[string]any
-				if err := json.NewDecoder(req.Body).Decode(&client); err != nil {
+				var body map[string]any
+				if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 					t.Fatalf("decode update body: %v", err)
 				}
-				if client["enable"] != false || int64Value(client["expiryTime"]) == 0 {
-					t.Fatalf("expected enable=false while preserving client fields, got %#v", client)
+				if intValue(body["id"]) != 7 {
+					t.Fatalf("expected inbound id 7, got %#v", body)
 				}
-				if client["id"] != "uuid-1" {
-					t.Fatalf("expected auth uuid to be preserved as id, got %#v", client["id"])
+				settings := stringValue(body["settings"])
+				if !strings.Contains(settings, `"id":"uuid-1"`) || !strings.Contains(settings, `"enable":false`) {
+					t.Fatalf("expected UUID to be preserved and enable=false, got %s", settings)
 				}
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "updated"}), nil
 			default:
@@ -1950,7 +1954,7 @@ func TestXUIExecuteSetClientEnabledUsesUpdateClientAPI(t *testing.T) {
 		t.Fatalf("unexpected result: %#v", result)
 	}
 	if !updateCalled {
-		t.Fatalf("expected v3 update client API to be called")
+		t.Fatalf("expected inbound updateClient API to be called")
 	}
 }
 
