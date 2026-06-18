@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --project tsconfig.app.json && tsc --project tsconfig.node.json && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:finance": "node scripts/test-finance.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "5.6.1",
