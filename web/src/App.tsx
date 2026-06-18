@@ -24,12 +24,14 @@ import {
 import type {
   AdminAuthResponse,
   AdminUser,
+  AreaManagerAdminView,
   AreaAgentTagsResponse,
   AgentListItem,
   AgentLogsResponse,
   AgentRefreshResponse,
   AgentRealtimeMetrics,
   ConfigAuditLog,
+  CustomerAdminView,
   CustomerAssignment,
   CustomerAssignmentDraft,
   DashboardAgentView,
@@ -39,6 +41,7 @@ import type {
   ClientInstallInfo,
   GlobalDashboardView,
   ManagedAgentConfig,
+  ScheduledTaskSettings,
   SystemInfo,
   TelegramBot,
   TagSettingsResponse,
@@ -82,6 +85,7 @@ import type {
 import {
   FrontendSettingsPanel,
   PersonalCenterDropdown,
+  ScheduledTasksPanel,
 } from './components/AdminModals'
 import { renderCNFlowPanel } from './components/DashboardTopologyPanels'
 import { AgentRail, AdminWorkbenchDashboard, OverviewSummaryCard } from './components/DashboardSidebar'
@@ -91,6 +95,7 @@ import { useAppTheme, type ThemeMode } from './theme'
 import {
   DASHBOARD_AUTO_REFRESH_MS,
   buildClientInstallCommand,
+  billingKeyForClient,
   buildDashboardRealtimeURL,
   buildSectionSavePayload,
   buildWindowsCMDInstallCommand,
@@ -151,7 +156,7 @@ interface LoadOptions {
   silent?: boolean
 }
 
-type AdminPageKey = 'dashboard' | 'assets' | 'customers' | 'settings'
+type AdminPageKey = 'dashboard' | 'assets' | 'customers' | 'settings' | 'schedules'
 
 interface AdminRouteState {
   page: AdminPageKey
@@ -175,7 +180,7 @@ function parseAdminRouteState(canManageSystem: boolean): AdminRouteState {
   const rawPage = (params.get('page') || pageFromAdminPath(path)).toLowerCase()
   const topology = rawPage === 'topology' || params.get('topology') === '1'
   let page: AdminPageKey = topology ? 'dashboard' : normalizeAdminPage(rawPage)
-  if (page === 'settings' && !canManageSystem) {
+  if ((page === 'settings' || page === 'schedules') && !canManageSystem) {
     page = 'dashboard'
   }
 
@@ -236,6 +241,7 @@ function normalizeAdminPage(value: string): AdminPageKey {
     case 'assets':
     case 'customers':
     case 'settings':
+    case 'schedules':
       return value
     default:
       return 'dashboard'
@@ -250,6 +256,8 @@ function pageFromAdminPath(path: string): string {
       return 'customers'
     case '/admin/settings':
       return 'settings'
+    case '/admin/schedules':
+      return 'schedules'
     case '/admin/topology':
       return 'topology'
     default:
@@ -289,6 +297,28 @@ function isAreaManagerAdminUser(user: AdminUser | null): boolean {
   return Boolean((user.agent_ids || []).length || (user.id && user.id !== 1))
 }
 
+function defaultScheduledTaskSettings(): ScheduledTaskSettings {
+  return {
+    alert_sweep: { enabled: true, interval_minutes: 5 },
+    daily_traffic_report: { enabled: true, time_of_day: '09:00', interval_days: 1 },
+  }
+}
+
+function normalizeScheduledTaskSettings(settings?: ScheduledTaskSettings): ScheduledTaskSettings {
+  const defaults = defaultScheduledTaskSettings()
+  return {
+    alert_sweep: {
+      enabled: settings?.alert_sweep?.enabled ?? defaults.alert_sweep.enabled,
+      interval_minutes: Math.min(1440, Math.max(1, Number(settings?.alert_sweep?.interval_minutes || defaults.alert_sweep.interval_minutes || 5))),
+    },
+    daily_traffic_report: {
+      enabled: settings?.daily_traffic_report?.enabled ?? defaults.daily_traffic_report.enabled,
+      time_of_day: /^\d{2}:\d{2}$/.test(settings?.daily_traffic_report?.time_of_day || '') ? settings?.daily_traffic_report?.time_of_day : defaults.daily_traffic_report.time_of_day,
+      interval_days: Math.min(365, Math.max(1, Number(settings?.daily_traffic_report?.interval_days || defaults.daily_traffic_report.interval_days || 1))),
+    },
+  }
+}
+
 const AgentDetailPanel = lazy(() => import('./components/AgentDetailPanel').then((module) => ({ default: module.AgentDetailPanel })))
 const ConsoleModals = lazy(() => import('./components/ConsoleModals').then((module) => ({ default: module.ConsoleModals })))
 const CustomerManagementModal = lazy(() => import('./components/CustomerManagementModal').then((module) => ({ default: module.CustomerManagementModal })))
@@ -315,6 +345,8 @@ export default function App() {
   const [agentsLoading, setAgentsLoading] = useState(false)
   const [agentsError, setAgentsError] = useState('')
   const [dashboardView, setDashboardView] = useState<GlobalDashboardView | null>(null)
+  const [financeCustomers, setFinanceCustomers] = useState<CustomerAdminView[]>([])
+  const [financeAreaManagers, setFinanceAreaManagers] = useState<AreaManagerAdminView[]>([])
   const [costCurrency, setCostCurrency] = useState<CurrencyCode>(() => readStoredCostCurrency())
   const [exchangeRates, setExchangeRates] = useState<ExchangeRatesState>(() => defaultExchangeRatesState())
   const [currencyOptions, setCurrencyOptions] = useState<CurrencyCode[]>(() => [...COMMON_COST_CURRENCIES])
@@ -336,6 +368,7 @@ export default function App() {
   const [entryAddressInputText, setEntryAddressInputText] = useState('')
   const [configLoading, setConfigLoading] = useState(false)
   const [configSavingSection, setConfigSavingSection] = useState<ConfigSectionKey | null>(null)
+  const [clientBillingSavingKey, setClientBillingSavingKey] = useState('')
   const [configError, setConfigError] = useState('')
   const [configAudits, setConfigAudits] = useState<ConfigAuditLog[]>([])
   const [configAuditsLoading, setConfigAuditsLoading] = useState(false)
@@ -356,6 +389,9 @@ export default function App() {
   const [frontendSettingsLoading, setFrontendSettingsLoading] = useState(false)
   const [frontendSettingsSaving, setFrontendSettingsSaving] = useState(false)
   const [frontendSettingsForm, setFrontendSettingsForm] = useState<FrontendSettingsForm>(() => defaultFrontendSettingsForm())
+  const [scheduledTasksLoading, setScheduledTasksLoading] = useState(false)
+  const [scheduledTasksSaving, setScheduledTasksSaving] = useState(false)
+  const [scheduledTasks, setScheduledTasks] = useState<ScheduledTaskSettings>(() => defaultScheduledTaskSettings())
   const [updateModalOpen, setUpdateModalOpen] = useState(false)
   const [updateLoading, setUpdateLoading] = useState(false)
   const [updateLatestLoading, setUpdateLatestLoading] = useState(false)
@@ -434,6 +470,7 @@ export default function App() {
         void loadTelegramBots()
         void loadTagSettings()
         void loadExchangeRates()
+        void loadFinanceAccounts()
       }
     }
   }, [adminUser, canManageSystem])
@@ -454,13 +491,19 @@ export default function App() {
     if (!adminUser || canManageSystem) {
       return
     }
-    if (activeAdminPage === 'settings') {
+    if (activeAdminPage === 'settings' || activeAdminPage === 'schedules') {
       setActiveAdminPage('dashboard')
     }
     if (['config', 'logs', 'certificates'].includes(activeTabKey)) {
       setActiveTabKey('overview')
     }
   }, [activeAdminPage, activeTabKey, adminUser, canManageSystem])
+
+  useEffect(() => {
+    if (adminUser && canManageSystem && activeAdminPage === 'schedules') {
+      void loadScheduledTasks()
+    }
+  }, [activeAdminPage, adminUser, canManageSystem])
 
   useEffect(() => {
     if (customerMode || sessionLoading || !adminUser) {
@@ -729,6 +772,8 @@ export default function App() {
     setDashboardView(null)
     setSelectedTag('')
     setAgents([])
+    setFinanceCustomers([])
+    setFinanceAreaManagers([])
     setSelectedAgentId('')
     setOverview(null)
     setManagedConfig(null)
@@ -951,6 +996,20 @@ export default function App() {
         summary: mergeRealtimeSummary(current.summary, metric.summary),
       }
     })
+  }
+
+  async function loadFinanceAccounts() {
+    try {
+      const [customers, areaManagers] = await Promise.all([
+        fetchJSON<CustomerAdminView[]>('/api/v1/admin/customers'),
+        fetchJSON<AreaManagerAdminView[]>('/api/v1/admin/area-managers'),
+      ])
+      setFinanceCustomers(Array.isArray(customers) ? customers : [])
+      setFinanceAreaManagers(Array.isArray(areaManagers) ? areaManagers : [])
+    } catch {
+      setFinanceCustomers([])
+      setFinanceAreaManagers([])
+    }
   }
 
   async function loadOverview(agentID: string, options: LoadOptions = {}) {
@@ -1564,6 +1623,41 @@ export default function App() {
     }
   }
 
+  async function loadScheduledTasks() {
+    setScheduledTasksLoading(true)
+    try {
+      const data = await fetchJSON<ScheduledTaskSettings>('/api/v1/admin/scheduled-tasks')
+      setScheduledTasks(normalizeScheduledTaskSettings(data))
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      message.error(error instanceof Error ? error.message : '加载定时任务失败')
+    } finally {
+      setScheduledTasksLoading(false)
+    }
+  }
+
+  async function saveScheduledTasks() {
+    setScheduledTasksSaving(true)
+    try {
+      const data = await fetchJSON<ScheduledTaskSettings>('/api/v1/admin/scheduled-tasks', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(normalizeScheduledTaskSettings(scheduledTasks)),
+      })
+      setScheduledTasks(normalizeScheduledTaskSettings(data))
+      message.success('定时任务配置已保存')
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      message.error(error instanceof Error ? error.message : '保存定时任务失败')
+    } finally {
+      setScheduledTasksSaving(false)
+    }
+  }
+
   async function copyClientInstallCommand(command = buildClientInstallCommand(clientInstallForm)) {
     if (!clientInstallForm.registration_token.trim()) {
       message.warning('当前 server 未配置注册 Token，安装命令无法完成 Client 注册')
@@ -1799,6 +1893,16 @@ export default function App() {
     }
   }
 
+  async function refreshAfterExternalConfigChange(agentID?: string) {
+    await loadAgents()
+    if (canManageSystem) {
+      await loadFinanceAccounts()
+    }
+    if (agentID && agentID === selectedAgentId) {
+      await loadManagedConfig(agentID, { silent: true })
+    }
+  }
+
   async function saveManagedConfigSection(section: ConfigSectionKey, draftOverride?: ManagedAgentConfig) {
     const draftConfig = draftOverride || managedConfig
     if (!selectedAgentId || !draftConfig) {
@@ -1870,6 +1974,7 @@ export default function App() {
     if (!selectedAgentId || !managedConfig) {
       return
     }
+    const savingKey = billingKeyForClient(record)
     const baseConfig = savedManagedConfig || createEmptyManagedConfig(selectedAgentId, selectedAgent?.agent_name)
     const billing = findClientBilling(managedConfig.renewal?.client_billings, record) || defaultClientBilling(record)
     const nextConfig: ManagedAgentConfig = {
@@ -1881,6 +1986,7 @@ export default function App() {
     }
     const payload = buildSectionSavePayload(baseConfig, nextConfig, 'renewal', selectedAgentId)
     setConfigSavingSection('renewal')
+    setClientBillingSavingKey(savingKey)
     setConfigError('')
     try {
       const saved = await fetchJSON<ManagedAgentConfig>(`/api/v1/agents/${selectedAgentId}/config`, {
@@ -1909,6 +2015,7 @@ export default function App() {
       message.error(detail)
     } finally {
       setConfigSavingSection(null)
+      setClientBillingSavingKey('')
     }
   }
 
@@ -1952,11 +2059,11 @@ export default function App() {
   const offlineAgentCount = Math.max(scopedAgentCount - onlineAgentCount, 0)
   const xuiErrorAgentCount = filteredAgents.filter((agent) => Boolean(agent.summary.last_collection_err)).length
   const scopedNetwork = summarizeAgentNetwork(filteredAgents)
-  const monthlyFinance = canManageSystem
-    ? summarizeMonthlyFinance(filteredAgents, costCurrency, exchangeRates)
-    : { costTotal: 0, costCount: 0, revenueTotal: 0, revenueCount: 0, profitTotal: 0, missingCostCount: 0, missingRevenueCount: 0 }
   const filteredTagLinks = (dashboardView?.links || []).filter((link) => topologyMatchesSelectedTag(link, selectedTag))
   const filteredChains = (dashboardView?.client_chains || []).filter((chain) => chainMatchesSelectedTag(chain, selectedTag))
+  const monthlyFinance = canManageSystem
+    ? summarizeMonthlyFinance(filteredAgents, filteredChains, costCurrency, exchangeRates, financeCustomers, financeAreaManagers)
+    : { costTotal: 0, costCount: 0, revenueTotal: 0, revenueCount: 0, profitTotal: 0, missingCostCount: 0, missingRevenueCount: 0 }
 
   if (customerMode) {
     return (
@@ -2084,6 +2191,10 @@ export default function App() {
               <SettingOutlined />
               <span>设置</span>
             </button> : null}
+            {canManageSystem ? <button type="button" className={activeAdminPage === 'schedules' ? 'active' : ''} onClick={() => setActiveAdminPage('schedules')}>
+              <ReloadOutlined />
+              <span>定时</span>
+            </button> : null}
           </nav>
           <div className="admin-mobile-actions">
             <Button size="small" icon={<ReloadOutlined />} loading={agentsLoading} onClick={() => void loadAgents()}>刷新</Button>
@@ -2150,6 +2261,11 @@ export default function App() {
               <SettingOutlined />
               <span>系统设置</span>
               <small>样式与升级</small>
+            </button> : null}
+            {canManageSystem ? <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'schedules' ? ' active' : ''}`} onClick={() => setActiveAdminPage('schedules')}>
+              <ReloadOutlined />
+              <span>定时任务</span>
+              <small>时间与频率</small>
             </button> : null}
           </nav>
           <div className="admin-oa-sider-foot">
@@ -2280,7 +2396,7 @@ export default function App() {
               setXUIActionAgentId('')
               setAddClientActionInbounds([])
             }}
-            onConfigChanged={() => loadAgents()}
+            onConfigChanged={refreshAfterExternalConfigChange}
             onOpenCustomerAssignment={openCustomerAssignment}
             onCopyClientInstallCommand={(command) => void copyClientInstallCommand(command)}
             onCopyImportURL={(client) => void copyImportURL(client)}
@@ -2314,7 +2430,7 @@ export default function App() {
                 adminUser={adminUser}
                 initialAssignment={customerAssignmentDraft}
                 onInitialAssignmentApplied={() => setCustomerAssignmentDraft(null)}
-                onConfigChanged={() => loadAgents()}
+                onConfigChanged={refreshAfterExternalConfigChange}
                 onOpenAssignment={openCustomerAssignment}
               />
             </Suspense>
@@ -2327,6 +2443,16 @@ export default function App() {
               form={frontendSettingsForm}
               onSave={() => void saveFrontendSettings()}
               onFormChange={setFrontendSettingsForm}
+            />
+          </main>
+        ) : activeAdminPage === 'schedules' ? (
+          <main className="admin-content-page">
+            <ScheduledTasksPanel
+              loading={scheduledTasksLoading}
+              saving={scheduledTasksSaving}
+              settings={scheduledTasks}
+              onSave={() => void saveScheduledTasks()}
+              onChange={(value) => setScheduledTasks(normalizeScheduledTaskSettings(value))}
             />
           </main>
         ) : showWorkbenchDashboard ? (
@@ -2358,6 +2484,8 @@ export default function App() {
             monthlyFinance={monthlyFinance}
             financeAgents={filteredAgents}
             financeChains={filteredChains}
+            financeCustomers={financeCustomers}
+            financeAreaManagers={financeAreaManagers}
             exchangeRates={exchangeRates}
             selectedTag={selectedTag}
             currentAgentLabel={selectedAgent?.agent_name || selectedAgent?.agent_id || ''}
@@ -2479,6 +2607,7 @@ export default function App() {
                 configError={configError}
                 configLoading={configLoading}
                 configSavingSection={configSavingSection}
+                clientBillingSavingKey={clientBillingSavingKey}
                 currencyOptions={currencyOptions}
                 currentAgentLoading={overviewLoading || configLoading || agentRefreshLoading}
                 xuiRestartLoading={xuiRestartLoading}

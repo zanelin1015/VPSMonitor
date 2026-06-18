@@ -47,6 +47,10 @@ interface AreaManagerFormState {
   display_name: string
   enabled: boolean
   agent_ids: string[]
+  billing_enabled: boolean
+  revenue_amount: number
+  revenue_currency: 'CNY' | 'USDT'
+  revenue_cycle: 'month' | 'quarter' | 'year'
   grant_agent_id: string
   xui_grant_agent_id: string
   assignments: AreaManagerAssignmentDraft[]
@@ -86,6 +90,10 @@ const emptyAreaManagerForm: AreaManagerFormState = {
   display_name: '',
   enabled: true,
   agent_ids: [],
+  billing_enabled: false,
+  revenue_amount: 0,
+  revenue_currency: 'CNY',
+  revenue_cycle: 'month',
   grant_agent_id: '',
   xui_grant_agent_id: '',
   assignments: [],
@@ -116,7 +124,7 @@ export function CustomerManagementModal(props: {
   open?: boolean
   agents: DashboardAgentView[]
   onClose?: () => void
-  onConfigChanged?: () => void | Promise<void>
+  onConfigChanged?: (agentID?: string) => void | Promise<void>
   onOpenAssignment?: (assignment: CustomerAssignment) => void
   initialAssignment?: CustomerAssignmentDraft | null
   onInitialAssignmentApplied?: () => void
@@ -490,6 +498,13 @@ export function CustomerManagementModal(props: {
       },
     },
     {
+      title: '区域收入',
+      width: 170,
+      render: (_, record) => record.billing_enabled && Number(record.revenue_amount || 0) > 0
+        ? `${record.revenue_currency || 'CNY'} ${Number(record.revenue_amount || 0).toFixed(2)} / ${revenueCycleLabel(record.revenue_cycle)}`
+        : <Tag>未统计</Tag>,
+    },
+    {
       title: '状态',
       dataIndex: 'enabled',
       width: 90,
@@ -657,6 +672,10 @@ export function CustomerManagementModal(props: {
         display_name: areaManagerForm.display_name.trim(),
         enabled: areaManagerForm.enabled,
         agent_ids: agentIDs,
+        billing_enabled: areaManagerForm.billing_enabled,
+        revenue_amount: areaManagerForm.revenue_amount,
+        revenue_currency: areaManagerForm.revenue_currency,
+        revenue_cycle: areaManagerForm.revenue_cycle,
       }
       if (editingAreaManagerID) {
         const currentManager = areaManagers.find((item) => item.id === editingAreaManagerID)
@@ -680,6 +699,7 @@ export function CustomerManagementModal(props: {
       setAreaManagerForm(emptyAreaManagerForm)
       setAreaManagerModalOpen(false)
       await loadAreaManagers()
+      await onConfigChanged?.()
     } catch (error) {
       message.error(error instanceof Error ? error.message : '保存区域账号失败')
     } finally {
@@ -809,6 +829,10 @@ export function CustomerManagementModal(props: {
       display_name: record.display_name || record.username,
       enabled: record.enabled,
       agent_ids: record.agent_ids || [],
+      billing_enabled: Boolean(record.billing_enabled),
+      revenue_amount: Number(record.revenue_amount || 0),
+      revenue_currency: record.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
+      revenue_cycle: record.revenue_cycle === 'quarter' || record.revenue_cycle === 'year' ? record.revenue_cycle : 'month',
       grant_agent_id: firstRealmAssignmentAgentID(record.assignments || [], agents) || '',
       xui_grant_agent_id: firstXUIAssignmentAgentID(record.assignments || [], agents) || '',
       assignments: normalizeAreaManagerAssignmentDrafts(record.assignments || []),
@@ -999,6 +1023,8 @@ export function CustomerManagementModal(props: {
     }
     setSavingAssignment(true)
     try {
+      const customerID = selectedCustomerID
+      const assignmentID = editingAssignmentID
       const payload = {
         agent_id: assignmentForm.agent_id,
         inbound_id: assignmentForm.inbound_id,
@@ -1012,24 +1038,34 @@ export function CustomerManagementModal(props: {
         } : {}),
         enabled: assignmentForm.enabled,
       }
-      if (editingAssignmentID) {
-        await fetchJSON<CustomerAssignment>(`/api/v1/admin/customers/${selectedCustomerID}/assignments/${editingAssignmentID}`, {
+      let savedAssignment: CustomerAssignment
+      if (assignmentID) {
+        savedAssignment = await fetchJSON<CustomerAssignment>(`/api/v1/admin/customers/${customerID}/assignments/${assignmentID}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         })
         message.success('分配已更新')
       } else {
-        await fetchJSON<CustomerAssignment>(`/api/v1/admin/customers/${selectedCustomerID}/assignments`, {
+        savedAssignment = await fetchJSON<CustomerAssignment>(`/api/v1/admin/customers/${customerID}/assignments`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         })
         message.success('分配已新增')
       }
-      setEditingAssignmentID(null)
-      setAssignmentForm(emptyAssignmentForm)
-      await onConfigChanged?.()
+      const nextForm = assignmentFormFromAssignment(savedAssignment, agents)
+      setSelectedCustomerID(customerID)
+      setEditingAssignmentID(savedAssignment.id)
+      setAssignmentForm({
+        ...nextForm,
+        ...(canViewFinance ? {
+          revenue_amount: Number(payload.revenue_amount ?? assignmentForm.revenue_amount ?? 0),
+          revenue_currency: payload.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
+          revenue_cycle: payload.revenue_cycle === 'quarter' || payload.revenue_cycle === 'year' ? payload.revenue_cycle : 'month',
+        } : {}),
+      })
+      await onConfigChanged?.(customerID ? payload.agent_id : undefined)
       await loadCustomers()
       if (canManageAreaManagers) {
         await loadAreaManagers()
@@ -1061,6 +1097,11 @@ export function CustomerManagementModal(props: {
   }
 
   function editAssignment(record: CustomerAssignment) {
+    const nextCustomerID = record.customer_id || selectedCustomerID
+    if (nextCustomerID !== selectedCustomerID) {
+      skipAssignmentResetRef.current = true
+      setSelectedCustomerID(nextCustomerID)
+    }
     setEditingAssignmentID(record.id)
     setAssignmentForm(assignmentFormFromAssignment(record, agents))
   }
@@ -1479,6 +1520,58 @@ export function CustomerManagementModal(props: {
                 <Switch checked={areaManagerForm.enabled} onChange={(checked) => setAreaManagerForm((current) => ({ ...current, enabled: checked }))} />
                 <Text>{areaManagerForm.enabled ? '启用' : '停用'}</Text>
               </div>
+            </Col>
+            <Col xs={24}>
+              <Card size="small" bordered className="customer-admin-card">
+                <Row gutter={[12, 12]} align="middle">
+                  <Col xs={24} md={6}>
+                    <Text type="secondary">区域账号财务</Text>
+                    <div className="customer-admin-switch-row">
+                      <Switch checked={areaManagerForm.billing_enabled} onChange={(checked) => setAreaManagerForm((current) => ({ ...current, billing_enabled: checked }))} />
+                      <Text>{areaManagerForm.billing_enabled ? '计入 admin 财务' : '不统计'}</Text>
+                    </div>
+                  </Col>
+                  <Col xs={24} md={6}>
+                    <Text type="secondary">账号收入</Text>
+                    <InputNumber
+                      style={{ width: '100%' }}
+                      min={0}
+                      precision={2}
+                      disabled={!areaManagerForm.billing_enabled}
+                      value={areaManagerForm.revenue_amount}
+                      onChange={(value) => setAreaManagerForm((current) => ({ ...current, revenue_amount: Number(value || 0) }))}
+                    />
+                  </Col>
+                  <Col xs={12} md={4}>
+                    <Text type="secondary">币种</Text>
+                    <Select
+                      style={{ width: '100%' }}
+                      disabled={!areaManagerForm.billing_enabled}
+                      value={areaManagerForm.revenue_currency}
+                      options={REVENUE_CURRENCIES.map((currency) => ({ value: currency, label: currency }))}
+                      onChange={(value) => setAreaManagerForm((current) => ({ ...current, revenue_currency: value as 'CNY' | 'USDT' }))}
+                    />
+                  </Col>
+                  <Col xs={12} md={4}>
+                    <Text type="secondary">周期</Text>
+                    <Select
+                      style={{ width: '100%' }}
+                      disabled={!areaManagerForm.billing_enabled}
+                      value={areaManagerForm.revenue_cycle}
+                      options={[
+                        { value: 'month', label: '月' },
+                        { value: 'quarter', label: '季' },
+                        { value: 'year', label: '年' },
+                      ]}
+                      onChange={(value) => setAreaManagerForm((current) => ({ ...current, revenue_cycle: value as 'month' | 'quarter' | 'year' }))}
+                    />
+                  </Col>
+                  <Col xs={24} md={4}>
+                    <Text type="secondary">说明</Text>
+                    <div className="muted-line">admin 财务 = 单用户节点收入 + 区域账号收入 - VPS 总花销</div>
+                  </Col>
+                </Row>
+              </Card>
             </Col>
             <Col xs={24} md={12}>
               <Text type="secondary">Realm 入口 Client</Text>

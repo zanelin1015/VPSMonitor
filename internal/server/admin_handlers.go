@@ -86,6 +86,12 @@ func (a *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.handleAdminFrontendSettings(w, r)
+	case "scheduled-tasks":
+		if r.Method != http.MethodGet && r.Method != http.MethodPut {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		a.handleAdminScheduledTasks(w, r)
 	default:
 		writeError(w, http.StatusNotFound, "route not found")
 	}

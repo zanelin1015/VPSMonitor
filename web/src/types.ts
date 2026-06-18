@@ -269,6 +269,10 @@ export interface AreaManagerAdminView {
   display_name?: string
   enabled: boolean
   agent_ids?: string[]
+  billing_enabled?: boolean
+  revenue_amount?: number
+  revenue_currency?: 'CNY' | 'USDT'
+  revenue_cycle?: 'month' | 'quarter' | 'year'
   assignments?: AreaManagerAssignment[]
   customers?: CustomerAdminView[]
   created_at: string
@@ -410,6 +414,18 @@ export interface AreaAgentTagsResponse {
 
 export interface FrontendSettings {
   custom_code: string
+}
+
+export interface ScheduledTaskSettings {
+  alert_sweep: ScheduledTaskConfig
+  daily_traffic_report: ScheduledTaskConfig
+}
+
+export interface ScheduledTaskConfig {
+  enabled: boolean
+  time_of_day?: string
+  interval_minutes?: number
+  interval_days?: number
 }
 
 export interface TelegramBot {
@@ -751,6 +767,7 @@ export interface ClientChainView {
   root_agent_tags?: string[]
   root_client_email?: string
   root_client_remark?: string
+  root_client_enabled: boolean
   root_inbound_tag?: string
   matched_link_count: number
   loop_detected?: boolean

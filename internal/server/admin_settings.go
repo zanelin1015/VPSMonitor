@@ -54,6 +54,35 @@ func (a *App) handleAdminFrontendSettings(w http.ResponseWriter, r *http.Request
 	}
 }
 
+func (a *App) handleAdminScheduledTasks(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := a.requireRootAdmin(w, r); !ok {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		settings, _, err := a.store.GetScheduledTaskSettings()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, settings)
+	case http.MethodPut:
+		var req model.ScheduledTaskSettings
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode scheduled task settings: %v", err))
+			return
+		}
+		settings, err := a.store.SaveScheduledTaskSettings(req)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, settings)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
 func (a *App) handleAdminTags(w http.ResponseWriter, r *http.Request) {
 	if _, _, ok := a.requireRootAdmin(w, r); !ok {
 		return

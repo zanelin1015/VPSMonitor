@@ -96,7 +96,7 @@ export interface ConsoleModalsProps {
   onCloseTelegramBot: () => void
   onCloseUpdateModal: () => void
   onCloseXUIActionModal: () => void
-  onConfigChanged?: () => void | Promise<void>
+  onConfigChanged?: (agentID?: string) => void | Promise<void>
   onOpenCustomerAssignment?: (assignment: CustomerAssignment) => void
   onCopyClientInstallCommand: (command: string) => void
   onCopyImportURL: (client: XUIClientView) => void

@@ -157,17 +157,18 @@ type ClientChainStep struct {
 }
 
 type ClientChainView struct {
-	Key              string            `json:"key"`
-	RootAgentID      string            `json:"root_agent_id"`
-	RootAgentName    string            `json:"root_agent_name,omitempty"`
-	RootAgentTags    []string          `json:"root_agent_tags,omitempty"`
-	RootClientEmail  string            `json:"root_client_email,omitempty"`
-	RootClientRemark string            `json:"root_client_remark,omitempty"`
-	RootInboundTag   string            `json:"root_inbound_tag,omitempty"`
-	MatchedLinkCount int               `json:"matched_link_count"`
-	LoopDetected     bool              `json:"loop_detected,omitempty"`
-	UnresolvedReason string            `json:"unresolved_reason,omitempty"`
-	Steps            []ClientChainStep `json:"steps"`
+	Key               string            `json:"key"`
+	RootAgentID       string            `json:"root_agent_id"`
+	RootAgentName     string            `json:"root_agent_name,omitempty"`
+	RootAgentTags     []string          `json:"root_agent_tags,omitempty"`
+	RootClientEmail   string            `json:"root_client_email,omitempty"`
+	RootClientRemark  string            `json:"root_client_remark,omitempty"`
+	RootClientEnabled bool              `json:"root_client_enabled"`
+	RootInboundTag    string            `json:"root_inbound_tag,omitempty"`
+	MatchedLinkCount  int               `json:"matched_link_count"`
+	LoopDetected      bool              `json:"loop_detected,omitempty"`
+	UnresolvedReason  string            `json:"unresolved_reason,omitempty"`
+	Steps             []ClientChainStep `json:"steps"`
 }
 
 type GlobalDashboardView struct {

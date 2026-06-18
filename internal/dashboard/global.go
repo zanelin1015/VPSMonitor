@@ -721,13 +721,14 @@ func buildClientChains(
 		}
 		for _, client := range overview.Clients {
 			chain := model.ClientChainView{
-				Key:              clientChainKey(agentID, client.InboundID, client.Email),
-				RootAgentID:      agentID,
-				RootAgentName:    agentView.AgentName,
-				RootAgentTags:    cloneStrings(agentView.Tags),
-				RootClientEmail:  client.Email,
-				RootClientRemark: firstNonEmpty(client.Comment, client.SubID),
-				RootInboundTag:   client.InboundTag,
+				Key:               clientChainKey(agentID, client.InboundID, client.Email),
+				RootAgentID:       agentID,
+				RootAgentName:     agentView.AgentName,
+				RootAgentTags:     cloneStrings(agentView.Tags),
+				RootClientEmail:   client.Email,
+				RootClientRemark:  firstNonEmpty(client.Comment, client.SubID),
+				RootClientEnabled: client.Enabled,
+				RootInboundTag:    client.InboundTag,
 			}
 			chain.Steps = append(chain.Steps, model.ClientChainStep{
 				StepType:  "client",

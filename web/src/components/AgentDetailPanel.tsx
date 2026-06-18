@@ -35,6 +35,7 @@ import {
   actionStatusColor,
   actionStatusLabel,
   buildAgentTerminalURL,
+  billingKeyForClient,
   clientBillingPatchFromStart,
   dateInputToStartMillis,
   defaultClientBilling,
@@ -85,6 +86,7 @@ export interface AgentDetailPanelProps {
   configError: string
   configLoading: boolean
   configSavingSection: ConfigSectionKey | null
+  clientBillingSavingKey: string
   currencyOptions: CurrencyCode[]
   dashboardView: GlobalDashboardView | null
   entryAddressInputText: string
@@ -185,6 +187,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     configError,
     configLoading,
     configSavingSection,
+    clientBillingSavingKey,
     currencyOptions,
     dashboardView,
     entryAddressInputText,
@@ -538,6 +541,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         const billing = findClientBilling(managedConfig?.renewal?.client_billings, record) || defaultClientBilling(record)
         const revenueCycle = normalizeBillingCycle(billing.revenue_cycle || billing.expire_cycle)
         const effectiveStart = effectiveClientBillingStartTime(billing, record.expiry_time || 0)
+        const saving = clientBillingSavingKey === billingKeyForClient(record)
         return (
           <Space wrap size={[6, 6]}>
             <InputNumber
@@ -575,7 +579,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
                 })
               }}
             />
-            <Button size="small" type="primary" disabled={!canManageConfig} loading={configSavingSection === 'renewal'} onClick={() => onSaveClientBilling(record)}>
+            <Button size="small" type="primary" disabled={!canManageConfig} loading={saving} onClick={() => onSaveClientBilling(record)}>
               保存
             </Button>
           </Space>
@@ -591,6 +595,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         const effectiveStart = effectiveClientBillingStartTime(billing, record.expiry_time || 0)
         const effectiveExpiry = effectiveClientBillingExpiryTime(billing, record.expiry_time || 0)
         const billingCycle = normalizeBillingCycle(billing.revenue_cycle || billing.expire_cycle)
+        const saving = clientBillingSavingKey === billingKeyForClient(record)
         return (
           <Space direction="vertical" size={6} className="client-expiry-cell">
             <Text type="secondary">x-ui 当前：{formatExpiryTime(record.expiry_time)}</Text>
@@ -605,7 +610,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
                 onChange={(event) => onUpdateClientBillingDraft(record, clientBillingPatchFromStart(dateInputToStartMillis(event.target.value), billingCycle))}
               />
               <Tag color="blue">按收费周期：{billingCycleLabel(billingCycle)}</Tag>
-              <Button size="small" type="primary" disabled={!canManageConfig} loading={configSavingSection === 'renewal'} onClick={() => onSaveClientBilling(record)}>
+              <Button size="small" type="primary" disabled={!canManageConfig} loading={saving} onClick={() => onSaveClientBilling(record)}>
                 保存
               </Button>
             </Space>

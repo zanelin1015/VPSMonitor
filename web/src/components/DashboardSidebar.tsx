@@ -5,7 +5,7 @@ import { ApartmentOutlined, BarsOutlined, CloudServerOutlined, ReloadOutlined } 
 import { Line } from '@ant-design/plots'
 import type { LineConfig } from '@ant-design/plots'
 
-import type { AgentListItem, ClientChainView, CustomerAdminView, CustomerAssignment, DashboardAgentView, DashboardTagView, GlobalDashboardView } from '../types'
+import type { AgentListItem, AreaManagerAdminView, ClientChainView, CustomerAdminView, CustomerAssignment, DashboardAgentView, DashboardTagView, GlobalDashboardView } from '../types'
 import type { AgentViewMode } from '../lib/appHelpers'
 import type { CurrencyCode, ExchangeRatesState, MonthlyFinanceCostDetail, MonthlyFinancePaymentInfo, MonthlyFinanceRevenueDetail, MonthlyFinanceSummary } from '../lib/currency'
 import { buildMonthlyFinanceCostDetails, buildMonthlyFinanceRevenueDetails, formatMoney } from '../lib/currency'
@@ -802,6 +802,8 @@ export function OverviewSummaryCard(props: {
   monthlyFinance: { profitTotal: number; revenueTotal: number; costTotal: number }
   financeAgents: DashboardAgentView[]
   financeChains: ClientChainView[]
+  financeCustomers: CustomerAdminView[]
+  financeAreaManagers: AreaManagerAdminView[]
   exchangeRates: ExchangeRatesState
   selectedTag: string
   currentAgentLabel: string
@@ -823,6 +825,8 @@ export function OverviewSummaryCard(props: {
     monthlyFinance,
     financeAgents,
     financeChains,
+    financeCustomers,
+    financeAreaManagers,
     exchangeRates,
     selectedTag,
     currentAgentLabel,
@@ -834,17 +838,18 @@ export function OverviewSummaryCard(props: {
   const [financeDetailOpen, setFinanceDetailOpen] = useState(false)
   const [customerRows, setCustomerRows] = useState<CustomerAdminView[]>([])
   const [customerRowsLoading, setCustomerRowsLoading] = useState(false)
+  const effectiveCustomerRows = financeCustomers.length ? financeCustomers : customerRows
   const costRows = useMemo(
     () => buildMonthlyFinanceCostDetails(financeAgents, costCurrency, exchangeRates),
     [costCurrency, exchangeRates, financeAgents],
   )
   const revenueRows = useMemo(
-    () => buildMonthlyFinanceRevenueDetails(financeAgents, financeChains, costCurrency, exchangeRates),
-    [costCurrency, exchangeRates, financeAgents, financeChains],
+    () => buildMonthlyFinanceRevenueDetails(financeAgents, financeChains, costCurrency, exchangeRates, effectiveCustomerRows, financeAreaManagers),
+    [costCurrency, effectiveCustomerRows, exchangeRates, financeAgents, financeAreaManagers, financeChains],
   )
   const customerRevenueRows = useMemo(
-    () => buildCustomerRevenueRows(revenueRows, customerRows),
-    [customerRows, revenueRows],
+    () => buildCustomerRevenueRows(revenueRows, effectiveCustomerRows),
+    [effectiveCustomerRows, revenueRows],
   )
   const nodeRevenueRows = useMemo(
     () => buildNodeRevenueRows(revenueRows),
@@ -852,7 +857,7 @@ export function OverviewSummaryCard(props: {
   )
 
   useEffect(() => {
-    if (restrictedView || !financeDetailOpen || customerRows.length || customerRowsLoading) {
+    if (restrictedView || !financeDetailOpen || effectiveCustomerRows.length || customerRowsLoading) {
       return
     }
     let cancelled = false
@@ -876,7 +881,7 @@ export function OverviewSummaryCard(props: {
     return () => {
       cancelled = true
     }
-  }, [customerRows.length, customerRowsLoading, financeDetailOpen, restrictedView])
+  }, [customerRowsLoading, effectiveCustomerRows.length, financeDetailOpen, restrictedView])
   const costColumns: ColumnsType<MonthlyFinanceCostDetail> = [
     {
       title: 'Client VPS',
@@ -928,6 +933,7 @@ export function OverviewSummaryCard(props: {
           <Text strong>{record.clientLabel}</Text>
           <Text type="secondary">{record.clientRemark || record.inboundTag || '未备注'}</Text>
           {record.source === 'billing' ? <Tag color="blue">仅收费配置</Tag> : null}
+          {record.source === 'area_account' ? <Tag color="gold">区域账号收入</Tag> : null}
         </Space>
       ),
     },
@@ -1123,7 +1129,7 @@ export function OverviewSummaryCard(props: {
                 <div className="finance-detail-head">
                   <div>
                     <Text strong>财务月览明细</Text>
-                    <Text type="secondary">成本按 Client VPS，收入按已配置收费的客户端统计</Text>
+                    <Text type="secondary">admin 财务 = 单用户节点收入 + 区域账号收入 - VPS 总花销</Text>
                   </div>
                   <Button size="small" onClick={() => setFinanceDetailOpen(false)}>收起</Button>
                 </div>
@@ -1163,7 +1169,7 @@ export function OverviewSummaryCard(props: {
                     },
                     {
                       key: 'revenue',
-                      label: `收入 · 客户端 ${revenueRows.length}`,
+                      label: `收入 · 用户/区域 ${revenueRows.length}`,
                       children: (
                         <Table
                           size="small"
@@ -1233,6 +1239,20 @@ function buildCustomerRevenueRows(revenueRows: MonthlyFinanceRevenueDetail[], cu
   for (const row of revenueRows) {
     const amount = row.monthlyAmount || 0
     if (amount <= 0) {
+      continue
+    }
+    if (row.source === 'area_account') {
+      const current = groups.get(row.key) || {
+        key: row.key,
+        label: row.clientLabel,
+        detail: row.clientRemark || '区域账号收入',
+        clients: [],
+        count: 0,
+        monthlyAmount: 0,
+      }
+      current.count += 1
+      current.monthlyAmount += amount
+      groups.set(row.key, current)
       continue
     }
     const matchedCustomers = customers.filter((customer) => (

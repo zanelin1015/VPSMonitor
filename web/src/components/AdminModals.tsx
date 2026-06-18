@@ -1,5 +1,5 @@
 import { useState, type ChangeEvent } from 'react'
-import { Alert, Avatar, Button, Col, Divider, Dropdown, Empty, Input, InputNumber, Modal, QRCode, Row, Select, Space, Spin, Switch, Tabs, Tag, Typography } from 'antd'
+import { Alert, Avatar, Button, Card, Col, Divider, Dropdown, Empty, Input, InputNumber, Modal, QRCode, Row, Select, Space, Spin, Switch, Tabs, Tag, Typography } from 'antd'
 import type { MenuProps } from 'antd'
 import {
   BellOutlined,
@@ -12,7 +12,7 @@ import {
   UploadOutlined,
 } from '@ant-design/icons'
 
-import type { AdminUser, AgentListItem, SystemInfo, TelegramBot, UpdateLatestInfo, XUIClientView, XUINodeView, XUIOverview } from '../types'
+import type { AdminUser, AgentListItem, ScheduledTaskSettings, SystemInfo, TelegramBot, UpdateLatestInfo, XUIClientView, XUINodeView, XUIOverview } from '../types'
 import type {
   ClientInstallCommandForm,
   ClientInstallCommandKind,
@@ -416,6 +416,95 @@ export function FrontendSettingsPanel(props: {
               placeholder={`<style>\n:root { --green: #2563eb; }\n</style>\n<script>\nwindow.CustomBackgroundImage = 'https://example.com/bg.jpg'\n</script>`}
             />
           </div>
+        </Space>
+      </Spin>
+    </div>
+  )
+}
+
+export function ScheduledTasksPanel(props: {
+  loading: boolean
+  saving: boolean
+  settings: ScheduledTaskSettings
+  onSave: () => void
+  onChange: (settings: ScheduledTaskSettings) => void
+}) {
+  const { loading, saving, settings, onSave, onChange } = props
+  const update = (patch: Partial<ScheduledTaskSettings>) => onChange({ ...settings, ...patch })
+  const updateAlertSweep = (patch: Partial<ScheduledTaskSettings['alert_sweep']>) => update({ alert_sweep: { ...settings.alert_sweep, ...patch } })
+  const updateDailyReport = (patch: Partial<ScheduledTaskSettings['daily_traffic_report']>) => update({ daily_traffic_report: { ...settings.daily_traffic_report, ...patch } })
+
+  return (
+    <div className="frontend-settings-page">
+      <div className="admin-content-title">
+        <div>
+          <Typography.Title level={3}>定时任务</Typography.Title>
+          <Text type="secondary">管理 Server 后台任务的执行时间和频率；Client 到期同步任务已取消。</Text>
+        </div>
+        <Button type="primary" loading={saving} onClick={onSave}>保存任务配置</Button>
+      </div>
+      <Spin spinning={loading}>
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Alert
+            type="info"
+            showIcon
+            message="已取消每天 00:00 的 Client 到期同步"
+            description="系统不会再通过午夜任务批量修改 x-ui 客户端到期时间。这里保留的是告警扫描和流量日报两个后台任务。"
+          />
+          <Card bordered={false} className="config-section-card">
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              <div className="admin-content-title compact">
+                <div>
+                  <Typography.Title level={4}>告警扫描</Typography.Title>
+                  <Text type="secondary">用于离线、X-UI 异常、Xray 状态、续费和流量等告警扫描。</Text>
+                </div>
+                <Switch checked={settings.alert_sweep.enabled} onChange={(checked) => updateAlertSweep({ enabled: checked })} />
+              </div>
+              <Row gutter={[16, 16]}>
+                <Col xs={24} md={8}>
+                  <Text type="secondary">执行频率（分钟）</Text>
+                  <InputNumber
+                    style={{ width: '100%' }}
+                    min={1}
+                    max={1440}
+                    value={settings.alert_sweep.interval_minutes || 5}
+                    onChange={(value) => updateAlertSweep({ interval_minutes: Number(value || 5) })}
+                  />
+                </Col>
+              </Row>
+            </Space>
+          </Card>
+          <Card bordered={false} className="config-section-card">
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              <div className="admin-content-title compact">
+                <div>
+                  <Typography.Title level={4}>每日流量日报</Typography.Title>
+                  <Text type="secondary">统计前一天流量，并推送到已启用的 Telegram Bot。</Text>
+                </div>
+                <Switch checked={settings.daily_traffic_report.enabled} onChange={(checked) => updateDailyReport({ enabled: checked })} />
+              </div>
+              <Row gutter={[16, 16]}>
+                <Col xs={24} md={8}>
+                  <Text type="secondary">执行时间</Text>
+                  <Input
+                    type="time"
+                    value={settings.daily_traffic_report.time_of_day || '09:00'}
+                    onChange={(event) => updateDailyReport({ time_of_day: event.target.value })}
+                  />
+                </Col>
+                <Col xs={24} md={8}>
+                  <Text type="secondary">执行频率（天）</Text>
+                  <InputNumber
+                    style={{ width: '100%' }}
+                    min={1}
+                    max={365}
+                    value={settings.daily_traffic_report.interval_days || 1}
+                    onChange={(value) => updateDailyReport({ interval_days: Number(value || 1) })}
+                  />
+                </Col>
+              </Row>
+            </Space>
+          </Card>
         </Space>
       </Spin>
     </div>

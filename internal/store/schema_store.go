@@ -46,6 +46,10 @@ func (s *SQLiteStore) init() error {
 			password_hash TEXT NOT NULL,
 			display_name TEXT NOT NULL DEFAULT '',
 			enabled INTEGER NOT NULL DEFAULT 1,
+			billing_enabled INTEGER NOT NULL DEFAULT 0,
+			revenue_amount REAL NOT NULL DEFAULT 0,
+			revenue_currency TEXT NOT NULL DEFAULT 'CNY',
+			revenue_cycle TEXT NOT NULL DEFAULT 'month',
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		);
@@ -288,6 +292,18 @@ func (s *SQLiteStore) init() error {
 		return err
 	}
 	if err := s.ensureColumn("customer_accounts", "owner_id", "INTEGER NOT NULL DEFAULT 1"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("area_manager_accounts", "billing_enabled", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("area_manager_accounts", "revenue_amount", "REAL NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("area_manager_accounts", "revenue_currency", "TEXT NOT NULL DEFAULT 'CNY'"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("area_manager_accounts", "revenue_cycle", "TEXT NOT NULL DEFAULT 'month'"); err != nil {
 		return err
 	}
 	indexes := []string{

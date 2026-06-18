@@ -16,6 +16,7 @@ const (
 	clientInstallSettingsKey = "client_install"
 	tagSettingsKey           = "tag_settings"
 	frontendSettingsKey      = "frontend_settings"
+	scheduledTasksKey        = "scheduled_tasks"
 	outboundLinkLibraryKey   = "outbound_link_library"
 	topologyLookupCacheKey   = "topology_lookup_cache"
 )
@@ -180,6 +181,84 @@ func (s *SQLiteStore) SaveFrontendSettings(settings model.FrontendSettings) (mod
 		return model.FrontendSettings{}, fmt.Errorf("save frontend settings: %w", err)
 	}
 	return settings, nil
+}
+
+func (s *SQLiteStore) GetScheduledTaskSettings() (model.ScheduledTaskSettings, bool, error) {
+	var raw string
+	err := s.db.QueryRow(`SELECT value_json FROM app_settings WHERE key = ?`, scheduledTasksKey).Scan(&raw)
+	if err == sql.ErrNoRows {
+		return defaultScheduledTaskSettings(), false, nil
+	}
+	if err != nil {
+		return model.ScheduledTaskSettings{}, false, fmt.Errorf("load scheduled task settings: %w", err)
+	}
+	var settings model.ScheduledTaskSettings
+	if err := json.Unmarshal([]byte(raw), &settings); err != nil {
+		return model.ScheduledTaskSettings{}, false, fmt.Errorf("decode scheduled task settings: %w", err)
+	}
+	return normalizeScheduledTaskSettings(settings), true, nil
+}
+
+func (s *SQLiteStore) SaveScheduledTaskSettings(settings model.ScheduledTaskSettings) (model.ScheduledTaskSettings, error) {
+	settings = normalizeScheduledTaskSettings(settings)
+	data, err := json.Marshal(settings)
+	if err != nil {
+		return model.ScheduledTaskSettings{}, fmt.Errorf("encode scheduled task settings: %w", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err = s.db.Exec(`
+		INSERT INTO app_settings (key, value_json, updated_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
+	`, scheduledTasksKey, string(data), now)
+	if err != nil {
+		return model.ScheduledTaskSettings{}, fmt.Errorf("save scheduled task settings: %w", err)
+	}
+	return settings, nil
+}
+
+func defaultScheduledTaskSettings() model.ScheduledTaskSettings {
+	return model.ScheduledTaskSettings{
+		AlertSweep: model.ScheduledTaskConfig{
+			Enabled:         true,
+			IntervalMinutes: 5,
+		},
+		DailyTrafficReport: model.ScheduledTaskConfig{
+			Enabled:      true,
+			TimeOfDay:    "09:00",
+			IntervalDays: 1,
+		},
+	}
+}
+
+func normalizeScheduledTaskSettings(settings model.ScheduledTaskSettings) model.ScheduledTaskSettings {
+	defaults := defaultScheduledTaskSettings()
+	if settings.AlertSweep.IntervalMinutes <= 0 {
+		settings.AlertSweep.IntervalMinutes = defaults.AlertSweep.IntervalMinutes
+	}
+	if settings.AlertSweep.IntervalMinutes > 24*60 {
+		settings.AlertSweep.IntervalMinutes = 24 * 60
+	}
+	if settings.DailyTrafficReport.IntervalDays <= 0 {
+		settings.DailyTrafficReport.IntervalDays = defaults.DailyTrafficReport.IntervalDays
+	}
+	if settings.DailyTrafficReport.IntervalDays > 365 {
+		settings.DailyTrafficReport.IntervalDays = 365
+	}
+	settings.DailyTrafficReport.TimeOfDay = normalizeTaskTimeOfDay(settings.DailyTrafficReport.TimeOfDay, defaults.DailyTrafficReport.TimeOfDay)
+	return settings
+}
+
+func normalizeTaskTimeOfDay(value string, fallback string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := time.Parse("15:04", value)
+	if err != nil {
+		return fallback
+	}
+	return parsed.Format("15:04")
 }
 
 func (s *SQLiteStore) GetTopologyLookupCache() (model.TopologyLookupCache, bool, error) {

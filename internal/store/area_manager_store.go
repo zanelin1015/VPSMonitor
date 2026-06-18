@@ -12,7 +12,7 @@ import (
 
 func (s *SQLiteStore) ListAreaManagers() ([]model.AreaManagerAdminView, error) {
 	rows, err := s.db.Query(`
-		SELECT id, username, display_name, enabled, created_at, updated_at
+		SELECT id, username, display_name, enabled, billing_enabled, revenue_amount, revenue_currency, revenue_cycle, created_at, updated_at
 		FROM area_manager_accounts
 		ORDER BY created_at DESC, id DESC
 	`)
@@ -76,7 +76,7 @@ func (s *SQLiteStore) GetAreaManager(id int64) (model.AreaManagerAdminView, bool
 }
 
 func (s *SQLiteStore) CreateAreaManager(req model.AreaManagerAccountRequest) (model.AreaManagerAdminView, error) {
-	username, displayName, enabled, agentIDs, err := s.normalizeAreaManagerRequest(req, true)
+	normalized, err := s.normalizeAreaManagerRequest(req, true)
 	if err != nil {
 		return model.AreaManagerAdminView{}, err
 	}
@@ -86,7 +86,7 @@ func (s *SQLiteStore) CreateAreaManager(req model.AreaManagerAccountRequest) (mo
 	if len(req.Password) < adminPasswordMinLength {
 		return model.AreaManagerAdminView{}, fmt.Errorf("password must be at least %d characters", adminPasswordMinLength)
 	}
-	if err := s.ensureAreaManagerUsernameAvailable(username, 0); err != nil {
+	if err := s.ensureAreaManagerUsernameAvailable(normalized.username, 0); err != nil {
 		return model.AreaManagerAdminView{}, err
 	}
 	hash, err := hashPassword(req.Password)
@@ -106,9 +106,10 @@ func (s *SQLiteStore) CreateAreaManager(req model.AreaManagerAccountRequest) (mo
 	}()
 
 	result, err := tx.Exec(`
-		INSERT INTO area_manager_accounts (username, password_hash, display_name, enabled, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, username, hash, displayName, boolInt(enabled), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
+		INSERT INTO area_manager_accounts (
+			username, password_hash, display_name, enabled, billing_enabled, revenue_amount, revenue_currency, revenue_cycle, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, normalized.username, hash, normalized.displayName, boolInt(normalized.enabled), boolInt(normalized.billingEnabled), normalized.revenueAmount, normalized.revenueCurrency, normalized.revenueCycle, now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
 	if err != nil {
 		return model.AreaManagerAdminView{}, fmt.Errorf("create area manager: %w", err)
 	}
@@ -116,7 +117,7 @@ func (s *SQLiteStore) CreateAreaManager(req model.AreaManagerAccountRequest) (mo
 	if err != nil {
 		return model.AreaManagerAdminView{}, fmt.Errorf("read area manager id: %w", err)
 	}
-	if err = s.replaceAreaManagerAgentsTx(tx, id, agentIDs); err != nil {
+	if err = s.replaceAreaManagerAgentsTx(tx, id, normalized.agentIDs); err != nil {
 		return model.AreaManagerAdminView{}, err
 	}
 	if err = tx.Commit(); err != nil {
@@ -144,23 +145,35 @@ func (s *SQLiteStore) UpdateAreaManager(id int64, req model.AreaManagerAccountRe
 		return model.AreaManagerAdminView{}, fmt.Errorf("area manager not found")
 	}
 
-	username, displayName, enabled, agentIDs, err := s.normalizeAreaManagerRequest(req, false)
+	normalized, err := s.normalizeAreaManagerRequest(req, false)
 	if err != nil {
 		return model.AreaManagerAdminView{}, err
 	}
-	if username == "" {
-		username = current.view.Username
+	if normalized.username == "" {
+		normalized.username = current.view.Username
 	}
-	if displayName == "" {
-		displayName = firstNonEmpty(current.view.DisplayName, username)
+	if normalized.displayName == "" {
+		normalized.displayName = firstNonEmpty(current.view.DisplayName, normalized.username)
 	}
 	if req.Enabled == nil {
-		enabled = current.view.Enabled
+		normalized.enabled = current.view.Enabled
 	}
-	if agentIDs == nil {
-		agentIDs = current.view.AgentIDs
+	if req.BillingEnabled == nil {
+		normalized.billingEnabled = current.view.BillingEnabled
 	}
-	if err := s.ensureAreaManagerUsernameAvailable(username, id); err != nil {
+	if req.RevenueAmount == nil {
+		normalized.revenueAmount = current.view.RevenueAmount
+	}
+	if strings.TrimSpace(req.RevenueCurrency) == "" {
+		normalized.revenueCurrency = current.view.RevenueCurrency
+	}
+	if strings.TrimSpace(req.RevenueCycle) == "" {
+		normalized.revenueCycle = current.view.RevenueCycle
+	}
+	if normalized.agentIDs == nil {
+		normalized.agentIDs = current.view.AgentIDs
+	}
+	if err := s.ensureAreaManagerUsernameAvailable(normalized.username, id); err != nil {
 		return model.AreaManagerAdminView{}, err
 	}
 
@@ -189,16 +202,16 @@ func (s *SQLiteStore) UpdateAreaManager(id int64, req model.AreaManagerAccountRe
 	}()
 	_, err = tx.Exec(`
 		UPDATE area_manager_accounts
-		SET username = ?, password_hash = ?, display_name = ?, enabled = ?, updated_at = ?
+		SET username = ?, password_hash = ?, display_name = ?, enabled = ?, billing_enabled = ?, revenue_amount = ?, revenue_currency = ?, revenue_cycle = ?, updated_at = ?
 		WHERE id = ?
-	`, username, passwordHash, displayName, boolInt(enabled), now.Format(time.RFC3339Nano), id)
+	`, normalized.username, passwordHash, normalized.displayName, boolInt(normalized.enabled), boolInt(normalized.billingEnabled), normalized.revenueAmount, normalized.revenueCurrency, normalized.revenueCycle, now.Format(time.RFC3339Nano), id)
 	if err != nil {
 		return model.AreaManagerAdminView{}, fmt.Errorf("update area manager: %w", err)
 	}
-	if err = s.replaceAreaManagerAgentsTx(tx, id, agentIDs); err != nil {
+	if err = s.replaceAreaManagerAgentsTx(tx, id, normalized.agentIDs); err != nil {
 		return model.AreaManagerAdminView{}, err
 	}
-	if !enabled || passwordChanged {
+	if !normalized.enabled || passwordChanged {
 		_, err = tx.Exec(`DELETE FROM admin_sessions WHERE role = ? AND account_id = ?`, model.AdminRoleAreaManager, id)
 		if err != nil {
 			return model.AreaManagerAdminView{}, fmt.Errorf("clear area manager sessions: %w", err)
@@ -505,34 +518,75 @@ func (s *SQLiteStore) SaveAreaManagerAgentTags(managerID int64, agentID string, 
 	return normalized, nil
 }
 
-func (s *SQLiteStore) normalizeAreaManagerRequest(req model.AreaManagerAccountRequest, creating bool) (string, string, bool, []string, error) {
+type normalizedAreaManagerRequest struct {
+	username        string
+	displayName     string
+	enabled         bool
+	agentIDs        []string
+	billingEnabled  bool
+	revenueAmount   float64
+	revenueCurrency string
+	revenueCycle    string
+}
+
+func (s *SQLiteStore) normalizeAreaManagerRequest(req model.AreaManagerAccountRequest, creating bool) (normalizedAreaManagerRequest, error) {
 	username := strings.TrimSpace(req.Username)
 	if username == "" && creating {
-		return "", "", false, nil, fmt.Errorf("username is required")
+		return normalizedAreaManagerRequest{}, fmt.Errorf("username is required")
 	}
 	if len(username) > 120 {
-		return "", "", false, nil, fmt.Errorf("username is too long")
+		return normalizedAreaManagerRequest{}, fmt.Errorf("username is too long")
 	}
 	displayName := strings.TrimSpace(req.DisplayName)
 	if displayName == "" && creating {
 		displayName = username
 	}
 	if len(displayName) > 160 {
-		return "", "", false, nil, fmt.Errorf("display name is too long")
+		return normalizedAreaManagerRequest{}, fmt.Errorf("display name is too long")
 	}
 	enabled := true
 	if req.Enabled != nil {
 		enabled = *req.Enabled
+	}
+	billingEnabled := false
+	if req.BillingEnabled != nil {
+		billingEnabled = *req.BillingEnabled
+	}
+	revenueAmount := 0.0
+	if req.RevenueAmount != nil {
+		revenueAmount = *req.RevenueAmount
+	}
+	if revenueAmount < 0 {
+		revenueAmount = 0
+	}
+	revenueCurrency := strings.ToUpper(strings.TrimSpace(req.RevenueCurrency))
+	if revenueCurrency != "USDT" {
+		revenueCurrency = "CNY"
+	}
+	revenueCycle := strings.ToLower(strings.TrimSpace(req.RevenueCycle))
+	switch revenueCycle {
+	case "quarter", "year":
+	default:
+		revenueCycle = "month"
 	}
 	var agentIDs []string
 	if creating || req.AgentIDs != nil {
 		var err error
 		agentIDs, err = s.normalizeAreaManagerAgentIDs(req.AgentIDs)
 		if err != nil {
-			return "", "", false, nil, err
+			return normalizedAreaManagerRequest{}, err
 		}
 	}
-	return username, displayName, enabled, agentIDs, nil
+	return normalizedAreaManagerRequest{
+		username:        username,
+		displayName:     displayName,
+		enabled:         enabled,
+		agentIDs:        agentIDs,
+		billingEnabled:  billingEnabled,
+		revenueAmount:   revenueAmount,
+		revenueCurrency: revenueCurrency,
+		revenueCycle:    revenueCycle,
+	}, nil
 }
 
 func (s *SQLiteStore) normalizeAreaManagerAgentIDs(raw []string) ([]string, error) {
@@ -611,7 +665,7 @@ func (s *SQLiteStore) ensureAreaManagerUsernameAvailable(username string, except
 
 func (s *SQLiteStore) getAreaManagerBase(id int64) (model.AreaManagerAdminView, bool, error) {
 	row := s.db.QueryRow(`
-		SELECT id, username, display_name, enabled, created_at, updated_at
+		SELECT id, username, display_name, enabled, billing_enabled, revenue_amount, revenue_currency, revenue_cycle, created_at, updated_at
 		FROM area_manager_accounts
 		WHERE id = ?
 	`, id)
@@ -632,13 +686,13 @@ type areaManagerWithHash struct {
 
 func (s *SQLiteStore) getAreaManagerWithHash(id int64) (areaManagerWithHash, bool, error) {
 	var item areaManagerWithHash
-	var enabled int
+	var enabled, billingEnabled int
 	var createdAtText, updatedAtText string
 	err := s.db.QueryRow(`
-		SELECT id, username, password_hash, display_name, enabled, created_at, updated_at
+		SELECT id, username, password_hash, display_name, enabled, billing_enabled, revenue_amount, revenue_currency, revenue_cycle, created_at, updated_at
 		FROM area_manager_accounts
 		WHERE id = ?
-	`, id).Scan(&item.view.ID, &item.view.Username, &item.passwordHash, &item.view.DisplayName, &enabled, &createdAtText, &updatedAtText)
+	`, id).Scan(&item.view.ID, &item.view.Username, &item.passwordHash, &item.view.DisplayName, &enabled, &billingEnabled, &item.view.RevenueAmount, &item.view.RevenueCurrency, &item.view.RevenueCycle, &createdAtText, &updatedAtText)
 	if err == sql.ErrNoRows {
 		return areaManagerWithHash{}, false, nil
 	}
@@ -646,6 +700,9 @@ func (s *SQLiteStore) getAreaManagerWithHash(id int64) (areaManagerWithHash, boo
 		return areaManagerWithHash{}, false, fmt.Errorf("load area manager: %w", err)
 	}
 	item.view.Enabled = enabled != 0
+	item.view.BillingEnabled = billingEnabled != 0
+	item.view.RevenueCurrency = normalizeAreaManagerRevenueCurrency(item.view.RevenueCurrency)
+	item.view.RevenueCycle = normalizeAreaManagerRevenueCycle(item.view.RevenueCycle)
 	item.view.CreatedAt = parseTime(createdAtText)
 	item.view.UpdatedAt = parseTime(updatedAtText)
 	item.view.AgentIDs, err = s.ListAreaManagerAgentIDs(id)
@@ -673,15 +730,34 @@ func (s *SQLiteStore) replaceAreaManagerAgentsTx(tx *sql.Tx, managerID int64, ag
 
 func scanAreaManager(scanner rowScanner) (model.AreaManagerAdminView, error) {
 	var item model.AreaManagerAdminView
-	var enabled int
+	var enabled, billingEnabled int
 	var createdAtText, updatedAtText string
-	if err := scanner.Scan(&item.ID, &item.Username, &item.DisplayName, &enabled, &createdAtText, &updatedAtText); err != nil {
+	if err := scanner.Scan(&item.ID, &item.Username, &item.DisplayName, &enabled, &billingEnabled, &item.RevenueAmount, &item.RevenueCurrency, &item.RevenueCycle, &createdAtText, &updatedAtText); err != nil {
 		return model.AreaManagerAdminView{}, fmt.Errorf("scan area manager: %w", err)
 	}
 	item.Enabled = enabled != 0
+	item.BillingEnabled = billingEnabled != 0
+	item.RevenueCurrency = normalizeAreaManagerRevenueCurrency(item.RevenueCurrency)
+	item.RevenueCycle = normalizeAreaManagerRevenueCycle(item.RevenueCycle)
 	item.CreatedAt = parseTime(createdAtText)
 	item.UpdatedAt = parseTime(updatedAtText)
 	return item, nil
+}
+
+func normalizeAreaManagerRevenueCurrency(value string) string {
+	if strings.ToUpper(strings.TrimSpace(value)) == "USDT" {
+		return "USDT"
+	}
+	return "CNY"
+}
+
+func normalizeAreaManagerRevenueCycle(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "quarter", "year":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return "month"
+	}
 }
 
 func scanAreaManagerAssignment(scanner rowScanner) (model.AreaManagerAssignment, error) {

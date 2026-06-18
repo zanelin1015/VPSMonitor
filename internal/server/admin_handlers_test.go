@@ -3,7 +3,6 @@ package server
 import (
 	"path/filepath"
 	"testing"
-	"time"
 
 	"bridge-core/internal/model"
 	"bridge-core/internal/store"
@@ -20,85 +19,6 @@ func TestNormalizeVersionSupportsComponentTags(t *testing.T) {
 		if got := normalizeVersion(input); got != want {
 			t.Fatalf("normalizeVersion(%q) = %q, want %q", input, got, want)
 		}
-	}
-}
-
-func TestBuildClientExpirySyncActionUsesStartTimeAsPeriodStart(t *testing.T) {
-	start := time.Date(2026, 4, 21, 16, 0, 0, 0, time.UTC)            // 2026-04-22 00:00:00 Asia/Shanghai.
-	expectedExpiry := time.Date(2026, 7, 21, 15, 59, 59, 0, time.UTC) // 2026-07-21 23:59:59 Asia/Shanghai.
-	action, ok := buildClientExpirySyncAction("agent-1", model.XUIClientBillingConfig{
-		InboundID:       20001,
-		InboundTag:      "inbound-20001",
-		Email:           "alice@example.com",
-		RevenueCycle:    "quarter",
-		StartTime:       start.UnixMilli(),
-		ExpireCycle:     "quarter",
-		ExpireAutoRenew: false,
-	}, []model.XUIClientView{{
-		InboundID:  20001,
-		InboundTag: "inbound-20001",
-		Email:      "alice@example.com",
-	}}, time.Date(2026, 6, 2, 0, 0, 0, 0, time.UTC), "test")
-	if !ok {
-		t.Fatal("expected sync action")
-	}
-	if got := action.Payload["expiry_time"]; got != expectedExpiry.UnixMilli() {
-		t.Fatalf("expected expiry %d, got %#v", expectedExpiry.UnixMilli(), got)
-	}
-	if got := action.Payload["start_time"]; got != start.UnixMilli() {
-		t.Fatalf("expected start_time to remain unchanged, got %#v", got)
-	}
-}
-
-func TestBuildClientExpirySyncActionAlwaysRollsByBillingCycle(t *testing.T) {
-	start := time.Date(2026, 0o1, 1, 16, 0, 0, 0, time.UTC) // 2026-01-02 00:00:00 Asia/Shanghai.
-	expectedExpiry := time.Date(2026, 7, 1, 15, 59, 59, 0, time.UTC)
-	action, ok := buildClientExpirySyncAction("agent-1", model.XUIClientBillingConfig{
-		InboundID:       20001,
-		InboundTag:      "inbound-20001",
-		Email:           "alice@example.com",
-		RevenueCycle:    "quarter",
-		StartTime:       start.UnixMilli(),
-		ExpireCycle:     "quarter",
-		ExpireAutoRenew: false,
-	}, []model.XUIClientView{{
-		InboundID:  20001,
-		InboundTag: "inbound-20001",
-		Email:      "alice@example.com",
-		ExpiryTime: time.Date(2026, 3, 1, 15, 59, 59, 0, time.UTC).UnixMilli(),
-		Enabled:    true,
-	}}, time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC), "test")
-	if !ok {
-		t.Fatal("expected sync action")
-	}
-	if got := action.Payload["expiry_time"]; got != expectedExpiry.UnixMilli() {
-		t.Fatalf("expected rolled expiry %d, got %#v", expectedExpiry.UnixMilli(), got)
-	}
-	if got := action.Payload["enabled"]; got != nil {
-		t.Fatalf("did not expect client to be disabled, got %#v", got)
-	}
-	if got := action.Payload["expire_auto_renew"]; got != true {
-		t.Fatalf("expected compatibility auto renew flag to be true, got %#v", got)
-	}
-}
-
-func TestBuildClientExpirySyncActionSkipsBillingWithoutStartTime(t *testing.T) {
-	_, ok := buildClientExpirySyncAction("agent-1", model.XUIClientBillingConfig{
-		InboundID:       20001,
-		InboundTag:      "inbound-20001",
-		Email:           "alice@example.com",
-		RevenueCycle:    "quarter",
-		ExpireTime:      time.Date(2026, 4, 1, 15, 59, 59, 0, time.UTC).UnixMilli(),
-		ExpireCycle:     "quarter",
-		ExpireAutoRenew: false,
-	}, []model.XUIClientView{{
-		InboundID:  20001,
-		InboundTag: "inbound-20001",
-		Email:      "alice@example.com",
-		Enabled:    true,
-	}}, time.Date(2026, 6, 2, 0, 0, 0, 0, time.UTC), "test")
-	if ok {
-		t.Fatal("expected billing without start_time to be ignored for expiry sync")
 	}
 }
 

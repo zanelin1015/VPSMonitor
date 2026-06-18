@@ -1103,7 +1103,6 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		a.syncAgentClientExpiryRules(record, "config_save")
 		a.clearCustomerOverviewCache()
 		a.requestAgentConfigApply(agentID, record.Config)
 		writeJSON(w, http.StatusOK, disableXUIAutoInstall(record.Config))

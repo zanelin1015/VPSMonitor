@@ -51,11 +51,15 @@ type AdminAccountUpdateRequest struct {
 }
 
 type AreaManagerAccountRequest struct {
-	Username    string   `json:"username"`
-	Password    string   `json:"password,omitempty"`
-	DisplayName string   `json:"display_name,omitempty"`
-	Enabled     *bool    `json:"enabled,omitempty"`
-	AgentIDs    []string `json:"agent_ids,omitempty"`
+	Username        string   `json:"username"`
+	Password        string   `json:"password,omitempty"`
+	DisplayName     string   `json:"display_name,omitempty"`
+	Enabled         *bool    `json:"enabled,omitempty"`
+	AgentIDs        []string `json:"agent_ids,omitempty"`
+	BillingEnabled  *bool    `json:"billing_enabled,omitempty"`
+	RevenueAmount   *float64 `json:"revenue_amount,omitempty"`
+	RevenueCurrency string   `json:"revenue_currency,omitempty"`
+	RevenueCycle    string   `json:"revenue_cycle,omitempty"`
 }
 
 type AreaManagerAssignment struct {
@@ -85,15 +89,19 @@ type AreaManagerAssignmentBatchRequest struct {
 }
 
 type AreaManagerAdminView struct {
-	ID          int64                   `json:"id"`
-	Username    string                  `json:"username"`
-	DisplayName string                  `json:"display_name,omitempty"`
-	Enabled     bool                    `json:"enabled"`
-	AgentIDs    []string                `json:"agent_ids,omitempty"`
-	Assignments []AreaManagerAssignment `json:"assignments,omitempty"`
-	Customers   []CustomerAdminView     `json:"customers,omitempty"`
-	CreatedAt   time.Time               `json:"created_at"`
-	UpdatedAt   time.Time               `json:"updated_at"`
+	ID              int64                   `json:"id"`
+	Username        string                  `json:"username"`
+	DisplayName     string                  `json:"display_name,omitempty"`
+	Enabled         bool                    `json:"enabled"`
+	AgentIDs        []string                `json:"agent_ids,omitempty"`
+	BillingEnabled  bool                    `json:"billing_enabled"`
+	RevenueAmount   float64                 `json:"revenue_amount,omitempty"`
+	RevenueCurrency string                  `json:"revenue_currency,omitempty"`
+	RevenueCycle    string                  `json:"revenue_cycle,omitempty"`
+	Assignments     []AreaManagerAssignment `json:"assignments,omitempty"`
+	Customers       []CustomerAdminView     `json:"customers,omitempty"`
+	CreatedAt       time.Time               `json:"created_at"`
+	UpdatedAt       time.Time               `json:"updated_at"`
 }
 
 type ClientInstallInfo struct {
@@ -150,6 +158,18 @@ type AreaAgentTagsResponse struct {
 
 type FrontendSettings struct {
 	CustomCode string `json:"custom_code"`
+}
+
+type ScheduledTaskSettings struct {
+	AlertSweep         ScheduledTaskConfig `json:"alert_sweep"`
+	DailyTrafficReport ScheduledTaskConfig `json:"daily_traffic_report"`
+}
+
+type ScheduledTaskConfig struct {
+	Enabled         bool   `json:"enabled"`
+	TimeOfDay       string `json:"time_of_day,omitempty"`
+	IntervalMinutes int    `json:"interval_minutes,omitempty"`
+	IntervalDays    int    `json:"interval_days,omitempty"`
 }
 
 type OutboundLinkLibraryItem struct {

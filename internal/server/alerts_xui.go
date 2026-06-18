@@ -2,7 +2,6 @@ package server
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -57,67 +56,6 @@ func buildXUIClientExpiryAlerts(agent model.AgentRecord, clients []model.XUIClie
 		alerts = append(alerts, newAgentAlert(agent, kind, severity, title, fmt.Sprintf("%s:%d", state, client.ExpiryTime), detail))
 	}
 	return alerts
-}
-
-func (s *alertService) evaluateXUIClientExpiryRenewals(agent model.AgentRecord, snapshot model.AgentSnapshot) {
-	if snapshot.XUI == nil || len(agent.Config.Renewal.ClientBillings) == 0 {
-		return
-	}
-	overview := dashboard.BuildXUIOverview(snapshot)
-	if overview == nil {
-		return
-	}
-	now := time.Now()
-	for _, billing := range agent.Config.Renewal.ClientBillings {
-		if billing.StartTime <= 0 {
-			continue
-		}
-		client := findOverviewClient(overview.Clients, billing)
-		expiryMillis := billing.ExpireTime
-		if expiryMillis <= 0 && client != nil {
-			expiryMillis = client.ExpiryTime
-		}
-		if expiryMillis <= 0 {
-			continue
-		}
-		expiry := time.UnixMilli(expiryMillis)
-		if expiry.After(now) {
-			continue
-		}
-		cycle := normalizeClientExpireCycle(billing.ExpireCycle)
-		next := expiry
-		for !next.After(now) {
-			next = addClientExpireCycle(next, cycle)
-		}
-		key := fmt.Sprintf("xui_client_expiry:%s:%d:%s:%s", agent.AgentID, billing.InboundID, billing.InboundTag, billing.Email)
-		fingerprint := fmt.Sprintf("%d:%d", expiryMillis, next.UnixMilli())
-		shouldCreate, err := s.store.ShouldSendAlert(key, fingerprint, "x-ui client expiry auto renew", 24*time.Hour)
-		if err != nil {
-			log.Printf("x-ui client expiry state: %v", err)
-			continue
-		}
-		if !shouldCreate {
-			continue
-		}
-		inboundTag := billing.InboundTag
-		if inboundTag == "" && client != nil {
-			inboundTag = client.InboundTag
-		}
-		_, err = s.store.CreateXUIAction(agent.AgentID, model.XUIActionRequest{
-			Kind: model.XUIActionUpdateClientExpiry,
-			Payload: map[string]any{
-				"inbound_id":        billing.InboundID,
-				"inbound_tag":       inboundTag,
-				"email":             billing.Email,
-				"expiry_time":       next.UnixMilli(),
-				"expire_cycle":      cycle,
-				"expire_auto_renew": true,
-			},
-		})
-		if err != nil {
-			log.Printf("create x-ui client expiry action: %v", err)
-		}
-	}
 }
 
 func xuiClientExpiryAlertKind(client model.XUIClientView) string {
