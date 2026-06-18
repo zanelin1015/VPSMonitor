@@ -169,7 +169,6 @@ export function buildMonthlyFinanceRevenueDetails(
   }
 
   const rows: MonthlyFinanceRevenueDetail[] = []
-  const hasCustomerScope = customers.length > 0
   for (const chain of clientChains) {
     if (chain.root_client_enabled === false) {
       continue
@@ -195,7 +194,7 @@ export function buildMonthlyFinanceRevenueDetails(
       targetCurrency,
       exchangeRates,
     })
-    if (!hasCustomerScope || isSingleUserRevenueRow(row, customers)) {
+    if (shouldCountNodeRevenueRow(row, customers, areaManagers)) {
       rows.push(row)
     }
   }
@@ -216,13 +215,22 @@ export function buildMonthlyFinanceRevenueDetails(
   })
 }
 
-function isSingleUserRevenueRow(row: MonthlyFinanceRevenueDetail, customers: CustomerAdminView[]): boolean {
-  return customers.some((customer) => {
-    if (customer.owner_type === 'area_manager') {
-      return false
-    }
-    return (customer.assignments || []).some((assignment) => assignmentMatchesRevenueRow(assignment, row))
-  })
+function shouldCountNodeRevenueRow(row: MonthlyFinanceRevenueDetail, customers: CustomerAdminView[], areaManagers: AreaManagerAdminView[]): boolean {
+  const matchedCustomers = customers.filter((customer) => (
+    (customer.assignments || []).some((assignment) => assignmentMatchesRevenueRow(assignment, row))
+  ))
+  if (!matchedCustomers.length) {
+    return true
+  }
+  if (matchedCustomers.some((customer) => customer.owner_type !== 'area_manager')) {
+    return true
+  }
+  const billedAreaManagerIDs = new Set(
+    areaManagers
+      .filter((manager) => manager.enabled && manager.billing_enabled && Number(manager.revenue_amount || 0) > 0)
+      .map((manager) => Number(manager.id)),
+  )
+  return matchedCustomers.some((customer) => !billedAreaManagerIDs.has(Number(customer.owner_id || 0)))
 }
 
 function assignmentMatchesRevenueRow(assignment: { agent_id: string; inbound_id: number; inbound_tag?: string; client_email?: string }, row: MonthlyFinanceRevenueDetail): boolean {
