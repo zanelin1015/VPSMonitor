@@ -47,6 +47,14 @@ try {
   assert(rowsWithAreaBilling.some((row) => row.clientEmail === 'unassigned-b'), 'unassigned charged node should stay in admin revenue')
   assert(!rowsWithAreaBilling.some((row) => row.clientEmail === 'area-c'), 'area-owned node should not duplicate account-level area revenue')
 
+
+  const summaryWithoutChains = summarizeMonthlyFinance(agents, [], 'USD', exchangeRates, customers, areaManagersWithAccountBilling)
+  approx(summaryWithoutChains.revenueTotal, 50.3333333333, 'billing fallback counts all non-duplicated revenue when topology chains are unavailable')
+  const rowsWithoutChains = buildMonthlyFinanceRevenueDetails(agents, [], 'USD', exchangeRates, customers, areaManagersWithAccountBilling)
+  assert(rowsWithoutChains.some((row) => row.source === 'billing' && row.clientEmail === 'user-a'), 'ordinary billing should be counted without chains')
+  assert(rowsWithoutChains.some((row) => row.source === 'billing' && row.clientEmail === 'unassigned-b'), 'unassigned billing should be counted without chains')
+  assert(!rowsWithoutChains.some((row) => row.clientEmail === 'area-c'), 'area-owned billing should still be skipped when account-level area billing is enabled')
+
   const areaManagersWithoutAccountBilling = [areaManager(7, false, 100, 'USDT', 'quarter')]
   const summaryWithoutAreaBilling = summarizeMonthlyFinance(agents, chains, 'USD', exchangeRates, customers, areaManagersWithoutAccountBilling)
   approx(summaryWithoutAreaBilling.revenueTotal, 117, 'area-owned node revenue is counted when account-level area billing is disabled')

@@ -169,6 +169,8 @@ export function buildMonthlyFinanceRevenueDetails(
   }
 
   const rows: MonthlyFinanceRevenueDetail[] = []
+  const usedBillingKeys = new Set<string>()
+  const usedBillingEmailKeys = new Set<string>()
   for (const chain of clientChains) {
     if (chain.root_client_enabled === false) {
       continue
@@ -196,6 +198,37 @@ export function buildMonthlyFinanceRevenueDetails(
     })
     if (shouldCountNodeRevenueRow(row, customers, areaManagers)) {
       rows.push(row)
+      if (ref?.billing) {
+        usedBillingKeys.add(revenueClientKey(ref.agent.agent_id, ref.billing.inbound_tag, ref.billing.email))
+        if (ref.billing.email) {
+          usedBillingEmailKeys.add(revenueEmailKey(ref.agent.agent_id, ref.billing.email))
+        }
+      }
+    }
+  }
+  for (const agent of agents) {
+    for (const billing of agent.renewal?.client_billings || []) {
+      const normalized = normalizeRevenueBilling(billing)
+      const exactKey = revenueClientKey(agent.agent_id, normalized.inbound_tag, normalized.email)
+      const emailKey = normalized.email ? revenueEmailKey(agent.agent_id, normalized.email) : ''
+      if (usedBillingKeys.has(exactKey) || (emailKey && usedBillingEmailKeys.has(emailKey))) {
+        continue
+      }
+      const row = buildRevenueDetailRow({
+        agent,
+        billing: normalized,
+        key: `billing:${exactKey}`,
+        inboundTag: normalized.inbound_tag,
+        inboundID: normalized.inbound_id,
+        clientEmail: normalized.email,
+        clientRemark: '',
+        source: 'billing',
+        targetCurrency,
+        exchangeRates,
+      })
+      if (shouldCountNodeRevenueRow(row, customers, areaManagers)) {
+        rows.push(row)
+      }
     }
   }
   for (const manager of areaManagers) {
