@@ -4,11 +4,15 @@ import {
   App as AntdApp,
   Button,
   Card,
+  Col,
   Input,
+  InputNumber,
+  Row,
   Select,
   Space,
   Spin,
   Switch,
+  Table,
   Typography,
 } from 'antd'
 import {
@@ -16,6 +20,7 @@ import {
   CloudServerOutlined,
   DashboardOutlined,
   DeploymentUnitOutlined,
+  FileSearchOutlined,
   ReloadOutlined,
   SettingOutlined,
   TeamOutlined,
@@ -24,6 +29,8 @@ import {
 import type {
   AdminAuthResponse,
   AdminUser,
+  AccessLogEntry,
+  AccessLogListResponse,
   AreaManagerAdminView,
   AreaAgentTagsResponse,
   AgentListItem,
@@ -156,7 +163,7 @@ interface LoadOptions {
   silent?: boolean
 }
 
-type AdminPageKey = 'dashboard' | 'assets' | 'customers' | 'settings' | 'schedules'
+type AdminPageKey = 'dashboard' | 'assets' | 'customers' | 'access-logs' | 'settings' | 'schedules'
 
 interface AdminRouteState {
   page: AdminPageKey
@@ -180,7 +187,7 @@ function parseAdminRouteState(canManageSystem: boolean): AdminRouteState {
   const rawPage = (params.get('page') || pageFromAdminPath(path)).toLowerCase()
   const topology = rawPage === 'topology' || params.get('topology') === '1'
   let page: AdminPageKey = topology ? 'dashboard' : normalizeAdminPage(rawPage)
-  if ((page === 'settings' || page === 'schedules') && !canManageSystem) {
+  if ((page === 'settings' || page === 'schedules' || page === 'access-logs') && !canManageSystem) {
     page = 'dashboard'
   }
 
@@ -240,6 +247,7 @@ function normalizeAdminPage(value: string): AdminPageKey {
   switch (value) {
     case 'assets':
     case 'customers':
+    case 'access-logs':
     case 'settings':
     case 'schedules':
       return value
@@ -254,6 +262,8 @@ function pageFromAdminPath(path: string): string {
       return 'assets'
     case '/admin/customers':
       return 'customers'
+    case '/admin/access-logs':
+      return 'access-logs'
     case '/admin/settings':
       return 'settings'
     case '/admin/schedules':
@@ -323,6 +333,7 @@ const AgentDetailPanel = lazy(() => import('./components/AgentDetailPanel').then
 const ConsoleModals = lazy(() => import('./components/ConsoleModals').then((module) => ({ default: module.ConsoleModals })))
 const CustomerManagementModal = lazy(() => import('./components/CustomerManagementModal').then((module) => ({ default: module.CustomerManagementModal })))
 const CustomerPortal = lazy(() => import('./components/CustomerPortal').then((module) => ({ default: module.CustomerPortal })))
+const PublicSite = lazy(() => import('./components/PublicSite').then((module) => ({ default: module.PublicSite })))
 
 export default function App() {
   const { message } = AntdApp.useApp()
@@ -392,6 +403,16 @@ export default function App() {
   const [scheduledTasksLoading, setScheduledTasksLoading] = useState(false)
   const [scheduledTasksSaving, setScheduledTasksSaving] = useState(false)
   const [scheduledTasks, setScheduledTasks] = useState<ScheduledTaskSettings>(() => defaultScheduledTaskSettings())
+  const [accessLogs, setAccessLogs] = useState<AccessLogEntry[]>([])
+  const [accessLogsTotal, setAccessLogsTotal] = useState(0)
+  const [accessLogsLoading, setAccessLogsLoading] = useState(false)
+  const [accessLogFilters, setAccessLogFilters] = useState({
+    agent_id: '',
+    source_ip: '',
+    target: '',
+    client_email: '',
+    limit: 100,
+  })
   const [updateModalOpen, setUpdateModalOpen] = useState(false)
   const [updateLoading, setUpdateLoading] = useState(false)
   const [updateLatestLoading, setUpdateLatestLoading] = useState(false)
@@ -444,16 +465,18 @@ export default function App() {
   const centerPanelOpen = topologyVisible || Boolean(selectedAgent)
   const topologyScopeLabel = selectedAgentId ? selectedAgent?.agent_name || selectedAgentId : selectedTag ? `${selectedTag} 标签` : '全部 Client'
   const heroTitle = '南风VPS监控'
-  const customerMode = window.location.pathname.replace(/\/+$/, '') === '/customer'
+  const normalizedPath = window.location.pathname.replace(/\/+$/, '') || '/'
+  const customerMode = normalizedPath === '/customer'
+  const publicSiteMode = normalizedPath === '/site' || normalizedPath === '/official' || new URLSearchParams(window.location.search).get('page') === 'site'
   const isAreaManagerAccount = isAreaManagerAdminUser(adminUser)
   const canManageSystem = Boolean(adminUser && !isAreaManagerAccount)
   useEffect(() => {
-    if (customerMode) {
+    if (customerMode || publicSiteMode) {
       setSessionLoading(false)
       return
     }
     void loadSession()
-  }, [customerMode])
+  }, [customerMode, publicSiteMode])
 
   useEffect(() => {
     if (!adminUser) {
@@ -491,7 +514,7 @@ export default function App() {
     if (!adminUser || canManageSystem) {
       return
     }
-    if (activeAdminPage === 'settings' || activeAdminPage === 'schedules') {
+    if (activeAdminPage === 'settings' || activeAdminPage === 'schedules' || activeAdminPage === 'access-logs') {
       setActiveAdminPage('dashboard')
     }
     if (['config', 'logs', 'certificates'].includes(activeTabKey)) {
@@ -506,7 +529,13 @@ export default function App() {
   }, [activeAdminPage, adminUser, canManageSystem])
 
   useEffect(() => {
-    if (customerMode || sessionLoading || !adminUser) {
+    if (adminUser && canManageSystem && activeAdminPage === 'access-logs') {
+      void loadAccessLogs()
+    }
+  }, [activeAdminPage, adminUser, canManageSystem])
+
+  useEffect(() => {
+    if (customerMode || publicSiteMode || sessionLoading || !adminUser) {
       return
     }
 
@@ -530,10 +559,10 @@ export default function App() {
     return () => {
       window.removeEventListener('popstate', applyCurrentURL)
     }
-  }, [adminUser, canManageSystem, customerMode, sessionLoading])
+  }, [adminUser, canManageSystem, customerMode, publicSiteMode, sessionLoading])
 
   useEffect(() => {
-    if (customerMode || sessionLoading || !adminUser) {
+    if (customerMode || publicSiteMode || sessionLoading || !adminUser) {
       return
     }
     if (applyingRouteRef.current) {
@@ -566,6 +595,7 @@ export default function App() {
     activeTabKey,
     adminUser,
     customerMode,
+    publicSiteMode,
     selectedAgentId,
     selectedNodeAnchor,
     selectedOutboundTag,
@@ -1658,6 +1688,28 @@ export default function App() {
     }
   }
 
+  async function loadAccessLogs() {
+    setAccessLogsLoading(true)
+    try {
+      const params = new URLSearchParams()
+      Object.entries(accessLogFilters).forEach(([key, value]) => {
+        if (String(value || '').trim()) {
+          params.set(key, String(value).trim())
+        }
+      })
+      const data = await fetchJSON<AccessLogListResponse>(`/api/v1/admin/access-logs?${params.toString()}`)
+      setAccessLogs(data.items || [])
+      setAccessLogsTotal(data.total || 0)
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      message.error(error instanceof Error ? error.message : '加载访问日志失败')
+    } finally {
+      setAccessLogsLoading(false)
+    }
+  }
+
   async function copyClientInstallCommand(command = buildClientInstallCommand(clientInstallForm)) {
     if (!clientInstallForm.registration_token.trim()) {
       message.warning('当前 server 未配置注册 Token，安装命令无法完成 Client 注册')
@@ -2064,6 +2116,65 @@ export default function App() {
   const monthlyFinance = canManageSystem
     ? summarizeMonthlyFinance(filteredAgents, filteredChains, costCurrency, exchangeRates, financeCustomers, financeAreaManagers)
     : { costTotal: 0, costCount: 0, revenueTotal: 0, revenueCount: 0, profitTotal: 0, missingCostCount: 0, missingRevenueCount: 0 }
+  const accessLogAgentOptions = [
+    { value: '', label: '全部 Client' },
+    ...agents.map((agent) => ({ value: agent.agent_id, label: agent.agent_name || agent.agent_id })),
+  ]
+  const accessLogColumns = [
+    {
+      title: '时间',
+      dataIndex: 'created_at',
+      width: 180,
+      render: (value: string) => formatDateTime(value),
+    },
+    {
+      title: 'Client',
+      dataIndex: 'agent_id',
+      width: 180,
+      render: (value: string, record: AccessLogEntry) => record.agent_name || agents.find((agent) => agent.agent_id === value)?.agent_name || value,
+    },
+    {
+      title: '来源',
+      width: 170,
+      render: (_: unknown, record: AccessLogEntry) => `${record.source_ip || '-'}${record.source_port ? `:${record.source_port}` : ''}`,
+    },
+    {
+      title: '目标',
+      width: 220,
+      render: (_: unknown, record: AccessLogEntry) => `${record.target_host || record.target_ip || '-'}${record.target_port ? `:${record.target_port}` : ''}`,
+    },
+    {
+      title: '协议',
+      width: 90,
+      render: (_: unknown, record: AccessLogEntry) => (record.network || record.protocol || '-').toUpperCase(),
+    },
+    {
+      title: '出站',
+      dataIndex: 'outbound_tag',
+      width: 140,
+      render: (value: string) => value || '-',
+    },
+    {
+      title: '客户端',
+      dataIndex: 'client_email',
+      width: 180,
+      render: (value: string) => value || '-',
+    },
+    {
+      title: '摘要',
+      dataIndex: 'raw_summary',
+      ellipsis: true,
+      render: (value: string) => value || '-',
+    },
+  ]
+
+  if (publicSiteMode) {
+    return (
+      <Suspense fallback={<div className="login-shell"><Spin size="large" /></div>}>
+        <PublicSite />
+      </Suspense>
+    )
+  }
 
   if (customerMode) {
     return (
@@ -2184,6 +2295,10 @@ export default function App() {
               <TeamOutlined />
               <span>用户</span>
             </button>
+            {canManageSystem ? <button type="button" className={activeAdminPage === 'access-logs' ? 'active' : ''} onClick={() => setActiveAdminPage('access-logs')}>
+              <FileSearchOutlined />
+              <span>日志</span>
+            </button> : null}
             {canManageSystem ? <button type="button" className={activeAdminPage === 'settings' ? 'active' : ''} onClick={() => {
               setActiveAdminPage('settings')
               void openFrontendSettingsModal(false)
@@ -2254,6 +2369,11 @@ export default function App() {
               <span>用户管理</span>
               <small>账号与授权</small>
             </button>
+            {canManageSystem ? <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'access-logs' ? ' active' : ''}`} onClick={() => setActiveAdminPage('access-logs')}>
+              <FileSearchOutlined />
+              <span>访问日志</span>
+              <small>连接排查</small>
+            </button> : null}
             {canManageSystem ? <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'settings' ? ' active' : ''}`} onClick={() => {
               setActiveAdminPage('settings')
               void openFrontendSettingsModal(false)
@@ -2434,6 +2554,64 @@ export default function App() {
                 onOpenAssignment={openCustomerAssignment}
               />
             </Suspense>
+          </main>
+        ) : activeAdminPage === 'access-logs' ? (
+          <main className="admin-content-page">
+            <Card className="config-section-card" bordered={false}>
+              <div className="section-title-row">
+                <Title level={4}>访问日志</Title>
+                <Space>
+                  <Text type="secondary">显示 {accessLogs.length} / {accessLogsTotal}</Text>
+                  <Button type="primary" icon={<ReloadOutlined />} loading={accessLogsLoading} onClick={() => void loadAccessLogs()}>查询</Button>
+                </Space>
+              </div>
+              <Row gutter={[12, 12]}>
+                <Col xs={24} md={6}>
+                  <Text type="secondary">Client</Text>
+                  <Select
+                    showSearch
+                    style={{ width: '100%' }}
+                    value={accessLogFilters.agent_id}
+                    options={accessLogAgentOptions}
+                    optionFilterProp="label"
+                    onChange={(value) => setAccessLogFilters((current) => ({ ...current, agent_id: value }))}
+                  />
+                </Col>
+                <Col xs={24} md={5}>
+                  <Text type="secondary">来源 IP</Text>
+                  <Input value={accessLogFilters.source_ip} onChange={(event) => setAccessLogFilters((current) => ({ ...current, source_ip: event.target.value }))} />
+                </Col>
+                <Col xs={24} md={5}>
+                  <Text type="secondary">目标域名/IP</Text>
+                  <Input value={accessLogFilters.target} onChange={(event) => setAccessLogFilters((current) => ({ ...current, target: event.target.value }))} />
+                </Col>
+                <Col xs={24} md={5}>
+                  <Text type="secondary">客户端 Email</Text>
+                  <Input value={accessLogFilters.client_email} onChange={(event) => setAccessLogFilters((current) => ({ ...current, client_email: event.target.value }))} />
+                </Col>
+                <Col xs={24} md={3}>
+                  <Text type="secondary">条数</Text>
+                  <InputNumber
+                    style={{ width: '100%' }}
+                    min={20}
+                    max={500}
+                    precision={0}
+                    value={accessLogFilters.limit}
+                    onChange={(value) => setAccessLogFilters((current) => ({ ...current, limit: Number(value || 100) }))}
+                  />
+                </Col>
+              </Row>
+              <Table
+                style={{ marginTop: 16 }}
+                rowKey={(record) => String(record.id || `${record.agent_id}-${record.created_at}-${record.raw_summary}`)}
+                size="small"
+                loading={accessLogsLoading}
+                columns={accessLogColumns}
+                dataSource={accessLogs}
+                pagination={false}
+                scroll={{ x: 1200 }}
+              />
+            </Card>
           </main>
         ) : activeAdminPage === 'settings' ? (
           <main className="admin-content-page">

@@ -40,6 +40,7 @@ type App struct {
 	networkPolicySignature string
 	xuiBootstrapSignature  string
 	realmForwardSignature  string
+	accessLogState         accessLogTailState
 }
 
 func New(cfg config.ClientConfig) (*App, error) {
@@ -76,7 +77,11 @@ func (a *App) runOnceWithConfig(ctx context.Context, effectiveConfig model.Manag
 	a.ensureXUIBootstrapIfNeeded(ctx, effectiveConfig.XUI)
 	a.executePendingXUIActions(ctx, effectiveConfig)
 	snapshot := a.collect(ctx, effectiveConfig)
-	return a.pushSnapshot(ctx, snapshot)
+	if err := a.pushSnapshot(ctx, snapshot); err != nil {
+		return err
+	}
+	a.collectAndPushAccessLogs(ctx, effectiveConfig.XUI)
+	return nil
 }
 
 func mergeLocalRealmConfigIntoEntry(entry model.AgentEntryConfig) model.AgentEntryConfig {

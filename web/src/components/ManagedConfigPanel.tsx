@@ -488,6 +488,31 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
             <Text type="secondary">节点维护方式</Text>
             <Input value="节点请直接在 x-ui 前端手动维护；中心只负责出站与转发编排" disabled />
           </Col>
+          <Col xs={24} md={12}>
+            <div className="switch-row">
+              <span>采集访问日志</span>
+              <Switch checked={Boolean(managedConfig.xui.access_log_enabled)} onChange={(checked) => onXUIChange({ access_log_enabled: checked })} />
+            </div>
+          </Col>
+          <Col xs={24} md={12}>
+            <Text type="secondary">日志保留天数</Text>
+            <InputNumber
+              style={{ width: '100%' }}
+              min={1}
+              max={30}
+              precision={0}
+              value={managedConfig.xui.access_log_retention_days || 7}
+              onChange={(value) => onXUIChange({ access_log_retention_days: Number(value || 7) })}
+            />
+          </Col>
+          <Col xs={24}>
+            <Text type="secondary">Xray access.log 路径</Text>
+            <Input
+              value={managedConfig.xui.access_log_path || ''}
+              placeholder="例如 /usr/local/x-ui/bin/access.log；Docker 需填写 client 本机可读取的挂载路径"
+              onChange={(event) => onXUIChange({ access_log_path: event.target.value })}
+            />
+          </Col>
         </Row>
       </Card>
 

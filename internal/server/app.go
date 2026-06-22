@@ -121,6 +121,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/customer/", a.handleCustomer)
 	mux.HandleFunc("/api/v1/frontend-settings", a.handlePublicFrontendSettings)
 	mux.HandleFunc("/api/v1/image-proxy", a.handleImageProxy)
+	mux.HandleFunc("/api/v1/public/topology", a.handlePublicTopology)
 	mux.HandleFunc("/api/v1/dashboard/realtime", a.handleDashboardRealtime)
 	mux.HandleFunc("/api/v1/dashboard/topology", a.handleDashboardTopology)
 	mux.HandleFunc("/api/v1/exchange-rates", a.handleAdminExchangeRates)

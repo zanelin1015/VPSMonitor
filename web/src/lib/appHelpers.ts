@@ -1710,6 +1710,9 @@ function createEmptyManagedConfig(agentID: string, agentName?: string): ManagedA
       api_token: '',
       two_factor_code: '',
       skip_tls_verify: false,
+      access_log_enabled: false,
+      access_log_path: '',
+      access_log_retention_days: 7,
     },
   }
 }
@@ -1730,6 +1733,8 @@ function normalizeManagedConfig(config: ManagedAgentConfig, agentID: string, age
       ...config.xui,
       enabled: Boolean(config.xui?.enabled),
       skip_tls_verify: Boolean(config.xui?.skip_tls_verify),
+      access_log_enabled: Boolean(config.xui?.access_log_enabled),
+      access_log_retention_days: Math.min(30, Math.max(1, Number(config.xui?.access_log_retention_days || 7))),
     },
   }
 }

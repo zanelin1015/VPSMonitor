@@ -34,6 +34,12 @@ func (a *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch path {
+	case "access-logs":
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		a.handleAdminAccessLogs(w, r)
 	case "login":
 		if r.Method != http.MethodPost {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")

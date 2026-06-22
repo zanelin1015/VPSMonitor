@@ -252,6 +252,33 @@ func (s *SQLiteStore) init() error {
 			created_at TEXT NOT NULL
 		);
 		`,
+		`
+		CREATE TABLE IF NOT EXISTS access_logs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			agent_id TEXT NOT NULL,
+			agent_name TEXT NOT NULL DEFAULT '',
+			inbound_id INTEGER NOT NULL DEFAULT 0,
+			inbound_tag TEXT NOT NULL DEFAULT '',
+			client_email TEXT NOT NULL DEFAULT '',
+			client_id TEXT NOT NULL DEFAULT '',
+			source_ip TEXT NOT NULL DEFAULT '',
+			source_port INTEGER NOT NULL DEFAULT 0,
+			target_host TEXT NOT NULL DEFAULT '',
+			target_ip TEXT NOT NULL DEFAULT '',
+			target_port INTEGER NOT NULL DEFAULT 0,
+			network TEXT NOT NULL DEFAULT '',
+			protocol TEXT NOT NULL DEFAULT '',
+			outbound_tag TEXT NOT NULL DEFAULT '',
+			upload_bytes INTEGER NOT NULL DEFAULT 0,
+			download_bytes INTEGER NOT NULL DEFAULT 0,
+			duration_ms INTEGER NOT NULL DEFAULT 0,
+			raw_summary TEXT NOT NULL DEFAULT '',
+			started_at TEXT NOT NULL DEFAULT '',
+			ended_at TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL,
+			FOREIGN KEY(agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE
+		);
+		`,
 	}
 	for _, stmt := range schema {
 		if _, err := s.db.Exec(stmt); err != nil {
@@ -319,6 +346,10 @@ func (s *SQLiteStore) init() error {
 		`CREATE INDEX IF NOT EXISTS idx_customer_assignments_agent ON customer_assignments(agent_id, inbound_id, client_email);`,
 		`CREATE INDEX IF NOT EXISTS idx_xui_actions_agent_status_id ON xui_actions(agent_id, status, id);`,
 		`CREATE INDEX IF NOT EXISTS idx_config_audit_agent_id ON config_audit_logs(agent_id, id DESC);`,
+		`CREATE INDEX IF NOT EXISTS idx_access_logs_created ON access_logs(created_at DESC, id DESC);`,
+		`CREATE INDEX IF NOT EXISTS idx_access_logs_agent_created ON access_logs(agent_id, created_at DESC, id DESC);`,
+		`CREATE INDEX IF NOT EXISTS idx_access_logs_source ON access_logs(source_ip, created_at DESC);`,
+		`CREATE INDEX IF NOT EXISTS idx_access_logs_target ON access_logs(target_host, target_ip, created_at DESC);`,
 	}
 	for _, stmt := range indexes {
 		if _, err := s.db.Exec(stmt); err != nil {

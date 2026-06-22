@@ -1104,3 +1104,60 @@ func TestNormalizeNetworkPolicyConfigDedupesByPort(t *testing.T) {
 		t.Fatalf("expected whitelist union, got %#v", rule.WhitelistIPs)
 	}
 }
+
+func TestAccessLogsSaveListAndPrune(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "bridge.db")
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	if err := store.SeedAgents([]config.ServerAgentAuth{{ID: "hk-01", Name: "HK-01", Token: "token"}}); err != nil {
+		t.Fatalf("SeedAgents: %v", err)
+	}
+	now := time.Now().UTC()
+	err = store.SaveAccessLogs("hk-01", []model.AccessLogEntry{
+		{
+			AgentName:   "HK-01",
+			SourceIP:    "1.2.3.4",
+			SourcePort:  12345,
+			TargetHost:  "example.com",
+			TargetPort:  443,
+			Network:     "tcp",
+			OutboundTag: "proxy",
+			ClientEmail: "alice@example.com",
+			RawSummary:  "accepted tcp:example.com:443",
+			CreatedAt:   now,
+		},
+		{
+			SourceIP:   "5.6.7.8",
+			TargetIP:   "8.8.8.8",
+			TargetPort: 53,
+			Network:    "udp",
+			CreatedAt:  now.Add(-48 * time.Hour),
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveAccessLogs: %v", err)
+	}
+	items, total, err := store.ListAccessLogs(AccessLogFilter{AgentID: "hk-01", Target: "example", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAccessLogs: %v", err)
+	}
+	if total != 1 || len(items) != 1 {
+		t.Fatalf("expected one filtered access log, total=%d items=%d", total, len(items))
+	}
+	if items[0].ClientEmail != "alice@example.com" || items[0].TargetHost != "example.com" {
+		t.Fatalf("unexpected access log item: %#v", items[0])
+	}
+	if err := store.PruneAccessLogs(1); err != nil {
+		t.Fatalf("PruneAccessLogs: %v", err)
+	}
+	_, total, err = store.ListAccessLogs(AccessLogFilter{AgentID: "hk-01", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAccessLogs after prune: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("expected one recent access log after prune, got %d", total)
+	}
+}

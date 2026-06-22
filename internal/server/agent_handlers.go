@@ -540,6 +540,12 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.handleAgentLogs(w, r, agentID)
+	case "access-logs":
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		a.handleAgentAccessLogs(w, r, agentID)
 	case "xui":
 		if len(parts) >= 3 && parts[2] == "actions" {
 			a.handleXUIActions(w, r, agentID, parts[3:])
@@ -1309,6 +1315,35 @@ func (a *App) handleHeartbeat(w http.ResponseWriter, r *http.Request, agentID st
 	a.syncRealmConfigFromSnapshot(agentID, snapshot.Realm)
 	go a.alerts.EvaluateAgent(agentID)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
+}
+
+func (a *App) handleAgentAccessLogs(w http.ResponseWriter, r *http.Request, agentID string) {
+	if !a.isAuthorized(agentID, r.Header.Get("X-Agent-Token")) {
+		writeError(w, http.StatusUnauthorized, "invalid agent token")
+		return
+	}
+	var req model.AccessLogBatchRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode access logs: %v", err))
+		return
+	}
+	if len(req.Entries) > 500 {
+		req.Entries = req.Entries[:500]
+	}
+	if err := a.store.SaveAccessLogs(agentID, req.Entries); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	retentionDays := 7
+	if cfg, found, err := a.store.GetAgentConfig(agentID); err == nil && found && cfg.XUI.AccessLogRetentionDays > 0 {
+		retentionDays = cfg.XUI.AccessLogRetentionDays
+	}
+	go func() {
+		if err := a.store.PruneAccessLogs(retentionDays); err != nil {
+			log.Printf("prune access logs failed: %v", err)
+		}
+	}()
+	writeJSON(w, http.StatusOK, map[string]any{"status": "accepted", "count": len(req.Entries)})
 }
 
 func (a *App) syncRealmConfigFromSnapshot(agentID string, snapshot *model.RealmSnapshot) {

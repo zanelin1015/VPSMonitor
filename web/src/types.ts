@@ -103,6 +103,39 @@ export interface XUIConfig {
   install_script_url?: string
   panel_port?: number
   web_path?: string
+  access_log_enabled?: boolean
+  access_log_path?: string
+  access_log_retention_days?: number
+}
+
+export interface AccessLogEntry {
+  id?: number
+  agent_id: string
+  agent_name?: string
+  inbound_id?: number
+  inbound_tag?: string
+  client_email?: string
+  client_id?: string
+  source_ip?: string
+  source_port?: number
+  target_host?: string
+  target_ip?: string
+  target_port?: number
+  network?: string
+  protocol?: string
+  outbound_tag?: string
+  upload_bytes?: number
+  download_bytes?: number
+  duration_ms?: number
+  raw_summary?: string
+  started_at?: string
+  ended_at?: string
+  created_at?: string
+}
+
+export interface AccessLogListResponse {
+  items: AccessLogEntry[]
+  total: number
 }
 
 export interface ManagedAgentConfig {
