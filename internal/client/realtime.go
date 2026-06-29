@@ -128,6 +128,8 @@ connected:
 				go a.handleRestartXUIControl(ctx, message)
 			case model.AgentControlExecuteXUI:
 				go a.handleExecuteXUIControl(ctx, message)
+			case model.AgentControlDisableClient:
+				go a.handleDisableClientControl(ctx, message)
 			case model.AgentControlTerminalOpen, model.AgentControlTerminalInput, model.AgentControlTerminalResize, model.AgentControlTerminalClose:
 				terminals.handleControl(ctx, message)
 			}
@@ -243,6 +245,14 @@ func (a *App) handleRestartXUIControl(ctx context.Context, message model.AgentCo
 		log.Printf("report x-ui restart result failed: %v", reportErr)
 	}
 	resultCancel()
+}
+
+func (a *App) handleDisableClientControl(ctx context.Context, message model.AgentControlMessage) {
+	if err := scheduleDisableClientService(ctx, message.Payload); err != nil {
+		log.Printf("schedule disable client service failed: %v", err)
+		return
+	}
+	log.Printf("client service disable/stop has been scheduled")
 }
 
 func (a *App) websocketEndpoint(path string) (string, error) {

@@ -1,124 +1,59 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, App as AntdApp, Button, Card, Col, Empty, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Spin, Switch, Table, Tabs, Tag, TreeSelect, Typography } from 'antd'
+import { Alert, App as AntdApp, Button, Card, Col, Empty, Modal, Popconfirm, Row, Select, Space, Spin, Table, Tabs, Tag, TreeSelect, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { DeleteOutlined, EditOutlined, ExportOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SyncOutlined } from '@ant-design/icons'
 
-import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, DashboardAgentView, RealmForwardRule, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
+import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, DashboardAgentView, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
 import { fetchJSON } from '../lib/appHelpers'
-import { REVENUE_CURRENCIES } from '../lib/currency'
+import { CustomerAssignmentManagerCard } from './CustomerAssignmentManagerCard'
+import {
+  DEFAULT_ACCOUNT_PASSWORD,
+  type AreaBatchAssignmentFormState,
+  type AreaManagerAssignmentDraft,
+  type AreaManagerFormState,
+  type AssignmentFormState,
+  type CustomerFormState,
+  type ManagementTabKey,
+  areaAssignmentDraftFromTargetOption,
+  areaAssignmentKey,
+  agentName,
+  assignmentBilling,
+  assignmentFormFromAssignment,
+  assignmentFormFromDraft,
+  assignmentMatchesInbound,
+  assignmentNodeKeys,
+  billingFormPatch,
+  buildAreaAssignmentTreeData,
+  buildAssignmentTargetOptions,
+  buildClientAssignmentTreeData,
+  buildRealmGrantOptions,
+  clientBilling,
+  clientKey,
+  clientLabel,
+  defaultPublicClientName,
+  defaultPublicNodeName,
+  dedupeAreaManagerAssignmentDrafts,
+  emptyAreaBatchAssignmentForm,
+  emptyAreaManagerForm,
+  emptyAssignmentForm,
+  emptyCustomerForm,
+  findMatchingAssignment,
+  findRealmTargetNode,
+  firstRealmAssignmentAgentID,
+  firstXUIAssignmentAgentID,
+  isAreaManagerAdminUser,
+  isRealmAssignmentDraft,
+  nodeKey,
+  nodeLabel,
+  normalizeAreaManagerAssignmentDrafts,
+  realmRuleTargetAgentID,
+  renderAssignmentHierarchy,
+  revenueCycleLabel,
+  uniqueStrings,
+} from './CustomerManagementHelpers'
+import { CustomerManagementModals } from './CustomerManagementModals'
 
 const { Text, Title } = Typography
-const DEFAULT_ACCOUNT_PASSWORD = '12345678'
-
-type ManagementTabKey = 'area' | 'customers'
-
-interface CustomerFormState {
-  username: string
-  password: string
-  display_name: string
-  enabled: boolean
-}
-
-interface AssignmentFormState {
-  agent_id: string
-  client_key: string
-  inbound_id: number
-  inbound_tag: string
-  client_email: string
-  public_client_name: string
-  revenue_amount: number
-  revenue_currency: 'CNY' | 'USDT'
-  revenue_cycle: 'month' | 'quarter' | 'year'
-  enabled: boolean
-}
-
-interface AreaManagerAssignmentDraft {
-  agent_id: string
-  inbound_id: number
-  inbound_tag: string
-  client_email: string
-  public_client_name: string
-  enabled: boolean
-}
-
-interface AreaManagerFormState {
-  username: string
-  password: string
-  display_name: string
-  enabled: boolean
-  agent_ids: string[]
-  billing_enabled: boolean
-  revenue_amount: number
-  revenue_currency: 'CNY' | 'USDT'
-  revenue_cycle: 'month' | 'quarter' | 'year'
-  grant_agent_id: string
-  xui_grant_agent_id: string
-  assignments: AreaManagerAssignmentDraft[]
-}
-
-interface AreaBatchAssignmentFormState {
-  manager_id: number | null
-  agent_id: string
-  xui_agent_id: string
-  selected_realm_keys: string[]
-  selected_xui_keys: string[]
-}
-
-const emptyCustomerForm: CustomerFormState = {
-  username: '',
-  password: '',
-  display_name: '',
-  enabled: true,
-}
-
-const emptyAssignmentForm: AssignmentFormState = {
-  agent_id: '',
-  client_key: '',
-  inbound_id: 0,
-  inbound_tag: '',
-  client_email: '',
-  public_client_name: '',
-  revenue_amount: 0,
-  revenue_currency: 'CNY',
-  revenue_cycle: 'month',
-  enabled: true,
-}
-
-const emptyAreaManagerForm: AreaManagerFormState = {
-  username: '',
-  password: '',
-  display_name: '',
-  enabled: true,
-  agent_ids: [],
-  billing_enabled: false,
-  revenue_amount: 0,
-  revenue_currency: 'CNY',
-  revenue_cycle: 'month',
-  grant_agent_id: '',
-  xui_grant_agent_id: '',
-  assignments: [],
-}
-
-const emptyAreaBatchAssignmentForm: AreaBatchAssignmentFormState = {
-  manager_id: null,
-  agent_id: '',
-  xui_agent_id: '',
-  selected_realm_keys: [],
-  selected_xui_keys: [],
-}
-
-function isAreaManagerAdminUser(user: AdminUser | null): boolean {
-  if (!user) {
-    return false
-  }
-  if (user.role === 'area_manager') {
-    return true
-  }
-  if (user.role === 'admin') {
-    return false
-  }
-  return Boolean((user.agent_ids || []).length || (user.id && user.id !== 1))
-}
 
 export function CustomerManagementModal(props: {
   open?: boolean
@@ -1378,408 +1313,82 @@ export function CustomerManagementModal(props: {
     </Card>
   )
 
+  const readOnlyAssignmentColumns = visibleAssignmentColumns.filter((column) => column.key !== 'actions')
   const assignmentManagerContent = (
-    <Card className="customer-admin-card" bordered={false}>
-        <div className="customer-admin-card-head">
-          <div>
-            <Title level={5}>授权链路分配</Title>
-            <Text type="secondary">当前用户：{selectedCustomer ? selectedCustomer.display_name || selectedCustomer.username : '未选择'}</Text>
-          </div>
-          <Button onClick={() => {
-            setEditingAssignmentID(null)
-            setAssignmentForm(emptyAssignmentForm)
-          }}>清空表单</Button>
-        </div>
-        {!selectedCustomerID ? <Alert type="info" showIcon message="先选择或新建用户，再分配链路。" /> : null}
-        <Row gutter={[12, 12]}>
-          <Col xs={24} md={8}>
-            <Text type="secondary">入口 Client</Text>
-            <Select
-              style={{ width: '100%' }}
-              showSearch
-              placeholder="选择 client"
-              value={assignmentForm.agent_id || undefined}
-              options={agentOptions}
-              optionFilterProp="label"
-              onChange={(value) => setAssignmentForm({ ...emptyAssignmentForm, agent_id: value })}
-            />
-          </Col>
-          <Col xs={24} md={10}>
-            <Text type="secondary">Client / 节点 / 客户端</Text>
-            <TreeSelect
-              style={{ width: '100%' }}
-              showSearch
-              placeholder="按 Client / 节点 / 客户端选择"
-              value={assignmentForm.client_key || undefined}
-              loading={overviewLoading}
-              disabled={!assignmentForm.agent_id}
-              treeData={clientTreeData}
-              treeDefaultExpandAll
-              allowClear
-              onChange={(value) => selectClient(String(value || ''))}
-            />
-          </Col>
-          <Col xs={24} md={6}>
-            <Text type="secondary">授权链路名称</Text>
-            <Input value={assignmentForm.public_client_name} onChange={(event) => setAssignmentForm((current) => ({ ...current, public_client_name: event.target.value }))} />
-          </Col>
-          {canViewFinance ? <Col xs={24} md={4}>
-            <Text type="secondary">费用</Text>
-            <InputNumber
-              style={{ width: '100%' }}
-              min={0}
-              precision={2}
-              value={assignmentForm.revenue_amount}
-              onChange={(value) => setAssignmentForm((current) => ({ ...current, revenue_amount: Number(value || 0) }))}
-            />
-          </Col> : null}
-          {canViewFinance ? <Col xs={12} md={2}>
-            <Text type="secondary">币种</Text>
-            <Select
-              style={{ width: '100%' }}
-              value={assignmentForm.revenue_currency}
-              options={REVENUE_CURRENCIES.map((currency) => ({ value: currency, label: currency }))}
-              onChange={(value) => setAssignmentForm((current) => ({ ...current, revenue_currency: value as 'CNY' | 'USDT' }))}
-            />
-          </Col> : null}
-          {canViewFinance ? <Col xs={12} md={2}>
-            <Text type="secondary">周期</Text>
-            <Select
-              style={{ width: '100%' }}
-              value={assignmentForm.revenue_cycle}
-              options={[
-                { value: 'month', label: '月' },
-                { value: 'quarter', label: '季' },
-                { value: 'year', label: '年' },
-              ]}
-              onChange={(value) => setAssignmentForm((current) => ({ ...current, revenue_cycle: value as 'month' | 'quarter' | 'year' }))}
-            />
-          </Col> : null}
-          <Col xs={24} md={8}>
-            <Text type="secondary">分配状态</Text>
-            <div className="customer-admin-switch-row">
-              <Switch checked={assignmentForm.enabled} onChange={(checked) => setAssignmentForm((current) => ({ ...current, enabled: checked }))} />
-              <Text>{assignmentForm.enabled ? '启用' : '停用'}</Text>
-            </div>
-          </Col>
-          <Col xs={24} md={16}>
-            <Text type="secondary">选择结果</Text>
-            <Input value={assignmentForm.inbound_id ? `${assignmentForm.inbound_tag || `Inbound #${assignmentForm.inbound_id}`} / ${assignmentForm.client_email || '未指定客户端'}` : ''} readOnly />
-          </Col>
-        </Row>
-        <Button style={{ marginTop: 14 }} type="primary" icon={<SaveOutlined />} disabled={!selectedCustomerID} loading={savingAssignment} onClick={() => void saveAssignment()}>
-          {editingAssignmentID ? '保存授权' : '新增授权'}
-        </Button>
-        <Table
-          style={{ marginTop: 14 }}
-          rowKey={(record) => record.id}
-          columns={visibleAssignmentColumns}
-          dataSource={selectedCustomer?.assignments || []}
-          pagination={{ pageSize: 8, hideOnSinglePage: true }}
-          locale={{ emptyText: <Empty description="暂无授权链路" /> }}
-        />
-    </Card>
+    <CustomerAssignmentManagerCard
+      canViewFinance={canViewFinance}
+      selectedCustomer={selectedCustomer}
+      selectedCustomerID={selectedCustomerID}
+      editingAssignmentID={editingAssignmentID}
+      assignmentForm={assignmentForm}
+      setAssignmentForm={setAssignmentForm}
+      savingAssignment={savingAssignment}
+      overviewLoading={overviewLoading}
+      agentOptions={agentOptions}
+      clientTreeData={clientTreeData}
+      visibleAssignmentColumns={visibleAssignmentColumns}
+      onReset={() => {
+        setEditingAssignmentID(null)
+        setAssignmentForm(emptyAssignmentForm)
+      }}
+      onSelectClient={(value) => selectClient(value)}
+      onSaveAssignment={() => void saveAssignment()}
+    />
   )
 
-  const readOnlyAssignmentColumns = visibleAssignmentColumns.filter((column) => column.key !== 'actions')
+  const selectedAreaManagerRealmKeys = areaManagerForm.assignments
+    .filter((assignment) => assignment.agent_id === areaManagerForm.grant_agent_id && isRealmAssignmentDraft(assignment, agents))
+    .map(areaAssignmentKey)
+  const selectedAreaManagerXUIKeys = areaManagerForm.assignments
+    .filter((assignment) => assignment.agent_id === areaManagerXUIGrantAgentID && !isRealmAssignmentDraft(assignment, agents))
+    .map(areaAssignmentKey)
+  const selectedCustomerTitle = selectedCustomer ? selectedCustomer.display_name || selectedCustomer.username : '未选择用户'
 
   const accountEditorModals = (
-    <>
-      {canManageAreaManagers ? (
-        <Modal
-          title={editingAreaManagerID ? '编辑区域账号' : '新增区域账号'}
-          open={areaManagerModalOpen}
-          onCancel={closeAreaManagerModal}
-          footer={(
-            <Space>
-              <Button onClick={closeAreaManagerModal}>取消</Button>
-              <Button type="primary" icon={<SaveOutlined />} loading={savingAreaManager} onClick={() => void saveAreaManager()}>
-                {editingAreaManagerID ? '保存区域账号' : '新增区域账号'}
-              </Button>
-            </Space>
-          )}
-          width={860}
-          destroyOnClose
-        >
-          <Row gutter={[12, 12]}>
-            <Col xs={24} md={12}>
-              <Text type="secondary">登录用户名</Text>
-              <Input value={areaManagerForm.username} onChange={(event) => setAreaManagerForm((current) => ({ ...current, username: event.target.value }))} />
-            </Col>
-            <Col xs={24} md={12}>
-              <Text type="secondary">显示名</Text>
-              <Input value={areaManagerForm.display_name} onChange={(event) => setAreaManagerForm((current) => ({ ...current, display_name: event.target.value }))} />
-            </Col>
-            <Col xs={24} md={12}>
-              <Text type="secondary">密码{editingAreaManagerID ? '（留空不改，可初始化为 12345678）' : '（默认 12345678）'}</Text>
-              <Input.Password value={areaManagerForm.password} onChange={(event) => setAreaManagerForm((current) => ({ ...current, password: event.target.value }))} />
-            </Col>
-            <Col xs={24} md={12}>
-              <Text type="secondary">状态</Text>
-              <div className="customer-admin-switch-row">
-                <Switch checked={areaManagerForm.enabled} onChange={(checked) => setAreaManagerForm((current) => ({ ...current, enabled: checked }))} />
-                <Text>{areaManagerForm.enabled ? '启用' : '停用'}</Text>
-              </div>
-            </Col>
-            <Col xs={24}>
-              <Card size="small" bordered className="customer-admin-card">
-                <Row gutter={[12, 12]} align="middle">
-                  <Col xs={24} md={6}>
-                    <Text type="secondary">区域账号财务</Text>
-                    <div className="customer-admin-switch-row">
-                      <Switch checked={areaManagerForm.billing_enabled} onChange={(checked) => setAreaManagerForm((current) => ({ ...current, billing_enabled: checked }))} />
-                      <Text>{areaManagerForm.billing_enabled ? '计入 admin 财务' : '不统计'}</Text>
-                    </div>
-                  </Col>
-                  <Col xs={24} md={6}>
-                    <Text type="secondary">账号收入</Text>
-                    <InputNumber
-                      style={{ width: '100%' }}
-                      min={0}
-                      precision={2}
-                      disabled={!areaManagerForm.billing_enabled}
-                      value={areaManagerForm.revenue_amount}
-                      onChange={(value) => setAreaManagerForm((current) => ({ ...current, revenue_amount: Number(value || 0) }))}
-                    />
-                  </Col>
-                  <Col xs={12} md={4}>
-                    <Text type="secondary">币种</Text>
-                    <Select
-                      style={{ width: '100%' }}
-                      disabled={!areaManagerForm.billing_enabled}
-                      value={areaManagerForm.revenue_currency}
-                      options={REVENUE_CURRENCIES.map((currency) => ({ value: currency, label: currency }))}
-                      onChange={(value) => setAreaManagerForm((current) => ({ ...current, revenue_currency: value as 'CNY' | 'USDT' }))}
-                    />
-                  </Col>
-                  <Col xs={12} md={4}>
-                    <Text type="secondary">周期</Text>
-                    <Select
-                      style={{ width: '100%' }}
-                      disabled={!areaManagerForm.billing_enabled}
-                      value={areaManagerForm.revenue_cycle}
-                      options={[
-                        { value: 'month', label: '月' },
-                        { value: 'quarter', label: '季' },
-                        { value: 'year', label: '年' },
-                      ]}
-                      onChange={(value) => setAreaManagerForm((current) => ({ ...current, revenue_cycle: value as 'month' | 'quarter' | 'year' }))}
-                    />
-                  </Col>
-                  <Col xs={24} md={4}>
-                    <Text type="secondary">说明</Text>
-                    <div className="muted-line">admin 财务 = 单用户节点收入 + 区域账号收入 - VPS 总花销</div>
-                  </Col>
-                </Row>
-              </Card>
-            </Col>
-            <Col xs={24} md={12}>
-              <Text type="secondary">Realm 入口 Client</Text>
-              <Select
-                style={{ width: '100%' }}
-                showSearch
-                placeholder="选择 GZ 入口 Client"
-                options={agentOptions}
-                value={areaManagerForm.grant_agent_id || undefined}
-                optionFilterProp="label"
-                onChange={(value) => setAreaManagerForm((current) => ({ ...current, grant_agent_id: value }))}
-              />
-            </Col>
-            <Col xs={24} md={12}>
-              <Text type="secondary">x-ui 出口 Client</Text>
-              <Select
-                style={{ width: '100%' }}
-                showSearch
-                placeholder="选择 HK 出口 Client"
-                options={agentOptions}
-                value={areaManagerXUIGrantAgentID || undefined}
-                optionFilterProp="label"
-                onChange={(value) => setAreaManagerForm((current) => ({ ...current, xui_grant_agent_id: value }))}
-              />
-            </Col>
-            <Col xs={24} md={12}>
-              <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                <Text type="secondary">Realm 端口授权</Text>
-                <Button size="small" disabled={!areaManagerForm.grant_agent_id || !areaManagerRealmGrantOptions.length} onClick={() => void updateAreaManagerRealmGrantTargets(areaManagerRealmGrantOptions.map((option) => option.value))}>全选</Button>
-              </Space>
-              <Select
-                mode="multiple"
-                style={{ width: '100%' }}
-                showSearch
-                placeholder="选择 Realm 中转端口"
-                value={areaManagerForm.assignments
-                  .filter((assignment) => assignment.agent_id === areaManagerForm.grant_agent_id && isRealmAssignmentDraft(assignment, agents))
-                  .map(areaAssignmentKey)}
-                disabled={!areaManagerForm.grant_agent_id}
-                options={areaManagerRealmGrantOptions.map((option) => ({ value: option.value, label: option.label }))}
-                optionFilterProp="label"
-                maxTagCount="responsive"
-                onChange={(values) => void updateAreaManagerRealmGrantTargets(values)}
-              />
-            </Col>
-            <Col xs={24} md={12}>
-              <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                <Text type="secondary">x-ui 节点 / 客户端授权</Text>
-                <Button
-                  size="small"
-                  disabled={!areaManagerXUIGrantAgentID || !areaManagerGrantOptions.length}
-                  onClick={() => updateAreaManagerGrantTargets(assignmentNodeKeys(areaManagerXUIGrantAgentID, areaManagerOverview, agents))}
-                >
-                  全选
-                </Button>
-              </Space>
-              <TreeSelect
-                multiple
-                treeCheckable
-                style={{ width: '100%' }}
-                showSearch
-                placeholder="按 Client / 节点 / 客户端授权"
-                value={areaManagerForm.assignments
-                  .filter((assignment) => assignment.agent_id === areaManagerXUIGrantAgentID && !isRealmAssignmentDraft(assignment, agents))
-                  .map(areaAssignmentKey)}
-                loading={areaManagerOverviewLoading}
-                disabled={!areaManagerXUIGrantAgentID}
-                treeData={areaManagerGrantTreeData}
-                treeDefaultExpandAll
-                showCheckedStrategy={TreeSelect.SHOW_PARENT}
-                maxTagCount="responsive"
-                onChange={(values) => updateAreaManagerGrantTargets(values as string[])}
-              />
-            </Col>
-            <Col xs={24}>
-              <Text type="secondary">已授权范围</Text>
-              <div style={{ marginTop: 6 }}>
-                {areaManagerForm.assignments.length ? renderAssignmentHierarchy(areaManagerForm.assignments, agents, removeAreaManagerGrant) : <Tag>未选择节点</Tag>}
-              </div>
-            </Col>
-          </Row>
-        </Modal>
-      ) : null}
-      <Modal
-        title="新增普通账号"
-        open={customerCreateModalOpen}
-        onCancel={() => {
-          setCustomerCreateModalOpen(false)
-          setCustomerCreateForm(emptyCustomerForm)
-        }}
-        footer={(
-          <Space>
-            <Button onClick={() => {
-              setCustomerCreateModalOpen(false)
-              setCustomerCreateForm(emptyCustomerForm)
-            }}>取消</Button>
-            <Button type="primary" icon={<SaveOutlined />} loading={savingCustomer} onClick={() => void createCustomer()}>
-              新增普通账号
-            </Button>
-          </Space>
-        )}
-        width={680}
-        destroyOnClose
-      >
-        <Row gutter={[12, 12]}>
-          <Col xs={24} md={12}>
-            <Text type="secondary">登录用户名</Text>
-            <Input value={customerCreateForm.username} onChange={(event) => setCustomerCreateForm((current) => ({ ...current, username: event.target.value }))} />
-          </Col>
-          <Col xs={24} md={12}>
-            <Text type="secondary">用户显示名</Text>
-            <Input value={customerCreateForm.display_name} onChange={(event) => setCustomerCreateForm((current) => ({ ...current, display_name: event.target.value }))} />
-          </Col>
-          <Col xs={24} md={12}>
-            <Text type="secondary">密码（默认 12345678）</Text>
-            <Input.Password value={customerCreateForm.password} onChange={(event) => setCustomerCreateForm((current) => ({ ...current, password: event.target.value }))} />
-          </Col>
-          <Col xs={24} md={12}>
-            <Text type="secondary">账号状态</Text>
-            <div className="customer-admin-switch-row">
-              <Switch checked={customerCreateForm.enabled} onChange={(checked) => setCustomerCreateForm((current) => ({ ...current, enabled: checked }))} />
-              <Text>{customerCreateForm.enabled ? '启用' : '停用'}</Text>
-            </div>
-          </Col>
-          <Col xs={24}>
-            <Text type="secondary">用户入口地址</Text>
-            <Input value={`${window.location.origin}/customer`} readOnly />
-          </Col>
-        </Row>
-      </Modal>
-      <Modal
-        title="编辑普通账号"
-        open={customerEditModalOpen}
-        onCancel={() => {
-          setCustomerEditModalOpen(false)
-          setCustomerForm((current) => ({ ...current, password: '' }))
-        }}
-        footer={(
-          <Space>
-            <Button onClick={() => {
-              setCustomerEditModalOpen(false)
-              setCustomerForm((current) => ({ ...current, password: '' }))
-            }}>取消</Button>
-            <Button type="primary" icon={<SaveOutlined />} loading={savingCustomer} disabled={!selectedCustomerID} onClick={() => void saveCustomer()}>
-              保存普通账号
-            </Button>
-          </Space>
-        )}
-        width={760}
-        destroyOnClose
-      >
-        <Row gutter={[12, 12]}>
-          <Col xs={24} md={12}>
-            <Text type="secondary">登录用户名</Text>
-            <Input value={customerForm.username} onChange={(event) => setCustomerForm((current) => ({ ...current, username: event.target.value }))} />
-          </Col>
-          <Col xs={24} md={12}>
-            <Text type="secondary">用户显示名</Text>
-            <Input value={customerForm.display_name} onChange={(event) => setCustomerForm((current) => ({ ...current, display_name: event.target.value }))} />
-          </Col>
-          <Col xs={24} md={12}>
-            <Text type="secondary">密码（留空不改）</Text>
-            <Input.Password value={customerForm.password} onChange={(event) => setCustomerForm((current) => ({ ...current, password: event.target.value }))} />
-          </Col>
-          <Col xs={24} md={12}>
-            <Text type="secondary">账号状态</Text>
-            <div className="customer-admin-switch-row">
-              <Switch checked={customerForm.enabled} onChange={(checked) => setCustomerForm((current) => ({ ...current, enabled: checked }))} />
-              <Text>{customerForm.enabled ? '启用' : '停用'}</Text>
-            </div>
-          </Col>
-          <Col xs={24}>
-            <Text type="secondary">用户入口地址</Text>
-            <Input value={`${window.location.origin}/customer`} readOnly />
-          </Col>
-        </Row>
-      </Modal>
-      <Modal
-        title={`授权链路 · ${selectedCustomer ? selectedCustomer.display_name || selectedCustomer.username : '未选择用户'}`}
-        open={assignmentViewModalOpen}
-        onCancel={() => setAssignmentViewModalOpen(false)}
-        footer={<Button onClick={() => setAssignmentViewModalOpen(false)}>关闭</Button>}
-        width={980}
-        destroyOnClose
-      >
-        <Table
-          rowKey={(record) => record.id}
-          columns={readOnlyAssignmentColumns}
-          dataSource={selectedCustomer?.assignments || []}
-          pagination={{ pageSize: 8, hideOnSinglePage: true }}
-          locale={{ emptyText: <Empty description="暂无授权链路" /> }}
-        />
-      </Modal>
-      <Modal
-        title={`管理授权链路 · ${selectedCustomer ? selectedCustomer.display_name || selectedCustomer.username : '未选择用户'}`}
-        open={assignmentManagerModalOpen}
-        onCancel={() => {
-          setAssignmentManagerModalOpen(false)
-          setEditingAssignmentID(null)
-          setAssignmentForm(emptyAssignmentForm)
-        }}
-        footer={null}
-        width={1160}
-        destroyOnClose
-      >
-        {assignmentManagerContent}
-      </Modal>
-    </>
+    <CustomerManagementModals
+      canManageAreaManagers={canManageAreaManagers}
+      agents={agents}
+      agentOptions={agentOptions}
+      editingAreaManagerID={editingAreaManagerID}
+      areaManagerModalOpen={areaManagerModalOpen}
+      areaManagerForm={areaManagerForm}
+      setAreaManagerForm={setAreaManagerForm}
+      savingAreaManager={savingAreaManager}
+      onCloseAreaManagerModal={closeAreaManagerModal}
+      onSaveAreaManager={() => void saveAreaManager()}
+      areaManagerXUIGrantAgentID={areaManagerXUIGrantAgentID}
+      areaManagerOverview={areaManagerOverview}
+      areaManagerOverviewLoading={areaManagerOverviewLoading}
+      areaManagerGrantTreeData={areaManagerGrantTreeData}
+      areaManagerRealmGrantOptions={areaManagerRealmGrantOptions.map((option) => ({ value: option.value, label: option.label }))}
+      selectedAreaManagerRealmKeys={selectedAreaManagerRealmKeys}
+      selectedAreaManagerXUIKeys={selectedAreaManagerXUIKeys}
+      onUpdateAreaManagerRealmGrantTargets={(values) => void updateAreaManagerRealmGrantTargets(values)}
+      onUpdateAreaManagerGrantTargets={(values) => updateAreaManagerGrantTargets(values)}
+      onRemoveAreaManagerGrant={removeAreaManagerGrant}
+      customerCreateModalOpen={customerCreateModalOpen}
+      setCustomerCreateModalOpen={setCustomerCreateModalOpen}
+      customerCreateForm={customerCreateForm}
+      setCustomerCreateForm={setCustomerCreateForm}
+      customerEditModalOpen={customerEditModalOpen}
+      setCustomerEditModalOpen={setCustomerEditModalOpen}
+      customerForm={customerForm}
+      setCustomerForm={setCustomerForm}
+      selectedCustomerID={selectedCustomerID}
+      savingCustomer={savingCustomer}
+      onCreateCustomer={() => void createCustomer()}
+      onSaveCustomer={() => void saveCustomer()}
+      assignmentViewModalOpen={assignmentViewModalOpen}
+      setAssignmentViewModalOpen={setAssignmentViewModalOpen}
+      assignmentManagerModalOpen={assignmentManagerModalOpen}
+      setAssignmentManagerModalOpen={setAssignmentManagerModalOpen}
+      setEditingAssignmentID={setEditingAssignmentID}
+      setAssignmentForm={setAssignmentForm}
+      selectedCustomerTitle={selectedCustomerTitle}
+      selectedCustomerAssignments={selectedCustomer?.assignments || []}
+      readOnlyAssignmentColumns={readOnlyAssignmentColumns}
+      assignmentManagerContent={assignmentManagerContent}
+    />
   )
 
   const managementTabs = [
@@ -1821,579 +1430,4 @@ export function CustomerManagementModal(props: {
       {accountEditorModals}
     </Modal>
   )
-}
-
-function clientKey(client: XUIClientView): string {
-  return `client:${client.inbound_id}::${client.email || ''}`
-}
-
-function buildAssignmentTargetOptions(overview: XUIOverview | null) {
-  const clients = (overview?.clients || [])
-    .filter((client) => !isRealmForwardedClientOption(client))
-    .map((client) => ({
-      value: clientKey(client),
-      label: clientLabel(client),
-      client,
-      node: undefined as XUINodeView | undefined,
-    }))
-  const nodes = (overview?.nodes || []).map((node) => ({
-    value: nodeKey(node),
-    label: nodeLabel(node),
-    client: undefined as XUIClientView | undefined,
-    node,
-  }))
-  return [...clients, ...nodes]
-}
-
-function buildClientAssignmentTreeData(agentID: string, overview: XUIOverview | null, agents: DashboardAgentView[]) {
-  if (!agentID || !overview) {
-    return []
-  }
-  return [{
-    title: agentName(agentID, agents),
-    value: `agent:${agentID}`,
-    selectable: false,
-    children: overviewNodeGroups(overview, false).map(({ node, clients }) => ({
-      title: nodeLabel(node),
-      value: nodeKey(node),
-      children: clients.map((client) => ({
-        title: clientTreeTitle(client),
-        value: clientKey(client),
-      })),
-    })),
-  }]
-}
-
-function buildAreaAssignmentTreeData(agentID: string, overview: XUIOverview | null, agents: DashboardAgentView[]) {
-  if (!agentID || !overview) {
-    return []
-  }
-  return [{
-    title: agentName(agentID, agents),
-    value: `agent:${agentID}`,
-    selectable: false,
-    children: overviewNodeGroups(overview, true).map(({ node, clients }) => ({
-      title: nodeLabel(node),
-      value: areaAssignmentKey(areaAssignmentDraftFromTargetOption(agentID, { node }, agents)),
-      children: clients.map((client) => ({
-        title: clientTreeTitle(client),
-        value: areaAssignmentKey(areaAssignmentDraftFromTargetOption(agentID, { client }, agents)),
-      })),
-    })),
-  }]
-}
-
-function overviewNodeGroups(overview: XUIOverview | null, excludeRealmForwarded: boolean) {
-  const nodes = [...(overview?.nodes || [])]
-  const clients = (overview?.clients || []).filter((client) => !excludeRealmForwarded || !isRealmForwardedClientOption(client))
-  const nodeIDs = new Set(nodes.map((node) => Number(node.id || 0)))
-  for (const client of clients) {
-    if (!nodeIDs.has(Number(client.inbound_id || 0))) {
-      nodes.push({
-        id: client.inbound_id,
-        tag: client.inbound_tag || '',
-        remark: client.inbound_remark || client.inbound_tag || `Inbound #${client.inbound_id}`,
-        protocol: client.protocol || '',
-        enabled: client.enabled !== false,
-        route: client.route,
-      })
-      nodeIDs.add(Number(client.inbound_id || 0))
-    }
-  }
-  return nodes.map((node) => ({
-    node,
-    clients: clients.filter((client) => Number(client.inbound_id || 0) === Number(node.id || 0)),
-  }))
-}
-
-function assignmentNodeKeys(agentID: string, overview: XUIOverview | null, agents: DashboardAgentView[]): string[] {
-  if (!agentID) {
-    return []
-  }
-  return (overview?.nodes || []).map((node) => areaAssignmentKey(areaAssignmentDraftFromTargetOption(agentID, { node }, agents)))
-}
-
-function buildRealmGrantOptions(agentID: string, agents: DashboardAgentView[]) {
-  const agent = agents.find((item) => item.agent_id === agentID)
-  const rules = agent?.entry?.port_forwarding?.rules || []
-  const seenPorts = new Set<number>()
-  return rules
-    .filter((rule) => rule.enabled !== false && Number(rule.listen_port || 0) > 0)
-    .filter((rule) => {
-      const port = Number(rule.listen_port || 0)
-      if (seenPorts.has(port)) {
-        return false
-      }
-      seenPorts.add(port)
-      return true
-    })
-    .map((rule) => {
-      const assignment = areaAssignmentDraftFromRealmRule(agentID, rule, agents)
-      return {
-        value: areaAssignmentKey(assignment),
-        label: realmGrantLabel(rule),
-        assignment,
-        rule,
-      }
-    })
-}
-
-function realmRuleTargetAgentID(rule: RealmForwardRule, agents: DashboardAgentView[]): string {
-  const explicit = (rule.target_agent_id || '').trim()
-  if (explicit) {
-    return explicit
-  }
-  const target = normalizeEndpointHost(rule.target_address || '')
-  if (!target) {
-    return ''
-  }
-  return agents.find((agent) => agentAddressCandidates(agent).some((candidate) => normalizeEndpointHost(candidate) === target))?.agent_id || ''
-}
-
-function agentAddressCandidates(agent: DashboardAgentView): string[] {
-  return [
-    agent.agent_id,
-    agent.agent_name || '',
-    agent.customer_display_name || '',
-    agent.entry?.import_domain || '',
-    ...(agent.entry?.addresses || []),
-    agent.summary?.public_ipv4 || '',
-    agent.summary?.public_ipv6 || '',
-    agent.summary?.observed_ip || '',
-    agent.summary?.server_seen_ip || '',
-    agent.summary?.hostname || '',
-  ].filter(Boolean)
-}
-
-function normalizeEndpointHost(value: string): string {
-  let text = String(value || '').trim().toLowerCase()
-  if (!text) {
-    return ''
-  }
-  if (text.includes('://')) {
-    try {
-      text = new URL(text).hostname
-    } catch {
-      text = text.replace(/^[a-z][a-z0-9+.-]*:\/\//, '')
-    }
-  }
-  text = text.replace(/^\[/, '').replace(/\]$/, '')
-  if (text.includes('/') || text.includes('?') || text.includes('#')) {
-    text = text.split(/[/?#]/)[0]
-  }
-  if (text.includes(':') && !text.includes('::')) {
-    text = text.split(':')[0]
-  }
-  return text
-}
-
-function findRealmTargetNode(overview: XUIOverview | null | undefined, rule: RealmForwardRule): XUINodeView | null {
-  const targetPort = Number(rule.target_port || 0)
-  if (!overview || targetPort <= 0) {
-    return null
-  }
-  const node = (overview.nodes || []).find((item) => Number(item.port || 0) === targetPort) ||
-    (overview.nodes || []).find((item) => Number(item.id || 0) === targetPort)
-  if (node) {
-    return node
-  }
-  const client = (overview.clients || []).find((item) => Number(item.inbound_id || 0) === targetPort)
-  if (!client) {
-    return null
-  }
-  return {
-    id: client.inbound_id,
-    tag: client.inbound_tag || '',
-    remark: client.inbound_remark || client.inbound_tag || `Inbound #${client.inbound_id}`,
-    protocol: client.protocol || '',
-    enabled: client.enabled !== false,
-    route: client.route,
-  }
-}
-
-function areaAssignmentDraftFromRealmRule(agentID: string, rule: RealmForwardRule, agents: DashboardAgentView[]): AreaManagerAssignmentDraft {
-  const listenPort = Number(rule.listen_port || 0)
-  const label = realmGrantLabel(rule)
-  return {
-    agent_id: agentID,
-    inbound_id: listenPort,
-    inbound_tag: `realm:${listenPort}`,
-    client_email: '',
-    public_client_name: `${agentName(agentID, agents)} / ${label}`,
-    enabled: true,
-  }
-}
-
-function realmGrantLabel(rule: RealmForwardRule) {
-  const listen = rule.listen_port || '-'
-  const name = (rule.name || '').trim()
-  return name ? `${name} (${listen})` : `Realm 端口 ${listen}`
-}
-
-function realmAssignmentDisplayName(item: { agent_id: string; inbound_id: number; public_client_name?: string }, agents: DashboardAgentView[]): string {
-  const agentPrefix = `${agentName(item.agent_id, agents)} / `
-  const publicName = (item.public_client_name || '').trim()
-  if (publicName) {
-    return publicName.startsWith(agentPrefix) ? publicName : `${agentPrefix}${publicName}`
-  }
-  return `${agentPrefix}Realm 端口 ${item.inbound_id}`
-}
-
-function areaAssignmentDraftFromTargetOption(
-  agentID: string,
-  option: { client?: XUIClientView; node?: XUINodeView },
-  agents: DashboardAgentView[],
-): AreaManagerAssignmentDraft {
-  if (option.client) {
-    const client = option.client
-    return {
-      agent_id: agentID,
-      inbound_id: client.inbound_id,
-      inbound_tag: client.inbound_tag || '',
-      client_email: client.email || '',
-      public_client_name: defaultPublicClientName(client, agentID, agents),
-      enabled: true,
-    }
-  }
-  const node = option.node
-  return {
-    agent_id: agentID,
-    inbound_id: node?.id || 0,
-    inbound_tag: node?.tag || '',
-    client_email: '',
-    public_client_name: node ? defaultPublicNodeName(node, agentID, agents) : agentName(agentID, agents),
-    enabled: true,
-  }
-}
-
-function normalizeAreaManagerAssignmentDrafts(items: Array<AreaManagerAssignment | AreaManagerAssignmentDraft>): AreaManagerAssignmentDraft[] {
-  const result: AreaManagerAssignmentDraft[] = []
-  const seen = new Set<string>()
-  for (const item of items || []) {
-    if (isLegacyRealmForwardedClientAssignment(item)) {
-      continue
-    }
-    const draft: AreaManagerAssignmentDraft = {
-      agent_id: item.agent_id,
-      inbound_id: Number(item.inbound_id || 0),
-      inbound_tag: item.inbound_tag || '',
-      client_email: item.client_email || '',
-      public_client_name: item.public_client_name || item.client_email || item.inbound_tag || `Inbound #${item.inbound_id}`,
-      enabled: item.enabled !== false,
-    }
-    if (!draft.agent_id || !draft.inbound_id) {
-      continue
-    }
-    if (!draft.client_email && isRealmAssignmentTagValue(draft.inbound_tag)) {
-      draft.inbound_tag = `realm:${draft.inbound_id}`
-      draft.public_client_name = draft.public_client_name || `Realm ${draft.inbound_id}`
-    }
-    const key = areaAssignmentKey(draft)
-    if (seen.has(key)) {
-      continue
-    }
-    seen.add(key)
-    result.push(draft)
-  }
-  return dedupeAreaManagerAssignmentDrafts(result)
-}
-
-function dedupeAreaManagerAssignmentDrafts(items: AreaManagerAssignmentDraft[]): AreaManagerAssignmentDraft[] {
-  const result: AreaManagerAssignmentDraft[] = []
-  const seen = new Set<string>()
-  const exactClientAssignments = items.filter((item) => item.client_email && !isRealmAssignmentTagValue(item.inbound_tag || ''))
-  for (const item of items) {
-    if (!item.client_email && !isRealmAssignmentTagValue(item.inbound_tag || '') && exactClientAssignments.some((exact) => assignmentMatchesInbound(exact, item.agent_id, item.inbound_id, item.inbound_tag))) {
-      continue
-    }
-    const key = areaAssignmentKey(item)
-    if (seen.has(key)) {
-      continue
-    }
-    seen.add(key)
-    result.push(item)
-  }
-  return result
-}
-
-function assignmentMatchesInbound(item: { agent_id: string; inbound_id: number; inbound_tag?: string }, agentID: string, inboundID: number, inboundTag?: string): boolean {
-  if ((item.agent_id || '') !== agentID || Number(item.inbound_id || 0) !== Number(inboundID || 0)) {
-    return false
-  }
-  const leftTag = (item.inbound_tag || '').trim().toLowerCase()
-  const rightTag = (inboundTag || '').trim().toLowerCase()
-  return !leftTag || !rightTag || leftTag === rightTag
-}
-
-function firstRealmAssignmentAgentID(items: AreaManagerAssignment[], agents: DashboardAgentView[]): string {
-  return normalizeAreaManagerAssignmentDrafts(items).find((item) => isRealmAssignmentDraft(item, agents))?.agent_id || ''
-}
-
-function firstXUIAssignmentAgentID(items: AreaManagerAssignment[], agents: DashboardAgentView[]): string {
-  return normalizeAreaManagerAssignmentDrafts(items).find((item) => !isRealmAssignmentDraft(item, agents))?.agent_id || ''
-}
-
-function isRealmForwardedClientOption(client: XUIClientView): boolean {
-  return Boolean(
-    client.is_realm_forwarded ||
-    client.realm_source_agent_id ||
-    client.realm_target_agent_id ||
-    looksLikeRealmForwardedInboundTag(client.inbound_tag || '') ||
-    looksLikeRealmForwardedInboundTag(client.inbound_remark || ''),
-  )
-}
-
-function isLegacyRealmForwardedClientAssignment(item: { inbound_tag?: string; client_email?: string; public_client_name?: string }): boolean {
-  if (!item.client_email) {
-    return false
-  }
-  return looksLikeRealmForwardedInboundTag(item.inbound_tag || '') || looksLikeRealmForwardedInboundTag(item.public_client_name || '')
-}
-
-function looksLikeRealmForwardedInboundTag(value: string): boolean {
-  return /^realm\s+\d+\s*->/i.test(value.trim())
-}
-
-function isRealmAssignmentDraft(item: { agent_id: string; inbound_id: number; inbound_tag?: string; client_email?: string }, agents: DashboardAgentView[]) {
-  if (item.client_email) {
-    return false
-  }
-  if (isRealmAssignmentTagValue(item.inbound_tag || '')) {
-    return true
-  }
-  const rules = agents.find((agent) => agent.agent_id === item.agent_id)?.entry?.port_forwarding?.rules || []
-  return rules.some((rule) => Number(rule.listen_port || 0) === Number(item.inbound_id || 0))
-}
-
-function areaAssignmentKey(item: { agent_id: string; inbound_id: number; inbound_tag?: string; client_email?: string }): string {
-  return [
-    item.agent_id || '',
-    String(item.inbound_id || 0),
-    item.inbound_tag || '',
-    item.client_email || '',
-  ].map((part) => encodeURIComponent(part)).join('::')
-}
-
-function areaAssignmentLabel(item: { agent_id: string; inbound_id: number; inbound_tag?: string; client_email?: string; public_client_name?: string }, agents: DashboardAgentView[]): string {
-  if (isRealmAssignmentDraft(item, agents)) {
-    return realmAssignmentDisplayName(item, agents)
-  }
-  const scope = item.client_email ? item.client_email : '整个节点'
-  const name = item.public_client_name || item.inbound_tag || `Inbound #${item.inbound_id}`
-  return `${agentName(item.agent_id, agents)} / ${name} / ${scope}`
-}
-
-function renderAssignmentHierarchy(
-  items: Array<{ agent_id: string; inbound_id: number; inbound_tag?: string; client_email?: string; public_client_name?: string }>,
-  agents: DashboardAgentView[],
-  onRemove?: (key: string) => void,
-) {
-  if (!items.length) {
-    return <Tag>未分配</Tag>
-  }
-  const grouped = new Map<string, Map<string, Array<{ key: string; label: string; nodeLabel: string }>>>()
-  for (const item of items) {
-    const agentID = item.agent_id || ''
-    const realm = isRealmAssignmentDraft(item, agents)
-    const nodeLabelText = realm ? realmAssignmentDisplayName(item, agents) : item.inbound_tag || `Inbound #${item.inbound_id}`
-    const nodeKeyText = `${item.inbound_id}\x00${nodeLabelText}`
-    const clientLabelText = realm ? '端口授权' : item.client_email || '整个节点'
-    if (!grouped.has(agentID)) {
-      grouped.set(agentID, new Map())
-    }
-    const nodeMap = grouped.get(agentID)!
-    if (!nodeMap.has(nodeKeyText)) {
-      nodeMap.set(nodeKeyText, [])
-    }
-    nodeMap.get(nodeKeyText)!.push({
-      key: areaAssignmentKey(item),
-      label: clientLabelText,
-      nodeLabel: nodeLabelText,
-    })
-  }
-  return (
-    <Space direction="vertical" size={4} style={{ width: '100%' }}>
-      {Array.from(grouped.entries()).map(([agentID, nodeMap]) => (
-        <div key={agentID}>
-          <Text strong>{agentName(agentID, agents)}</Text>
-          <Space direction="vertical" size={3} style={{ width: '100%', marginTop: 4, paddingLeft: 10 }}>
-            {Array.from(nodeMap.entries()).map(([nodeKeyText, clients]) => (
-              <div key={nodeKeyText}>
-                <Tag color="blue">{clients[0]?.nodeLabel || '-'}</Tag>
-                <Space size={[4, 4]} wrap>
-                  {clients.map((client) => (
-                    <Tag
-                      key={client.key}
-                      closable={Boolean(onRemove)}
-                      onClose={(event) => {
-                        event.preventDefault()
-                        onRemove?.(client.key)
-                      }}
-                    >
-                      {client.label}
-                    </Tag>
-                  ))}
-                </Space>
-              </div>
-            ))}
-          </Space>
-        </div>
-      ))}
-    </Space>
-  )
-}
-
-function isRealmAssignmentTagValue(value: string): boolean {
-  return value.trim().toLowerCase().startsWith('realm:')
-}
-
-function uniqueStrings(values: string[]): string[] {
-  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)))
-}
-
-function clientLabel(client: XUIClientView): string {
-  const inbound = client.inbound_remark || client.inbound_tag || `Inbound #${client.inbound_id}`
-  const email = client.email || '未指定客户端'
-  return `客户端：${inbound} / ${email}`
-}
-
-function clientTreeTitle(client: XUIClientView): string {
-  return ['客户端', client.email || '未指定客户端', client.comment || client.sub_id || ''].filter(Boolean).join(' / ')
-}
-
-function nodeKey(node: XUINodeView): string {
-  return `node:${node.id}::`
-}
-
-function nodeLabel(node: XUINodeView): string {
-  return `节点：${node.remark || node.tag || `Inbound #${node.id}`} / ${node.protocol || '-'}`
-}
-
-function defaultPublicClientName(client: XUIClientView, agentID: string, agents: DashboardAgentView[]): string {
-  const agent = customerAgentName(agentID, agents)
-  const node = client.inbound_remark || client.inbound_tag || `Inbound #${client.inbound_id}`
-  return [agent, node, client.email || client.comment || client.sub_id].filter(Boolean).join(' - ')
-}
-
-function defaultPublicNodeName(node: XUINodeView, agentID: string, agents: DashboardAgentView[]): string {
-  const agent = customerAgentName(agentID, agents)
-  return [agent, node.remark || node.tag || `Inbound #${node.id}`].filter(Boolean).join(' - ')
-}
-
-function agentName(agentID: string, agents: DashboardAgentView[]): string {
-  const agent = agents.find((item) => item.agent_id === agentID)
-  return agent?.agent_name || agentID
-}
-
-function customerAgentName(agentID: string, agents: DashboardAgentView[]): string {
-  const agent = agents.find((item) => item.agent_id === agentID)
-  return agent?.customer_display_name || agent?.agent_name || agentID
-}
-
-function assignmentBilling(record: CustomerAssignment, agents: DashboardAgentView[]): XUIClientBillingConfig | undefined {
-  return clientBilling(record.agent_id, record.inbound_id, record.inbound_tag || '', record.client_email || '', agents)
-}
-
-function assignmentFormFromAssignment(record: CustomerAssignment, agents: DashboardAgentView[]): AssignmentFormState {
-  const billing = assignmentBilling(record, agents)
-  return {
-    agent_id: record.agent_id,
-    client_key: record.client_email ? `client:${record.inbound_id}::${record.client_email}` : `node:${record.inbound_id}::`,
-    inbound_id: record.inbound_id,
-    inbound_tag: record.inbound_tag || '',
-    client_email: record.client_email || '',
-    public_client_name: record.public_client_name || '',
-    revenue_amount: Number(billing?.revenue_amount || 0),
-    revenue_currency: billing?.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
-    revenue_cycle: billing?.revenue_cycle === 'quarter' || billing?.revenue_cycle === 'year' ? billing.revenue_cycle : 'month',
-    enabled: record.enabled,
-  }
-}
-
-function assignmentFormFromDraft(draft: CustomerAssignmentDraft, agents: DashboardAgentView[]): AssignmentFormState {
-  const inboundTag = draft.inbound_tag || ''
-  const clientEmail = draft.client_email || ''
-  const billing = clientBilling(draft.agent_id, draft.inbound_id, inboundTag, clientEmail, agents)
-  const publicClientName = draft.public_client_name || defaultPublicNameFromDraft(draft, agents)
-  return {
-    agent_id: draft.agent_id,
-    client_key: clientEmail ? `client:${draft.inbound_id}::${clientEmail}` : `node:${draft.inbound_id}::`,
-    inbound_id: draft.inbound_id,
-    inbound_tag: inboundTag,
-    client_email: clientEmail,
-    public_client_name: publicClientName,
-    revenue_amount: Number(draft.revenue_amount ?? billing?.revenue_amount ?? 0),
-    revenue_currency: draft.revenue_currency === 'USDT' ? 'USDT' : billing?.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
-    revenue_cycle: draft.revenue_cycle === 'quarter' || draft.revenue_cycle === 'year'
-      ? draft.revenue_cycle
-      : billing?.revenue_cycle === 'quarter' || billing?.revenue_cycle === 'year'
-        ? billing.revenue_cycle
-        : 'month',
-    enabled: true,
-  }
-}
-
-function defaultPublicNameFromDraft(draft: CustomerAssignmentDraft, agents: DashboardAgentView[]): string {
-  const agent = customerAgentName(draft.agent_id, agents)
-  const tail = draft.client_email || draft.inbound_tag || `Inbound #${draft.inbound_id}`
-  return [agent, tail].filter(Boolean).join(' - ')
-}
-
-function findMatchingAssignment(customers: CustomerAdminView[], draft: CustomerAssignmentDraft): { customer: CustomerAdminView, assignment: CustomerAssignment } | null {
-  const exactKey = billingKey(draft.inbound_id, draft.inbound_tag || '', draft.client_email || '')
-  const emailKey = draft.client_email ? billingEmailKey(draft.inbound_id, draft.client_email) : ''
-  for (const customer of customers) {
-    for (const assignment of customer.assignments || []) {
-      if (assignment.agent_id !== draft.agent_id) {
-        continue
-      }
-      if (billingKey(assignment.inbound_id, assignment.inbound_tag || '', assignment.client_email || '') === exactKey) {
-        return { customer, assignment }
-      }
-      if (emailKey && billingEmailKey(assignment.inbound_id, assignment.client_email || '') === emailKey) {
-        return { customer, assignment }
-      }
-    }
-  }
-  return null
-}
-
-function clientBilling(agentID: string, inboundID: number, inboundTag: string, email: string, agents: DashboardAgentView[]): XUIClientBillingConfig | undefined {
-  const agent = agents.find((item) => item.agent_id === agentID)
-  const exactKey = billingKey(inboundID, inboundTag, email)
-  const emailKey = email ? billingEmailKey(inboundID, email) : ''
-  return (agent?.renewal?.client_billings || []).find((billing) => {
-    if (billingKey(Number(billing.inbound_id || 0), billing.inbound_tag || '', billing.email || '') === exactKey) {
-      return true
-    }
-    return Boolean(emailKey && billingEmailKey(Number(billing.inbound_id || 0), billing.email || '') === emailKey)
-  })
-}
-
-function billingFormPatch(billing?: XUIClientBillingConfig): Pick<AssignmentFormState, 'revenue_amount' | 'revenue_currency' | 'revenue_cycle'> {
-  return {
-    revenue_amount: Number(billing?.revenue_amount || 0),
-    revenue_currency: billing?.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
-    revenue_cycle: billing?.revenue_cycle === 'quarter' || billing?.revenue_cycle === 'year' ? billing.revenue_cycle : 'month',
-  }
-}
-
-function billingKey(inboundID: number, inboundTag: string, email: string): string {
-  return `${Number(inboundID || 0)}\u0000${String(inboundTag || '').trim().toLowerCase()}\u0000${String(email || '').trim().toLowerCase()}`
-}
-
-function billingEmailKey(inboundID: number, email: string): string {
-  return `${Number(inboundID || 0)}\u0000${String(email || '').trim().toLowerCase()}`
-}
-
-function revenueCycleLabel(cycle?: string): string {
-  switch (cycle) {
-    case 'quarter':
-      return '季'
-    case 'year':
-      return '年'
-    case 'month':
-    default:
-      return '月'
-  }
 }

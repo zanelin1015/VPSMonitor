@@ -15,16 +15,7 @@ import {
   Table,
   Typography,
 } from 'antd'
-import {
-  ApartmentOutlined,
-  CloudServerOutlined,
-  DashboardOutlined,
-  DeploymentUnitOutlined,
-  FileSearchOutlined,
-  ReloadOutlined,
-  SettingOutlined,
-  TeamOutlined,
-} from '@ant-design/icons'
+import { ReloadOutlined } from '@ant-design/icons'
 
 import type {
   AdminAuthResponse,
@@ -39,7 +30,6 @@ import type {
   AgentRealtimeMetrics,
   ConfigAuditLog,
   CustomerAdminView,
-  CustomerAssignment,
   CustomerAssignmentDraft,
   DashboardAgentView,
   DashboardRealtimeMessage,
@@ -77,6 +67,10 @@ import {
   summarizeAgentNetwork,
 } from './lib/traffic'
 import { useCurrentAgentRequest } from './hooks/useCurrentAgentRequest'
+import { buildAdminRouteURL, parseAdminRouteState, type AdminPageKey } from './lib/adminRoute'
+import { isAreaManagerAdminUser, sanitizeAreaRealtimeMetric } from './lib/adminUsers'
+import { createAppNavigationHandlers } from './lib/appNavigation'
+import { defaultScheduledTaskSettings, normalizeScheduledTaskSettings } from './lib/scheduledTasks'
 
 import type {
   AgentViewMode,
@@ -91,14 +85,14 @@ import type {
 } from './lib/appHelpers'
 import {
   FrontendSettingsPanel,
-  PersonalCenterDropdown,
   ScheduledTasksPanel,
 } from './components/AdminModals'
+import { AdminShellNavigation } from './components/AdminShellNavigation'
 import { renderCNFlowPanel } from './components/DashboardTopologyPanels'
 import { AgentRail, AdminWorkbenchDashboard, OverviewSummaryCard } from './components/DashboardSidebar'
 import { LoginScreen } from './components/LoginScreen'
 import { VisualEffects, applyCustomFrontendCode } from './components/VisualEffects'
-import { useAppTheme, type ThemeMode } from './theme'
+import { useAppTheme } from './theme'
 import {
   DASHBOARD_AUTO_REFRESH_MS,
   buildClientInstallCommand,
@@ -134,8 +128,6 @@ import {
   mergeRealtimeSummary,
   mergeSavedSectionIntoDraft,
   mergeTagOptions,
-  nodeElementId,
-  outboundElementId,
   normalizeEntryConfig,
   normalizeClientInstallCommandForm,
   normalizeFrontendSettingsForm,
@@ -150,7 +142,6 @@ import {
   sortAgentsByOrder,
   statusColor,
   storeAgentViewMode,
-  ruleElementId,
   summarizeAgent,
   summarizeConfigAudit,
   summarizeRule,
@@ -158,175 +149,13 @@ import {
   upsertClientBilling,
 } from './lib/appHelpers'
 
-const { Paragraph, Text, Title } = Typography
+const { Text, Title } = Typography
 interface LoadOptions {
   silent?: boolean
 }
 
-type AdminPageKey = 'dashboard' | 'assets' | 'customers' | 'access-logs' | 'settings' | 'schedules'
-
-interface AdminRouteState {
-  page: AdminPageKey
-  topology: boolean
-  agentId: string
-  tabKey: string
-  tag: string
-  outboundTag: string
-  ruleIndex: number | null
-  nodeAnchor: string
-  topologySearch: string
-}
-
 function hasCustomerDisplayNameField(value: unknown): boolean {
   return Boolean(value && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'customer_display_name'))
-}
-
-function parseAdminRouteState(canManageSystem: boolean): AdminRouteState {
-  const params = new URLSearchParams(window.location.search)
-  const path = window.location.pathname.replace(/\/+$/, '')
-  const rawPage = (params.get('page') || pageFromAdminPath(path)).toLowerCase()
-  const topology = rawPage === 'topology' || params.get('topology') === '1'
-  let page: AdminPageKey = topology ? 'dashboard' : normalizeAdminPage(rawPage)
-  if ((page === 'settings' || page === 'schedules' || page === 'access-logs') && !canManageSystem) {
-    page = 'dashboard'
-  }
-
-  const ruleParam = Number(params.get('rule') || '')
-  return {
-    page,
-    topology,
-    agentId: params.get('agent') || agentFromAdminPath(path),
-    tabKey: params.get('tab') || 'overview',
-    tag: params.get('tag') || '',
-    outboundTag: params.get('outbound') || '',
-    ruleIndex: Number.isInteger(ruleParam) && ruleParam > 0 ? ruleParam : null,
-    nodeAnchor: params.get('node') || '',
-    topologySearch: params.get('q') || '',
-  }
-}
-
-function buildAdminRouteURL(route: AdminRouteState): string {
-  const params = new URLSearchParams()
-  if (route.topology) {
-    params.set('page', 'topology')
-  } else if (route.page !== 'dashboard') {
-    params.set('page', route.page)
-  }
-  if (route.tag) {
-    params.set('tag', route.tag)
-  }
-  if (route.topology) {
-    if (route.agentId) {
-      params.set('agent', route.agentId)
-    }
-    if (route.topologySearch.trim()) {
-      params.set('q', route.topologySearch.trim())
-    }
-  } else if (route.page === 'assets') {
-    if (route.agentId) {
-      params.set('agent', route.agentId)
-    }
-    if (route.agentId && route.tabKey && route.tabKey !== 'overview') {
-      params.set('tab', route.tabKey)
-    }
-    if (route.outboundTag) {
-      params.set('outbound', route.outboundTag)
-    }
-    if (route.ruleIndex) {
-      params.set('rule', String(route.ruleIndex))
-    }
-    if (route.nodeAnchor) {
-      params.set('node', route.nodeAnchor)
-    }
-  }
-  const query = params.toString()
-  return query ? `/?${query}` : '/'
-}
-
-function normalizeAdminPage(value: string): AdminPageKey {
-  switch (value) {
-    case 'assets':
-    case 'customers':
-    case 'access-logs':
-    case 'settings':
-    case 'schedules':
-      return value
-    default:
-      return 'dashboard'
-  }
-}
-
-function pageFromAdminPath(path: string): string {
-  switch (path) {
-    case '/admin/assets':
-      return 'assets'
-    case '/admin/customers':
-      return 'customers'
-    case '/admin/access-logs':
-      return 'access-logs'
-    case '/admin/settings':
-      return 'settings'
-    case '/admin/schedules':
-      return 'schedules'
-    case '/admin/topology':
-      return 'topology'
-    default:
-      return 'dashboard'
-  }
-}
-
-function agentFromAdminPath(path: string): string {
-  const match = path.match(/^\/admin\/assets\/([^/]+)$/)
-  return match ? decodeURIComponent(match[1]) : ''
-}
-
-function sanitizeAreaRealtimeMetric(metric: AgentRealtimeMetrics): AgentRealtimeMetrics {
-  return {
-    agent_id: metric.agent_id,
-    reported_at: metric.reported_at,
-    summary: {
-      net_traffic_sent: metric.summary?.net_traffic_sent,
-      net_traffic_recv: metric.summary?.net_traffic_recv,
-      net_traffic_total: metric.summary?.net_traffic_total,
-      net_io_up: metric.summary?.net_io_up,
-      net_io_down: metric.summary?.net_io_down,
-    },
-  }
-}
-
-function isAreaManagerAdminUser(user: AdminUser | null): boolean {
-  if (!user) {
-    return false
-  }
-  if (user.role === 'area_manager') {
-    return true
-  }
-  if (user.role === 'admin') {
-    return false
-  }
-  return Boolean((user.agent_ids || []).length || (user.id && user.id !== 1))
-}
-
-function defaultScheduledTaskSettings(): ScheduledTaskSettings {
-  return {
-    alert_sweep: { enabled: true, interval_minutes: 5 },
-    daily_traffic_report: { enabled: true, time_of_day: '09:00', interval_days: 1 },
-  }
-}
-
-function normalizeScheduledTaskSettings(settings?: ScheduledTaskSettings): ScheduledTaskSettings {
-  const defaults = defaultScheduledTaskSettings()
-  return {
-    alert_sweep: {
-      enabled: settings?.alert_sweep?.enabled ?? defaults.alert_sweep.enabled,
-      interval_minutes: Math.min(1440, Math.max(1, Number(settings?.alert_sweep?.interval_minutes || defaults.alert_sweep.interval_minutes || 5))),
-    },
-    daily_traffic_report: {
-      enabled: settings?.daily_traffic_report?.enabled ?? defaults.daily_traffic_report.enabled,
-      time_of_day: /^\d{2}:\d{2}$/.test(settings?.daily_traffic_report?.time_of_day || '') ? settings?.daily_traffic_report?.time_of_day : defaults.daily_traffic_report.time_of_day,
-      interval_days: Math.min(365, Math.max(1, Number(settings?.daily_traffic_report?.interval_days || defaults.daily_traffic_report.interval_days || 1))),
-    },
-  }
 }
 
 const AgentDetailPanel = lazy(() => import('./components/AgentDetailPanel').then((module) => ({ default: module.AgentDetailPanel })))
@@ -463,6 +292,36 @@ export default function App() {
   const currentOverview = overview?.agent_id === selectedAgentId ? overview : null
   const selectedSummary = currentOverview?.summary || selectedAgent?.summary || {}
   const centerPanelOpen = topologyVisible || Boolean(selectedAgent)
+  const {
+    applyAdminRoute,
+    jumpToNode,
+    jumpToOutbound,
+    jumpToRule,
+    openAgentDetailPanel,
+    openCustomerAssignment,
+    openCustomerAuthorization,
+    openTopologyPanel,
+    returnHome,
+    selectDashboardTag,
+    selectTopologyAgent,
+  } = createAppNavigationHandlers({
+    topologyVisible,
+    topologyLoaded,
+    setActiveAdminPage,
+    setTopologyVisible,
+    setSelectedTag,
+    setTopologySearch,
+    setSelectedOutboundTag,
+    setSelectedRuleIndex,
+    setSelectedNodeAnchor,
+    setClientSearch,
+    setSelectedAgentId,
+    setActiveTabKey,
+    loadTopology,
+    runTransition: startTransition,
+    setCustomerModalOpen,
+    setCustomerAssignmentDraft,
+  })
   const topologyScopeLabel = selectedAgentId ? selectedAgent?.agent_name || selectedAgentId : selectedTag ? `${selectedTag} 标签` : '全部 Client'
   const heroTitle = '南风VPS监控'
   const normalizedPath = window.location.pathname.replace(/\/+$/, '') || '/'
@@ -1235,7 +1094,7 @@ export default function App() {
     const targetName = agents.find((item) => item.agent_id === agentID)?.agent_name || agentID
     setAgentDeleteLoading(true)
     try {
-      await fetchJSON<{ status: string; agent_id: string }>(`/api/v1/agents/${encodeURIComponent(agentID)}`, {
+      const result = await fetchJSON<{ status: string; agent_id: string; client_stop_sent?: boolean }>(`/api/v1/agents/${encodeURIComponent(agentID)}`, {
         method: 'DELETE',
       })
       customerDisplayNameCacheRef.current = Object.fromEntries(
@@ -1244,7 +1103,9 @@ export default function App() {
       if (selectedAgentId === agentID) {
         returnHome()
       }
-      message.success(`已删除 Client / VPS：${targetName}`)
+      message.success(result.client_stop_sent
+        ? `已删除 Client / VPS：${targetName}，并已通知远端停止 Client 服务`
+        : `已删除 Client / VPS：${targetName}；远端不在线，未能即时停止 Client 服务`)
       await loadAgents({ silent: true })
     } catch (error) {
       if (isUnauthorized(error)) {
@@ -2222,235 +2083,69 @@ export default function App() {
     xuiActionModalOpen
   const showWorkbenchDashboard = activeAdminPage === 'dashboard' && !topologyVisible
   const serverVersionLabel = `V${systemInfo?.version || '-'}`
+  const openAccountModal = () => {
+    setAccountForm({
+      current_password: '',
+      new_username: adminUser.username,
+      new_password: '',
+      confirm_password: '',
+      avatar_url: adminUser.avatar_url || '',
+    })
+    setAccountModalOpen(true)
+  }
+  const openAssetsPage = () => {
+    setActiveAdminPage('assets')
+    setTopologyVisible(false)
+    setSelectedAgentId('')
+    setActiveTabKey('overview')
+    setSelectedOutboundTag('')
+    setSelectedRuleIndex(null)
+    setSelectedNodeAnchor('')
+  }
+  const openCustomersPage = () => setActiveAdminPage('customers')
+  const openSettingsPage = () => {
+    setActiveAdminPage('settings')
+    void openFrontendSettingsModal(false)
+  }
+  const openAccessLogsPage = () => setActiveAdminPage('access-logs')
+  const openSchedulesPage = () => setActiveAdminPage('schedules')
   return (
     <div className="page-shell admin-page-shell">
       <VisualEffects disabled={isAreaManagerAccount} />
       <div className="page-background page-background-left" />
       <div className="page-background page-background-right" />
       <div className={`app-shell admin-oa-shell${centerPanelOpen ? ' topology-open-shell' : ''}`}>
-        <header className="admin-mobile-header">
-          <div className="admin-mobile-brand-row">
-            <div className="admin-mobile-brand">
-              <span className="admin-oa-brand-mark">南</span>
-              <div>
-                <strong>南风VPS监控</strong>
-                <small>
-                  在线 {onlineAgentCount}/{scopedAgentCount} · v{systemInfo?.version || '-'}
-                </small>
-              </div>
-            </div>
-            <PersonalCenterDropdown
-              adminUser={adminUser}
-              systemInfo={systemInfo}
-              canManageSystem={canManageSystem}
-              onOpenAccount={() => {
-                setAccountForm({
-                  current_password: '',
-                  new_username: adminUser.username,
-                  new_password: '',
-                  confirm_password: '',
-                  avatar_url: adminUser.avatar_url || '',
-                })
-                setAccountModalOpen(true)
-              }}
-              onOpenClientInstall={() => void openClientInstallModal()}
-              onOpenTelegram={() => setTelegramBotModalOpen(true)}
-              onOpenCustomers={() => setActiveAdminPage('customers')}
-              onOpenFrontendSettings={() => {
-                setActiveAdminPage('settings')
-                void openFrontendSettingsModal(false)
-              }}
-              onOpenUpdates={() => setUpdateModalOpen(true)}
-              onLogout={() => void logout()}
-            />
-          </div>
-          <nav className="admin-mobile-nav" aria-label="移动端管理导航">
-            <button type="button" className={activeAdminPage === 'dashboard' && !topologyVisible ? 'active' : ''} onClick={() => {
-              setActiveAdminPage('dashboard')
-              returnHome()
-            }}>
-              <DashboardOutlined />
-              <span>工作台</span>
-            </button>
-            <button type="button" className={activeAdminPage === 'assets' ? 'active' : ''} onClick={() => {
-              setActiveAdminPage('assets')
-              setTopologyVisible(false)
-              setSelectedAgentId('')
-              setActiveTabKey('overview')
-              setSelectedOutboundTag('')
-              setSelectedRuleIndex(null)
-              setSelectedNodeAnchor('')
-            }}>
-              <CloudServerOutlined />
-              <span>资产</span>
-            </button>
-            <button type="button" className={activeAdminPage === 'dashboard' && topologyVisible ? 'active' : ''} onClick={() => {
-              setActiveAdminPage('dashboard')
-              openTopologyPanel()
-            }}>
-              <ApartmentOutlined />
-              <span>拓扑</span>
-            </button>
-            <button type="button" className={activeAdminPage === 'customers' ? 'active' : ''} onClick={() => setActiveAdminPage('customers')}>
-              <TeamOutlined />
-              <span>用户</span>
-            </button>
-            {canManageSystem ? <button type="button" className={activeAdminPage === 'access-logs' ? 'active' : ''} onClick={() => setActiveAdminPage('access-logs')}>
-              <FileSearchOutlined />
-              <span>日志</span>
-            </button> : null}
-            {canManageSystem ? <button type="button" className={activeAdminPage === 'settings' ? 'active' : ''} onClick={() => {
-              setActiveAdminPage('settings')
-              void openFrontendSettingsModal(false)
-            }}>
-              <SettingOutlined />
-              <span>设置</span>
-            </button> : null}
-            {canManageSystem ? <button type="button" className={activeAdminPage === 'schedules' ? 'active' : ''} onClick={() => setActiveAdminPage('schedules')}>
-              <ReloadOutlined />
-              <span>定时</span>
-            </button> : null}
-          </nav>
-          <div className="admin-mobile-actions">
-            <Button size="small" icon={<ReloadOutlined />} loading={agentsLoading} onClick={() => void loadAgents()}>刷新</Button>
-            {canManageSystem ? <Button size="small" icon={<DeploymentUnitOutlined />} onClick={() => void openClientInstallModal()}>安装 Client</Button> : null}
-            <Select
-              size="small"
-              value={themeMode}
-              options={[
-                { value: 'system', label: '跟随系统' },
-                { value: 'light', label: '明亮' },
-                { value: 'dark', label: '暗黑' },
-              ]}
-              onChange={(value) => setThemeMode(value as ThemeMode)}
-            />
-          </div>
-        </header>
-        <aside className="admin-oa-sider">
-          <div className="admin-oa-brand">
-            <span className="admin-oa-brand-mark">南</span>
-            <div>
-              <strong>南风VPS监控</strong>
-              <small>{serverVersionLabel}</small>
-            </div>
-          </div>
-          <nav className="admin-oa-nav" aria-label="管理端导航">
-            <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'dashboard' && !topologyVisible ? ' active' : ''}`} onClick={() => {
-              setActiveAdminPage('dashboard')
-              returnHome()
-            }}>
-              <DashboardOutlined />
-              <span>工作台</span>
-              <small>{isAreaManagerAccount ? '授权总览' : '总览与财务'}</small>
-            </button>
-            <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'assets' ? ' active' : ''}`} onClick={() => {
-              setActiveAdminPage('assets')
-              setTopologyVisible(false)
-              setSelectedAgentId('')
-              setActiveTabKey('overview')
-              setSelectedOutboundTag('')
-              setSelectedRuleIndex(null)
-              setSelectedNodeAnchor('')
-            }}>
-              <CloudServerOutlined />
-              <span>Client 资产</span>
-              <small>节点列表</small>
-            </button>
-            <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'dashboard' && topologyVisible ? ' active' : ''}`} onClick={() => {
-              setActiveAdminPage('dashboard')
-              openTopologyPanel()
-            }}>
-              <ApartmentOutlined />
-              <span>拓扑图</span>
-              <small>链路联动</small>
-            </button>
-            <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'customers' ? ' active' : ''}`} onClick={() => setActiveAdminPage('customers')}>
-              <TeamOutlined />
-              <span>用户管理</span>
-              <small>账号与授权</small>
-            </button>
-            {canManageSystem ? <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'access-logs' ? ' active' : ''}`} onClick={() => setActiveAdminPage('access-logs')}>
-              <FileSearchOutlined />
-              <span>访问日志</span>
-              <small>连接排查</small>
-            </button> : null}
-            {canManageSystem ? <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'settings' ? ' active' : ''}`} onClick={() => {
-              setActiveAdminPage('settings')
-              void openFrontendSettingsModal(false)
-            }}>
-              <SettingOutlined />
-              <span>系统设置</span>
-              <small>样式与升级</small>
-            </button> : null}
-            {canManageSystem ? <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'schedules' ? ' active' : ''}`} onClick={() => setActiveAdminPage('schedules')}>
-              <ReloadOutlined />
-              <span>定时任务</span>
-              <small>时间与频率</small>
-            </button> : null}
-          </nav>
-          <div className="admin-oa-sider-foot">
-            <span>在线 Client</span>
-            <strong>{onlineAgentCount}/{scopedAgentCount}</strong>
-            <small className="admin-oa-sider-version-row">
-              <span>Server v{systemInfo?.version || '-'}</span>
-            </small>
-          </div>
-        </aside>
+        <AdminShellNavigation
+          adminUser={adminUser}
+          systemInfo={systemInfo}
+          canManageSystem={canManageSystem}
+          isAreaManagerAccount={isAreaManagerAccount}
+          activeAdminPage={activeAdminPage}
+          topologyVisible={topologyVisible}
+          onlineAgentCount={onlineAgentCount}
+          scopedAgentCount={scopedAgentCount}
+          agentsLoading={agentsLoading}
+          themeMode={themeMode}
+          effectiveMode={effectiveMode}
+          heroTitle={heroTitle}
+          serverVersionLabel={serverVersionLabel}
+          onOpenAccount={openAccountModal}
+          onOpenClientInstall={() => void openClientInstallModal()}
+          onOpenTelegram={() => setTelegramBotModalOpen(true)}
+          onOpenCustomers={openCustomersPage}
+          onOpenFrontendSettings={openSettingsPage}
+          onOpenUpdates={() => setUpdateModalOpen(true)}
+          onLogout={() => void logout()}
+          onOpenWorkbench={returnHome}
+          onOpenAssets={openAssetsPage}
+          onOpenTopology={openTopologyPanel}
+          onOpenAccessLogs={openAccessLogsPage}
+          onOpenSchedules={openSchedulesPage}
+          onRefreshAgents={() => void loadAgents()}
+          onThemeModeChange={setThemeMode}
+        />
 
         <section className="admin-oa-main">
-        <header className="hero-panel admin-oa-topbar">
-          <div className="admin-oa-titlebar">
-            <div className="eyebrow">{serverVersionLabel} / 工作台</div>
-            <Title level={1}>{heroTitle}</Title>
-            <Paragraph className="hero-copy">
-              {isAreaManagerAccount
-                ? '管理已授权 Client、用户账号、区域标签与可见拓扑链路。'
-                : '统一管理 Client、x-ui 托管配置、用户账号、财务月览与跨 Client 拓扑联动。'}
-            </Paragraph>
-          </div>
-          <div className="hero-actions hero-actions-column">
-            <Button icon={<ReloadOutlined />} loading={agentsLoading} onClick={() => void loadAgents()}>刷新</Button>
-            {canManageSystem ? <Button icon={<DeploymentUnitOutlined />} onClick={() => void openClientInstallModal()}>安装 Client</Button> : null}
-            <Button icon={<TeamOutlined />} onClick={() => setActiveAdminPage('customers')}>用户</Button>
-            <PersonalCenterDropdown
-              adminUser={adminUser}
-              systemInfo={systemInfo}
-              canManageSystem={canManageSystem}
-              onOpenAccount={() => {
-                setAccountForm({
-                  current_password: '',
-                  new_username: adminUser.username,
-                  new_password: '',
-                  confirm_password: '',
-                  avatar_url: adminUser.avatar_url || '',
-                })
-                setAccountModalOpen(true)
-              }}
-              onOpenClientInstall={() => void openClientInstallModal()}
-              onOpenTelegram={() => setTelegramBotModalOpen(true)}
-              onOpenCustomers={() => setActiveAdminPage('customers')}
-              onOpenFrontendSettings={() => {
-                setActiveAdminPage('settings')
-                void openFrontendSettingsModal(false)
-              }}
-              onOpenUpdates={() => setUpdateModalOpen(true)}
-              onLogout={() => void logout()}
-            />
-            <div className="theme-mode-row">
-              <Text type="secondary">主题</Text>
-              <Select
-                size="small"
-                value={themeMode}
-                options={[
-                  { value: 'system', label: `跟随系统（${effectiveMode === 'dark' ? '暗黑' : '明亮'}）` },
-                  { value: 'light', label: '明亮' },
-                  { value: 'dark', label: '暗黑' },
-                ]}
-                onChange={(value) => setThemeMode(value as ThemeMode)}
-              />
-            </div>
-          </div>
-        </header>
 
         {consoleModalOpen ? <Suspense fallback={null}>
           <ConsoleModals
@@ -2915,29 +2610,6 @@ export default function App() {
     })
   }
 
-  function applyAdminRoute(route: AdminRouteState) {
-    setActiveAdminPage(route.page)
-    setTopologyVisible(route.topology)
-    setSelectedTag(route.tag)
-    setTopologySearch(route.topologySearch)
-    setSelectedOutboundTag(route.outboundTag)
-    setSelectedRuleIndex(route.ruleIndex)
-    setSelectedNodeAnchor(route.nodeAnchor)
-    setClientSearch('')
-    if (route.topology) {
-      void loadTopology({ silent: topologyLoaded })
-    }
-
-    if (route.page === 'assets' || route.topology) {
-      setSelectedAgentId(route.agentId)
-      setActiveTabKey(route.topology ? 'overview' : route.tabKey || 'overview')
-      return
-    }
-
-    setSelectedAgentId('')
-    setActiveTabKey('overview')
-  }
-
   function updateClientBillingDraft(record: XUIClientView, patch: Partial<XUIClientBillingConfig>) {
     updateManagedConfig((current) => {
       const currentBilling = findClientBilling(current.renewal?.client_billings, record) || defaultClientBilling(record)
@@ -2952,173 +2624,5 @@ export default function App() {
         },
       }
     })
-  }
-
-  function openTopologyPanel() {
-    setActiveAdminPage('dashboard')
-    setTopologyVisible(true)
-    void loadTopology({ silent: topologyLoaded })
-    window.setTimeout(() => {
-      document.getElementById('topology-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 80)
-  }
-
-  function selectDashboardTag(tag: string) {
-    setSelectedTag(tag)
-    if (topologyVisible) {
-      setSelectedAgentId('')
-      setSelectedNodeAnchor('')
-      setSelectedOutboundTag('')
-      setSelectedRuleIndex(null)
-    }
-  }
-
-  function selectTopologyAgent(agentID: string) {
-    setTopologyVisible(true)
-    setSelectedNodeAnchor('')
-    setSelectedOutboundTag('')
-    setSelectedRuleIndex(null)
-    startTransition(() => {
-      setSelectedAgentId(agentID)
-    })
-    window.setTimeout(() => {
-      document.getElementById('topology-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 80)
-  }
-
-  function returnHome() {
-    setActiveAdminPage('dashboard')
-    setTopologyVisible(false)
-    setSelectedAgentId('')
-    setActiveTabKey('overview')
-    setSelectedOutboundTag('')
-    setSelectedRuleIndex(null)
-    setSelectedNodeAnchor('')
-  }
-
-  function openAgentDetailPanel(agentID: string, tabKey = 'overview') {
-    setActiveAdminPage('assets')
-    setTopologyVisible(false)
-    setActiveTabKey(tabKey)
-    startTransition(() => {
-      setSelectedAgentId(agentID)
-    })
-    window.setTimeout(() => {
-      document.getElementById('agent-detail-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 80)
-  }
-
-  function openCustomerAssignment(assignment: CustomerAssignment) {
-    if (!assignment.agent_id) {
-      return
-    }
-    setCustomerModalOpen(false)
-    setActiveAdminPage('assets')
-    setTopologyVisible(false)
-    setSelectedOutboundTag('')
-    setSelectedRuleIndex(null)
-
-    if (assignment.client_email) {
-      setSelectedNodeAnchor('')
-      setClientSearch(assignment.client_email)
-      setActiveTabKey('clients')
-    } else {
-      const nodeLabel = assignment.inbound_tag || String(assignment.inbound_id)
-      setClientSearch('')
-      setSelectedNodeAnchor(nodeElementId(assignment.agent_id, nodeLabel))
-      setActiveTabKey('nodes')
-    }
-
-    startTransition(() => {
-      setSelectedAgentId(assignment.agent_id)
-    })
-
-    let attempts = 0
-    const scrollToTarget = () => {
-      attempts += 1
-      const anchor = assignment.client_email ? 'agent-detail-panel' : nodeElementId(assignment.agent_id, assignment.inbound_tag || String(assignment.inbound_id))
-      const element = document.getElementById(anchor) || document.getElementById('agent-detail-panel')
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: assignment.client_email ? 'start' : 'center' })
-        return
-      }
-      if (attempts < 20) {
-        window.setTimeout(scrollToTarget, 120)
-      }
-    }
-    window.setTimeout(scrollToTarget, 80)
-  }
-
-  function openCustomerAuthorization(draft: CustomerAssignmentDraft) {
-    setCustomerModalOpen(false)
-    setTopologyVisible(false)
-    setSelectedOutboundTag('')
-    setSelectedRuleIndex(null)
-    setCustomerAssignmentDraft(draft)
-    setActiveAdminPage('customers')
-    window.setTimeout(() => {
-      document.getElementById('customer-management-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 80)
-  }
-
-  function jumpToOutbound(tag?: string) {
-    if (!tag) {
-      return
-    }
-    setSelectedOutboundTag(tag)
-    setActiveTabKey('outbounds')
-    window.setTimeout(() => {
-      document.getElementById(outboundElementId(tag))?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }, 60)
-  }
-
-  function jumpToRule(index?: number) {
-    if (!index) {
-      return
-    }
-    setSelectedRuleIndex(index)
-    setActiveTabKey('routes')
-    window.setTimeout(() => {
-      document.getElementById(ruleElementId(index))?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }, 60)
-  }
-
-  function jumpToNode(agentID?: string, nodeLabel?: string) {
-    if (!agentID || !nodeLabel) {
-      return
-    }
-    const anchor = nodeElementId(agentID, nodeLabel)
-    setSelectedNodeAnchor(anchor)
-    if (topologyVisible) {
-      setActiveAdminPage('dashboard')
-      setTopologyVisible(true)
-      setSelectedOutboundTag('')
-      setSelectedRuleIndex(null)
-      startTransition(() => {
-        setSelectedAgentId(agentID)
-      })
-      window.setTimeout(() => {
-        document.getElementById('topology-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }, 80)
-      return
-    }
-    setActiveAdminPage('assets')
-    setTopologyVisible(false)
-    setSelectedAgentId(agentID)
-    setActiveTabKey('nodes')
-
-    let attempts = 0
-    const scrollToNode = () => {
-      attempts += 1
-      const element = document.getElementById(anchor)
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        return
-      }
-      if (attempts < 20) {
-        window.setTimeout(scrollToNode, 120)
-      }
-    }
-    window.setTimeout(scrollToNode, 80)
   }
 }

@@ -40,6 +40,7 @@ export interface AgentListItem {
   last_seen_at?: string
   has_config: boolean
   summary: VPSSummary
+  realm?: RealmSnapshot
   network_policy?: NetworkPolicySnapshot
   geo?: IPGeoView
 }
@@ -198,6 +199,15 @@ export interface NetworkPolicySnapshot {
   rate_limit_backend?: string
   error?: string
   rules?: NetworkPortPolicyRule[]
+}
+
+export interface RealmSnapshot {
+  config_path?: string
+  service_name?: string
+  binary_path?: string
+  collected_at?: string
+  error?: string
+  rules?: RealmForwardRule[]
 }
 
 export interface RealmForwardConfig {

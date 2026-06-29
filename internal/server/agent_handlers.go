@@ -95,8 +95,10 @@ func (a *App) handleAgents(w http.ResponseWriter, r *http.Request) {
 	items := make([]model.AgentListItem, 0, len(agents))
 	for _, agent := range agents {
 		var networkPolicy *model.NetworkPolicySnapshot
+		var realmSnapshot *model.RealmSnapshot
 		if snapshot, ok := latestByAgent[agent.AgentID]; ok {
 			agent.Config.Entry = dashboard.MergeRealmSnapshotIntoEntry(agent.Config.Entry, snapshot.Realm)
+			realmSnapshot = snapshot.Realm
 			networkPolicy = snapshot.NetworkPolicy
 		}
 		items = append(items, model.AgentListItem{
@@ -116,6 +118,7 @@ func (a *App) handleAgents(w http.ResponseWriter, r *http.Request) {
 			UpdatedAt:           &agent.UpdatedAt,
 			LastSeenAt:          agent.LastSeenAt,
 			Summary:             agent.Summary,
+			Realm:               realmSnapshot,
 			NetworkPolicy:       networkPolicy,
 			HasConfig:           agent.HasConfig,
 		})
@@ -598,6 +601,15 @@ func (a *App) handleDeleteAgent(w http.ResponseWriter, r *http.Request, agentID 
 		return
 	}
 	_ = user
+	agent, found, err := a.store.GetAgent(agentID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "agent not found")
+		return
+	}
 	if err := a.store.DeleteAgent(agentID); err != nil {
 		if err.Error() == "agent not found" {
 			writeError(w, http.StatusNotFound, err.Error())
@@ -606,8 +618,9 @@ func (a *App) handleDeleteAgent(w http.ResponseWriter, r *http.Request, agentID 
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	a.realtime.removeAgent(agentID)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted", "agent_id": agentID})
+	clientStopSent := a.dispatchDisableClientService(agent)
+	a.removeAgentRealtimeAfterDisable(agentID, clientStopSent)
+	writeJSON(w, http.StatusOK, map[string]any{"status": "deleted", "agent_id": agentID, "client_stop_sent": clientStopSent})
 }
 
 func (a *App) handleAgentRefresh(w http.ResponseWriter, r *http.Request, agentID string) {
@@ -1100,6 +1113,11 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 			cfg.CustomerDisplayName = existing.CustomerDisplayName
 		}
 		cfg = disableXUIAutoInstall(cfg)
+		cfg = a.hydrateRealmForwardTargets(cfg)
+		if err := validateRealmForwardTargets(r.Context(), cfg.Entry.PortForwarding); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		record, err := a.store.UpdateAgentConfigWithActor(agentID, cfg, user.Username)
 		if err != nil {
 			if err.Error() == "agent not found" {

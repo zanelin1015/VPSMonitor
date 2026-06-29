@@ -334,6 +334,7 @@ func sanitizeAgentListItemForAreaManager(item model.AgentListItem, tagMap map[st
 	item.Entry = model.AgentEntryConfig{}
 	item.HasConfig = false
 	item.Summary = sanitizeAreaManagerSummary(item.Summary)
+	item.Realm = nil
 	item.Geo = nil
 	return item
 }
@@ -349,6 +350,7 @@ func sanitizeDashboardAgentForAreaManager(agent model.DashboardAgentView, tagMap
 	agent.Entry = model.AgentEntryConfig{}
 	agent.HasConfig = false
 	agent.Summary = sanitizeAreaManagerSummary(agent.Summary)
+	agent.Realm = nil
 	agent.NetworkPolicy = nil
 	agent.Geo = nil
 	return agent

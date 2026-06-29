@@ -119,6 +119,8 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
       }
     : configuredNetworkPolicy
   const portForwarding = entryConfig.port_forwarding || { enabled: false, backend: 'realm', binary_path: '', config_path: '', service_name: '', log_level: 'info', rules: [] }
+  const observedRealm = selectedAgent.realm
+  const observedRealmRules = observedRealm?.rules || []
   const targetAgentOptions = agents
     .filter((agent) => agent.agent_id && agent.agent_id !== selectedAgent.agent_id)
     .map((agent) => ({ value: agent.agent_id, label: `${agent.agent_name || agent.agent_id} · ${bestAgentAddress(agent) || '未上报 IP'}` }))
@@ -788,6 +790,44 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
           message="用于广州 -> HK 这种整端口中转"
           description="Client 会在当前 VPS 本机生成 realm 配置，并把本机监听端口直接转发到目标 Client 的指定端口；这不经过 x-ui 用户和出站规则。需要当前 Client 所在 VPS 已安装 realm，或在这里填写 realm 二进制路径。"
         />
+        {observedRealm ? (
+          <div className="observed-config-panel">
+            <Space direction="vertical" size={8} style={{ width: '100%' }}>
+              <Space wrap>
+                <Text strong>Client 当前采集配置</Text>
+                <Text type="secondary">路径：{observedRealm.config_path || '-'}</Text>
+                <Text type="secondary">服务：{observedRealm.service_name || '-'}</Text>
+                <Text type="secondary">采集：{formatDateTime(observedRealm.collected_at)}</Text>
+              </Space>
+              {observedRealm.error ? (
+                <Alert type="error" showIcon className="compact-alert" message={observedRealm.error} />
+              ) : null}
+              <List
+                size="small"
+                locale={{ emptyText: 'Client 当前没有采集到 Realm endpoint' }}
+                dataSource={observedRealmRules}
+                renderItem={(rule, index) => (
+                  <List.Item key={rule.id || `${rule.listen_port || 0}-${rule.target_address || ''}-${rule.target_port || 0}-${index}`}>
+                    <Space wrap>
+                      <Text>{rule.name || `endpoint ${index + 1}`}</Text>
+                      <Text code>{formatRealmEndpoint(rule.listen_address || '0.0.0.0', rule.listen_port)}</Text>
+                      <Text type="secondary">-&gt;</Text>
+                      <Text code>{formatRealmEndpoint(rule.target_address || '-', rule.target_port)}</Text>
+                    </Space>
+                  </List.Item>
+                )}
+              />
+            </Space>
+          </div>
+        ) : (
+          <Alert
+            type="warning"
+            showIcon
+            className="compact-alert"
+            message="尚未采集到 Client 实际 Realm 配置"
+            description="保存后可点击立即获取 Client 信息，确认最终写入到 Client 的 realm 配置。"
+          />
+        )}
         <Row gutter={[16, 16]}>
           <Col xs={24} md={6}>
             <div className="switch-row">
@@ -1051,6 +1091,12 @@ function mergeNetworkPolicyRate(a?: number, b?: number) {
     return first
   }
   return Math.min(first, second)
+}
+
+function formatRealmEndpoint(host?: string, port?: number) {
+  const cleanHost = String(host || '').trim() || '-'
+  const cleanPort = Number(port || 0)
+  return cleanPort > 0 ? `${cleanHost}:${cleanPort}` : cleanHost
 }
 
 function bestAgentAddress(agent?: AgentListItem) {

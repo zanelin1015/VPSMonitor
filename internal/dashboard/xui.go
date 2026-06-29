@@ -1,13 +1,8 @@
 package dashboard
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"net"
-	"net/url"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -540,17 +535,98 @@ func matchesSelector(tag string, selector string) bool {
 func outboundTrafficByTag(items []map[string]any) map[string]outboundTraffic {
 	result := make(map[string]outboundTraffic, len(items))
 	for _, item := range items {
-		tag := stringValue(item["tag"])
+		tag, direction := outboundTrafficTagAndDirection(item)
 		if tag == "" {
 			continue
 		}
-		result[tag] = outboundTraffic{
-			up:    int64Value(item["up"]),
-			down:  int64Value(item["down"]),
-			total: int64Value(item["total"]),
+		traffic := result[tag]
+		if up := outboundTrafficValue(item, direction, "up"); up != 0 {
+			traffic.up += up
 		}
+		if down := outboundTrafficValue(item, direction, "down"); down != 0 {
+			traffic.down += down
+		}
+		if total := outboundTrafficValue(item, direction, "total"); total != 0 {
+			traffic.total += total
+		}
+		result[tag] = traffic
 	}
 	return result
+}
+
+func outboundTrafficTagAndDirection(item map[string]any) (string, string) {
+	tag := firstNonEmptyString(
+		stringValue(item["tag"]),
+		stringValue(item["outboundTag"]),
+		stringValue(item["outbound_tag"]),
+		stringValue(item["outbound"]),
+	)
+	direction := strings.ToLower(strings.TrimSpace(firstNonEmptyString(
+		stringValue(item["direction"]),
+		stringValue(item["type"]),
+	)))
+	if tag != "" {
+		return tag, direction
+	}
+
+	name := stringValue(item["name"])
+	parts := strings.Split(name, ">>>")
+	if len(parts) >= 4 && strings.EqualFold(parts[0], "outbound") && strings.EqualFold(parts[2], "traffic") {
+		return strings.TrimSpace(parts[1]), strings.ToLower(strings.TrimSpace(parts[3]))
+	}
+	return "", direction
+}
+
+func outboundTrafficValue(item map[string]any, direction string, field string) int64 {
+	switch field {
+	case "up":
+		value := firstNonZeroInt64(item["up"], item["uplink"], item["upload"], item["sent"], item["tx"])
+		if value == 0 && isOutboundUplinkDirection(direction) {
+			value = int64Value(item["value"])
+		}
+		return value
+	case "down":
+		value := firstNonZeroInt64(item["down"], item["downlink"], item["download"], item["recv"], item["rx"])
+		if value == 0 && isOutboundDownlinkDirection(direction) {
+			value = int64Value(item["value"])
+		}
+		return value
+	case "total":
+		value := firstNonZeroInt64(item["total"], item["allTime"], item["all_time"], item["traffic"])
+		if value == 0 && direction == "" {
+			value = int64Value(item["value"])
+		}
+		return value
+	default:
+		return 0
+	}
+}
+
+func firstNonZeroInt64(values ...any) int64 {
+	for _, value := range values {
+		if n := int64Value(value); n != 0 {
+			return n
+		}
+	}
+	return 0
+}
+
+func isOutboundUplinkDirection(direction string) bool {
+	switch direction {
+	case "up", "uplink", "upload", "sent", "tx":
+		return true
+	default:
+		return false
+	}
+}
+
+func isOutboundDownlinkDirection(direction string) bool {
+	switch direction {
+	case "down", "downlink", "download", "recv", "rx":
+		return true
+	default:
+		return false
+	}
 }
 
 func parseClientStats(raw any) map[string]clientStat {
@@ -664,387 +740,6 @@ func parseInboundStreamSettings(raw any) inboundStreamMeta {
 		meta.realitySpider = defaultString(stringValue(realitySettings["spiderX"]), stringValue(realityOption["spiderX"]))
 	}
 	return meta
-}
-
-func chooseSingleNodeImportHost(entry model.AgentEntryConfig, certificates []model.XUILocalCertificate, snapshot model.AgentSnapshot) string {
-	if host := normalizeImportHost(entry.ImportDomain); host != "" {
-		return host
-	}
-	if domain := firstCertificateDomain(certificates); domain != "" {
-		return domain
-	}
-	for _, address := range entry.Addresses {
-		if host := normalizeImportHost(address); host != "" {
-			return host
-		}
-	}
-	for _, value := range []string{
-		snapshot.Summary.PublicIPv4,
-		snapshot.Summary.PublicIPv6,
-		snapshot.Summary.ObservedIP,
-		xuiBaseURLHost(snapshot.XUI),
-	} {
-		if host := normalizeUsableImportIP(value); host != "" {
-			return host
-		}
-	}
-	return ""
-}
-
-func filterDomainCertificates(certificates []model.XUILocalCertificate) []model.XUILocalCertificate {
-	result := make([]model.XUILocalCertificate, 0, len(certificates))
-	for _, cert := range certificates {
-		domains := certificateDomains(cert)
-		if len(domains) == 0 {
-			continue
-		}
-		cert.DNSNames = domains
-		result = append(result, cert)
-	}
-	return result
-}
-
-func firstCertificateDomain(certificates []model.XUILocalCertificate) string {
-	for _, cert := range certificates {
-		for _, domain := range cert.DNSNames {
-			if normalized := normalizeImportDomain(domain); normalized != "" {
-				return normalized
-			}
-		}
-		if normalized := normalizeImportDomain(cert.Subject); normalized != "" {
-			return normalized
-		}
-	}
-	return ""
-}
-
-func certificateDomains(cert model.XUILocalCertificate) []string {
-	values := append([]string{}, cert.DNSNames...)
-	values = append(values, cert.Subject)
-	seen := make(map[string]struct{}, len(values))
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		normalized := normalizeCertificateDomain(value)
-		if normalized == "" {
-			continue
-		}
-		if _, ok := seen[normalized]; ok {
-			continue
-		}
-		seen[normalized] = struct{}{}
-		result = append(result, normalized)
-	}
-	return result
-}
-
-func normalizeCertificateDomain(value string) string {
-	value = strings.TrimSpace(strings.ToLower(value))
-	value = strings.TrimSuffix(value, ".")
-	if strings.HasPrefix(value, "*.") {
-		suffix := strings.TrimPrefix(value, "*.")
-		if suffix == "" || strings.Contains(suffix, " ") || net.ParseIP(suffix) != nil {
-			return ""
-		}
-		return "*." + suffix
-	}
-	return normalizeImportDomain(value)
-}
-
-func normalizeImportDomain(value string) string {
-	host := normalizeImportHost(value)
-	if net.ParseIP(host) != nil {
-		return ""
-	}
-	return host
-}
-
-func normalizeImportHost(value string) string {
-	value = strings.TrimSpace(strings.ToLower(value))
-	value = strings.TrimSuffix(value, ".")
-	value = strings.TrimPrefix(value, "https://")
-	value = strings.TrimPrefix(value, "http://")
-	if slash := strings.Index(value, "/"); slash >= 0 {
-		value = value[:slash]
-	}
-	if host, _, err := net.SplitHostPort(value); err == nil {
-		value = host
-	}
-	value = strings.Trim(value, "[]")
-	if ip := net.ParseIP(value); ip != nil {
-		return ip.String()
-	}
-	if value == "" || strings.Contains(value, " ") || strings.Contains(value, "*") || strings.Contains(value, ":") {
-		return ""
-	}
-	return value
-}
-
-func normalizeUsableImportIP(value string) string {
-	host := normalizeImportHost(value)
-	ip := net.ParseIP(host)
-	if ip == nil || !isUsableImportIP(ip) {
-		return ""
-	}
-	return ip.String()
-}
-
-func isUsableImportIP(ip net.IP) bool {
-	return ip != nil && !ip.IsUnspecified() && !ip.IsLoopback() && !ip.IsLinkLocalUnicast() && !ip.IsLinkLocalMulticast()
-}
-
-func xuiBaseURLHost(snapshot *model.XUISnapshot) string {
-	if snapshot == nil {
-		return ""
-	}
-	parsed, err := url.Parse(strings.TrimSpace(snapshot.BaseURL))
-	if err != nil {
-		return ""
-	}
-	return parsed.Hostname()
-}
-
-func buildSingleNodeImportURL(inbound inboundRecord, cfg clientConfig) string {
-	protocol := strings.ToLower(strings.TrimSpace(inbound.view.Protocol))
-	if inbound.importHost == "" || inbound.view.Port == 0 {
-		return ""
-	}
-	switch protocol {
-	case "vless":
-		return buildVLESSImportURL(inbound, cfg)
-	case "vmess":
-		return buildVMessImportURL(inbound, cfg)
-	case "trojan":
-		return buildTrojanImportURL(inbound, cfg)
-	case "shadowsocks":
-		return buildShadowsocksImportURL(inbound, cfg)
-	case "hysteria", "hysteria2":
-		return buildHysteriaImportURL(inbound, cfg)
-	case "http":
-		return buildUserPassURL("http", inbound, cfg)
-	case "socks", "socks5":
-		return buildUserPassURL("socks", inbound, cfg)
-	default:
-		return ""
-	}
-}
-
-func buildVLESSImportURL(inbound inboundRecord, cfg clientConfig) string {
-	if cfg.authUUID == "" {
-		return ""
-	}
-	query := url.Values{}
-	query.Set("type", defaultString(inbound.view.Network, "tcp"))
-	query.Set("encryption", defaultString(inbound.vlessEncryption, "none"))
-	if inbound.view.Security == "tls" || inbound.view.Security == "reality" {
-		query.Set("security", inbound.view.Security)
-	} else {
-		query.Set("security", "none")
-	}
-	if cfg.flow != "" && inbound.view.Network == "tcp" {
-		query.Set("flow", cfg.flow)
-	}
-	addSingleNodeStreamQuery(query, inbound.view)
-	return "vless://" + cfg.authUUID + "@" + hostPortForShare(inbound.importHost, inbound.view.Port) + "?" + query.Encode() + "#" + url.PathEscape(shareRemark(inbound, cfg))
-}
-
-func buildVMessImportURL(inbound inboundRecord, cfg clientConfig) string {
-	if cfg.authUUID == "" {
-		return ""
-	}
-	payload := map[string]any{
-		"v":    "2",
-		"ps":   shareRemark(inbound, cfg),
-		"add":  inbound.importHost,
-		"port": inbound.view.Port,
-		"id":   cfg.authUUID,
-		"scy":  defaultString(cfg.security, "auto"),
-		"net":  defaultString(inbound.view.Network, "tcp"),
-		"tls":  "none",
-		"type": "none",
-	}
-	if cfg.alterID > 0 {
-		payload["aid"] = strconv.Itoa(cfg.alterID)
-	}
-	if inbound.view.WSHost != "" {
-		payload["host"] = inbound.view.WSHost
-	}
-	if inbound.view.WSPath != "" {
-		payload["path"] = inbound.view.WSPath
-	}
-	if inbound.view.GRPCService != "" {
-		payload["path"] = inbound.view.GRPCService
-	}
-	if inbound.view.Security == "tls" || inbound.view.Security == "reality" {
-		payload["tls"] = inbound.view.Security
-	}
-	if inbound.view.TLSServerName != "" {
-		payload["sni"] = inbound.view.TLSServerName
-	}
-	if inbound.view.ALPN != "" {
-		payload["alpn"] = inbound.view.ALPN
-	}
-	if inbound.view.RealityFingerprint != "" {
-		payload["fp"] = inbound.view.RealityFingerprint
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return ""
-	}
-	return "vmess://" + base64.StdEncoding.EncodeToString(body)
-}
-
-func buildTrojanImportURL(inbound inboundRecord, cfg clientConfig) string {
-	if cfg.authPassword == "" {
-		return ""
-	}
-	query := url.Values{}
-	query.Set("type", defaultString(inbound.view.Network, "tcp"))
-	if inbound.view.Security == "tls" || inbound.view.Security == "reality" {
-		query.Set("security", inbound.view.Security)
-	} else {
-		query.Set("security", "none")
-	}
-	if cfg.flow != "" && inbound.view.Security == "reality" && inbound.view.Network == "tcp" {
-		query.Set("flow", cfg.flow)
-	}
-	addSingleNodeStreamQuery(query, inbound.view)
-	return buildUserInfoURL("trojan", url.User(cfg.authPassword), inbound, cfg, query)
-}
-
-func buildShadowsocksImportURL(inbound inboundRecord, cfg clientConfig) string {
-	if inbound.shadowsocksMethod == "" || cfg.authPassword == "" {
-		return ""
-	}
-	encPart := inbound.shadowsocksMethod + ":" + cfg.authPassword
-	if strings.HasPrefix(inbound.shadowsocksMethod, "2022-") && inbound.shadowsocksPassword != "" {
-		encPart = inbound.shadowsocksMethod + ":" + inbound.shadowsocksPassword + ":" + cfg.authPassword
-	}
-	query := url.Values{}
-	query.Set("type", defaultString(inbound.view.Network, "tcp"))
-	if inbound.view.Security == "tls" {
-		query.Set("security", "tls")
-	}
-	addSingleNodeStreamQuery(query, inbound.view)
-	return buildUserInfoURL("ss", url.User(base64.StdEncoding.EncodeToString([]byte(encPart))), inbound, cfg, query)
-}
-
-func buildHysteriaImportURL(inbound inboundRecord, cfg clientConfig) string {
-	if cfg.auth == "" {
-		return ""
-	}
-	query := url.Values{}
-	query.Set("security", "tls")
-	addSingleNodeStreamQuery(query, inbound.view)
-	scheme := "hysteria2"
-	if inbound.hysteriaVersion == 1 || strings.EqualFold(inbound.view.Protocol, "hysteria") {
-		scheme = "hysteria"
-	}
-	return buildUserInfoURL(scheme, url.User(cfg.auth), inbound, cfg, query)
-}
-
-func buildUserInfoURL(scheme string, user *url.Userinfo, inbound inboundRecord, cfg clientConfig, query url.Values) string {
-	uri := url.URL{
-		Scheme:   scheme,
-		User:     user,
-		Host:     hostPortForShare(inbound.importHost, inbound.view.Port),
-		RawQuery: query.Encode(),
-		Fragment: shareRemark(inbound, cfg),
-	}
-	return uri.String()
-}
-
-func buildUserPassURL(scheme string, inbound inboundRecord, cfg clientConfig) string {
-	if cfg.authUUID == "" && cfg.authPassword == "" {
-		return ""
-	}
-	uri := url.URL{
-		Scheme: scheme,
-		Host:   hostPortForShare(inbound.importHost, inbound.view.Port),
-		Path:   "/",
-	}
-	if cfg.authUUID != "" || cfg.authPassword != "" {
-		uri.User = url.UserPassword(cfg.authUUID, cfg.authPassword)
-	}
-	uri.Fragment = shareRemark(inbound, cfg)
-	return uri.String()
-}
-
-func addSingleNodeStreamQuery(query url.Values, node model.XUINodeView) {
-	if node.TLSServerName != "" {
-		query.Set("sni", node.TLSServerName)
-	}
-	if node.ALPN != "" {
-		query.Set("alpn", node.ALPN)
-	}
-	if node.Security == "reality" {
-		if node.RealityFingerprint != "" {
-			query.Set("fp", node.RealityFingerprint)
-		}
-		if node.RealityPubKey != "" {
-			query.Set("pbk", node.RealityPubKey)
-		}
-		if node.RealityShortID != "" {
-			query.Set("sid", node.RealityShortID)
-		}
-		if node.RealitySpiderX != "" {
-			query.Set("spx", node.RealitySpiderX)
-		}
-	}
-	if node.Security == "tls" && node.RealityFingerprint != "" {
-		query.Set("fp", node.RealityFingerprint)
-	}
-	if node.WSHost != "" {
-		query.Set("host", node.WSHost)
-	}
-	if node.WSPath != "" {
-		query.Set("path", node.WSPath)
-	}
-	if node.GRPCService != "" {
-		query.Set("serviceName", node.GRPCService)
-	}
-}
-
-func shareRemark(inbound inboundRecord, cfg clientConfig) string {
-	return strings.TrimSpace(strings.Join(nonEmptyStrings(inbound.view.Remark, cfg.email), "-"))
-}
-
-func hostPortForShare(host string, port int) string {
-	if strings.Contains(host, ":") && net.ParseIP(host) != nil {
-		return "[" + host + "]:" + strconv.Itoa(port)
-	}
-	return host + ":" + strconv.Itoa(port)
-}
-
-func defaultString(value string, fallback string) string {
-	if strings.TrimSpace(value) != "" {
-		return value
-	}
-	return fallback
-}
-
-func firstString(values []string) string {
-	if len(values) == 0 {
-		return ""
-	}
-	return values[0]
-}
-
-func defaultStringList(values []string, fallback []string) []string {
-	if len(values) > 0 {
-		return values
-	}
-	return fallback
-}
-
-func nonEmptyStrings(values ...string) []string {
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value != "" {
-			result = append(result, value)
-		}
-	}
-	return result
 }
 
 func countOnlineClients(stats map[string]clientStat, reportedAt time.Time) int {
@@ -1242,179 +937,4 @@ func firstAddressPortPair(items []map[string]any, addressKey, portKey string) (s
 		return address, 0
 	}
 	return address, port
-}
-
-func isPlaceholderEndpointValue(value string) bool {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "undefined", "null", "nan":
-		return true
-	default:
-		return false
-	}
-}
-
-func decodeStringObject(raw any) map[string]any {
-	switch value := raw.(type) {
-	case map[string]any:
-		return value
-	case string:
-		if strings.TrimSpace(value) == "" {
-			return nil
-		}
-		var decoded map[string]any
-		if err := json.Unmarshal([]byte(value), &decoded); err != nil {
-			return nil
-		}
-		return decoded
-	default:
-		return nil
-	}
-}
-
-func objectMap(raw any) map[string]any {
-	obj, _ := raw.(map[string]any)
-	return obj
-}
-
-func objectList(raw any) []map[string]any {
-	switch items := raw.(type) {
-	case []map[string]any:
-		return items
-	case []any:
-		result := make([]map[string]any, 0, len(items))
-		for _, item := range items {
-			if m, ok := item.(map[string]any); ok {
-				result = append(result, m)
-			}
-		}
-		return result
-	default:
-		return nil
-	}
-}
-
-func stringList(raw any) []string {
-	switch value := raw.(type) {
-	case string:
-		if value == "" {
-			return nil
-		}
-		parts := strings.Split(value, ",")
-		result := make([]string, 0, len(parts))
-		for _, part := range parts {
-			part = strings.TrimSpace(part)
-			if part != "" {
-				result = append(result, part)
-			}
-		}
-		return result
-	case []string:
-		return append([]string(nil), value...)
-	case []any:
-		result := make([]string, 0, len(value))
-		for _, item := range value {
-			if s := stringValue(item); s != "" {
-				result = append(result, s)
-			}
-		}
-		return result
-	default:
-		return nil
-	}
-}
-
-func stringValue(v any) string {
-	switch value := v.(type) {
-	case string:
-		return value
-	case json.Number:
-		return value.String()
-	default:
-		return fmt.Sprintf("%v", zeroIfNil(v))
-	}
-}
-
-func intValue(v any) int {
-	return int(int64Value(v))
-}
-
-func int64Value(v any) int64 {
-	switch value := v.(type) {
-	case int:
-		return int64(value)
-	case int32:
-		return int64(value)
-	case int64:
-		return value
-	case uint64:
-		return int64(value)
-	case float64:
-		return int64(value)
-	case float32:
-		return int64(value)
-	case json.Number:
-		n, _ := value.Int64()
-		return n
-	default:
-		return 0
-	}
-}
-
-func boolValue(v any) bool {
-	switch value := v.(type) {
-	case bool:
-		return value
-	case string:
-		return strings.EqualFold(value, "true")
-	default:
-		return false
-	}
-}
-
-func containsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
-}
-
-func uniqueStrings(values []string) []string {
-	seen := make(map[string]struct{}, len(values))
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		result = append(result, value)
-	}
-	sort.Strings(result)
-	return result
-}
-
-func cloneInts(values []int) []int {
-	if len(values) == 0 {
-		return nil
-	}
-	return append([]int(nil), values...)
-}
-
-func chooseInt64(primary, fallback int64) int64 {
-	if primary != 0 {
-		return primary
-	}
-	return fallback
-}
-
-func zeroIfNil(v any) any {
-	if v == nil {
-		return ""
-	}
-	return v
 }

@@ -103,6 +103,55 @@ func TestBuildXUIOverview(t *testing.T) {
 	}
 }
 
+func TestBuildXUIOverviewNormalizesOutboundTrafficShapes(t *testing.T) {
+	reportedAt := time.Date(2026, 6, 26, 12, 0, 0, 0, time.UTC)
+	snapshot := model.AgentSnapshot{
+		AgentID:    "agent-outbound-traffic",
+		ReportedAt: reportedAt,
+		XUI: &model.XUISnapshot{
+			CollectedAt: reportedAt,
+			Inbounds: []map[string]any{
+				{"id": 1, "tag": "entry", "remark": "Entry", "protocol": "vless", "port": 443, "settings": `{"clients":[]}`},
+			},
+			Outbounds: []map[string]any{
+				{"tag": "direct", "protocol": "freedom"},
+				{"tag": "relay-hk", "protocol": "vless"},
+				{"tag": "relay-sg", "protocol": "vmess"},
+			},
+			OutboundTraffic: []map[string]any{
+				{"name": "outbound>>>direct>>>traffic>>>uplink", "value": int64(100)},
+				{"name": "outbound>>>direct>>>traffic>>>downlink", "value": int64(250)},
+				{"outboundTag": "relay-hk", "uplink": int64(300), "downlink": int64(700), "allTime": int64(1000)},
+				{"outbound_tag": "relay-sg", "up": int64(50), "down": int64(75)},
+			},
+		},
+	}
+
+	overview := BuildXUIOverview(snapshot)
+	if overview == nil {
+		t.Fatalf("expected overview")
+	}
+	byTag := map[string]model.XUIOutboundView{}
+	for _, outbound := range overview.Outbounds {
+		byTag[outbound.Tag] = outbound
+	}
+	if got := byTag["direct"].Up; got != 100 {
+		t.Fatalf("expected direct up 100, got %d", got)
+	}
+	if got := byTag["direct"].Down; got != 250 {
+		t.Fatalf("expected direct down 250, got %d", got)
+	}
+	if got := byTag["direct"].Total; got != 350 {
+		t.Fatalf("expected direct total 350, got %d", got)
+	}
+	if got := byTag["relay-hk"].Total; got != 1000 {
+		t.Fatalf("expected relay-hk total 1000, got %d", got)
+	}
+	if got := byTag["relay-sg"].Total; got != 125 {
+		t.Fatalf("expected relay-sg total 125, got %d", got)
+	}
+}
+
 func TestBuildXUIOverviewUsesDefaultOutbound(t *testing.T) {
 	snapshot := model.AgentSnapshot{
 		AgentID:    "agent-2",

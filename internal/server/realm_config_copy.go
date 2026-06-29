@@ -76,6 +76,11 @@ func (a *App) handleRealmConfigCopy(w http.ResponseWriter, r *http.Request, sour
 	targetCfg.Features.Realm = true
 	targetCfg.Features.Configured = true
 	targetCfg = inferLegacyAgentFeatures(targetCfg, nil)
+	targetCfg = a.hydrateRealmForwardTargets(targetCfg)
+	if err := validateRealmForwardTargets(r.Context(), targetCfg.Entry.PortForwarding); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	record, err := a.store.UpdateAgentConfigWithActor(targetAgentID, targetCfg, user.Username+":realm-copy:"+sourceAgentID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

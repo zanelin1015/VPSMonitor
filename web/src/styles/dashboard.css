@@ -1216,6 +1216,14 @@
   margin-bottom: 12px;
 }
 
+.observed-config-panel {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-soft) 62%, transparent);
+}
+
 .empty-stage {
   display: flex;
   align-items: center;

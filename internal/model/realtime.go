@@ -24,6 +24,7 @@ const (
 	AgentControlApplyConfig    = "apply_config"
 	AgentControlRestartXUI     = "restart_xui"
 	AgentControlExecuteXUI     = "execute_xui_action"
+	AgentControlDisableClient  = "disable_client_service"
 	AgentControlTerminalOpen   = "terminal_open"
 	AgentControlTerminalInput  = "terminal_input"
 	AgentControlTerminalResize = "terminal_resize"

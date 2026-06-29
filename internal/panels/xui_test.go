@@ -254,6 +254,20 @@ func TestXUICollectIgnoresInvalidOutboundTrafficResponse(t *testing.T) {
 	}
 }
 
+func TestDecodeXUIListPayloadAcceptsWrappedLists(t *testing.T) {
+	raw := json.RawMessage(`{"data":[{"name":"outbound>>>direct>>>traffic>>>uplink","value":123}]}`)
+	items, err := decodeXUIListPayload(raw, "/panel/xray/getOutboundsTraffic")
+	if err != nil {
+		t.Fatalf("decodeXUIListPayload: %v", err)
+	}
+	if got := len(items); got != 1 {
+		t.Fatalf("expected 1 item, got %d", got)
+	}
+	if got := items[0]["name"]; got != "outbound>>>direct>>>traffic>>>uplink" {
+		t.Fatalf("unexpected item name: %#v", got)
+	}
+}
+
 func TestXUICollectFallsBackToXrayTemplateWhenServerConfigIsEmpty(t *testing.T) {
 	client, err := NewXUIClient(config.XUIConfig{
 		Enabled:  true,
@@ -1885,7 +1899,7 @@ func TestXUIExecuteDeleteClientUsesDeleteAPI(t *testing.T) {
 	}
 }
 
-func TestXUIExecuteSetClientEnabledUsesInboundUpdateClientAPI(t *testing.T) {
+func TestXUIExecuteSetClientEnabledUsesFullInboundUpdateAndPreservesUUID(t *testing.T) {
 	client, err := NewXUIClient(config.XUIConfig{
 		Enabled:  true,
 		BaseURL:  "https://xui.local",
@@ -1903,8 +1917,8 @@ func TestXUIExecuteSetClientEnabledUsesInboundUpdateClientAPI(t *testing.T) {
 			switch req.URL.Path {
 			case "/login":
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
-			case "/panel/api/clients/update/alice@example.com":
-				t.Fatalf("must not call 3x-ui client update API because some versions reset UUIDs")
+			case "/panel/api/clients/update/alice@example.com", "/panel/api/inbounds/updateClient/uuid-1":
+				t.Fatalf("must not call single-client update API because some x-ui versions reset UUIDs")
 				return nil, nil
 			case "/panel/api/inbounds/list":
 				return jsonResponse(t, req, map[string]any{
@@ -1918,7 +1932,7 @@ func TestXUIExecuteSetClientEnabledUsesInboundUpdateClientAPI(t *testing.T) {
 						},
 					},
 				}), nil
-			case "/panel/api/inbounds/updateClient/uuid-1":
+			case "/panel/api/inbounds/update/7":
 				updateCalled = true
 				var body map[string]any
 				if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
@@ -1928,7 +1942,7 @@ func TestXUIExecuteSetClientEnabledUsesInboundUpdateClientAPI(t *testing.T) {
 					t.Fatalf("expected inbound id 7, got %#v", body)
 				}
 				settings := stringValue(body["settings"])
-				if !strings.Contains(settings, `"id":"uuid-1"`) || !strings.Contains(settings, `"enable":false`) {
+				if !strings.Contains(settings, `"id":"uuid-1"`) || !strings.Contains(settings, `"email":"alice@example.com"`) || !strings.Contains(settings, `"enable":false`) {
 					t.Fatalf("expected UUID to be preserved and enable=false, got %s", settings)
 				}
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "updated"}), nil
@@ -1954,11 +1968,11 @@ func TestXUIExecuteSetClientEnabledUsesInboundUpdateClientAPI(t *testing.T) {
 		t.Fatalf("unexpected result: %#v", result)
 	}
 	if !updateCalled {
-		t.Fatalf("expected inbound updateClient API to be called")
+		t.Fatalf("expected full inbound update API to be called")
 	}
 }
 
-func TestXUIUpdateV3ClientPreservesImmutableAuthFields(t *testing.T) {
+func TestXUIExecuteUpdateClientExpiryUsesFullInboundUpdateAndPreservesUUID(t *testing.T) {
 	client, err := NewXUIClient(config.XUIConfig{
 		Enabled:  true,
 		BaseURL:  "https://xui.local",
@@ -1969,33 +1983,37 @@ func TestXUIUpdateV3ClientPreservesImmutableAuthFields(t *testing.T) {
 		t.Fatalf("NewXUIClient: %v", err)
 	}
 
+	updateCalled := false
 	client.client = &http.Client{
 		Timeout: 5 * time.Second,
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			switch req.URL.Path {
 			case "/login":
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
-			case "/panel/api/clients/get/alice@example.com":
+			case "/panel/api/inbounds/list":
 				return jsonResponse(t, req, map[string]any{
 					"success": true,
-					"obj": map[string]any{
-						"id":       42,
-						"uuid":     "uuid-original",
-						"password": "password-original",
-						"email":    "alice@example.com",
-						"enable":   true,
+					"obj": []map[string]any{
+						{
+							"id":       7,
+							"tag":      "in-vless-443",
+							"protocol": "vless",
+							"settings": `{"clients":[{"id":"uuid-1","email":"alice@example.com","enable":true,"expiryTime":1893456000000,"flow":"xtls-rprx-vision"}]}`,
+						},
 					},
 				}), nil
-			case "/panel/api/clients/update/alice@example.com":
+			case "/panel/api/inbounds/updateClient/uuid-1":
+				t.Fatalf("must not call single-client update API because some x-ui versions reset UUIDs")
+				return nil, nil
+			case "/panel/api/inbounds/update/7":
+				updateCalled = true
 				var body map[string]any
 				if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 					t.Fatalf("decode update body: %v", err)
 				}
-				if body["id"] != "uuid-original" || body["uuid"] != "uuid-original" || body["password"] != "password-original" {
-					t.Fatalf("auth fields must be immutable, got %#v", body)
-				}
-				if body["enable"] != false {
-					t.Fatalf("expected mutable field to be updated, got %#v", body)
+				settings := stringValue(body["settings"])
+				if !strings.Contains(settings, `"id":"uuid-1"`) || !strings.Contains(settings, `"expiryTime":1896048000000`) || !strings.Contains(settings, `"flow":"xtls-rprx-vision"`) {
+					t.Fatalf("expected immutable client fields to be preserved and expiry updated, got %s", settings)
 				}
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "updated"}), nil
 			default:
@@ -2005,15 +2023,22 @@ func TestXUIUpdateV3ClientPreservesImmutableAuthFields(t *testing.T) {
 		}),
 	}
 
-	_, err = client.updateV3Client(context.Background(), "alice@example.com", func(value map[string]any) map[string]any {
-		value["id"] = "uuid-wrong"
-		value["uuid"] = "uuid-wrong"
-		value["password"] = "password-wrong"
-		value["enable"] = false
-		return value
+	result, err := client.ExecuteAction(context.Background(), model.XUIAction{
+		Kind: model.XUIActionUpdateClientExpiry,
+		Payload: map[string]any{
+			"inbound_id":  7,
+			"email":       "alice@example.com",
+			"expiry_time": int64(1896048000000),
+		},
 	})
 	if err != nil {
-		t.Fatalf("updateV3Client: %v", err)
+		t.Fatalf("ExecuteAction: %v", err)
+	}
+	if result["expiry_time"] != int64(1896048000000) {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+	if !updateCalled {
+		t.Fatalf("expected full inbound update API to be called")
 	}
 }
 
@@ -2095,12 +2120,12 @@ func TestXUIExecuteAddClientUsesAddClientAPI(t *testing.T) {
 	}
 }
 
-func TestNormalizeInboundClientReplacesDeterministicUUID(t *testing.T) {
+func TestEnsureNewInboundClientAuthGeneratesUniqueUUID(t *testing.T) {
 	client := map[string]any{
 		"id":    "00000000-0000-0000-0000-000000000001",
 		"email": "bob@example.com",
 	}
-	normalizeInboundClient(client, "vless")
+	ensureNewInboundClientAuth(client, "vless", nil)
 	id := stringValue(client["id"])
 	if id == "00000000-0000-0000-0000-000000000001" || !looksLikeUUID(id) {
 		t.Fatalf("expected deterministic placeholder uuid to be replaced, got %q", id)
@@ -2111,11 +2136,6 @@ func TestNormalizeInboundClientReplacesDeterministicUUID(t *testing.T) {
 		"id":    existingID,
 		"email": "alice@example.com",
 	}
-	normalizeInboundClient(client, "vless")
-	if got := stringValue(client["id"]); got != existingID {
-		t.Fatalf("expected existing uuid to be preserved, got %q", got)
-	}
-
 	used := map[string]struct{}{strings.ToLower(existingID): {}}
 	ensureNewInboundClientAuth(client, "vless", used)
 	if got := stringValue(client["id"]); got == existingID || !looksLikeUUID(got) {

@@ -2,11 +2,14 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +18,49 @@ import (
 	"bridge-core/internal/model"
 	"bridge-core/internal/store"
 )
+
+func TestValidateRealmForwardTargetsRejectsUnresolvableDomain(t *testing.T) {
+	originalLookup := realmForwardLookupHost
+	realmForwardLookupHost = func(ctx context.Context, host string) ([]string, error) {
+		if host == "hkq1.zanelin.top" {
+			return []string{"8.217.202.247"}, nil
+		}
+		return nil, &net.DNSError{Err: "no such host", Name: host}
+	}
+	t.Cleanup(func() {
+		realmForwardLookupHost = originalLookup
+	})
+
+	err := validateRealmForwardTargets(context.Background(), model.RealmForwardConfig{
+		Enabled: true,
+		Backend: "realm",
+		Rules: []model.RealmForwardRule{{
+			Enabled:       true,
+			Name:          "HK typo",
+			ListenPort:    20002,
+			TargetAddress: "hkq1.zanellin.top",
+			TargetPort:    20002,
+		}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "无法解析") {
+		t.Fatalf("expected DNS validation error, got %v", err)
+	}
+
+	err = validateRealmForwardTargets(context.Background(), model.RealmForwardConfig{
+		Enabled: true,
+		Backend: "realm",
+		Rules: []model.RealmForwardRule{{
+			Enabled:       true,
+			Name:          "HK",
+			ListenPort:    20002,
+			TargetAddress: "hkq1.zanelin.top",
+			TargetPort:    20002,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("expected valid target to pass, got %v", err)
+	}
+}
 
 func TestHandleRegisterDoesNotSeedDefaultXUIBootstrap(t *testing.T) {
 	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))

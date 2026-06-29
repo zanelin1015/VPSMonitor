@@ -221,6 +221,7 @@ type AgentListItem struct {
 	LastSeenAt          *time.Time             `json:"last_seen_at,omitempty"`
 	HasConfig           bool                   `json:"has_config"`
 	Summary             VPSSummary             `json:"summary"`
+	Realm               *RealmSnapshot         `json:"realm,omitempty"`
 	NetworkPolicy       *NetworkPolicySnapshot `json:"network_policy,omitempty"`
 	Geo                 *IPGeoView             `json:"geo,omitempty"`
 }
