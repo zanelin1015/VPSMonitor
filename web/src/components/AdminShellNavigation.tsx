@@ -59,8 +59,6 @@ export function AdminShellNavigation(props: AdminShellNavigationProps) {
     scopedAgentCount,
     agentsLoading,
     themeMode,
-    effectiveMode,
-    heroTitle,
     serverVersionLabel,
     onOpenAccount,
     onOpenClientInstall,
@@ -203,47 +201,73 @@ export function AdminShellNavigation(props: AdminShellNavigationProps) {
         </div>
       </aside>
 
-      <header className="hero-panel admin-oa-topbar">
-        <div className="admin-oa-titlebar">
-          <div className="eyebrow">{serverVersionLabel} / 工作台</div>
-          <Title level={1}>{heroTitle}</Title>
-          <Paragraph className="hero-copy">
-            {isAreaManagerAccount
-              ? '管理已授权 Client、用户账号、区域标签与可见拓扑链路。'
-              : '统一管理 Client、x-ui 托管配置、用户账号、财务月览与跨 Client 拓扑联动。'}
-          </Paragraph>
-        </div>
-        <div className="hero-actions hero-actions-column">
-          <Button icon={<ReloadOutlined />} loading={agentsLoading} onClick={onRefreshAgents}>刷新</Button>
-          {canManageSystem ? <Button icon={<DeploymentUnitOutlined />} onClick={onOpenClientInstall}>安装 Client</Button> : null}
-          <Button icon={<TeamOutlined />} onClick={onOpenCustomers}>用户</Button>
-          <PersonalCenterDropdown
-            adminUser={adminUser}
-            systemInfo={systemInfo}
-            canManageSystem={canManageSystem}
-            onOpenAccount={onOpenAccount}
-            onOpenClientInstall={onOpenClientInstall}
-            onOpenTelegram={onOpenTelegram}
-            onOpenCustomers={onOpenCustomers}
-            onOpenFrontendSettings={onOpenFrontendSettings}
-            onOpenUpdates={onOpenUpdates}
-            onLogout={onLogout}
-          />
-          <div className="theme-mode-row">
-            <Text type="secondary">主题</Text>
-            <Select
-              size="small"
-              value={themeMode}
-              options={[
-                { value: 'system', label: `跟随系统（${effectiveMode === 'dark' ? '暗黑' : '明亮'}）` },
-                { value: 'light', label: '明亮' },
-                { value: 'dark', label: '暗黑' },
-              ]}
-              onChange={(value) => onThemeModeChange(value as ThemeMode)}
-            />
-          </div>
-        </div>
-      </header>
     </>
+  )
+}
+
+export function AdminShellTopbar(props: AdminShellNavigationProps) {
+  const {
+    adminUser,
+    systemInfo,
+    canManageSystem,
+    isAreaManagerAccount,
+    agentsLoading,
+    themeMode,
+    effectiveMode,
+    heroTitle,
+    serverVersionLabel,
+    onOpenAccount,
+    onOpenClientInstall,
+    onOpenTelegram,
+    onOpenCustomers,
+    onOpenFrontendSettings,
+    onOpenUpdates,
+    onLogout,
+    onRefreshAgents,
+    onThemeModeChange,
+  } = props
+
+  return (
+    <header className="hero-panel admin-oa-topbar">
+      <div className="admin-oa-titlebar">
+        <div className="eyebrow">{serverVersionLabel} / 工作台</div>
+        <Title level={1}>{heroTitle}</Title>
+        <Paragraph className="hero-copy">
+          {isAreaManagerAccount
+            ? '管理已授权 Client、用户账号、区域标签与可见拓扑链路。'
+            : '统一管理 Client、x-ui 托管配置、用户账号、财务月览与跨 Client 拓扑联动。'}
+        </Paragraph>
+      </div>
+      <div className="hero-actions hero-actions-column">
+        <Button icon={<ReloadOutlined />} loading={agentsLoading} onClick={onRefreshAgents}>刷新</Button>
+        {canManageSystem ? <Button icon={<DeploymentUnitOutlined />} onClick={onOpenClientInstall}>安装 Client</Button> : null}
+        <Button icon={<TeamOutlined />} onClick={onOpenCustomers}>用户</Button>
+        <PersonalCenterDropdown
+          adminUser={adminUser}
+          systemInfo={systemInfo}
+          canManageSystem={canManageSystem}
+          onOpenAccount={onOpenAccount}
+          onOpenClientInstall={onOpenClientInstall}
+          onOpenTelegram={onOpenTelegram}
+          onOpenCustomers={onOpenCustomers}
+          onOpenFrontendSettings={onOpenFrontendSettings}
+          onOpenUpdates={onOpenUpdates}
+          onLogout={onLogout}
+        />
+        <div className="theme-mode-row">
+          <Text type="secondary">主题</Text>
+          <Select
+            size="small"
+            value={themeMode}
+            options={[
+              { value: 'system', label: `跟随系统（${effectiveMode === 'dark' ? '暗黑' : '明亮'}）` },
+              { value: 'light', label: '明亮' },
+              { value: 'dark', label: '暗黑' },
+            ]}
+            onChange={(value) => onThemeModeChange(value as ThemeMode)}
+          />
+        </div>
+      </div>
+    </header>
   )
 }

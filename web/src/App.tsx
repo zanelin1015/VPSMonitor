@@ -87,7 +87,7 @@ import {
   FrontendSettingsPanel,
   ScheduledTasksPanel,
 } from './components/AdminModals'
-import { AdminShellNavigation } from './components/AdminShellNavigation'
+import { AdminShellNavigation, AdminShellTopbar } from './components/AdminShellNavigation'
 import { renderCNFlowPanel } from './components/DashboardTopologyPanels'
 import { AgentRail, AdminWorkbenchDashboard, OverviewSummaryCard } from './components/DashboardSidebar'
 import { LoginScreen } from './components/LoginScreen'
@@ -2109,45 +2109,48 @@ export default function App() {
   }
   const openAccessLogsPage = () => setActiveAdminPage('access-logs')
   const openSchedulesPage = () => setActiveAdminPage('schedules')
+  const shellNavigationProps = {
+    adminUser,
+    systemInfo,
+    canManageSystem,
+    isAreaManagerAccount,
+    activeAdminPage,
+    topologyVisible,
+    onlineAgentCount,
+    scopedAgentCount,
+    agentsLoading,
+    themeMode,
+    effectiveMode,
+    heroTitle,
+    serverVersionLabel,
+    onOpenAccount: openAccountModal,
+    onOpenClientInstall: () => void openClientInstallModal(),
+    onOpenTelegram: () => setTelegramBotModalOpen(true),
+    onOpenCustomers: openCustomersPage,
+    onOpenFrontendSettings: openSettingsPage,
+    onOpenUpdates: () => setUpdateModalOpen(true),
+    onLogout: () => void logout(),
+    onOpenWorkbench: returnHome,
+    onOpenAssets: openAssetsPage,
+    onOpenTopology: openTopologyPanel,
+    onOpenAccessLogs: openAccessLogsPage,
+    onOpenSchedules: openSchedulesPage,
+    onRefreshAgents: () => void loadAgents(),
+    onThemeModeChange: setThemeMode,
+  }
+
   return (
     <div className="page-shell admin-page-shell">
       <VisualEffects disabled={isAreaManagerAccount} />
       <div className="page-background page-background-left" />
       <div className="page-background page-background-right" />
       <div className={`app-shell admin-oa-shell${centerPanelOpen ? ' topology-open-shell' : ''}`}>
-        <AdminShellNavigation
-          adminUser={adminUser}
-          systemInfo={systemInfo}
-          canManageSystem={canManageSystem}
-          isAreaManagerAccount={isAreaManagerAccount}
-          activeAdminPage={activeAdminPage}
-          topologyVisible={topologyVisible}
-          onlineAgentCount={onlineAgentCount}
-          scopedAgentCount={scopedAgentCount}
-          agentsLoading={agentsLoading}
-          themeMode={themeMode}
-          effectiveMode={effectiveMode}
-          heroTitle={heroTitle}
-          serverVersionLabel={serverVersionLabel}
-          onOpenAccount={openAccountModal}
-          onOpenClientInstall={() => void openClientInstallModal()}
-          onOpenTelegram={() => setTelegramBotModalOpen(true)}
-          onOpenCustomers={openCustomersPage}
-          onOpenFrontendSettings={openSettingsPage}
-          onOpenUpdates={() => setUpdateModalOpen(true)}
-          onLogout={() => void logout()}
-          onOpenWorkbench={returnHome}
-          onOpenAssets={openAssetsPage}
-          onOpenTopology={openTopologyPanel}
-          onOpenAccessLogs={openAccessLogsPage}
-          onOpenSchedules={openSchedulesPage}
-          onRefreshAgents={() => void loadAgents()}
-          onThemeModeChange={setThemeMode}
-        />
+        <AdminShellNavigation {...shellNavigationProps} />
 
         <section className="admin-oa-main">
+          <AdminShellTopbar {...shellNavigationProps} />
 
-        {consoleModalOpen ? <Suspense fallback={null}>
+          {consoleModalOpen ? <Suspense fallback={null}>
           <ConsoleModals
             accountForm={accountForm}
             accountModalOpen={accountModalOpen}
