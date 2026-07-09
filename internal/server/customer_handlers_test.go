@@ -159,6 +159,8 @@ func TestBuildCustomerLinkViewIncludesBillingAndExpiry(t *testing.T) {
 		"entry": {
 			AgentID: "entry",
 			Renewal: model.VPSRenewalConfig{
+				Enabled:    true,
+				ExpireDate: "2099-01-02",
 				ClientBillings: []model.XUIClientBillingConfig{
 					{
 						InboundID:       1001,
@@ -177,6 +179,10 @@ func TestBuildCustomerLinkViewIncludesBillingAndExpiry(t *testing.T) {
 	}
 
 	link := buildCustomerLinkView(assignment, chainMap, clientMap, agentMap)
+	expectedNodeExpiry, ok := parseDate("2099-01-02")
+	if !ok || link.NodeExpireTime != expectedNodeExpiry.UnixMilli() {
+		t.Fatalf("expected node expiry from agent renewal, got %#v", link)
+	}
 	if link.RevenueAmount == nil || *link.RevenueAmount != 88.5 || link.RevenueCurrency != "USDT" || link.RevenueCycle != "quarter" {
 		t.Fatalf("expected billing revenue on customer link, got %#v", link)
 	}

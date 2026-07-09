@@ -17,6 +17,10 @@ import (
 
 func (a *App) handleCustomer(w http.ResponseWriter, r *http.Request) {
 	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/customer/"), "/")
+	if strings.HasPrefix(path, "subscription/") {
+		a.handleCustomerSubscription(w, r, strings.Split(path, "/")[1:])
+		return
+	}
 	switch path {
 	case "login":
 		if r.Method != http.MethodPost {
@@ -109,7 +113,26 @@ func (a *App) handleCustomerOverview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	token, err := a.store.EnsureCustomerSubscriptionToken(user.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.ClashSubscriptionURL = customerSubscriptionURL(r, token, "clash.yaml")
+	response.MihomoSubscriptionURL = customerSubscriptionURL(r, token, "mihomo.yaml")
 	writeJSON(w, http.StatusOK, response)
+}
+
+func customerSubscriptionURL(r *http.Request, token string, filename string) string {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return ""
+	}
+	filename = strings.Trim(strings.TrimSpace(filename), "/")
+	if !isMihomoSubscriptionFile(filename) {
+		filename = "clash.yaml"
+	}
+	return requestPublicBaseURL(r) + "/api/v1/customer/subscription/" + url.PathEscape(token) + "/" + filename
 }
 
 func (a *App) handleCustomerStyleUpdate(w http.ResponseWriter, r *http.Request) {
@@ -335,6 +358,7 @@ func buildCustomerLinkView(
 			{Role: "entry", Label: entryName},
 		},
 	}
+	link.NodeExpireTime = customerNodeExpireTime(assignment.AgentID, agentMap)
 	var clientRef customerClientRef
 	if ref, ok := clientMap[customerAssignmentKey(assignment.AgentID, assignment.InboundID, assignment.ClientEmail)]; ok {
 		clientRef = ref
@@ -400,6 +424,41 @@ func buildCustomerLinkView(
 		link.UnresolvedReason = chain.UnresolvedReason
 	}
 	return link
+}
+
+func customerNodeExpireTime(agentID string, agentMap map[string]model.DashboardAgentView) int64 {
+	if agentMap == nil || agentID == "" {
+		return 0
+	}
+	agent, ok := agentMap[agentID]
+	if !ok {
+		return 0
+	}
+	cfg := normalizeAlertRenewal(agent.Renewal)
+	if !cfg.Enabled || (cfg.StartDate == "" && cfg.ExpireDate == "") {
+		return 0
+	}
+	now := startOfDay(time.Now())
+	if cfg.ExpireDate != "" {
+		end, ok := parseDate(cfg.ExpireDate)
+		if !ok {
+			return 0
+		}
+		for cfg.Cycle != "" && !end.After(now) {
+			end = addRenewalCycle(end, cfg.Cycle)
+		}
+		return end.UnixMilli()
+	}
+	start, ok := parseDate(cfg.StartDate)
+	if !ok || cfg.Cycle == "" {
+		return 0
+	}
+	end := addRenewalCycle(start, cfg.Cycle)
+	for !end.After(now) {
+		start = end
+		end = addRenewalCycle(start, cfg.Cycle)
+	}
+	return end.UnixMilli()
 }
 
 type customerPublicEntry struct {

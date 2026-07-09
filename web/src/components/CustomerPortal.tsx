@@ -213,6 +213,20 @@ export function CustomerPortal() {
     }
   }
 
+  async function copyClashSubscriptionURL() {
+    const subscriptionURL = overview?.clash_subscription_url || overview?.mihomo_subscription_url || ''
+    if (!subscriptionURL) {
+      message.warning('当前服务端暂未返回订阅地址，请先发布新版 Server')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(subscriptionURL)
+      message.success('Clash/Mihomo 订阅已复制')
+    } catch {
+      message.error('复制失败，请手动复制')
+    }
+  }
+
   if (sessionLoading) {
     return (
       <div className="login-shell">
@@ -250,6 +264,7 @@ export function CustomerPortal() {
               setStyleDraft(user.style_code || '')
               setStyleModalOpen(true)
             }} />
+            <Button shape="circle" icon={<CopyOutlined />} title="复制 Clash/Mihomo 订阅" onClick={() => void copyClashSubscriptionURL()} />
             <Button shape="circle" icon={<LockOutlined />} onClick={openPasswordModal} />
             <Button shape="circle" icon={<ReloadOutlined />} loading={overviewLoading} onClick={() => void loadOverview()} />
             <Button shape="circle" icon={<LogoutOutlined />} onClick={() => void logout()} />
@@ -279,6 +294,7 @@ export function CustomerPortal() {
               setStyleDraft(user.style_code || '')
               setStyleModalOpen(true)
             }}>页面样式</Button>
+            <Button icon={<CopyOutlined />} onClick={() => void copyClashSubscriptionURL()}>复制 Clash/Mihomo 订阅</Button>
             <Button icon={<LockOutlined />} onClick={openPasswordModal}>修改密码</Button>
             <Button icon={<ReloadOutlined />} loading={overviewLoading} onClick={() => void loadOverview()}>刷新</Button>
             <Button icon={<LogoutOutlined />} onClick={() => void logout()}>退出</Button>
@@ -298,6 +314,9 @@ export function CustomerPortal() {
               <Text type="secondary">用户账号</Text>
               <Title level={3}>{user.display_name || user.username}</Title>
               <Tag color="blue">登录可见</Tag>
+              <Button block icon={<CopyOutlined />} onClick={() => void copyClashSubscriptionURL()}>
+                复制 Clash/Mihomo 订阅
+              </Button>
               <Text type="secondary">数据更新时间</Text>
               <Text>{overview?.generated_at ? formatDateTime(overview.generated_at) : '-'}</Text>
             </Card>
@@ -579,10 +598,16 @@ function customerLinkMetaItems(link: CustomerLinkView): Array<{ key: string; tex
       text: `费用：${formatCustomerRecurringPrice(Number(link.revenue_amount || 0), link.revenue_currency || 'CNY', link.revenue_cycle)}`,
     })
   }
+  if (Number(link.node_expire_time || 0) > 0) {
+    items.push({
+      key: 'node-expiry',
+      text: `节点到期：${formatCustomerExpiryTime(Number(link.node_expire_time || 0))}`,
+    })
+  }
   if (Number(link.expire_time || 0) > 0) {
     items.push({
       key: 'expiry',
-      text: `过期时间：${formatCustomerExpiryTime(Number(link.expire_time || 0))}`,
+      text: `客户端到期：${formatCustomerExpiryTime(Number(link.expire_time || 0))}`,
     })
   }
   return items

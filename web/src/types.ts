@@ -347,6 +347,7 @@ export interface CustomerLinkView {
   revenue_amount?: number
   revenue_currency?: 'CNY' | 'USDT' | string
   revenue_cycle?: 'month' | 'quarter' | 'year' | string
+  node_expire_time?: number
   start_time?: number
   expire_time?: number
   expire_cycle?: 'month' | 'quarter' | 'year' | string
@@ -358,6 +359,8 @@ export interface CustomerLinkView {
 export interface CustomerOverviewResponse {
   user: CustomerUser
   generated_at: string
+  clash_subscription_url?: string
+  mihomo_subscription_url?: string
   links: CustomerLinkView[]
 }
 

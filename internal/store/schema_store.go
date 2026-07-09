@@ -99,6 +99,7 @@ func (s *SQLiteStore) init() error {
 			password_hash TEXT NOT NULL,
 			display_name TEXT NOT NULL DEFAULT '',
 			style_code TEXT NOT NULL DEFAULT '',
+			subscription_token TEXT NOT NULL DEFAULT '',
 			owner_type TEXT NOT NULL DEFAULT 'admin',
 			owner_id INTEGER NOT NULL DEFAULT 1,
 			enabled INTEGER NOT NULL DEFAULT 1,
@@ -315,6 +316,9 @@ func (s *SQLiteStore) init() error {
 	if err := s.ensureColumn("customer_accounts", "style_code", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	if err := s.ensureColumn("customer_accounts", "subscription_token", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	if err := s.ensureColumn("customer_accounts", "owner_type", "TEXT NOT NULL DEFAULT 'admin'"); err != nil {
 		return err
 	}
@@ -341,6 +345,7 @@ func (s *SQLiteStore) init() error {
 		`CREATE INDEX IF NOT EXISTS idx_area_manager_assignments_manager ON area_manager_assignments(manager_id, enabled, id);`,
 		`CREATE INDEX IF NOT EXISTS idx_area_manager_assignments_agent ON area_manager_assignments(agent_id, inbound_id, client_email);`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_accounts_owner ON customer_accounts(owner_type, owner_id, id);`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_accounts_subscription_token ON customer_accounts(subscription_token) WHERE subscription_token <> '';`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_sessions_expires_at ON customer_sessions(expires_at);`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_assignments_customer ON customer_assignments(customer_id, enabled, id);`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_assignments_agent ON customer_assignments(agent_id, inbound_id, client_email);`,

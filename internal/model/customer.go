@@ -105,6 +105,7 @@ type CustomerLinkView struct {
 	RevenueAmount    *float64           `json:"revenue_amount,omitempty"`
 	RevenueCurrency  string             `json:"revenue_currency,omitempty"`
 	RevenueCycle     string             `json:"revenue_cycle,omitempty"`
+	NodeExpireTime   int64              `json:"node_expire_time,omitempty"`
 	StartTime        int64              `json:"start_time,omitempty"`
 	ExpireTime       int64              `json:"expire_time,omitempty"`
 	ExpireCycle      string             `json:"expire_cycle,omitempty"`
@@ -114,7 +115,9 @@ type CustomerLinkView struct {
 }
 
 type CustomerOverviewResponse struct {
-	User        CustomerUser       `json:"user"`
-	GeneratedAt time.Time          `json:"generated_at"`
-	Links       []CustomerLinkView `json:"links"`
+	User                  CustomerUser       `json:"user"`
+	GeneratedAt           time.Time          `json:"generated_at"`
+	ClashSubscriptionURL  string             `json:"clash_subscription_url,omitempty"`
+	MihomoSubscriptionURL string             `json:"mihomo_subscription_url,omitempty"`
+	Links                 []CustomerLinkView `json:"links"`
 }

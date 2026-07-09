@@ -107,10 +107,14 @@ func (s *SQLiteStore) CreateCustomerForOwner(req model.CustomerAccountRequest, o
 		ownerID = adminAccountID
 	}
 	now := time.Now().UTC()
+	subscriptionToken, err := randomTokenBytes(32)
+	if err != nil {
+		return model.CustomerAdminView{}, err
+	}
 	result, err := s.db.Exec(`
-		INSERT INTO customer_accounts (username, password_hash, display_name, style_code, owner_type, owner_id, enabled, created_at, updated_at)
-		VALUES (?, ?, ?, '', ?, ?, ?, ?, ?)
-	`, username, hash, displayName, ownerType, ownerID, boolInt(enabled), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
+		INSERT INTO customer_accounts (username, password_hash, display_name, style_code, subscription_token, owner_type, owner_id, enabled, created_at, updated_at)
+		VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, ?)
+	`, username, hash, displayName, subscriptionToken, ownerType, ownerID, boolInt(enabled), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
 	if err != nil {
 		return model.CustomerAdminView{}, fmt.Errorf("create customer: %w", err)
 	}
@@ -126,6 +130,81 @@ func (s *SQLiteStore) CreateCustomerForOwner(req model.CustomerAccountRequest, o
 		return model.CustomerAdminView{}, fmt.Errorf("created customer not found")
 	}
 	return customer, nil
+}
+
+func (s *SQLiteStore) EnsureCustomerSubscriptionToken(customerID int64) (string, error) {
+	if customerID <= 0 {
+		return "", fmt.Errorf("invalid customer id")
+	}
+	var current string
+	err := s.db.QueryRow(`
+		SELECT subscription_token
+		FROM customer_accounts
+		WHERE id = ? AND enabled = 1
+	`, customerID).Scan(&current)
+	if err == sql.ErrNoRows {
+		return "", fmt.Errorf("customer not found")
+	}
+	if err != nil {
+		return "", fmt.Errorf("load customer subscription token: %w", err)
+	}
+	current = strings.TrimSpace(current)
+	if current != "" {
+		return current, nil
+	}
+	for attempt := 0; attempt < 5; attempt++ {
+		token, err := randomTokenBytes(32)
+		if err != nil {
+			return "", err
+		}
+		result, err := s.db.Exec(`
+			UPDATE customer_accounts
+			SET subscription_token = ?, updated_at = ?
+			WHERE id = ? AND enabled = 1 AND subscription_token = ''
+		`, token, time.Now().UTC().Format(time.RFC3339Nano), customerID)
+		if err != nil {
+			if strings.Contains(strings.ToLower(err.Error()), "unique") {
+				continue
+			}
+			return "", fmt.Errorf("update customer subscription token: %w", err)
+		}
+		if affected, _ := result.RowsAffected(); affected > 0 {
+			return token, nil
+		}
+		err = s.db.QueryRow(`
+			SELECT subscription_token
+			FROM customer_accounts
+			WHERE id = ? AND enabled = 1
+		`, customerID).Scan(&current)
+		if err != nil {
+			return "", fmt.Errorf("reload customer subscription token: %w", err)
+		}
+		current = strings.TrimSpace(current)
+		if current != "" {
+			return current, nil
+		}
+	}
+	return "", fmt.Errorf("generate customer subscription token: exhausted retries")
+}
+
+func (s *SQLiteStore) GetCustomerBySubscriptionToken(token string) (model.CustomerUser, bool, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return model.CustomerUser{}, false, nil
+	}
+	row := s.db.QueryRow(`
+		SELECT id, username, display_name, style_code, owner_type, owner_id, enabled, created_at, updated_at
+		FROM customer_accounts
+		WHERE subscription_token = ? AND enabled = 1
+	`, token)
+	user, err := scanCustomerUser(row)
+	if err == sql.ErrNoRows {
+		return model.CustomerUser{}, false, nil
+	}
+	if err != nil {
+		return model.CustomerUser{}, false, fmt.Errorf("load customer by subscription token: %w", err)
+	}
+	return user, true, nil
 }
 
 func (s *SQLiteStore) CustomerOwnedBy(customerID int64, ownerType string, ownerID int64) (bool, error) {
