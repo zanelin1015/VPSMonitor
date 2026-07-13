@@ -323,7 +323,7 @@ export default function App() {
     setCustomerAssignmentDraft,
   })
   const topologyScopeLabel = selectedAgentId ? selectedAgent?.agent_name || selectedAgentId : selectedTag ? `${selectedTag} 标签` : '全部 Client'
-  const heroTitle = '南风VPS监控'
+  const heroTitle = 'ZaneLin'
   const normalizedPath = window.location.pathname.replace(/\/+$/, '') || '/'
   const customerMode = normalizedPath === '/customer'
   const publicSiteMode = normalizedPath === '/site' || normalizedPath === '/official' || new URLSearchParams(window.location.search).get('page') === 'site'

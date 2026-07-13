@@ -112,10 +112,10 @@ export function PublicSite() {
         <section className="public-hero">
           <div className="public-hero-copy">
             <div className="public-brand-row">
-              <span className="public-brand-mark">南</span>
-              <span>VPSMonitor</span>
+              <span className="public-brand-mark">Z</span>
+              <span>ZaneLin</span>
             </div>
-            <h1>VPSMonitor</h1>
+            <h1>ZaneLin</h1>
             <p>跨区域 VPS、Realm 中转与 X-UI 节点的统一拓扑视图。</p>
             <div className="public-hero-actions">
               <Button type="primary" size="large" href="/admin">

@@ -81,9 +81,9 @@ export function AdminShellNavigation(props: AdminShellNavigationProps) {
       <header className="admin-mobile-header">
         <div className="admin-mobile-brand-row">
           <div className="admin-mobile-brand">
-            <span className="admin-oa-brand-mark">南</span>
+            <span className="admin-oa-brand-mark">Z</span>
             <div>
-              <strong>南风VPS监控</strong>
+              <strong>ZaneLin</strong>
               <small>
                 在线 {onlineAgentCount}/{scopedAgentCount} · v{systemInfo?.version || '-'}
               </small>
@@ -149,9 +149,9 @@ export function AdminShellNavigation(props: AdminShellNavigationProps) {
       </header>
       <aside className="admin-oa-sider">
         <div className="admin-oa-brand">
-          <span className="admin-oa-brand-mark">南</span>
+          <span className="admin-oa-brand-mark">Z</span>
           <div>
-            <strong>南风VPS监控</strong>
+            <strong>ZaneLin</strong>
             <small>{serverVersionLabel}</small>
           </div>
         </div>

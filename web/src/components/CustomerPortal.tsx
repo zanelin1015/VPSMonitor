@@ -238,7 +238,7 @@ export function CustomerPortal() {
   if (!user) {
     return (
       <LoginScreen
-        title="AlanStone授权链路面板"
+        title="ZaneLin授权链路面板"
         subtitle=""
         loginForm={loginForm}
         loginLoading={loginLoading}

@@ -12,7 +12,7 @@ export interface LoginScreenProps {
   onLogin: () => void
 }
 
-export function LoginScreen({ loginForm, loginLoading, title = '南风VPS监控', subtitle = '管理员登录', onChange, onLogin }: LoginScreenProps) {
+export function LoginScreen({ loginForm, loginLoading, title = 'ZaneLin', subtitle = '管理员登录', onChange, onLogin }: LoginScreenProps) {
   const canLogin = Boolean(loginForm.username && loginForm.password)
 
   return (
