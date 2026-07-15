@@ -57,6 +57,7 @@ type FinanceClientView struct {
 	InboundID     int    `json:"inbound_id"`
 	InboundTag    string `json:"inbound_tag,omitempty"`
 	InboundRemark string `json:"inbound_remark,omitempty"`
+	NodeEnabled   bool   `json:"node_enabled"`
 	Email         string `json:"email,omitempty"`
 	Comment       string `json:"comment,omitempty"`
 	Enabled       bool   `json:"enabled"`
@@ -169,19 +170,20 @@ type ClientChainStep struct {
 }
 
 type ClientChainView struct {
-	Key               string            `json:"key"`
-	RootAgentID       string            `json:"root_agent_id"`
-	RootAgentName     string            `json:"root_agent_name,omitempty"`
-	RootAgentTags     []string          `json:"root_agent_tags,omitempty"`
-	RootClientEmail   string            `json:"root_client_email,omitempty"`
-	RootClientRemark  string            `json:"root_client_remark,omitempty"`
-	RootClientEnabled bool              `json:"root_client_enabled"`
-	RootInboundID     int               `json:"root_inbound_id,omitempty"`
-	RootInboundTag    string            `json:"root_inbound_tag,omitempty"`
-	MatchedLinkCount  int               `json:"matched_link_count"`
-	LoopDetected      bool              `json:"loop_detected,omitempty"`
-	UnresolvedReason  string            `json:"unresolved_reason,omitempty"`
-	Steps             []ClientChainStep `json:"steps"`
+	Key                string            `json:"key"`
+	RootAgentID        string            `json:"root_agent_id"`
+	RootAgentName      string            `json:"root_agent_name,omitempty"`
+	RootAgentTags      []string          `json:"root_agent_tags,omitempty"`
+	RootClientEmail    string            `json:"root_client_email,omitempty"`
+	RootClientRemark   string            `json:"root_client_remark,omitempty"`
+	RootClientEnabled  bool              `json:"root_client_enabled"`
+	RootInboundID      int               `json:"root_inbound_id,omitempty"`
+	RootInboundTag     string            `json:"root_inbound_tag,omitempty"`
+	RootInboundEnabled bool              `json:"root_inbound_enabled"`
+	MatchedLinkCount   int               `json:"matched_link_count"`
+	LoopDetected       bool              `json:"loop_detected,omitempty"`
+	UnresolvedReason   string            `json:"unresolved_reason,omitempty"`
+	Steps              []ClientChainStep `json:"steps"`
 }
 
 type GlobalDashboardView struct {

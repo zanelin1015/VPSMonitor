@@ -234,8 +234,43 @@ func TestBuildGlobalDashboardMatchesCrossClientTopology(t *testing.T) {
 		t.Fatalf("expected lightweight dashboard finance client state, got %#v", lightweight.Agents[0].FinanceClients)
 	}
 	financeClient := lightweight.Agents[0].FinanceClients[0]
-	if financeClient.InboundID != 1 || financeClient.InboundTag != "in-a" || financeClient.Email != "alice@example.com" || !financeClient.Enabled {
+	if financeClient.InboundID != 1 || financeClient.InboundTag != "in-a" || financeClient.Email != "alice@example.com" || !financeClient.NodeEnabled || !financeClient.Enabled {
 		t.Fatalf("unexpected lightweight finance client: %#v", financeClient)
+	}
+	if !view.ClientChains[0].RootInboundEnabled {
+		t.Fatalf("expected client chain to retain enabled root inbound, got %#v", view.ClientChains[0])
+	}
+}
+
+func TestBuildGlobalDashboardFinanceClientTracksDisabledInbound(t *testing.T) {
+	now := time.Now().UTC()
+	agents := []model.AgentRecord{{
+		AgentID:      "agent-disabled",
+		RegisteredAt: now,
+		UpdatedAt:    now,
+	}}
+	snapshots := []model.AgentSnapshot{{
+		AgentID:    "agent-disabled",
+		ReportedAt: now,
+		XUI: &model.XUISnapshot{
+			CollectedAt: now,
+			Inbounds: []map[string]any{{
+				"id":       9,
+				"tag":      "disabled-inbound",
+				"protocol": "vless",
+				"enable":   false,
+				"settings": `{"clients":[{"id":"11111111-1111-1111-1111-111111111111","email":"enabled-client","enable":true}]}`,
+			}},
+		},
+	}}
+
+	view := BuildGlobalDashboardWithOptions(agents, snapshots, GlobalDashboardOptions{IncludeTopology: false})
+	if len(view.Agents) != 1 || len(view.Agents[0].FinanceClients) != 1 {
+		t.Fatalf("expected one finance client, got %#v", view.Agents)
+	}
+	client := view.Agents[0].FinanceClients[0]
+	if client.NodeEnabled || !client.Enabled {
+		t.Fatalf("expected enabled client on disabled node, got %#v", client)
 	}
 }
 

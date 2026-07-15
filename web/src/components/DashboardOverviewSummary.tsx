@@ -639,6 +639,8 @@ function excludedRevenueReasonLabel(reason: MonthlyFinanceExcludedRevenueDetail[
   switch (reason) {
     case 'client_disabled':
       return '客户端已停用'
+    case 'node_disabled':
+      return '节点已关闭'
     case 'client_not_found':
       return '客户端不存在'
     case 'client_state_unavailable':
@@ -647,6 +649,8 @@ function excludedRevenueReasonLabel(reason: MonthlyFinanceExcludedRevenueDetail[
       return '收费配置重复'
     case 'ambiguous_client':
       return '匹配到多个客户端'
+    case 'outside_billing_period':
+      return '不在本月收费周期'
     default:
       return '未计入'
   }

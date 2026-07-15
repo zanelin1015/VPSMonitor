@@ -81,28 +81,30 @@ try {
   )
 
   const statusBillings = [
-    { inbound_id: 1, inbound_tag: 'node-1', email: 'active', revenue_amount: 10, revenue_currency: 'USDT', revenue_cycle: 'month', start_time: Date.UTC(2026, 0, 15) },
+    { inbound_id: 1, inbound_tag: 'node-1', email: 'active', revenue_amount: 10, revenue_currency: 'USDT', revenue_cycle: 'month', start_time: monthTimestamp(0, 15), expire_time: cycleExpiry(monthTimestamp(0, 15), 1) },
     { inbound_id: 1, inbound_tag: 'node-1', email: 'disabled', revenue_amount: 20, revenue_currency: 'USDT', revenue_cycle: 'month' },
     { inbound_id: 1, inbound_tag: 'node-1', email: 'missing', revenue_amount: 30, revenue_currency: 'USDT', revenue_cycle: 'month' },
     { inbound_id: 1, inbound_tag: 'node-1', email: 'shared', revenue_amount: 15, revenue_currency: 'USDT', revenue_cycle: 'month' },
+    { inbound_id: 3, inbound_tag: 'node-3', email: 'closed-node', revenue_amount: 40, revenue_currency: 'USDT', revenue_cycle: 'month' },
   ]
   const statusClients = [
     financeClient(1, 'node-1', 'active', true),
     financeClient(1, 'node-1', 'disabled', false),
     financeClient(1, 'node-1', 'shared', true),
     financeClient(2, 'node-2', 'shared', true),
+    financeClient(3, 'node-3', 'closed-node', true, false),
   ]
   const statusAgent = agent('status', 0, statusBillings, statusClients)
-  const statusChains = statusClients.map((client) => chain('status', client.inbound_tag, client.email, client.inbound_id, client.enabled))
+  const statusChains = statusClients.map((client) => chain('status', client.inbound_tag, client.email, client.inbound_id, client.enabled, client.node_enabled))
   const lightweightStatus = summarizeMonthlyFinance([statusAgent], [], 'USD', exchangeRates)
   const topologyStatus = summarizeMonthlyFinance([statusAgent], statusChains, 'USD', exchangeRates)
   approx(lightweightStatus.revenueTotal, 25, 'only enabled, exact client matches are counted')
   approx(topologyStatus.revenueTotal, 25, 'opening topology does not change finance totals')
-  assert.equal(lightweightStatus.excludedRevenueCount, 2, 'disabled and missing clients are excluded')
+  assert.equal(lightweightStatus.excludedRevenueCount, 3, 'disabled clients, missing clients, and closed nodes are excluded')
   assert.deepEqual(
     buildMonthlyFinanceExcludedRevenueDetails([statusAgent], [], 'USD', exchangeRates).map((row) => row.reason).sort(),
-    ['client_disabled', 'client_not_found'],
-    'excluded revenue explains stale and disabled billing records',
+    ['client_disabled', 'client_not_found', 'node_disabled'],
+    'excluded revenue explains stale clients, disabled clients, and closed nodes',
   )
   const activeRow = buildMonthlyFinanceRevenueDetails([statusAgent], [], 'USD', exchangeRates).find((row) => row.clientEmail === 'active')
   assert(activeRow?.payment?.date.endsWith('-15'), 'client payment date follows billing start day')
@@ -130,13 +132,32 @@ try {
   delete legacyAgent.finance_clients
   const legacyLightweight = summarizeMonthlyFinance([legacyAgent], [], 'USD', exchangeRates)
   approx(legacyLightweight.revenueTotal, 0, 'unknown client state is never guessed from billing configuration')
-  assert.equal(legacyLightweight.excludedRevenueCount, 4, 'unknown client state is reported instead of counted')
+  assert.equal(legacyLightweight.excludedRevenueCount, 5, 'unknown client state is reported instead of counted')
   const legacyTopology = summarizeMonthlyFinance([legacyAgent], statusChains, 'USD', exchangeRates)
   approx(legacyTopology.revenueTotal, 25, 'older servers can verify revenue after topology is available')
 
   const unavailableAgent = { ...statusAgent, finance_clients: [], finance_clients_ready: false }
   const unavailableRows = buildMonthlyFinanceExcludedRevenueDetails([unavailableAgent], [], 'USD', exchangeRates)
   assert(unavailableRows.every((row) => row.reason === 'client_state_unavailable'), 'failed x-ui collection reports unavailable state instead of deleted clients')
+
+  const coveredQuarterStart = monthTimestamp(-2, 5)
+  const finishedQuarterStart = monthTimestamp(-3, 5)
+  const futureMonthStart = monthTimestamp(1, 5)
+  const periodBillings = [
+    { inbound_id: 1, inbound_tag: 'period', email: 'covered-quarter', revenue_amount: 300, revenue_currency: 'USDT', revenue_cycle: 'quarter', start_time: coveredQuarterStart, expire_time: cycleExpiry(coveredQuarterStart, 3) },
+    { inbound_id: 1, inbound_tag: 'period', email: 'finished-quarter', revenue_amount: 300, revenue_currency: 'USDT', revenue_cycle: 'quarter', start_time: finishedQuarterStart, expire_time: cycleExpiry(finishedQuarterStart, 3) },
+    { inbound_id: 1, inbound_tag: 'period', email: 'renewed-quarter', revenue_amount: 600, revenue_currency: 'USDT', revenue_cycle: 'quarter', start_time: finishedQuarterStart, expire_time: cycleExpiry(finishedQuarterStart, 6) },
+    { inbound_id: 1, inbound_tag: 'period', email: 'future-month', revenue_amount: 90, revenue_currency: 'USDT', revenue_cycle: 'month', start_time: futureMonthStart, expire_time: cycleExpiry(futureMonthStart, 1) },
+  ]
+  const periodAgent = agent('period', 0, periodBillings, periodBillings.map((billing) => financeClient(1, 'period', billing.email, true)))
+  const periodSummary = summarizeMonthlyFinance([periodAgent], [], 'USD', exchangeRates)
+  approx(periodSummary.revenueTotal, 300, 'quarterly revenue is spread only across covered calendar months')
+  assert.equal(periodSummary.excludedRevenueCount, 2, 'finished and future billing periods are excluded from the current month')
+  assert.deepEqual(
+    buildMonthlyFinanceExcludedRevenueDetails([periodAgent], [], 'USD', exchangeRates).map((row) => row.reason),
+    ['outside_billing_period', 'outside_billing_period'],
+    'out-of-period revenue is explained in finance details',
+  )
 
   assert.match(formatMoney(1410.62, 'USD'), /1[,.]?410[.,]62/, 'financial totals preserve two decimals')
 
@@ -163,7 +184,7 @@ function agent(agent_id, cost, client_billings, finance_clients = client_billing
   }
 }
 
-function chain(agentID, inboundTag, email, inboundID = Number(inboundTag.replace(/\D+/g, '')) || 0, enabled = true) {
+function chain(agentID, inboundTag, email, inboundID = Number(inboundTag.replace(/\D+/g, '')) || 0, enabled = true, nodeEnabled = true) {
   return {
     key: `${agentID}::${inboundID}::${email}`,
     root_agent_id: agentID,
@@ -172,12 +193,23 @@ function chain(agentID, inboundTag, email, inboundID = Number(inboundTag.replace
     root_client_email: email,
     root_client_remark: email,
     root_client_enabled: enabled,
+    root_inbound_enabled: nodeEnabled,
     steps: [{ step_type: 'inbound', agent_id: agentID, label: inboundTag, detail: inboundTag }],
   }
 }
 
-function financeClient(inbound_id, inbound_tag, email, enabled) {
-  return { inbound_id, inbound_tag, inbound_remark: inbound_tag, email, comment: email, enabled }
+function financeClient(inbound_id, inbound_tag, email, enabled, node_enabled = true) {
+  return { inbound_id, inbound_tag, inbound_remark: inbound_tag, email, comment: email, enabled, node_enabled }
+}
+
+function monthTimestamp(offset, day) {
+  const now = new Date()
+  return new Date(now.getFullYear(), now.getMonth() + offset, day).getTime()
+}
+
+function cycleExpiry(startTime, months) {
+  const start = new Date(startTime)
+  return new Date(start.getFullYear(), start.getMonth() + months, start.getDate() - 1, 23, 59, 59).getTime()
 }
 
 function customer(id, ownerType, ownerID, assignments) {

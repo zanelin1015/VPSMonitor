@@ -51,6 +51,7 @@ export interface FinanceClientView {
   inbound_id: number
   inbound_tag?: string
   inbound_remark?: string
+  node_enabled?: boolean
   email?: string
   comment?: string
   enabled: boolean
@@ -827,6 +828,7 @@ export interface ClientChainView {
   root_client_enabled: boolean
   root_inbound_id?: number
   root_inbound_tag?: string
+  root_inbound_enabled?: boolean
   matched_link_count: number
   loop_detected?: boolean
   unresolved_reason?: string

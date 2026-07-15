@@ -100,6 +100,7 @@ func BuildGlobalDashboardWithOptions(agents []model.AgentRecord, snapshots []mod
 					InboundID:     client.InboundID,
 					InboundTag:    client.InboundTag,
 					InboundRemark: client.InboundRemark,
+					NodeEnabled:   clientInboundEnabled(overview.Nodes, client),
 					Email:         client.Email,
 					Comment:       client.Comment,
 					Enabled:       client.Enabled,
@@ -187,6 +188,18 @@ func BuildGlobalDashboardWithOptions(agents []model.AgentRecord, snapshots []mod
 		Links:        links,
 		ClientChains: chains,
 	}
+}
+
+func clientInboundEnabled(nodes []model.XUINodeView, client model.XUIClientView) bool {
+	for _, node := range nodes {
+		if client.InboundID > 0 && node.ID == client.InboundID {
+			return node.Enabled
+		}
+		if client.InboundID <= 0 && client.InboundTag != "" && node.Tag == client.InboundTag {
+			return node.Enabled
+		}
+	}
+	return true
 }
 
 func lookupAgentGeo(summary model.VPSSummary, resolver *topologyResolver) *model.IPGeoView {

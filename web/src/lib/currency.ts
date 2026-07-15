@@ -70,7 +70,7 @@ export interface MonthlyFinanceRevenueDetail {
   source: 'client' | 'billing' | 'area_account'
 }
 
-export type ExcludedRevenueReason = 'client_disabled' | 'client_not_found' | 'client_state_unavailable' | 'duplicate_billing' | 'ambiguous_client'
+export type ExcludedRevenueReason = 'client_disabled' | 'node_disabled' | 'client_not_found' | 'client_state_unavailable' | 'duplicate_billing' | 'ambiguous_client' | 'outside_billing_period'
 
 export interface MonthlyFinanceExcludedRevenueDetail extends MonthlyFinanceRevenueDetail {
   reason: ExcludedRevenueReason
@@ -229,6 +229,10 @@ function analyzeMonthlyFinanceRevenue(
         continue
       }
       seenBillingKeys.add(exactKey)
+      if (!revenueBillingAppliesToCurrentMonth(normalized)) {
+        excluded.push(buildExcludedRevenueDetailRow(agent, normalized, undefined, 'outside_billing_period', targetCurrency, exchangeRates))
+        continue
+      }
       if (!states.availableAgentIDs.has(agent.agent_id)) {
         excluded.push(buildExcludedRevenueDetailRow(agent, normalized, undefined, 'client_state_unavailable', targetCurrency, exchangeRates))
         continue
@@ -243,6 +247,10 @@ function analyzeMonthlyFinanceRevenue(
         continue
       }
       const state = matches[0]
+      if (!state.nodeEnabled) {
+        excluded.push(buildExcludedRevenueDetailRow(agent, normalized, state, 'node_disabled', targetCurrency, exchangeRates))
+        continue
+      }
       if (!state.enabled) {
         excluded.push(buildExcludedRevenueDetailRow(agent, normalized, state, 'client_disabled', targetCurrency, exchangeRates))
         continue
@@ -338,7 +346,7 @@ function monthlyConvertedAmount(amount: number, currency: CurrencyCode, cycle: V
 
 type NormalizedRevenueBilling = Required<Pick<
   XUIClientBillingConfig,
-  'inbound_id' | 'inbound_tag' | 'email' | 'revenue_amount' | 'revenue_currency' | 'revenue_cycle' | 'start_time'
+  'inbound_id' | 'inbound_tag' | 'email' | 'revenue_amount' | 'revenue_currency' | 'revenue_cycle' | 'start_time' | 'expire_time'
 >>
 
 type FinanceClientStateRef = {
@@ -347,6 +355,7 @@ type FinanceClientStateRef = {
   inboundRemark: string
   email: string
   comment: string
+  nodeEnabled: boolean
   enabled: boolean
   nodeDetail: string
 }
@@ -360,7 +369,28 @@ function normalizeRevenueBilling(billing: XUIClientBillingConfig): NormalizedRev
     revenue_currency: billing.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
     revenue_cycle: billing.revenue_cycle === 'quarter' || billing.revenue_cycle === 'year' ? billing.revenue_cycle : 'month',
     start_time: Math.max(0, Number(billing.start_time || 0)),
+    expire_time: Math.max(0, Number(billing.expire_time || 0)),
   }
+}
+
+function revenueBillingAppliesToCurrentMonth(billing: NormalizedRevenueBilling): boolean {
+  const start = parseTimestampDateOnly(billing.start_time)
+  if (!start) {
+    return true
+  }
+  const currentMonth = monthSerial(todayDateOnly())
+  const startMonth = monthSerial(start)
+  if (currentMonth < startMonth) {
+    return false
+  }
+  const expiry = parseTimestampDateOnly(billing.expire_time)
+  const defaultEndMonth = startMonth + billingCycleMonths(billing.revenue_cycle)
+  if (!expiry) {
+    return currentMonth < defaultEndMonth
+  }
+  const dayAfterExpiry = new Date(expiry.getFullYear(), expiry.getMonth(), expiry.getDate() + 1)
+  const endMonth = Math.max(defaultEndMonth, monthSerial(dayAfterExpiry))
+  return currentMonth < endMonth
 }
 
 function buildFinanceClientStateIndex(agents: AgentListItem[], clientChains: ClientChainView[]): {
@@ -386,6 +416,7 @@ function buildFinanceClientStateIndex(agents: AgentListItem[], clientChains: Cli
         inboundRemark: client.inbound_remark || '',
         email: client.email || '',
         comment: client.comment || '',
+        nodeEnabled: client.node_enabled !== false,
         enabled: client.enabled !== false,
         nodeDetail: '',
       })
@@ -410,6 +441,7 @@ function buildFinanceClientStateIndex(agents: AgentListItem[], clientChains: Cli
       inboundRemark: inboundStep?.label || '',
       email: chain.root_client_email || '',
       comment: chain.root_client_remark || '',
+      nodeEnabled: chain.root_inbound_enabled !== false,
       enabled: chain.root_client_enabled !== false,
       nodeDetail: inboundStep?.detail || '',
     })
