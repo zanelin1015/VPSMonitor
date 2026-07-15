@@ -61,6 +61,7 @@ import {
   mergeCurrencyOptions,
   normalizeCurrencyCode,
   readStoredCostCurrency,
+  scopeAreaManagersToAgents,
   summarizeMonthlyFinance,
 } from './lib/currency'
 import {
@@ -187,6 +188,8 @@ export default function App() {
   const [dashboardView, setDashboardView] = useState<GlobalDashboardView | null>(null)
   const [financeCustomers, setFinanceCustomers] = useState<CustomerAdminView[]>([])
   const [financeAreaManagers, setFinanceAreaManagers] = useState<AreaManagerAdminView[]>([])
+  const [financeAccountsLoaded, setFinanceAccountsLoaded] = useState(false)
+  const [financeAccountsError, setFinanceAccountsError] = useState('')
   const [costCurrency, setCostCurrency] = useState<CurrencyCode>(() => readStoredCostCurrency())
   const [exchangeRates, setExchangeRates] = useState<ExchangeRatesState>(() => defaultExchangeRatesState())
   const [currencyOptions, setCurrencyOptions] = useState<CurrencyCode[]>(() => [...COMMON_COST_CURRENCIES])
@@ -344,6 +347,15 @@ export default function App() {
     }
     setAgentViewMode(readStoredAgentViewMode(adminUser.username))
   }, [adminUser?.username])
+
+  useEffect(() => {
+    setFinanceAccountsLoaded(false)
+    setFinanceAccountsError('')
+    if (!adminUser) {
+      setFinanceCustomers([])
+      setFinanceAreaManagers([])
+    }
+  }, [adminUser?.id, adminUser?.username])
 
   useEffect(() => {
     if (adminUser) {
@@ -663,6 +675,8 @@ export default function App() {
     setAgents([])
     setFinanceCustomers([])
     setFinanceAreaManagers([])
+    setFinanceAccountsLoaded(false)
+    setFinanceAccountsError('')
     setSelectedAgentId('')
     setOverview(null)
     setManagedConfig(null)
@@ -895,9 +909,10 @@ export default function App() {
       ])
       setFinanceCustomers(Array.isArray(customers) ? customers : [])
       setFinanceAreaManagers(Array.isArray(areaManagers) ? areaManagers : [])
-    } catch {
-      setFinanceCustomers([])
-      setFinanceAreaManagers([])
+      setFinanceAccountsLoaded(true)
+      setFinanceAccountsError('')
+    } catch (error) {
+      setFinanceAccountsError(error instanceof Error ? error.message : '财务账号数据加载失败')
     }
   }
 
@@ -1974,9 +1989,24 @@ export default function App() {
   const scopedNetwork = summarizeAgentNetwork(filteredAgents)
   const filteredTagLinks = (dashboardView?.links || []).filter((link) => topologyMatchesSelectedTag(link, selectedTag))
   const filteredChains = (dashboardView?.client_chains || []).filter((chain) => chainMatchesSelectedTag(chain, selectedTag))
-  const monthlyFinance = canManageSystem
-    ? summarizeMonthlyFinance(filteredAgents, filteredChains, costCurrency, exchangeRates, financeCustomers, financeAreaManagers)
-    : { costTotal: 0, costCount: 0, revenueTotal: 0, revenueCount: 0, profitTotal: 0, missingCostCount: 0, missingRevenueCount: 0 }
+  const scopedFinanceAreaManagers = scopeAreaManagersToAgents(financeAreaManagers, filteredAgents, Boolean(selectedTag))
+  const monthlyFinance = canManageSystem && financeAccountsLoaded
+    ? {
+        ...summarizeMonthlyFinance(filteredAgents, filteredChains, costCurrency, exchangeRates, financeCustomers, scopedFinanceAreaManagers),
+        error: financeAccountsError || undefined,
+      }
+    : {
+        available: false,
+        error: financeAccountsError,
+        costTotal: 0,
+        costCount: 0,
+        revenueTotal: 0,
+        revenueCount: 0,
+        profitTotal: 0,
+        missingCostCount: 0,
+        missingRevenueCount: 0,
+        excludedRevenueCount: 0,
+      }
   const accessLogAgentOptions = [
     { value: '', label: '全部 Client' },
     ...agents.map((agent) => ({ value: agent.agent_id, label: agent.agent_name || agent.agent_id })),
@@ -2361,7 +2391,7 @@ export default function App() {
             financeAgents={filteredAgents}
             financeChains={filteredChains}
             financeCustomers={financeCustomers}
-            financeAreaManagers={financeAreaManagers}
+            financeAreaManagers={scopedFinanceAreaManagers}
             exchangeRates={exchangeRates}
             selectedTag={selectedTag}
             currentAgentLabel={selectedAgent?.agent_name || selectedAgent?.agent_id || ''}

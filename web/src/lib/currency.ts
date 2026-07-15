@@ -22,6 +22,8 @@ export interface MonthlyCostSummary {
 }
 
 export interface MonthlyFinanceSummary {
+  available: boolean
+  error?: string
   costTotal: number
   revenueTotal: number
   profitTotal: number
@@ -29,6 +31,7 @@ export interface MonthlyFinanceSummary {
   revenueCount: number
   missingCostCount: number
   missingRevenueCount: number
+  excludedRevenueCount: number
 }
 
 export interface MonthlyFinancePaymentInfo {
@@ -63,8 +66,14 @@ export interface MonthlyFinanceRevenueDetail {
   currency: CurrencyCode
   cycle: VPSRenewalConfig['cost_cycle']
   monthlyAmount: number | null
-  payment: MonthlyFinancePaymentInfo
+  payment: MonthlyFinancePaymentInfo | null
   source: 'client' | 'billing' | 'area_account'
+}
+
+export type ExcludedRevenueReason = 'client_disabled' | 'client_not_found' | 'client_state_unavailable' | 'duplicate_billing' | 'ambiguous_client'
+
+export interface MonthlyFinanceExcludedRevenueDetail extends MonthlyFinanceRevenueDetail {
+  reason: ExcludedRevenueReason
 }
 
 type BillingConfig = Pick<VPSRenewalConfig, 'cost_amount' | 'cost_currency' | 'cost_cycle'>
@@ -100,7 +109,7 @@ export function summarizeMonthlyFinance(
   customers: CustomerAdminView[] = [],
   areaManagers: AreaManagerAdminView[] = [],
 ): MonthlyFinanceSummary {
-  const singleUserRevenueRows = buildMonthlyFinanceRevenueDetails(agents, clientChains, targetCurrency, exchangeRates, customers, areaManagers)
+  const revenueAnalysis = analyzeMonthlyFinanceRevenue(agents, clientChains, targetCurrency, exchangeRates, customers, areaManagers)
   const summary = agents.reduce<MonthlyFinanceSummary>(
     (summary, agent) => {
       const billing = normalizeBillingConfig(agent.renewal)
@@ -114,9 +123,19 @@ export function summarizeMonthlyFinance(
       summary.profitTotal = summary.revenueTotal - summary.costTotal
       return summary
     },
-    { costTotal: 0, revenueTotal: 0, profitTotal: 0, costCount: 0, revenueCount: 0, missingCostCount: 0, missingRevenueCount: 0 },
+    {
+      available: true,
+      costTotal: 0,
+      revenueTotal: 0,
+      profitTotal: 0,
+      costCount: 0,
+      revenueCount: 0,
+      missingCostCount: 0,
+      missingRevenueCount: 0,
+      excludedRevenueCount: revenueAnalysis.excluded.length,
+    },
   )
-  for (const row of singleUserRevenueRows) {
+  for (const row of revenueAnalysis.included) {
     if (row.monthlyAmount === null) {
       summary.missingRevenueCount += 1
       continue
@@ -126,6 +145,24 @@ export function summarizeMonthlyFinance(
   }
   summary.profitTotal = summary.revenueTotal - summary.costTotal
   return summary
+}
+
+export function scopeAreaManagersToAgents(
+  areaManagers: AreaManagerAdminView[],
+  agents: AgentListItem[],
+  restrictToAgentScope: boolean,
+): AreaManagerAdminView[] {
+  if (!restrictToAgentScope) {
+    return areaManagers
+  }
+  const agentIDs = new Set(agents.map((agent) => agent.agent_id))
+  return areaManagers.filter((manager) => {
+    const assignments = manager.assignments || []
+    if (assignments.length) {
+      return assignments.some((assignment) => assignment.enabled && agentIDs.has(assignment.agent_id))
+    }
+    return (manager.agent_ids || []).some((agentID) => agentIDs.has(agentID))
+  })
 }
 
 export function buildMonthlyFinanceCostDetails(agents: AgentListItem[], targetCurrency: CurrencyCode, exchangeRates: ExchangeRatesState): MonthlyFinanceCostDetail[] {
@@ -153,81 +190,79 @@ export function buildMonthlyFinanceRevenueDetails(
   customers: CustomerAdminView[] = [],
   areaManagers: AreaManagerAdminView[] = [],
 ): MonthlyFinanceRevenueDetail[] {
-  const agentByID = new Map(agents.map((agent) => [agent.agent_id, agent]))
-  const billingByClient = new Map<string, RevenueBillingRef>()
-  const billingByEmail = new Map<string, RevenueBillingRef>()
+  return analyzeMonthlyFinanceRevenue(agents, clientChains, targetCurrency, exchangeRates, customers, areaManagers).included
+}
+
+export function buildMonthlyFinanceExcludedRevenueDetails(
+  agents: AgentListItem[],
+  clientChains: ClientChainView[],
+  targetCurrency: CurrencyCode,
+  exchangeRates: ExchangeRatesState,
+  customers: CustomerAdminView[] = [],
+  areaManagers: AreaManagerAdminView[] = [],
+): MonthlyFinanceExcludedRevenueDetail[] {
+  return analyzeMonthlyFinanceRevenue(agents, clientChains, targetCurrency, exchangeRates, customers, areaManagers).excluded
+}
+
+function analyzeMonthlyFinanceRevenue(
+  agents: AgentListItem[],
+  clientChains: ClientChainView[],
+  targetCurrency: CurrencyCode,
+  exchangeRates: ExchangeRatesState,
+  customers: CustomerAdminView[],
+  areaManagers: AreaManagerAdminView[],
+): { included: MonthlyFinanceRevenueDetail[]; excluded: MonthlyFinanceExcludedRevenueDetail[] } {
+  const states = buildFinanceClientStateIndex(agents, clientChains)
+  const included: MonthlyFinanceRevenueDetail[] = []
+  const excluded: MonthlyFinanceExcludedRevenueDetail[] = []
+  const seenBillingKeys = new Set<string>()
 
   for (const agent of agents) {
     for (const billing of agent.renewal?.client_billings || []) {
       const normalized = normalizeRevenueBilling(billing)
-      const ref: RevenueBillingRef = { agent, billing: normalized }
-      billingByClient.set(revenueClientKey(agent.agent_id, normalized.inbound_tag, normalized.email), ref)
-      if (normalized.email && !billingByEmail.has(revenueEmailKey(agent.agent_id, normalized.email))) {
-        billingByEmail.set(revenueEmailKey(agent.agent_id, normalized.email), ref)
+      if (normalized.revenue_amount <= 0) {
+        continue
       }
-    }
-  }
-
-  const rows: MonthlyFinanceRevenueDetail[] = []
-  const usedBillingKeys = new Set<string>()
-  const usedBillingEmailKeys = new Set<string>()
-  for (const chain of clientChains) {
-    if (chain.root_client_enabled === false) {
-      continue
-    }
-    const agent = agentByID.get(chain.root_agent_id)
-    if (!agent) {
-      continue
-    }
-    const ref = billingByClient.get(revenueClientKey(chain.root_agent_id, chain.root_inbound_tag || '', chain.root_client_email || ''))
-      || billingByEmail.get(revenueEmailKey(chain.root_agent_id, chain.root_client_email || ''))
-    const inboundStep = rootInboundStep(chain)
-    const row = buildRevenueDetailRow({
-      agent,
-      billing: ref?.billing,
-      key: `client:${chain.key}`,
-      inboundTag: chain.root_inbound_tag || ref?.billing.inbound_tag || '',
-      inboundID: ref?.billing.inbound_id || 0,
-      nodeLabel: inboundStep?.label || '',
-      nodeDetail: inboundStep?.detail || '',
-      clientEmail: chain.root_client_email || ref?.billing.email || '',
-      clientRemark: chain.root_client_remark || '',
-      source: 'client',
-      targetCurrency,
-      exchangeRates,
-    })
-    if (shouldCountNodeRevenueRow(row, customers, areaManagers)) {
-      rows.push(row)
-      if (ref?.billing) {
-        usedBillingKeys.add(revenueClientKey(ref.agent.agent_id, ref.billing.inbound_tag, ref.billing.email))
-        if (ref.billing.email) {
-          usedBillingEmailKeys.add(revenueEmailKey(ref.agent.agent_id, ref.billing.email))
-        }
+      const exactKey = revenueClientKey(agent.agent_id, normalized.inbound_id, normalized.inbound_tag, normalized.email)
+      if (seenBillingKeys.has(exactKey)) {
+        excluded.push(buildExcludedRevenueDetailRow(agent, normalized, undefined, 'duplicate_billing', targetCurrency, exchangeRates))
+        continue
       }
-    }
-  }
-  for (const agent of agents) {
-    for (const billing of agent.renewal?.client_billings || []) {
-      const normalized = normalizeRevenueBilling(billing)
-      const exactKey = revenueClientKey(agent.agent_id, normalized.inbound_tag, normalized.email)
-      const emailKey = normalized.email ? revenueEmailKey(agent.agent_id, normalized.email) : ''
-      if (usedBillingKeys.has(exactKey) || (emailKey && usedBillingEmailKeys.has(emailKey))) {
+      seenBillingKeys.add(exactKey)
+      if (!states.availableAgentIDs.has(agent.agent_id)) {
+        excluded.push(buildExcludedRevenueDetailRow(agent, normalized, undefined, 'client_state_unavailable', targetCurrency, exchangeRates))
+        continue
+      }
+      const matches = lookupFinanceClientStates(states.byKey, agent.agent_id, normalized)
+      if (!matches.length) {
+        excluded.push(buildExcludedRevenueDetailRow(agent, normalized, undefined, 'client_not_found', targetCurrency, exchangeRates))
+        continue
+      }
+      if (matches.length > 1) {
+        excluded.push(buildExcludedRevenueDetailRow(agent, normalized, matches[0], 'ambiguous_client', targetCurrency, exchangeRates))
+        continue
+      }
+      const state = matches[0]
+      if (!state.enabled) {
+        excluded.push(buildExcludedRevenueDetailRow(agent, normalized, state, 'client_disabled', targetCurrency, exchangeRates))
         continue
       }
       const row = buildRevenueDetailRow({
         agent,
         billing: normalized,
-        key: `billing:${exactKey}`,
-        inboundTag: normalized.inbound_tag,
-        inboundID: normalized.inbound_id,
-        clientEmail: normalized.email,
-        clientRemark: '',
-        source: 'billing',
+        key: `client:${exactKey}`,
+        inboundTag: state.inboundTag || normalized.inbound_tag,
+        inboundID: state.inboundID || normalized.inbound_id,
+        nodeLabel: state.inboundRemark,
+        nodeDetail: state.nodeDetail,
+        clientEmail: state.email || normalized.email,
+        clientRemark: state.comment,
+        source: 'client',
         targetCurrency,
         exchangeRates,
       })
       if (shouldCountNodeRevenueRow(row, customers, areaManagers)) {
-        rows.push(row)
+        included.push(row)
       }
     }
   }
@@ -235,9 +270,9 @@ export function buildMonthlyFinanceRevenueDetails(
     if (!manager.enabled || !manager.billing_enabled || Number(manager.revenue_amount || 0) <= 0) {
       continue
     }
-    rows.push(buildAreaManagerRevenueDetailRow(manager, targetCurrency, exchangeRates))
+    included.push(buildAreaManagerRevenueDetailRow(manager, targetCurrency, exchangeRates))
   }
-  return rows.filter((row) => row.amount > 0).sort((left, right) => {
+  const sortRows = <T extends MonthlyFinanceRevenueDetail>(rows: T[]): T[] => rows.sort((left, right) => {
     if (left.agentName !== right.agentName) {
       return left.agentName.localeCompare(right.agentName)
     }
@@ -246,11 +281,15 @@ export function buildMonthlyFinanceRevenueDetails(
     }
     return left.clientLabel.localeCompare(right.clientLabel)
   })
+  return {
+    included: sortRows(included.filter((row) => row.amount > 0)),
+    excluded: sortRows(excluded.filter((row) => row.amount > 0)),
+  }
 }
 
 function shouldCountNodeRevenueRow(row: MonthlyFinanceRevenueDetail, customers: CustomerAdminView[], areaManagers: AreaManagerAdminView[]): boolean {
   const matchedCustomers = customers.filter((customer) => (
-    (customer.assignments || []).some((assignment) => assignmentMatchesRevenueRow(assignment, row))
+    customer.enabled && (customer.assignments || []).some((assignment) => assignment.enabled && financeAssignmentMatchesRevenueRow(assignment, row))
   ))
   if (!matchedCustomers.length) {
     return true
@@ -266,21 +305,27 @@ function shouldCountNodeRevenueRow(row: MonthlyFinanceRevenueDetail, customers: 
   return matchedCustomers.some((customer) => !billedAreaManagerIDs.has(Number(customer.owner_id || 0)))
 }
 
-function assignmentMatchesRevenueRow(assignment: { agent_id: string; inbound_id: number; inbound_tag?: string; client_email?: string }, row: MonthlyFinanceRevenueDetail): boolean {
+export function financeAssignmentMatchesRevenueRow(
+  assignment: { agent_id: string; inbound_id: number; inbound_tag?: string; client_email?: string },
+  row: MonthlyFinanceRevenueDetail,
+): boolean {
   if (assignment.agent_id !== row.agentID) {
     return false
   }
-  const assignmentEmail = (assignment.client_email || '').toLowerCase()
-  const rowEmail = (row.clientEmail || '').toLowerCase()
-  if (assignmentEmail && rowEmail && assignmentEmail === rowEmail) {
-    return true
+  const assignmentEmail = normalizeRevenueIdentity(assignment.client_email)
+  const rowEmail = normalizeRevenueIdentity(row.clientEmail)
+  if ((assignmentEmail || rowEmail) && assignmentEmail !== rowEmail) {
+    return false
   }
-  if (assignment.inbound_id > 0 && row.inboundID > 0 && assignment.inbound_id === row.inboundID) {
-    return !assignmentEmail || !rowEmail || assignmentEmail === rowEmail
+  if (assignment.inbound_id > 0 && row.inboundID > 0) {
+    return assignment.inbound_id === row.inboundID
   }
-  const assignmentTag = (assignment.inbound_tag || '').toLowerCase()
-  const rowTag = (row.inboundTag || '').toLowerCase()
-  return Boolean(assignmentTag && rowTag && assignmentTag === rowTag && (!assignmentEmail || !rowEmail || assignmentEmail === rowEmail))
+  const assignmentTag = normalizeRevenueIdentity(assignment.inbound_tag)
+  const rowTag = normalizeRevenueIdentity(row.inboundTag)
+  if (assignmentTag || rowTag) {
+    return Boolean(assignmentTag && rowTag && assignmentTag === rowTag)
+  }
+  return Boolean(assignmentEmail && rowEmail)
 }
 
 function monthlyConvertedAmount(amount: number, currency: CurrencyCode, cycle: VPSRenewalConfig['cost_cycle'], targetCurrency: CurrencyCode, exchangeRates: ExchangeRatesState): number | null {
@@ -291,34 +336,22 @@ function monthlyConvertedAmount(amount: number, currency: CurrencyCode, cycle: V
   return convertCurrency(monthlyAmount, normalizeCurrencyCode(currency), targetCurrency, exchangeRates)
 }
 
-function enabledRevenueBillingKeys(clientChains: ClientChainView[]): Set<string> {
-  const keys = new Set<string>()
-  for (const chain of clientChains || []) {
-    if (chain.root_client_enabled === false) {
-      continue
-    }
-    keys.add(revenueClientKey(chain.root_agent_id, chain.root_inbound_tag || '', chain.root_client_email || ''))
-  }
-  return keys
+type NormalizedRevenueBilling = Required<Pick<
+  XUIClientBillingConfig,
+  'inbound_id' | 'inbound_tag' | 'email' | 'revenue_amount' | 'revenue_currency' | 'revenue_cycle' | 'start_time'
+>>
+
+type FinanceClientStateRef = {
+  inboundID: number
+  inboundTag: string
+  inboundRemark: string
+  email: string
+  comment: string
+  enabled: boolean
+  nodeDetail: string
 }
 
-function enabledRevenueBillingEmailKeys(clientChains: ClientChainView[]): Set<string> {
-  const keys = new Set<string>()
-  for (const chain of clientChains || []) {
-    if (chain.root_client_enabled === false || !chain.root_client_email) {
-      continue
-    }
-    keys.add(revenueEmailKey(chain.root_agent_id, chain.root_client_email || ''))
-  }
-  return keys
-}
-
-type RevenueBillingRef = {
-  agent: AgentListItem
-  billing: Required<Pick<XUIClientBillingConfig, 'inbound_id' | 'inbound_tag' | 'email' | 'revenue_amount' | 'revenue_currency' | 'revenue_cycle'>>
-}
-
-function normalizeRevenueBilling(billing: XUIClientBillingConfig): RevenueBillingRef['billing'] {
+function normalizeRevenueBilling(billing: XUIClientBillingConfig): NormalizedRevenueBilling {
   return {
     inbound_id: Number(billing.inbound_id || 0),
     inbound_tag: billing.inbound_tag || '',
@@ -326,12 +359,116 @@ function normalizeRevenueBilling(billing: XUIClientBillingConfig): RevenueBillin
     revenue_amount: Math.max(0, Number(billing.revenue_amount || 0)),
     revenue_currency: billing.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
     revenue_cycle: billing.revenue_cycle === 'quarter' || billing.revenue_cycle === 'year' ? billing.revenue_cycle : 'month',
+    start_time: Math.max(0, Number(billing.start_time || 0)),
   }
+}
+
+function buildFinanceClientStateIndex(agents: AgentListItem[], clientChains: ClientChainView[]): {
+  availableAgentIDs: Set<string>
+  byKey: Map<string, FinanceClientStateRef[]>
+} {
+  const availableAgentIDs = new Set<string>()
+  const byKey = new Map<string, FinanceClientStateRef[]>()
+  const agentHasEmbeddedState = new Set<string>()
+  for (const agent of agents) {
+    if (!Object.prototype.hasOwnProperty.call(agent, 'finance_clients')) {
+      continue
+    }
+    agentHasEmbeddedState.add(agent.agent_id)
+    if (agent.finance_clients_ready === false) {
+      continue
+    }
+    availableAgentIDs.add(agent.agent_id)
+    for (const client of agent.finance_clients || []) {
+      addFinanceClientState(byKey, agent.agent_id, {
+        inboundID: Number(client.inbound_id || 0),
+        inboundTag: client.inbound_tag || '',
+        inboundRemark: client.inbound_remark || '',
+        email: client.email || '',
+        comment: client.comment || '',
+        enabled: client.enabled !== false,
+        nodeDetail: '',
+      })
+    }
+  }
+  if (!clientChains.length) {
+    return { availableAgentIDs, byKey }
+  }
+  for (const agent of agents) {
+    if (!agentHasEmbeddedState.has(agent.agent_id)) {
+      availableAgentIDs.add(agent.agent_id)
+    }
+  }
+  for (const chain of clientChains) {
+    if (agentHasEmbeddedState.has(chain.root_agent_id)) {
+      continue
+    }
+    const inboundStep = rootInboundStep(chain)
+    addFinanceClientState(byKey, chain.root_agent_id, {
+      inboundID: Number(chain.root_inbound_id || parseClientChainInboundID(chain.key)),
+      inboundTag: chain.root_inbound_tag || '',
+      inboundRemark: inboundStep?.label || '',
+      email: chain.root_client_email || '',
+      comment: chain.root_client_remark || '',
+      enabled: chain.root_client_enabled !== false,
+      nodeDetail: inboundStep?.detail || '',
+    })
+  }
+  return { availableAgentIDs, byKey }
+}
+
+function addFinanceClientState(index: Map<string, FinanceClientStateRef[]>, agentID: string, state: FinanceClientStateRef) {
+  for (const key of revenueClientLookupKeys(agentID, state.inboundID, state.inboundTag, state.email)) {
+    const rows = index.get(key) || []
+    if (!rows.includes(state)) {
+      rows.push(state)
+    }
+    index.set(key, rows)
+  }
+}
+
+function lookupFinanceClientStates(
+  index: Map<string, FinanceClientStateRef[]>,
+  agentID: string,
+  billing: NormalizedRevenueBilling,
+): FinanceClientStateRef[] {
+  const matches = new Set<FinanceClientStateRef>()
+  for (const key of revenueClientLookupKeys(agentID, billing.inbound_id, billing.inbound_tag, billing.email)) {
+    for (const state of index.get(key) || []) {
+      matches.add(state)
+    }
+  }
+  return [...matches]
+}
+
+function buildExcludedRevenueDetailRow(
+  agent: AgentListItem,
+  billing: NormalizedRevenueBilling,
+  state: FinanceClientStateRef | undefined,
+  reason: ExcludedRevenueReason,
+  targetCurrency: CurrencyCode,
+  exchangeRates: ExchangeRatesState,
+): MonthlyFinanceExcludedRevenueDetail {
+  const row = buildRevenueDetailRow({
+    agent,
+    billing,
+    key: `excluded:${reason}:${revenueClientKey(agent.agent_id, billing.inbound_id, billing.inbound_tag, billing.email)}`,
+    inboundID: state?.inboundID || billing.inbound_id,
+    inboundTag: state?.inboundTag || billing.inbound_tag,
+    nodeLabel: state?.inboundRemark || billing.inbound_tag,
+    nodeDetail: state?.nodeDetail || '',
+    clientEmail: state?.email || billing.email,
+    clientRemark: state?.comment || '',
+    source: 'billing',
+    targetCurrency,
+    exchangeRates,
+  })
+  return { ...row, reason }
 }
 
 function buildRevenueDetailRow(options: {
   agent: AgentListItem
-  billing?: RevenueBillingRef['billing']
+  billing?: NormalizedRevenueBilling
   key: string
   inboundTag: string
   inboundID?: number
@@ -363,7 +500,7 @@ function buildRevenueDetailRow(options: {
     currency,
     cycle,
     monthlyAmount: monthlyConvertedAmount(amount, currency, cycle, options.targetCurrency, options.exchangeRates),
-    payment: revenuePaymentInfo(cycle),
+    payment: revenuePaymentInfo(options.billing?.start_time, cycle),
     source: options.source,
   }
 }
@@ -388,7 +525,7 @@ function buildAreaManagerRevenueDetailRow(manager: AreaManagerAdminView, targetC
     currency,
     cycle,
     monthlyAmount: monthlyConvertedAmount(amount, currency, cycle, targetCurrency, exchangeRates),
-    payment: revenuePaymentInfo(cycle),
+    payment: null,
     source: 'area_account',
   }
 }
@@ -399,12 +536,29 @@ function rootInboundStep(chain: ClientChainView) {
     || (chain.steps || []).find((step) => step.step_type === 'inbound')
 }
 
-function revenueClientKey(agentID: string, inboundTag: string, email: string): string {
-  return `${agentID}\u0000${inboundTag.trim().toLowerCase()}\u0000${email.trim().toLowerCase()}`
+function revenueClientKey(agentID: string, inboundID: number, inboundTag: string, email: string): string {
+  const inboundIdentity = inboundID > 0 ? `id:${inboundID}` : `tag:${normalizeRevenueIdentity(inboundTag)}`
+  return `${agentID}\u0000${inboundIdentity}\u0000${normalizeRevenueIdentity(email)}`
 }
 
-function revenueEmailKey(agentID: string, email: string): string {
-  return `${agentID}\u0000${email.trim().toLowerCase()}`
+function revenueClientLookupKeys(agentID: string, inboundID: number, inboundTag: string, email: string): string[] {
+  const keys = [revenueClientKey(agentID, inboundID, inboundTag, email)]
+  if (inboundID > 0 && normalizeRevenueIdentity(inboundTag)) {
+    keys.push(revenueClientKey(agentID, 0, inboundTag, email))
+  }
+  return keys
+}
+
+function normalizeRevenueIdentity(value?: string): string {
+  return String(value || '').trim().toLowerCase()
+}
+
+function parseClientChainInboundID(key: string): number {
+  const parts = String(key || '').split('::')
+  if (parts.length < 3) {
+    return 0
+  }
+  return Math.max(0, Number(parts[1]) || 0)
 }
 
 function costPaymentInfo(startDate: string | undefined, cycle: VPSRenewalConfig['cost_cycle']): MonthlyFinancePaymentInfo | null {
@@ -412,6 +566,18 @@ function costPaymentInfo(startDate: string | undefined, cycle: VPSRenewalConfig[
   if (!start) {
     return null
   }
+  return periodicPaymentInfo(start, cycle)
+}
+
+function revenuePaymentInfo(startTime: number | undefined, cycle: VPSRenewalConfig['cost_cycle']): MonthlyFinancePaymentInfo | null {
+  const start = parseTimestampDateOnly(startTime)
+  if (!start) {
+    return null
+  }
+  return periodicPaymentInfo(start, cycle)
+}
+
+function periodicPaymentInfo(start: Date, cycle: VPSRenewalConfig['cost_cycle']): MonthlyFinancePaymentInfo {
   const today = todayDateOnly()
   const cycleMonths = billingCycleMonths(cycle || 'month')
   const startMonth = monthSerial(start)
@@ -427,17 +593,6 @@ function costPaymentInfo(startDate: string | undefined, cycle: VPSRenewalConfig[
     due = makeDateFromMonthSerial(dueMonth, start.getDate())
   }
   return paymentInfo(due, today)
-}
-
-function revenuePaymentInfo(cycle: VPSRenewalConfig['cost_cycle']): MonthlyFinancePaymentInfo {
-  const today = todayDateOnly()
-  let month = today.getMonth()
-  if (cycle === 'quarter') {
-    month = Math.floor(month / 3) * 3
-  } else if (cycle === 'year') {
-    month = 0
-  }
-  return paymentInfo(new Date(today.getFullYear(), month, 1), today)
 }
 
 function paymentInfo(due: Date, today: Date): MonthlyFinancePaymentInfo {
@@ -460,6 +615,18 @@ function parseDateOnly(value?: string): Date | null {
     return null
   }
   return makeDate(year, month, day)
+}
+
+function parseTimestampDateOnly(value?: number): Date | null {
+  const raw = Number(value || 0)
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return null
+  }
+  const date = new Date(raw < 1_000_000_000_000 ? raw * 1000 : raw)
+  if (Number.isNaN(Number(date))) {
+    return null
+  }
+  return makeDate(date.getFullYear(), date.getMonth(), date.getDate())
 }
 
 function todayDateOnly(): Date {
@@ -575,15 +742,16 @@ export function readStoredCostCurrency(): CurrencyCode {
 
 export function formatMoney(value: number, currency: CurrencyCode): string {
   if (currency === 'USDT') {
-    return `USDT ${value.toFixed(value >= 100 ? 0 : 2)}`
+    return `USDT ${value.toFixed(2)}`
   }
   try {
     return new Intl.NumberFormat(undefined, {
       style: 'currency',
       currency,
-      maximumFractionDigits: value >= 100 ? 0 : 2,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(value)
   } catch {
-    return `${currency} ${value.toFixed(value >= 100 ? 0 : 2)}`
+    return `${currency} ${value.toFixed(2)}`
   }
 }

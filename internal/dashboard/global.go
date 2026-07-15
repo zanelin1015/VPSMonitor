@@ -84,6 +84,7 @@ func BuildGlobalDashboardWithOptions(agents []model.AgentRecord, snapshots []mod
 			Summary:             summary,
 			Realm:               realmByAgent[agent.AgentID],
 			NetworkPolicy:       networkPolicyByAgent[agent.AgentID],
+			FinanceClients:      make([]model.FinanceClientView, 0),
 		}
 		if options.IncludeGeo {
 			view.Geo = lookupAgentGeo(summary, resolver)
@@ -92,6 +93,18 @@ func BuildGlobalDashboardWithOptions(agents []model.AgentRecord, snapshots []mod
 			}
 		}
 		if overview != nil {
+			view.FinanceClientsReady = true
+			view.FinanceClients = make([]model.FinanceClientView, 0, len(overview.Clients))
+			for _, client := range overview.Clients {
+				view.FinanceClients = append(view.FinanceClients, model.FinanceClientView{
+					InboundID:     client.InboundID,
+					InboundTag:    client.InboundTag,
+					InboundRemark: client.InboundRemark,
+					Email:         client.Email,
+					Comment:       client.Comment,
+					Enabled:       client.Enabled,
+				})
+			}
 			view.NodeCount = overview.NodeCount
 			view.ClientCount = overview.ClientCount
 			view.OnlineClientCount = overview.OnlineClientCount

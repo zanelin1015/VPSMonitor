@@ -219,8 +219,23 @@ func TestBuildGlobalDashboardMatchesCrossClientTopology(t *testing.T) {
 	if view.ClientChains[0].MatchedLinkCount != 1 {
 		t.Fatalf("expected client chain to include one matched link, got %#v", view.ClientChains[0])
 	}
+	if view.ClientChains[0].RootInboundID != 1 {
+		t.Fatalf("expected client chain root inbound id 1, got %#v", view.ClientChains[0])
+	}
 	if view.Links[0].Target.AgentID != "agent-b" {
 		t.Fatalf("expected outbound to match agent-b inbound, got %#v", view.Links[0])
+	}
+
+	lightweight := BuildGlobalDashboardWithOptions(agents, snapshots, GlobalDashboardOptions{IncludeTopology: false})
+	if len(lightweight.ClientChains) != 0 {
+		t.Fatalf("expected lightweight dashboard without topology chains, got %#v", lightweight.ClientChains)
+	}
+	if !lightweight.Agents[0].FinanceClientsReady || len(lightweight.Agents[0].FinanceClients) != 1 {
+		t.Fatalf("expected lightweight dashboard finance client state, got %#v", lightweight.Agents[0].FinanceClients)
+	}
+	financeClient := lightweight.Agents[0].FinanceClients[0]
+	if financeClient.InboundID != 1 || financeClient.InboundTag != "in-a" || financeClient.Email != "alice@example.com" || !financeClient.Enabled {
+		t.Fatalf("unexpected lightweight finance client: %#v", financeClient)
 	}
 }
 

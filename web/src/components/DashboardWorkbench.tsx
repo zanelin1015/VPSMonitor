@@ -154,7 +154,12 @@ export function AdminWorkbenchDashboard(props: {
         <WorkbenchRealtimeKpi up={scopedNetwork.up} down={scopedNetwork.down} />
         <WorkbenchKpi label={restrictedView ? '授权周期已用' : '周期总流量'} value={formatBytes(scopedNetwork.used)} note={restrictedView ? '仅统计有权限的 Client' : `↑${formatBytes(scopedNetwork.sent)} · ↓${formatBytes(scopedNetwork.recv)}`} tone="traffic" />
         {!restrictedView ? <WorkbenchKpi label="续费风险" value={`${renewalRiskCount}`} note={`30天内 ${renewalWithin30Count}`} tone={renewalRiskCount ? 'bad' : 'ok'} /> : null}
-        {!restrictedView ? <WorkbenchKpi label="本月利润" value={formatMoney(monthlyFinance.profitTotal, costCurrency)} note={`收入 ${formatMoney(monthlyFinance.revenueTotal, costCurrency)}`} tone={monthlyFinance.profitTotal >= 0 ? 'profit' : 'bad'} /> : null}
+        {!restrictedView ? <WorkbenchKpi
+          label="本月利润"
+          value={monthlyFinance.available ? formatMoney(monthlyFinance.profitTotal, costCurrency) : '--'}
+          note={monthlyFinance.available ? `收入 ${formatMoney(monthlyFinance.revenueTotal, costCurrency)}` : monthlyFinance.error || '财务数据加载中'}
+          tone={monthlyFinance.available && monthlyFinance.profitTotal >= 0 ? 'profit' : 'bad'}
+        /> : null}
         <Button size="small" onClick={onOpenTopology} icon={<ApartmentOutlined />}>拓扑</Button>
       </div>
 
@@ -210,23 +215,26 @@ export function AdminWorkbenchDashboard(props: {
         {!restrictedView ? <Card bordered={false} className="surface-card admin-workbench-card workbench-finance-card">
           <div className="admin-workbench-card-title">
             <Text strong>财务月览</Text>
-            <Tag color={monthlyFinance.profitTotal >= 0 ? 'green' : 'red'}>{costCurrency}</Tag>
+            <Tag color={!monthlyFinance.available ? 'default' : monthlyFinance.profitTotal >= 0 ? 'green' : 'red'}>{monthlyFinance.available ? costCurrency : '未就绪'}</Tag>
           </div>
           <div className="workbench-finance-total">
             <span>预计月利润</span>
-            <strong className={monthlyFinance.profitTotal >= 0 ? 'finance-positive' : 'finance-negative'}>{formatMoney(monthlyFinance.profitTotal, costCurrency)}</strong>
+            <strong className={monthlyFinance.profitTotal >= 0 ? 'finance-positive' : 'finance-negative'}>{monthlyFinance.available ? formatMoney(monthlyFinance.profitTotal, costCurrency) : '--'}</strong>
           </div>
           <div className="workbench-finance-bars">
             {financeBars.map((bar) => (
               <div className={`workbench-finance-bar workbench-finance-${bar.tone}`} key={bar.label}>
-                <div><span>{bar.label}</span><strong>{formatMoney(bar.value, costCurrency)}</strong></div>
-                <i><b style={{ width: `${percentOf(Math.abs(bar.value), maxFinance)}%` }} /></i>
+                <div><span>{bar.label}</span><strong>{monthlyFinance.available ? formatMoney(bar.value, costCurrency) : '--'}</strong></div>
+                <i><b style={{ width: `${monthlyFinance.available ? percentOf(Math.abs(bar.value), maxFinance) : 0}%` }} /></i>
               </div>
             ))}
           </div>
           <div className="workbench-finance-foot">
-            <span>成本 Client VPS {monthlyFinance.costCount}</span>
-            <span>收费客户端 {monthlyFinance.revenueCount}</span>
+            {monthlyFinance.available ? <>
+              <span>成本 {monthlyFinance.costCount}/{agents.length}</span>
+              <span>收费客户端 {monthlyFinance.revenueCount}</span>
+              {monthlyFinance.excludedRevenueCount ? <span>未计收入 {monthlyFinance.excludedRevenueCount}</span> : null}
+            </> : <span>{monthlyFinance.error || '财务数据加载中'}</span>}
           </div>
         </Card> : null}
 

@@ -44,11 +44,22 @@ type DashboardAgentView struct {
 	Realm               *RealmSnapshot         `json:"realm,omitempty"`
 	NetworkPolicy       *NetworkPolicySnapshot `json:"network_policy,omitempty"`
 	Geo                 *IPGeoView             `json:"geo,omitempty"`
+	FinanceClients      []FinanceClientView    `json:"finance_clients"`
+	FinanceClientsReady bool                   `json:"finance_clients_ready"`
 	NodeCount           int                    `json:"node_count"`
 	ClientCount         int                    `json:"client_count"`
 	OnlineClientCount   int                    `json:"online_client_count"`
 	OutboundCount       int                    `json:"outbound_count"`
 	RoutingRuleCount    int                    `json:"routing_rule_count"`
+}
+
+type FinanceClientView struct {
+	InboundID     int    `json:"inbound_id"`
+	InboundTag    string `json:"inbound_tag,omitempty"`
+	InboundRemark string `json:"inbound_remark,omitempty"`
+	Email         string `json:"email,omitempty"`
+	Comment       string `json:"comment,omitempty"`
+	Enabled       bool   `json:"enabled"`
 }
 
 type IPGeoView struct {
@@ -165,6 +176,7 @@ type ClientChainView struct {
 	RootClientEmail   string            `json:"root_client_email,omitempty"`
 	RootClientRemark  string            `json:"root_client_remark,omitempty"`
 	RootClientEnabled bool              `json:"root_client_enabled"`
+	RootInboundID     int               `json:"root_inbound_id,omitempty"`
 	RootInboundTag    string            `json:"root_inbound_tag,omitempty"`
 	MatchedLinkCount  int               `json:"matched_link_count"`
 	LoopDetected      bool              `json:"loop_detected,omitempty"`

@@ -43,6 +43,17 @@ export interface AgentListItem {
   realm?: RealmSnapshot
   network_policy?: NetworkPolicySnapshot
   geo?: IPGeoView
+  finance_clients?: FinanceClientView[]
+  finance_clients_ready?: boolean
+}
+
+export interface FinanceClientView {
+  inbound_id: number
+  inbound_tag?: string
+  inbound_remark?: string
+  email?: string
+  comment?: string
+  enabled: boolean
 }
 
 export interface AgentLogEntry {
@@ -814,6 +825,7 @@ export interface ClientChainView {
   root_client_email?: string
   root_client_remark?: string
   root_client_enabled: boolean
+  root_inbound_id?: number
   root_inbound_tag?: string
   matched_link_count: number
   loop_detected?: boolean

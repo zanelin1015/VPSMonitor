@@ -33,8 +33,12 @@ export function CustomerPortal() {
   const [remarkDrafts, setRemarkDrafts] = useState<Record<number, string>>({})
 
   useEffect(() => {
+    document.title = 'ZaneLin Customer'
     clearCustomFrontendCode()
-    return () => clearCustomFrontendCode()
+    return () => {
+      document.title = 'ZaneLin'
+      clearCustomFrontendCode()
+    }
   }, [])
 
   useEffect(() => {

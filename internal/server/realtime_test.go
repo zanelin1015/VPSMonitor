@@ -219,6 +219,21 @@ func TestSanitizeGeoForAreaManagerKeepsOnlyCountry(t *testing.T) {
 	}
 }
 
+func TestSanitizeDashboardAgentForAreaManagerRemovesFinanceClients(t *testing.T) {
+	agent := sanitizeDashboardAgentForAreaManager(model.DashboardAgentView{
+		AgentID:             "agent-1",
+		FinanceClientsReady: true,
+		FinanceClients: []model.FinanceClientView{{
+			InboundID: 1,
+			Email:     "private@example.com",
+			Enabled:   true,
+		}},
+	}, map[string][]string{"agent-1": {"public"}})
+	if agent.FinanceClientsReady || len(agent.FinanceClients) != 0 {
+		t.Fatalf("expected finance client state to be removed for area manager, got %#v", agent.FinanceClients)
+	}
+}
+
 func TestAreaManagerRealtimeMetricsAreSanitized(t *testing.T) {
 	app := &App{}
 	user := model.AdminUser{

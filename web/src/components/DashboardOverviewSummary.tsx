@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { Button, Card, Empty, Select, Space, Table, Tabs, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
-import type { AreaManagerAdminView, ClientChainView, CustomerAdminView, CustomerAssignment, DashboardAgentView, GlobalDashboardView } from '../types'
-import type { CurrencyCode, ExchangeRatesState, MonthlyFinanceCostDetail, MonthlyFinancePaymentInfo, MonthlyFinanceRevenueDetail } from '../lib/currency'
-import { buildMonthlyFinanceCostDetails, buildMonthlyFinanceRevenueDetails, formatMoney } from '../lib/currency'
+import type { AreaManagerAdminView, ClientChainView, CustomerAdminView, DashboardAgentView, GlobalDashboardView } from '../types'
+import type { CurrencyCode, ExchangeRatesState, MonthlyFinanceCostDetail, MonthlyFinanceExcludedRevenueDetail, MonthlyFinancePaymentInfo, MonthlyFinanceRevenueDetail, MonthlyFinanceSummary } from '../lib/currency'
+import { buildMonthlyFinanceCostDetails, buildMonthlyFinanceExcludedRevenueDetails, buildMonthlyFinanceRevenueDetails, financeAssignmentMatchesRevenueRow, formatMoney } from '../lib/currency'
 import { fetchJSON, formatDateTime } from '../lib/appHelpers'
 import { type AgentNetworkSummary, formatBytes, formatSpeed } from '../lib/traffic'
 
@@ -29,7 +29,7 @@ export function OverviewSummaryCard(props: {
   scopedNetwork: AgentNetworkSummary
   costCurrency: CurrencyCode
   currencyOptions: CurrencyCode[]
-  monthlyFinance: { profitTotal: number; revenueTotal: number; costTotal: number }
+  monthlyFinance: MonthlyFinanceSummary
   financeAgents: DashboardAgentView[]
   financeChains: ClientChainView[]
   financeCustomers: CustomerAdminView[]
@@ -75,6 +75,10 @@ export function OverviewSummaryCard(props: {
   )
   const revenueRows = useMemo(
     () => buildMonthlyFinanceRevenueDetails(financeAgents, financeChains, costCurrency, exchangeRates, effectiveCustomerRows, financeAreaManagers),
+    [costCurrency, effectiveCustomerRows, exchangeRates, financeAgents, financeAreaManagers, financeChains],
+  )
+  const excludedRevenueRows = useMemo(
+    () => buildMonthlyFinanceExcludedRevenueDetails(financeAgents, financeChains, costCurrency, exchangeRates, effectiveCustomerRows, financeAreaManagers),
     [costCurrency, effectiveCustomerRows, exchangeRates, financeAgents, financeAreaManagers, financeChains],
   )
   const customerRevenueRows = useMemo(
@@ -141,7 +145,7 @@ export function OverviewSummaryCard(props: {
       render: (cycle: MonthlyFinanceCostDetail['cycle']) => cycleLabel(cycle),
     },
     {
-      title: '缴费日',
+      title: '本期缴费日',
       key: 'payment',
       width: 160,
       render: (_, record) => renderPaymentInfo(record.payment),
@@ -200,7 +204,7 @@ export function OverviewSummaryCard(props: {
       render: (cycle: MonthlyFinanceRevenueDetail['cycle']) => cycleLabel(cycle),
     },
     {
-      title: '缴费日',
+      title: '本期收费日',
       key: 'payment',
       width: 160,
       render: (_, record) => renderPaymentInfo(record.payment),
@@ -212,6 +216,16 @@ export function OverviewSummaryCard(props: {
       align: 'right',
       render: (_, record) => renderMonthlyAmount(record.monthlyAmount, costCurrency, record.amount > 0),
     },
+  ]
+  const excludedRevenueColumns: ColumnsType<MonthlyFinanceExcludedRevenueDetail> = [
+    {
+      title: '未计原因',
+      dataIndex: 'reason',
+      key: 'reason',
+      width: 150,
+      render: (reason: MonthlyFinanceExcludedRevenueDetail['reason']) => <Tag color={reason === 'client_disabled' ? 'default' : 'orange'}>{excludedRevenueReasonLabel(reason)}</Tag>,
+    },
+    ...(revenueColumns as unknown as ColumnsType<MonthlyFinanceExcludedRevenueDetail>),
   ]
   const revenueGroupColumns: ColumnsType<FinanceRevenueGroupRow> = [
     {
@@ -328,7 +342,7 @@ export function OverviewSummaryCard(props: {
               }}
             >
               <div className="overview-stat-title overview-cost-title">
-                <span>财务月览</span>
+                <span>本月利润</span>
                 <Select
                   className="overview-currency-select"
                   size="small"
@@ -340,10 +354,22 @@ export function OverviewSummaryCard(props: {
                   onChange={(value) => onCostCurrencyChange(value as CurrencyCode)}
                 />
               </div>
-              <div className="overview-cost-value">{formatMoney(monthlyFinance.profitTotal, costCurrency)}</div>
+              <div className="overview-cost-value">{monthlyFinance.available ? formatMoney(monthlyFinance.profitTotal, costCurrency) : '--'}</div>
               <div className="overview-stat-foot">
-                营收 {formatMoney(monthlyFinance.revenueTotal, costCurrency)} · 花销 {formatMoney(monthlyFinance.costTotal, costCurrency)}
+                {monthlyFinance.available
+                  ? `营收 ${formatMoney(monthlyFinance.revenueTotal, costCurrency)} · 花销 ${formatMoney(monthlyFinance.costTotal, costCurrency)}`
+                  : monthlyFinance.error || '财务数据加载中'}
               </div>
+              {monthlyFinance.available && (monthlyFinance.missingCostCount || monthlyFinance.excludedRevenueCount || monthlyFinance.missingRevenueCount) ? (
+                <div className="overview-stat-foot">
+                  {monthlyFinance.missingCostCount ? `未录成本 ${monthlyFinance.missingCostCount}` : ''}
+                  {monthlyFinance.missingCostCount && monthlyFinance.excludedRevenueCount ? ' · ' : ''}
+                  {monthlyFinance.excludedRevenueCount ? `未计收入 ${monthlyFinance.excludedRevenueCount}` : ''}
+                  {(monthlyFinance.missingCostCount || monthlyFinance.excludedRevenueCount) && monthlyFinance.missingRevenueCount ? ' · ' : ''}
+                  {monthlyFinance.missingRevenueCount ? `汇率缺失 ${monthlyFinance.missingRevenueCount}` : ''}
+                </div>
+              ) : null}
+              {monthlyFinance.error && monthlyFinance.available ? <div className="overview-stat-foot">财务账号数据未刷新：{monthlyFinance.error}</div> : null}
               {exchangeRates.error ? <div className="overview-stat-foot">汇率加载失败：{exchangeRates.error}</div> : null}
             </section> : null}
           </div>
@@ -355,13 +381,10 @@ export function OverviewSummaryCard(props: {
             <span>当前详情节点 · {currentAgentLabel || '-'}</span>
             {!restrictedView ? <span>当前节点 IPv4 · {currentIPv4 || '-'}</span> : null}
           </div>
-          {!restrictedView && financeDetailOpen ? (
+          {!restrictedView && financeDetailOpen && monthlyFinance.available ? (
             <div className="finance-detail-panel">
               <div className="finance-detail-head">
-                <div>
-                  <Text strong>财务月览明细</Text>
-                  <Text type="secondary">admin 财务 = 单用户节点收入 + 区域账号收入 - VPS 总花销</Text>
-                </div>
+                <Text strong>财务月览明细</Text>
                 <Button size="small" onClick={() => setFinanceDetailOpen(false)}>收起</Button>
               </div>
               <div className="finance-detail-summary">
@@ -380,6 +403,14 @@ export function OverviewSummaryCard(props: {
                 <div>
                   <span>范围</span>
                   <strong>{selectedTag || '全部标签'}</strong>
+                </div>
+                <div>
+                  <span>未录成本</span>
+                  <strong>{monthlyFinance.missingCostCount}</strong>
+                </div>
+                <div>
+                  <span>未计收入</span>
+                  <strong>{monthlyFinance.excludedRevenueCount}</strong>
                 </div>
               </div>
               <Tabs
@@ -409,6 +440,20 @@ export function OverviewSummaryCard(props: {
                         dataSource={revenueRows}
                         pagination={{ pageSize: 8, showSizeChanger: false }}
                         scroll={{ x: 1120 }}
+                      />
+                    ),
+                  },
+                  {
+                    key: 'revenue-excluded',
+                    label: `未计收入 ${excludedRevenueRows.length}`,
+                    children: (
+                      <Table
+                        size="small"
+                        rowKey="key"
+                        columns={excludedRevenueColumns}
+                        dataSource={excludedRevenueRows}
+                        pagination={{ pageSize: 8, showSizeChanger: false }}
+                        scroll={{ x: 1260 }}
                       />
                     ),
                   },
@@ -487,7 +532,7 @@ function buildCustomerRevenueRows(revenueRows: MonthlyFinanceRevenueDetail[], cu
       continue
     }
     const matchedCustomers = customers.filter((customer) => (
-      (customer.assignments || []).some((assignment) => assignmentMatchesRevenue(assignment, row))
+      customer.enabled && (customer.assignments || []).some((assignment) => assignment.enabled && financeAssignmentMatchesRevenueRow(assignment, row))
     ))
     if (!matchedCustomers.length) {
       const key = 'unassigned'
@@ -495,6 +540,22 @@ function buildCustomerRevenueRows(revenueRows: MonthlyFinanceRevenueDetail[], cu
         key,
         label: '未分配用户',
         detail: '收费已设置，但没有匹配的用户分配',
+        clients: [],
+        count: 0,
+        monthlyAmount: 0,
+      }
+      current.count += 1
+      current.monthlyAmount += amount
+      groups.set(key, current)
+      continue
+    }
+    if (matchedCustomers.length > 1) {
+      const customerNames = matchedCustomers.map((customer) => customer.display_name || customer.username).sort()
+      const key = `overlap:${matchedCustomers.map((customer) => customer.id).sort((left, right) => left - right).join(',')}`
+      const current = groups.get(key) || {
+        key,
+        label: '重复授权',
+        detail: customerNames.join('、'),
         clients: [],
         count: 0,
         monthlyAmount: 0,
@@ -553,26 +614,6 @@ function buildNodeRevenueRows(revenueRows: MonthlyFinanceRevenueDetail[]): Finan
   return [...groups.values()].sort((left, right) => right.monthlyAmount - left.monthlyAmount)
 }
 
-function assignmentMatchesRevenue(assignment: CustomerAssignment, row: MonthlyFinanceRevenueDetail): boolean {
-  if (assignment.agent_id !== row.agentID) {
-    return false
-  }
-  const assignmentEmail = (assignment.client_email || '').toLowerCase()
-  const rowEmail = (row.clientEmail || '').toLowerCase()
-  if (assignmentEmail && rowEmail && assignmentEmail === rowEmail) {
-    return true
-  }
-  if (assignment.inbound_id > 0 && row.inboundID > 0 && assignment.inbound_id === row.inboundID) {
-    return !assignmentEmail || !rowEmail || assignmentEmail === rowEmail
-  }
-  const assignmentTag = (assignment.inbound_tag || '').toLowerCase()
-  const rowTag = (row.inboundTag || '').toLowerCase()
-  if (assignmentTag && rowTag && assignmentTag === rowTag) {
-    return !assignmentEmail || !rowEmail || assignmentEmail === rowEmail
-  }
-  return false
-}
-
 function renderMonthlyAmount(amount: number | null, currency: CurrencyCode, hasSourceAmount: boolean) {
   if (amount !== null) {
     return <Text strong>{formatMoney(amount, currency)}</Text>
@@ -584,12 +625,29 @@ function renderPaymentInfo(payment: MonthlyFinancePaymentInfo | null) {
   if (!payment) {
     return <Tag>未设置日期</Tag>
   }
-  const color = payment.status === 'paid' ? 'success' : payment.status === 'today' ? 'processing' : 'warning'
-  const label = payment.status === 'paid' ? '已缴费' : payment.status === 'today' ? '今日缴费' : '待缴费'
+  const color = payment.status === 'paid' ? 'default' : payment.status === 'today' ? 'processing' : 'warning'
+  const label = payment.status === 'paid' ? '本期已过' : payment.status === 'today' ? '今日' : '待到日期'
   return (
     <Space direction="vertical" size={2}>
       <Text>{payment.date}</Text>
       <Tag color={color}>{label}</Tag>
     </Space>
   )
+}
+
+function excludedRevenueReasonLabel(reason: MonthlyFinanceExcludedRevenueDetail['reason']): string {
+  switch (reason) {
+    case 'client_disabled':
+      return '客户端已停用'
+    case 'client_not_found':
+      return '客户端不存在'
+    case 'client_state_unavailable':
+      return '状态尚未同步'
+    case 'duplicate_billing':
+      return '收费配置重复'
+    case 'ambiguous_client':
+      return '匹配到多个客户端'
+    default:
+      return '未计入'
+  }
 }

@@ -239,6 +239,7 @@ func buildClientChains(
 				RootClientEmail:   client.Email,
 				RootClientRemark:  firstNonEmpty(client.Comment, client.SubID),
 				RootClientEnabled: client.Enabled,
+				RootInboundID:     client.InboundID,
 				RootInboundTag:    client.InboundTag,
 			}
 			chain.Steps = append(chain.Steps, model.ClientChainStep{

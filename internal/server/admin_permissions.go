@@ -353,6 +353,8 @@ func sanitizeDashboardAgentForAreaManager(agent model.DashboardAgentView, tagMap
 	agent.Realm = nil
 	agent.NetworkPolicy = nil
 	agent.Geo = nil
+	agent.FinanceClients = []model.FinanceClientView{}
+	agent.FinanceClientsReady = false
 	return agent
 }
 
@@ -744,6 +746,9 @@ func applyAreaManagerClientCounts(view *model.GlobalDashboardView, clientScope a
 }
 
 func clientChainInboundID(chain model.ClientChainView) int {
+	if chain.RootInboundID > 0 {
+		return chain.RootInboundID
+	}
 	parts := strings.Split(chain.Key, "::")
 	if len(parts) < 3 {
 		return 0
