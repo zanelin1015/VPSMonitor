@@ -56,7 +56,7 @@ type VPSRenewalConfig struct {
 	CostCycle                  string                   `json:"cost_cycle,omitempty"`
 	ClientBillings             []XUIClientBillingConfig `json:"client_billings,omitempty"`
 	TrafficLimitBytes          uint64                   `json:"traffic_limit_bytes,omitempty"`
-	TrafficAccountingMode       string                   `json:"traffic_accounting_mode,omitempty"`
+	TrafficAccountingMode      string                   `json:"traffic_accounting_mode,omitempty"`
 	BandwidthMbps              float64                  `json:"bandwidth_mbps,omitempty"`
 	TrafficBaselineBytes       uint64                   `json:"traffic_baseline_bytes,omitempty"`
 	TrafficSentBaselineBytes   uint64                   `json:"traffic_sent_baseline_bytes,omitempty"`
@@ -65,16 +65,17 @@ type VPSRenewalConfig struct {
 }
 
 type XUIClientBillingConfig struct {
-	InboundID       int     `json:"inbound_id,omitempty"`
-	InboundTag      string  `json:"inbound_tag,omitempty"`
-	Email           string  `json:"email,omitempty"`
-	RevenueAmount   float64 `json:"revenue_amount,omitempty"`
-	RevenueCurrency string  `json:"revenue_currency,omitempty"`
-	RevenueCycle    string  `json:"revenue_cycle,omitempty"`
-	StartTime       int64   `json:"start_time,omitempty"`
-	ExpireTime      int64   `json:"expire_time,omitempty"`
-	ExpireCycle     string  `json:"expire_cycle,omitempty"`
-	ExpireAutoRenew bool    `json:"expire_auto_renew,omitempty"`
+	InboundID         int     `json:"inbound_id,omitempty"`
+	InboundTag        string  `json:"inbound_tag,omitempty"`
+	Email             string  `json:"email,omitempty"`
+	TrafficMultiplier float64 `json:"traffic_multiplier,omitempty"`
+	RevenueAmount     float64 `json:"revenue_amount,omitempty"`
+	RevenueCurrency   string  `json:"revenue_currency,omitempty"`
+	RevenueCycle      string  `json:"revenue_cycle,omitempty"`
+	StartTime         int64   `json:"start_time,omitempty"`
+	ExpireTime        int64   `json:"expire_time,omitempty"`
+	ExpireCycle       string  `json:"expire_cycle,omitempty"`
+	ExpireAutoRenew   bool    `json:"expire_auto_renew,omitempty"`
 }
 
 type AgentEntryConfig struct {

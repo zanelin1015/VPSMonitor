@@ -18,7 +18,12 @@ export function topologyMatchesSelectedTag(link: TopologyLinkView, selectedTag: 
   if (!selectedTag) {
     return true
   }
-  return [...(link.source.agent_tags || []), ...(link.target.agent_tags || [])].includes(selectedTag)
+  return [
+    ...(link.source.agent_tags || []),
+    ...(link.target.agent_tags || []),
+    ...(link.final_target?.agent_tags || []),
+    ...(link.realm_hops || []).flatMap((hop) => hop.agent_tags || []),
+  ].includes(selectedTag)
 }
 
 export function findOutboundLinkedClient(view: GlobalDashboardView | null, agentID: string, outboundTag?: string): TopologyLinkView | undefined {

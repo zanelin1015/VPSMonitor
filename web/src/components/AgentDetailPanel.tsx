@@ -26,7 +26,7 @@ import type {
 import type { ConfigSectionKey } from '../lib/appHelpers'
 import type { CurrencyCode } from '../lib/currency'
 import { REVENUE_CURRENCIES } from '../lib/currency'
-import { clientTrafficTotal, formatBytes, formatSpeed } from '../lib/traffic'
+import { clientBidirectionalTrafficTotal, formatBytes, formatSpeed } from '../lib/traffic'
 import {
   actionKindLabel,
   actionStatusColor,
@@ -46,10 +46,12 @@ import {
   hasSelectedTag,
   isClientOnline,
   mergeTagOptions,
+  normalizeClientTrafficMultiplier,
   nodeElementId,
   outboundElementId,
   parseAddressInput,
   ruleElementId,
+  scaleClientTraffic,
   shortJSON,
   summarizeRule,
 } from '../lib/appHelpers'
@@ -518,12 +520,16 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       key: 'traffic',
       width: 170,
       render: (_, record) => {
-        const up = Number(record.up || 0)
-        const down = Number(record.down || 0)
-        const total = clientTrafficTotal(record)
+        const billing = findClientBilling(managedConfig?.renewal?.client_billings, record) || defaultClientBilling(record)
+        const multiplier = normalizeClientTrafficMultiplier(billing.traffic_multiplier)
+        const up = scaleClientTraffic(Number(record.up || 0), multiplier)
+        const down = scaleClientTraffic(Number(record.down || 0), multiplier)
+        const total = scaleClientTraffic(clientBidirectionalTrafficTotal(record), multiplier)
+        const limit = scaleClientTraffic(Number(record.total_gb || 0), multiplier)
         return (
           <div className="client-traffic-cell">
-            <span>{restrictedView ? '已用' : '总'} {formatBytes(total)}</span>
+            <span>已用 {formatBytes(total)}{limit > 0 ? ` / 限额 ${formatBytes(limit)}` : ' / 无上限'}</span>
+            {multiplier !== 1 ? <span>流量倍率 ×{multiplier}</span> : null}
             {!restrictedView ? <span>上传 {formatBytes(up)}</span> : null}
             {!restrictedView ? <span>下载 {formatBytes(down)}</span> : null}
           </div>
@@ -533,7 +539,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     {
       title: '收费',
       key: 'billing',
-      width: 300,
+      width: 430,
       render: (_, record) => {
         const billing = findClientBilling(managedConfig?.renewal?.client_billings, record) || defaultClientBilling(record)
         const revenueCycle = normalizeBillingCycle(billing.revenue_cycle || billing.expire_cycle)
@@ -558,6 +564,21 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
               options={REVENUE_CURRENCIES.map((currency) => ({ value: currency, label: currency }))}
               onChange={(value) => onUpdateClientBillingDraft(record, { revenue_currency: value as 'CNY' | 'USDT' })}
             />
+            <Space size={4}>
+              <Text type="secondary">流量</Text>
+              <InputNumber
+                size="small"
+                min={0.1}
+                max={100}
+                precision={2}
+                step={0.1}
+                disabled={!canManageConfig}
+                style={{ width: 76 }}
+                value={normalizeClientTrafficMultiplier(billing.traffic_multiplier)}
+                onChange={(value) => onUpdateClientBillingDraft(record, { traffic_multiplier: Number(value || 1) })}
+              />
+              <Text type="secondary">倍</Text>
+            </Space>
             <Select
               size="small"
               style={{ width: 78 }}

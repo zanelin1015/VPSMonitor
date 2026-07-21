@@ -56,7 +56,41 @@ func matchTopologyLinks(inbounds map[string]topologyInboundCandidate, outbounds 
 		}
 		return links[i].Source.OutboundTag < links[j].Source.OutboundTag
 	})
+	annotateRealmTopologyLinks(links, linkByOutbound)
 	return links, linkByOutbound
+}
+
+func annotateRealmTopologyLinks(links []model.TopologyLinkView, linkByOutbound map[string]model.TopologyLinkView) {
+	for index := range links {
+		link := links[index]
+		if normalizedTopologyProtocol(link.Source.Protocol) != "realm" {
+			continue
+		}
+		visited := map[string]struct{}{link.Key: {}}
+		current := link
+		for normalizedTopologyProtocol(current.Target.Protocol) == "realm" {
+			link.RealmHops = append(link.RealmHops, current.Target)
+			nextKey := outboundTopologyKey(current.Target.AgentID, current.Target.InboundTag)
+			if _, seen := visited[nextKey]; seen {
+				link.LoopDetected = true
+				link.UnresolvedReason = "detected a Realm forwarding loop"
+				break
+			}
+			visited[nextKey] = struct{}{}
+			next, ok := linkByOutbound[nextKey]
+			if !ok {
+				link.UnresolvedReason = "Realm forwarding target did not resolve to another Realm listener or x-ui inbound"
+				break
+			}
+			current = next
+		}
+		if !link.LoopDetected && link.UnresolvedReason == "" && current.Target.AgentID != "" {
+			finalTarget := current.Target
+			link.FinalTarget = &finalTarget
+		}
+		links[index] = link
+		linkByOutbound[link.Key] = link
+	}
 }
 
 func scoreTopologyMatch(outbound model.TopologyOutboundRef, inbound model.TopologyInboundRef) topologyMatchResult {

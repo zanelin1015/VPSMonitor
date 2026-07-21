@@ -142,11 +142,15 @@
   min-width: 0;
   min-height: 0;
   flex: 1 1 auto;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-template-rows: repeat(2, minmax(0, 1fr));
   gap: 8px;
   align-items: stretch;
   overflow: hidden;
+}
+
+.workbench-speed-card {
+  grid-column: span 2;
 }
 
 .admin-workbench-card {
@@ -333,12 +337,80 @@
 
 .workbench-speed-list,
 .workbench-progress-list,
-.workbench-alert-list {
+.workbench-alert-list,
+.workbench-client-expiry-list {
   display: grid;
   min-height: 0;
   flex: 1 1 auto;
   gap: 6px;
   overflow: hidden;
+}
+
+.workbench-client-expiry-list {
+  grid-template-rows: repeat(5, minmax(0, 1fr));
+}
+
+.workbench-client-expiry-list button {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-soft) 58%, transparent);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.workbench-client-expiry-identity,
+.workbench-client-expiry-status {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.workbench-client-expiry-identity strong,
+.workbench-client-expiry-identity small,
+.workbench-client-expiry-status strong,
+.workbench-client-expiry-status small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-client-expiry-identity strong {
+  font-size: 12px;
+}
+
+.workbench-client-expiry-identity small,
+.workbench-client-expiry-status small {
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.workbench-client-expiry-status {
+  justify-items: end;
+  text-align: right;
+}
+
+.workbench-client-expiry-status .ant-tag {
+  margin-inline-end: 0;
+  font-size: 10px;
+  line-height: 17px;
+}
+
+.workbench-client-expiry-status strong {
+  color: var(--amber);
+  font-size: 11px;
+}
+
+.workbench-client-expiry-status strong.finance-negative {
+  color: var(--red);
 }
 
 .workbench-speed-list {
@@ -757,6 +829,15 @@
 }
 
 @media (max-width: 1180px) {
+  .admin-workbench-page {
+    overflow: auto;
+  }
+
+  .admin-workbench {
+    height: auto;
+    overflow: visible;
+  }
+
   .admin-workbench-strip {
     grid-template-columns: minmax(160px, 1.2fr) repeat(3, minmax(108px, 1fr));
   }
@@ -766,8 +847,14 @@
   }
 
   .admin-workbench-grid {
+    flex: 0 0 auto;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: repeat(3, minmax(220px, 1fr));
+    grid-template-rows: repeat(4, minmax(220px, 1fr));
+    overflow: visible;
+  }
+
+  .workbench-speed-card {
+    grid-column: auto;
   }
 }
 

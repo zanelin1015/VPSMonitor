@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc --project tsconfig.app.json && tsc --project tsconfig.node.json && vite build",
     "preview": "vite preview",
+    "test:client-expiry": "node scripts/test-client-expiry.mjs",
     "test:finance": "node scripts/test-finance.mjs"
   },
   "dependencies": {

@@ -5,6 +5,13 @@ import { Line } from '@ant-design/plots'
 import type { LineConfig } from '@ant-design/plots'
 
 import type { DashboardAgentView, GlobalDashboardView } from '../types'
+import {
+  buildClientExpiryRows,
+  CLIENT_EXPIRY_WARNING_DAYS,
+  clientExpiryCycleLabel,
+  clientExpiryRemainingLabel,
+  type ClientExpiryRow,
+} from '../lib/clientExpiry'
 import type { CurrencyCode, MonthlyFinanceSummary } from '../lib/currency'
 import { formatMoney } from '../lib/currency'
 import { agentDisplayStatus, calculateRenewalStatus, formatDateTime } from '../lib/appHelpers'
@@ -124,6 +131,8 @@ export function AdminWorkbenchDashboard(props: {
     .slice(0, 5)
   const renewalRiskCount = renewalRows.filter((row) => row.renewal?.level !== 'ok').length
   const renewalWithin30Count = renewalRows.filter((row) => row.renewalDays !== null && row.renewalDays <= 30).length
+  const clientExpiryRows = useMemo(() => buildClientExpiryRows(agents), [agents])
+  const expiredClientCount = clientExpiryRows.filter((row) => row.remainingDays < 0).length
 
   const alertRows = buildWorkbenchAlerts({
     offlineRows,
@@ -210,6 +219,16 @@ export function AdminWorkbenchDashboard(props: {
             <Tag color={renewalRiskCount ? 'red' : 'green'}>{renewalRows.length ? `已配置 ${renewalRows.length}` : '未配置'}</Tag>
           </div>
           <WorkbenchRenewalList rows={renewalRiskRows} onSelectAgent={onSelectAgent} />
+        </Card> : null}
+
+        {!restrictedView ? <Card bordered={false} className="surface-card admin-workbench-card workbench-client-expiry-card">
+          <div className="admin-workbench-card-title">
+            <Text strong>客户端即将到期</Text>
+            <Tag color={expiredClientCount ? 'red' : clientExpiryRows.length ? 'orange' : 'green'}>
+              {CLIENT_EXPIRY_WARNING_DAYS} 天内 {clientExpiryRows.length}
+            </Tag>
+          </div>
+          <WorkbenchClientExpiryList rows={clientExpiryRows.slice(0, 5)} onSelectAgent={onSelectAgent} />
         </Card> : null}
 
         {!restrictedView ? <Card bordered={false} className="surface-card admin-workbench-card workbench-finance-card">
@@ -511,6 +530,33 @@ function WorkbenchRenewalList(props: {
           </button>
         )
       })}
+    </div>
+  )
+}
+
+function WorkbenchClientExpiryList(props: {
+  rows: ClientExpiryRow[]
+  onSelectAgent: (agentID: string) => void
+}) {
+  const { rows, onSelectAgent } = props
+  if (!rows.length) {
+    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={`未来 ${CLIENT_EXPIRY_WARNING_DAYS} 天暂无客户端到期`} />
+  }
+  return (
+    <div className="workbench-client-expiry-list">
+      {rows.map((row) => (
+        <button type="button" key={row.key} onClick={() => onSelectAgent(row.agentID)}>
+          <span className="workbench-client-expiry-identity">
+            <strong title={row.clientName}>{row.clientName}</strong>
+            <small title={`${row.agentName} · ${row.inboundName}`}>{row.agentName} · {row.inboundName}</small>
+          </span>
+          <span className="workbench-client-expiry-status">
+            <Tag color={row.cycle === 'quarter' ? 'geekblue' : row.cycle === 'year' ? 'purple' : 'blue'}>{clientExpiryCycleLabel(row.cycle)}</Tag>
+            <strong className={row.level === 'bad' ? 'finance-negative' : ''}>{clientExpiryRemainingLabel(row.remainingDays)}</strong>
+            <small>{row.expiryDate}</small>
+          </span>
+        </button>
+      ))}
     </div>
   )
 }

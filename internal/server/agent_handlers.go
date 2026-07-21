@@ -703,6 +703,10 @@ func (a *App) appendRealmForwardedImportURLs(agentID string, overview *model.XUI
 	for agentID, agent := range agentMap {
 		entryByAgent[agentID] = agent.Entry
 	}
+	targetOverviewByAgent := make(map[string]*model.XUIOverview, len(snapshotMap))
+	for targetAgentID, targetSnapshot := range snapshotMap {
+		targetOverviewByAgent[targetAgentID] = dashboard.BuildXUIOverviewWithOptions(targetSnapshot, dashboard.XUIOverviewOptions{Entry: entryByAgent[targetAgentID]})
+	}
 	sourceAgent, ok := agentMap[agentID]
 	if !ok {
 		return
@@ -712,38 +716,22 @@ func (a *App) appendRealmForwardedImportURLs(agentID string, overview *model.XUI
 	for index, node := range overview.Nodes {
 		realmNodes[overviewInboundKey(node.ID, node.Tag)] = index
 	}
-	targetOverviewByAgent := make(map[string]*model.XUIOverview)
 	for _, rule := range sourceAgent.Entry.PortForwarding.Rules {
 		if !rule.Enabled || rule.ListenPort <= 0 || rule.TargetPort <= 0 {
 			continue
 		}
-		targetAgentID := findRealmTargetAgentID(rule, agentMap)
-		if targetAgentID == "" || strings.EqualFold(targetAgentID, agentID) {
+		resolution := resolveRealmForwardTarget(agentID, rule, agentMap, targetOverviewByAgent)
+		if !resolution.Resolved || resolution.FinalAgentID == "" {
 			continue
 		}
-		targetSnapshot, ok := snapshotMap[targetAgentID]
-		if !ok {
-			continue
-		}
+		targetAgentID := resolution.FinalAgentID
 		targetOverview := targetOverviewByAgent[targetAgentID]
-		if targetOverview == nil {
-			targetOverview = dashboard.BuildXUIOverviewWithOptions(targetSnapshot, dashboard.XUIOverviewOptions{Entry: entryByAgent[targetAgentID]})
-			targetOverviewByAgent[targetAgentID] = targetOverview
-		}
-		if targetOverview == nil {
-			continue
-		}
 		host := customerRealmSourceHost(sourceAgent, rule)
 		if host == "" {
 			continue
 		}
-		targetPorts := overviewNodePorts(targetOverview.Nodes)
 		for _, client := range targetOverview.Clients {
-			targetPort := targetPorts[overviewInboundKey(client.InboundID, client.InboundTag)]
-			if targetPort > 0 && targetPort != rule.TargetPort {
-				continue
-			}
-			if targetPort == 0 && rule.TargetPort <= 0 {
+			if !realmClientMatchesNode(client, resolution.FinalNode) {
 				continue
 			}
 			rewritten := rewriteCustomerImportURL(client.ImportURL, host, rule.ListenPort)
@@ -763,7 +751,7 @@ func (a *App) appendRealmForwardedImportURLs(agentID string, overview *model.XUI
 			sourceClient.RealmTargetInboundID = client.InboundID
 			sourceClient.RealmTargetInboundTag = client.InboundTag
 			sourceClient.RealmListenPort = rule.ListenPort
-			sourceClient.Route.Note = fmt.Sprintf("Realm 入口 %s:%d -> %s:%d", host, rule.ListenPort, firstNonEmptyString(agentMap[targetAgentID].AgentName, targetAgentID), rule.TargetPort)
+			sourceClient.Route.Note = realmForwardResolutionNote(host, rule.ListenPort, resolution, agentMap)
 			overview.Clients = append(overview.Clients, sourceClient)
 			nodeKey := overviewInboundKey(rule.ListenPort, sourceClient.InboundTag)
 			if nodeIndex, exists := realmNodes[nodeKey]; exists {
@@ -824,18 +812,16 @@ func overviewInboundKey(inboundID int, inboundTag string) string {
 	return fmt.Sprintf("%d\x00%s", inboundID, inboundTag)
 }
 
-func overviewNodePorts(nodes []model.XUINodeView) map[string]int {
-	ports := make(map[string]int, len(nodes))
-	for _, node := range nodes {
-		ports[overviewInboundKey(node.ID, node.Tag)] = node.Port
-	}
-	return ports
-}
-
 func findRealmTargetAgentID(rule model.RealmForwardRule, agentMap map[string]model.DashboardAgentView) string {
-	if strings.TrimSpace(rule.TargetAgentID) != "" {
-		if _, ok := agentMap[rule.TargetAgentID]; ok {
-			return rule.TargetAgentID
+	targetAgentID := strings.TrimSpace(rule.TargetAgentID)
+	if targetAgentID != "" {
+		if _, ok := agentMap[targetAgentID]; ok {
+			return targetAgentID
+		}
+		for agentID := range agentMap {
+			if strings.EqualFold(agentID, targetAgentID) {
+				return agentID
+			}
 		}
 		return ""
 	}

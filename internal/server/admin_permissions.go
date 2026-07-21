@@ -147,7 +147,8 @@ func (a *App) sanitizeDashboardForAdmin(user model.AdminUser, view *model.Global
 	}
 	tagMap, _ := a.store.ListAreaManagerAgentTags(user.ID)
 	clientScope := a.areaManagerClientScope(user)
-	allowed := clientScope.agents
+	allowed := cloneAgentSet(clientScope.agents)
+	expandAreaManagerRealmPathAgents(allowed, view.Links, clientScope)
 	agentNames := make(map[string]string, len(view.Agents))
 	for index := range view.Agents {
 		view.Agents[index] = sanitizeDashboardAgentForAreaManager(view.Agents[index], tagMap)
@@ -405,16 +406,28 @@ func sanitizeTopologyLinksForAreaManager(links []model.TopologyLinkView, allowed
 		link.Source.TargetIP = ""
 		link.Source.TargetGeo = sanitizeGeoForAreaManager(link.Source.TargetGeo)
 		link.Source.ResolvedIPs = nil
-		link.Target.AgentName = areaManagerDisplayName("", agentNames[link.Target.AgentID], link.Target.AgentID)
-		link.Target.AgentTags = cloneStringSlice(tagMap[link.Target.AgentID])
-		link.Target.IPs = nil
-		link.Target.ResolvedIPs = nil
-		link.Target.EntryIPs = nil
-		link.Target.EntryAddresses = filterDomainLikeValues(link.Target.EntryAddresses)
-		link.Target.EntryMappings = sanitizeEntryMappingsForAreaManager(link.Target.EntryMappings)
+		link.Target = sanitizeTopologyInboundForAreaManager(link.Target, tagMap, agentNames)
+		if link.FinalTarget != nil {
+			finalTarget := sanitizeTopologyInboundForAreaManager(*link.FinalTarget, tagMap, agentNames)
+			link.FinalTarget = &finalTarget
+		}
+		for index := range link.RealmHops {
+			link.RealmHops[index] = sanitizeTopologyInboundForAreaManager(link.RealmHops[index], tagMap, agentNames)
+		}
 		filtered = append(filtered, link)
 	}
 	return filtered
+}
+
+func sanitizeTopologyInboundForAreaManager(ref model.TopologyInboundRef, tagMap map[string][]string, agentNames map[string]string) model.TopologyInboundRef {
+	ref.AgentName = areaManagerDisplayName("", agentNames[ref.AgentID], ref.AgentID)
+	ref.AgentTags = cloneStringSlice(tagMap[ref.AgentID])
+	ref.IPs = nil
+	ref.ResolvedIPs = nil
+	ref.EntryIPs = nil
+	ref.EntryAddresses = filterDomainLikeValues(ref.EntryAddresses)
+	ref.EntryMappings = sanitizeEntryMappingsForAreaManager(ref.EntryMappings)
+	return ref
 }
 
 func sanitizeClientChainsForAreaManager(chains []model.ClientChainView, allowed map[string]struct{}, tagMap map[string][]string, agentNames map[string]string, clientScope areaManagerClientScope) []model.ClientChainView {
@@ -636,6 +649,7 @@ func filterTopologyLinksUsedByChains(links []model.TopologyLinkView, chains []mo
 
 func filterTopologyLinksVisibleToAreaManager(links []model.TopologyLinkView, chains []model.ClientChainView, clientScope areaManagerClientScope) []model.TopologyLinkView {
 	used := make(map[string]struct{})
+	visibleRealmPaths := areaManagerRealmPathLinkKeys(links, clientScope)
 	for _, chain := range chains {
 		for _, step := range chain.Steps {
 			if step.StepType != "outbound" || step.AgentID == "" || step.OutboundTag == "" {
@@ -650,7 +664,7 @@ func filterTopologyLinksVisibleToAreaManager(links []model.TopologyLinkView, cha
 			filtered = append(filtered, link)
 			continue
 		}
-		if areaManagerCanViewRealmLink(link, clientScope) {
+		if _, ok := visibleRealmPaths[outboundLinkKey(link.Source.AgentID, link.Source.OutboundTag)]; ok {
 			filtered = append(filtered, link)
 		}
 	}
@@ -665,12 +679,81 @@ func areaManagerCanViewRealmLink(link model.TopologyLinkView, clientScope areaMa
 	if listenPort <= 0 {
 		listenPort = realmListenPortFromOutboundTag(link.Source.OutboundTag)
 	}
-	if listenPort <= 0 || link.Target.AgentID == "" {
+	finalTarget, ok := topologyLinkFinalTarget(link)
+	if listenPort <= 0 || !ok {
 		return false
 	}
 	return clientScope.allowsRealmPort(link.Source.AgentID, listenPort) &&
-		(clientScope.allowsInbound(link.Target.AgentID, link.Target.InboundID, link.Target.InboundTag) ||
-			clientScope.hasExactClientOnInbound(link.Target.AgentID, link.Target.InboundID, link.Target.InboundTag))
+		(clientScope.allowsInbound(finalTarget.AgentID, finalTarget.InboundID, finalTarget.InboundTag) ||
+			clientScope.hasExactClientOnInbound(finalTarget.AgentID, finalTarget.InboundID, finalTarget.InboundTag))
+}
+
+func topologyLinkFinalTarget(link model.TopologyLinkView) (model.TopologyInboundRef, bool) {
+	if link.FinalTarget != nil && link.FinalTarget.AgentID != "" {
+		return *link.FinalTarget, true
+	}
+	if link.Target.AgentID != "" && !strings.EqualFold(strings.TrimSpace(link.Target.Protocol), "realm") {
+		return link.Target, true
+	}
+	return model.TopologyInboundRef{}, false
+}
+
+func areaManagerRealmPathLinkKeys(links []model.TopologyLinkView, clientScope areaManagerClientScope) map[string]struct{} {
+	result := make(map[string]struct{})
+	byOutbound := make(map[string]model.TopologyLinkView, len(links))
+	for _, link := range links {
+		byOutbound[outboundLinkKey(link.Source.AgentID, link.Source.OutboundTag)] = link
+	}
+	for _, link := range links {
+		if !areaManagerCanViewRealmLink(link, clientScope) {
+			continue
+		}
+		visited := make(map[string]struct{})
+		current := link
+		for {
+			key := outboundLinkKey(current.Source.AgentID, current.Source.OutboundTag)
+			if _, seen := visited[key]; seen {
+				break
+			}
+			visited[key] = struct{}{}
+			result[key] = struct{}{}
+			if !strings.EqualFold(strings.TrimSpace(current.Target.Protocol), "realm") {
+				break
+			}
+			nextKey := outboundLinkKey(current.Target.AgentID, current.Target.InboundTag)
+			next, ok := byOutbound[nextKey]
+			if !ok {
+				break
+			}
+			current = next
+		}
+	}
+	return result
+}
+
+func expandAreaManagerRealmPathAgents(allowed map[string]struct{}, links []model.TopologyLinkView, clientScope areaManagerClientScope) {
+	visible := areaManagerRealmPathLinkKeys(links, clientScope)
+	for _, link := range links {
+		if _, ok := visible[outboundLinkKey(link.Source.AgentID, link.Source.OutboundTag)]; !ok {
+			continue
+		}
+		allowed[link.Source.AgentID] = struct{}{}
+		allowed[link.Target.AgentID] = struct{}{}
+		if link.FinalTarget != nil {
+			allowed[link.FinalTarget.AgentID] = struct{}{}
+		}
+		for _, hop := range link.RealmHops {
+			allowed[hop.AgentID] = struct{}{}
+		}
+	}
+}
+
+func cloneAgentSet(values map[string]struct{}) map[string]struct{} {
+	result := make(map[string]struct{}, len(values))
+	for value := range values {
+		result[value] = struct{}{}
+	}
+	return result
 }
 
 func realmListenPortFromOutboundTag(tag string) int {

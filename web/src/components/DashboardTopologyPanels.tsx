@@ -652,16 +652,17 @@ function findEntryRealmRelay(
   const targetPort = entryStep?.port || 0
   const normalizedEntryLabel = normalizeNodeAnchorLabel(entryLabel).toLowerCase()
   const relayLink = links.find((link) => {
+    const target = link.final_target || link.target
     if ((link.source.protocol || '').toLowerCase() !== 'realm' || link.source.agent_id === chain.root_agent_id) {
       return false
     }
-    if (link.target.agent_id !== chain.root_agent_id) {
+    if (target.agent_id !== chain.root_agent_id) {
       return false
     }
-    if (targetPort && link.target.port && targetPort === link.target.port) {
+    if (targetPort && target.port && targetPort === target.port) {
       return true
     }
-    const targetLabel = normalizeNodeAnchorLabel(`${link.target.inbound_name || link.target.inbound_tag || ''}${link.target.port ? `:${link.target.port}` : ''}`).toLowerCase()
+    const targetLabel = normalizeNodeAnchorLabel(`${target.inbound_name || target.inbound_tag || ''}${target.port ? `:${target.port}` : ''}`).toLowerCase()
     return targetLabel !== '' && targetLabel === normalizedEntryLabel
   })
   if (!relayLink) {

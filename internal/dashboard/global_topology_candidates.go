@@ -109,6 +109,49 @@ func buildInboundCandidates(agentViews map[string]model.DashboardAgentView, over
 			}
 		}
 	}
+	for agentID, agentView := range agentViews {
+		domains := mergeStringSets(
+			collectEntryDomains(agentView.Entry),
+			uniqueNormalizedDomains([]string{agentView.Summary.Hostname}),
+		)
+		resolvedIPs := resolver.lookupAll(domains)
+		ips := mergeStringSets(
+			collectEntryIPs(agentView.Entry),
+			uniqueNormalizedIPs([]string{
+				agentView.Summary.ObservedIP,
+				agentView.Summary.PublicIPv4,
+				agentView.Summary.PublicIPv6,
+			}),
+			resolvedIPs,
+		)
+		for _, rule := range activeRealmForwardRulesForTopology(agentView.Entry.PortForwarding.Rules) {
+			tag := realmTopologyTag(rule)
+			ref := model.TopologyInboundRef{
+				AgentID:        agentID,
+				AgentName:      agentView.AgentName,
+				AgentTags:      cloneStrings(agentView.Tags),
+				InboundID:      rule.ListenPort,
+				InboundTag:     tag,
+				InboundName:    firstNonEmpty(rule.Name, fmt.Sprintf("Realm :%d", rule.ListenPort)),
+				Protocol:       "realm",
+				Port:           rule.ListenPort,
+				Network:        normalizeRealmForwardNetworkForTopology(rule.Network),
+				Domains:        domains,
+				IPs:            ips,
+				ResolvedIPs:    resolvedIPs,
+				EntryAddresses: mergeStringSets(agentView.Entry.Addresses, []string{agentView.Entry.ImportDomain}),
+				EntryIPs:       collectEntryIPs(agentView.Entry),
+			}
+			result[inboundTopologyKey(agentID, ref.InboundID, ref.InboundTag)] = topologyInboundCandidate{
+				ref: ref,
+				route: model.XUIRouteTrace{
+					MatchScope:  "realm",
+					OutboundTag: tag,
+					Note:        fmt.Sprintf("Realm :%d -> %s:%d", rule.ListenPort, rule.TargetAddress, rule.TargetPort),
+				},
+			}
+		}
+	}
 	return result
 }
 
@@ -153,31 +196,63 @@ func buildOutboundCandidates(agentViews map[string]model.DashboardAgentView, ove
 	}
 	for agentID, agentView := range agentViews {
 		for _, rule := range activeRealmForwardRulesForTopology(agentView.Entry.PortForwarding.Rules) {
-			resolvedIPs := resolver.lookupHost(rule.TargetAddress)
+			targetAddress := strings.TrimSpace(rule.TargetAddress)
+			if targetAddress == "" {
+				targetAddress = realmTargetAgentAddress(rule.TargetAgentID, agentViews)
+			}
+			resolvedIPs := resolver.lookupHost(targetAddress)
+			tag := realmTopologyTag(rule)
 			ref := model.TopologyOutboundRef{
 				AgentID:     agentID,
 				AgentName:   agentView.AgentName,
 				AgentTags:   cloneStrings(agentView.Tags),
-				OutboundTag: firstNonEmpty(rule.Name, rule.ID, fmt.Sprintf("realm:%d", rule.ListenPort)),
+				OutboundTag: tag,
 				Protocol:    "realm",
-				Target:      fmt.Sprintf("%s:%d", rule.TargetAddress, rule.TargetPort),
-				Address:     rule.TargetAddress,
+				Target:      fmt.Sprintf("%s:%d", targetAddress, rule.TargetPort),
+				Address:     targetAddress,
 				Port:        rule.TargetPort,
 				ListenPort:  rule.ListenPort,
 				Network:     normalizeRealmForwardNetworkForTopology(rule.Network),
 				ResolvedIPs: resolvedIPs,
 			}
-			result[outboundTopologyKey(agentID, "realm:"+firstNonEmpty(rule.ID, ref.OutboundTag))] = topologyOutboundCandidate{ref: ref}
+			result[outboundTopologyKey(agentID, tag)] = topologyOutboundCandidate{ref: ref}
 		}
 	}
 	return result
+}
+
+func realmTopologyTag(rule model.RealmForwardRule) string {
+	if name := strings.TrimSpace(rule.Name); name != "" {
+		return fmt.Sprintf("%s (%d)", name, rule.ListenPort)
+	}
+	if id := strings.TrimSpace(rule.ID); id != "" {
+		return "realm:" + id
+	}
+	return fmt.Sprintf("realm:%d", rule.ListenPort)
+}
+
+func realmTargetAgentAddress(agentID string, agentViews map[string]model.DashboardAgentView) string {
+	agent, ok := agentViews[strings.TrimSpace(agentID)]
+	if !ok {
+		return ""
+	}
+	if value := strings.TrimSpace(agent.Entry.ImportDomain); value != "" {
+		return value
+	}
+	for _, value := range agent.Entry.Addresses {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return firstNonEmpty(agent.Summary.ObservedIP, agent.Summary.PublicIPv4, agent.Summary.PublicIPv6, agent.Summary.Hostname)
 }
 
 func activeRealmForwardRulesForTopology(items []model.RealmForwardRule) []model.RealmForwardRule {
 	rules := make([]model.RealmForwardRule, 0, len(items))
 	for _, rule := range items {
 		rule.TargetAddress = strings.TrimSpace(rule.TargetAddress)
-		if !rule.Enabled || rule.TargetAddress == "" || rule.ListenPort <= 0 || rule.TargetPort <= 0 {
+		rule.TargetAgentID = strings.TrimSpace(rule.TargetAgentID)
+		if !rule.Enabled || (rule.TargetAddress == "" && rule.TargetAgentID == "") || rule.ListenPort <= 0 || rule.TargetPort <= 0 {
 			continue
 		}
 		rules = append(rules, rule)

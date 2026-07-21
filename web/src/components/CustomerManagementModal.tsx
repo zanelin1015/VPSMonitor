@@ -324,6 +324,12 @@ export function CustomerManagementModal(props: {
       },
     },
     {
+      title: '流量倍率',
+      key: 'traffic_multiplier',
+      width: 100,
+      render: (_, record) => `${Number(assignmentBilling(record, agents)?.traffic_multiplier || 1)} 倍`,
+    },
+    {
       title: '状态',
       dataIndex: 'enabled',
       width: 90,
@@ -350,7 +356,7 @@ export function CustomerManagementModal(props: {
   ]
   const visibleAssignmentColumns = canViewFinance
     ? assignmentColumns
-    : assignmentColumns.filter((column) => String(column.key || '') !== 'revenue')
+    : assignmentColumns.filter((column) => !['revenue', 'traffic_multiplier'].includes(String(column.key || '')))
 
   const areaCustomerColumns: ColumnsType<CustomerAdminView> = [
     {
@@ -967,6 +973,7 @@ export function CustomerManagementModal(props: {
         client_email: assignmentForm.client_email,
         public_client_name: assignmentForm.public_client_name,
         ...(canViewFinance ? {
+          traffic_multiplier: assignmentForm.traffic_multiplier,
           revenue_amount: assignmentForm.revenue_amount,
           revenue_currency: assignmentForm.revenue_currency,
           revenue_cycle: assignmentForm.revenue_cycle,
@@ -995,6 +1002,7 @@ export function CustomerManagementModal(props: {
       setAssignmentForm({
         ...nextForm,
         ...(canViewFinance ? {
+          traffic_multiplier: Number(payload.traffic_multiplier ?? assignmentForm.traffic_multiplier ?? 1),
           revenue_amount: Number(payload.revenue_amount ?? assignmentForm.revenue_amount ?? 0),
           revenue_currency: payload.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
           revenue_cycle: payload.revenue_cycle === 'quarter' || payload.revenue_cycle === 'year' ? payload.revenue_cycle : 'month',
@@ -1148,10 +1156,19 @@ export function CustomerManagementModal(props: {
       if (!node) {
         continue
       }
-      if (excludedTargetAssignments.some((item) => assignmentMatchesInbound(item, targetAgentID, node.id, node.tag))) {
+      const resolvedTargetAgentID = node.realm_target_agent_id || targetAgentID
+      const resolvedNode = node.realm_target_agent_id
+        ? {
+            ...node,
+            id: node.realm_target_inbound_id || node.id,
+            tag: node.realm_target_inbound_tag || node.tag,
+            port: node.realm_target_inbound_id || node.port,
+          }
+        : node
+      if (excludedTargetAssignments.some((item) => assignmentMatchesInbound(item, resolvedTargetAgentID, resolvedNode.id, resolvedNode.tag))) {
         continue
       }
-      inferred.push(areaAssignmentDraftFromTargetOption(targetAgentID, { node }, agents))
+      inferred.push(areaAssignmentDraftFromTargetOption(resolvedTargetAgentID, { node: resolvedNode }, agents))
     }
     return dedupeAreaManagerAssignmentDrafts(inferred)
   }

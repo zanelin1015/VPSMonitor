@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -141,7 +142,7 @@ func TestBuildGlobalDashboardMatchesCrossClientTopology(t *testing.T) {
 						"protocol":       "vless",
 						"port":           443,
 						"enable":         true,
-						"settings":       `{"clients":[{"id":"11111111-1111-1111-1111-111111111111","email":"alice@example.com","enable":true}]}`,
+						"settings":       fmt.Sprintf(`{"clients":[{"id":"11111111-1111-1111-1111-111111111111","email":"alice@example.com","enable":true,"expiryTime":%d}]}`, now.AddDate(0, 0, 5).UnixMilli()),
 						"streamSettings": `{"network":"tcp","security":"tls","tlsSettings":{"serverName":"a.example.com"}}`,
 						"clientStats": []map[string]any{
 							{"email": "alice@example.com", "enable": true, "lastOnline": now.Add(-2 * time.Minute).UnixMilli()},
@@ -234,7 +235,7 @@ func TestBuildGlobalDashboardMatchesCrossClientTopology(t *testing.T) {
 		t.Fatalf("expected lightweight dashboard finance client state, got %#v", lightweight.Agents[0].FinanceClients)
 	}
 	financeClient := lightweight.Agents[0].FinanceClients[0]
-	if financeClient.InboundID != 1 || financeClient.InboundTag != "in-a" || financeClient.Email != "alice@example.com" || !financeClient.NodeEnabled || !financeClient.Enabled {
+	if financeClient.InboundID != 1 || financeClient.InboundTag != "in-a" || financeClient.Email != "alice@example.com" || !financeClient.NodeEnabled || !financeClient.Enabled || financeClient.ExpiryTime == 0 {
 		t.Fatalf("unexpected lightweight finance client: %#v", financeClient)
 	}
 	if !view.ClientChains[0].RootInboundEnabled {

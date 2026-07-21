@@ -69,6 +69,20 @@ func TestSQLiteStoreSaveAndReload(t *testing.T) {
 	}
 }
 
+func TestNormalizeClientBillingsTrafficMultiplier(t *testing.T) {
+	items := normalizeClientBillings([]model.XUIClientBillingConfig{
+		{InboundID: 1, Email: "legacy"},
+		{InboundID: 2, Email: "small", TrafficMultiplier: 0.05},
+		{InboundID: 3, Email: "large", TrafficMultiplier: 200},
+	})
+	if len(items) != 3 {
+		t.Fatalf("expected three normalized billings, got %#v", items)
+	}
+	if items[0].TrafficMultiplier != 1 || items[1].TrafficMultiplier != 0.1 || items[2].TrafficMultiplier != 100 {
+		t.Fatalf("unexpected normalized traffic multipliers: %#v", items)
+	}
+}
+
 func TestSQLiteStoreMigratesLegacyCustomerOwnerColumnsBeforeIndexes(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "bridge.db")
 	db, err := sql.Open("sqlite", dbPath)

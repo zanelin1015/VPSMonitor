@@ -61,6 +61,7 @@ type FinanceClientView struct {
 	Email         string `json:"email,omitempty"`
 	Comment       string `json:"comment,omitempty"`
 	Enabled       bool   `json:"enabled"`
+	ExpiryTime    int64  `json:"expiry_time,omitempty"`
 }
 
 type IPGeoView struct {
@@ -141,14 +142,18 @@ type TopologyOutboundRef struct {
 }
 
 type TopologyLinkView struct {
-	Key              string              `json:"key"`
-	Source           TopologyOutboundRef `json:"source"`
-	Target           TopologyInboundRef  `json:"target"`
-	MatchScore       int                 `json:"match_score"`
-	MatchConfidence  string              `json:"match_confidence,omitempty"`
-	MatchReason      string              `json:"match_reason,omitempty"`
-	MatchExplanation string              `json:"match_explanation,omitempty"`
-	MatchFields      []string            `json:"match_fields,omitempty"`
+	Key              string               `json:"key"`
+	Source           TopologyOutboundRef  `json:"source"`
+	Target           TopologyInboundRef   `json:"target"`
+	FinalTarget      *TopologyInboundRef  `json:"final_target,omitempty"`
+	RealmHops        []TopologyInboundRef `json:"realm_hops,omitempty"`
+	MatchScore       int                  `json:"match_score"`
+	MatchConfidence  string               `json:"match_confidence,omitempty"`
+	MatchReason      string               `json:"match_reason,omitempty"`
+	MatchExplanation string               `json:"match_explanation,omitempty"`
+	MatchFields      []string             `json:"match_fields,omitempty"`
+	LoopDetected     bool                 `json:"loop_detected,omitempty"`
+	UnresolvedReason string               `json:"unresolved_reason,omitempty"`
 }
 
 type ClientChainStep struct {

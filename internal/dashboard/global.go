@@ -104,6 +104,7 @@ func BuildGlobalDashboardWithOptions(agents []model.AgentRecord, snapshots []mod
 					Email:         client.Email,
 					Comment:       client.Comment,
 					Enabled:       client.Enabled,
+					ExpiryTime:    client.ExpiryTime,
 				})
 			}
 			view.NodeCount = overview.NodeCount

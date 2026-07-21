@@ -55,6 +55,7 @@ export interface FinanceClientView {
   email?: string
   comment?: string
   enabled: boolean
+  expiry_time?: number
 }
 
 export interface AgentLogEntry {
@@ -94,6 +95,7 @@ export interface XUIClientBillingConfig {
   inbound_id?: number
   inbound_tag?: string
   email?: string
+  traffic_multiplier?: number
   revenue_amount?: number
   revenue_currency?: 'CNY' | 'USDT' | ''
   revenue_cycle?: 'month' | 'quarter' | 'year' | ''
@@ -309,6 +311,7 @@ export interface CustomerAssignmentDraft {
   inbound_tag?: string
   client_email?: string
   public_client_name?: string
+  traffic_multiplier?: number
   revenue_amount?: number
   revenue_currency?: 'CNY' | 'USDT'
   revenue_cycle?: 'month' | 'quarter' | 'year'
@@ -359,6 +362,9 @@ export interface CustomerLinkView {
   revenue_amount?: number
   revenue_currency?: 'CNY' | 'USDT' | string
   revenue_cycle?: 'month' | 'quarter' | 'year' | string
+  traffic_multiplier?: number
+  traffic_used_bytes?: number
+  traffic_limit_bytes?: number
   node_expire_time?: number
   start_time?: number
   expire_time?: number
@@ -785,11 +791,15 @@ export interface TopologyLinkView {
   key: string
   source: TopologyOutboundRef
   target: TopologyInboundRef
+  final_target?: TopologyInboundRef
+  realm_hops?: TopologyInboundRef[]
   match_score: number
   match_confidence?: string
   match_reason?: string
   match_explanation?: string
   match_fields?: string[]
+  loop_detected?: boolean
+  unresolved_reason?: string
 }
 
 export interface ClientChainStep {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Card, Empty, Select, Space, Table, Tabs, Tag, Typography } from 'antd'
-import type { ColumnsType } from 'antd/es/table'
+import type { ColumnsType, TablePaginationConfig } from 'antd/es/table'
 
 import type { AreaManagerAdminView, ClientChainView, CustomerAdminView, DashboardAgentView, GlobalDashboardView } from '../types'
 import type { CurrencyCode, ExchangeRatesState, MonthlyFinanceCostDetail, MonthlyFinanceExcludedRevenueDetail, MonthlyFinancePaymentInfo, MonthlyFinanceRevenueDetail, MonthlyFinanceSummary } from '../lib/currency'
@@ -9,6 +9,14 @@ import { fetchJSON, formatDateTime } from '../lib/appHelpers'
 import { type AgentNetworkSummary, formatBytes, formatSpeed } from '../lib/traffic'
 
 const { Text } = Typography
+
+const financeTablePagination: TablePaginationConfig = {
+  pageSize: 6,
+  showSizeChanger: false,
+  hideOnSinglePage: true,
+  position: ['topRight'],
+  showTotal: (total) => `共 ${total} 条`,
+}
 
 type FinanceRevenueGroupRow = {
   key: string
@@ -424,7 +432,7 @@ export function OverviewSummaryCard(props: {
                         rowKey="key"
                         columns={costColumns}
                         dataSource={costRows}
-                        pagination={{ pageSize: 8, showSizeChanger: false }}
+                        pagination={financeTablePagination}
                         scroll={{ x: 880 }}
                       />
                     ),
@@ -438,7 +446,7 @@ export function OverviewSummaryCard(props: {
                         rowKey="key"
                         columns={revenueColumns}
                         dataSource={revenueRows}
-                        pagination={{ pageSize: 8, showSizeChanger: false }}
+                        pagination={financeTablePagination}
                         scroll={{ x: 1120 }}
                       />
                     ),
@@ -452,7 +460,7 @@ export function OverviewSummaryCard(props: {
                         rowKey="key"
                         columns={excludedRevenueColumns}
                         dataSource={excludedRevenueRows}
-                        pagination={{ pageSize: 8, showSizeChanger: false }}
+                        pagination={financeTablePagination}
                         scroll={{ x: 1260 }}
                       />
                     ),
@@ -467,7 +475,7 @@ export function OverviewSummaryCard(props: {
                         columns={revenueGroupColumns}
                         dataSource={customerRevenueRows}
                         loading={customerRowsLoading}
-                        pagination={{ pageSize: 8, showSizeChanger: false }}
+                        pagination={financeTablePagination}
                         scroll={{ x: 620 }}
                       />
                     ),
@@ -481,7 +489,7 @@ export function OverviewSummaryCard(props: {
                         rowKey="key"
                         columns={nodeRevenueColumns}
                         dataSource={nodeRevenueRows}
-                        pagination={{ pageSize: 8, showSizeChanger: false }}
+                        pagination={financeTablePagination}
                         scroll={{ x: 880 }}
                       />
                     ),

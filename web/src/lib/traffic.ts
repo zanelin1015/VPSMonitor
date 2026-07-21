@@ -75,6 +75,11 @@ export function clientTrafficTotal(client: XUIClientView): number {
   return allTime || up + down || trafficTotal
 }
 
+export function clientBidirectionalTrafficTotal(client: XUIClientView): number {
+  const directionalTotal = Math.max(0, Number(client.up || 0)) + Math.max(0, Number(client.down || 0))
+  return directionalTotal || clientTrafficTotal(client)
+}
+
 function buildTrafficMeter(used: number, total: number): TrafficMeterStatus {
   if (!total) {
     return {

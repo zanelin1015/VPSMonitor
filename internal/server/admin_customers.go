@@ -223,7 +223,7 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 }
 
 func (a *App) syncCustomerAssignmentRevenue(req model.CustomerAssignmentRequest, actor string) error {
-	if req.RevenueAmount == nil {
+	if req.RevenueAmount == nil && req.TrafficMultiplier == nil {
 		return nil
 	}
 	if req.AgentID == "" || req.InboundID <= 0 {
@@ -236,10 +236,7 @@ func (a *App) syncCustomerAssignmentRevenue(req model.CustomerAssignmentRequest,
 	if !found {
 		return fmt.Errorf("agent not found")
 	}
-	amount := *req.RevenueAmount
-	if amount < 0 {
-		amount = 0
-	}
+	amount := 0.0
 	currency := strings.ToUpper(strings.TrimSpace(req.RevenueCurrency))
 	if currency != "USDT" {
 		currency = "CNY"
@@ -250,14 +247,22 @@ func (a *App) syncCustomerAssignmentRevenue(req model.CustomerAssignmentRequest,
 	default:
 		cycle = "month"
 	}
+	if req.RevenueAmount != nil {
+		amount = max(*req.RevenueAmount, 0)
+	}
+	trafficMultiplier := 1.0
+	if req.TrafficMultiplier != nil {
+		trafficMultiplier = normalizeClientTrafficMultiplier(*req.TrafficMultiplier)
+	}
 	billing := model.XUIClientBillingConfig{
-		InboundID:       req.InboundID,
-		InboundTag:      strings.TrimSpace(req.InboundTag),
-		Email:           strings.TrimSpace(req.ClientEmail),
-		RevenueAmount:   amount,
-		RevenueCurrency: currency,
-		RevenueCycle:    cycle,
-		ExpireCycle:     cycle,
+		InboundID:         req.InboundID,
+		InboundTag:        strings.TrimSpace(req.InboundTag),
+		Email:             strings.TrimSpace(req.ClientEmail),
+		TrafficMultiplier: trafficMultiplier,
+		RevenueAmount:     amount,
+		RevenueCurrency:   currency,
+		RevenueCycle:      cycle,
+		ExpireCycle:       cycle,
 	}
 	key := customerBillingKey(billing.InboundID, billing.InboundTag, billing.Email)
 	emailKey := customerBillingEmailKey(billing.InboundID, billing.Email)
@@ -269,8 +274,16 @@ func (a *App) syncCustomerAssignmentRevenue(req model.CustomerAssignmentRequest,
 		}
 		billing.StartTime = existing.StartTime
 		billing.ExpireTime = existing.ExpireTime
-		billing.ExpireCycle = cycle
 		billing.ExpireAutoRenew = existing.ExpireAutoRenew
+		if req.RevenueAmount == nil {
+			billing.RevenueAmount = existing.RevenueAmount
+			billing.RevenueCurrency = existing.RevenueCurrency
+			billing.RevenueCycle = existing.RevenueCycle
+			billing.ExpireCycle = existing.ExpireCycle
+		}
+		if req.TrafficMultiplier == nil {
+			billing.TrafficMultiplier = normalizeClientTrafficMultiplier(existing.TrafficMultiplier)
+		}
 		cfg.Renewal.ClientBillings[index] = billing
 		replaced = true
 		break
@@ -283,6 +296,19 @@ func (a *App) syncCustomerAssignmentRevenue(req model.CustomerAssignmentRequest,
 		a.clearCustomerOverviewCache()
 	}
 	return err
+}
+
+func normalizeClientTrafficMultiplier(value float64) float64 {
+	if value <= 0 {
+		return 1
+	}
+	if value < 0.1 {
+		return 0.1
+	}
+	if value > 100 {
+		return 100
+	}
+	return value
 }
 
 func customerBillingKey(inboundID int, inboundTag, email string) string {

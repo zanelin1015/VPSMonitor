@@ -4,6 +4,7 @@ import { BgColorsOutlined, CheckOutlined, CloseOutlined, CopyOutlined, EditOutli
 
 import type { CustomerAuthResponse, CustomerLinkStep, CustomerLinkView, CustomerOverviewResponse, CustomerUser } from '../types'
 import { countryFlag, fetchJSON, formatDateTime } from '../lib/appHelpers'
+import { formatBytes } from '../lib/traffic'
 import { LoginScreen } from './LoginScreen'
 import { clearCustomFrontendCode } from './VisualEffects'
 
@@ -596,6 +597,14 @@ function customerLinkDisplayName(link: CustomerLinkView, draft?: string): string
 
 function customerLinkMetaItems(link: CustomerLinkView): Array<{ key: string; text: string }> {
   const items: Array<{ key: string; text: string }> = []
+  const trafficUsed = Math.max(0, Number(link.traffic_used_bytes || 0))
+  const trafficLimit = Math.max(0, Number(link.traffic_limit_bytes || 0))
+  if (trafficUsed > 0 || trafficLimit > 0) {
+    items.push({
+      key: 'traffic',
+      text: `流量：已用 ${formatBytes(trafficUsed)} / ${trafficLimit > 0 ? `双向限额 ${formatBytes(trafficLimit)}` : '无上限'}`,
+    })
+  }
   if (Number(link.revenue_amount || 0) > 0) {
     items.push({
       key: 'revenue',

@@ -372,6 +372,13 @@ func normalizeClientBillings(items []model.XUIClientBillingConfig) []model.XUICl
 		if item.RevenueAmount < 0 {
 			item.RevenueAmount = 0
 		}
+		if item.TrafficMultiplier <= 0 {
+			item.TrafficMultiplier = 1
+		} else if item.TrafficMultiplier < 0.1 {
+			item.TrafficMultiplier = 0.1
+		} else if item.TrafficMultiplier > 100 {
+			item.TrafficMultiplier = 100
+		}
 		item.RevenueCurrency = strings.ToUpper(strings.TrimSpace(item.RevenueCurrency))
 		if item.RevenueCurrency != "USDT" {
 			item.RevenueCurrency = "CNY"

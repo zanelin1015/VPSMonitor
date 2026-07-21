@@ -82,6 +82,8 @@ export {
   clientBillingKey,
   billingKeyForClient,
   defaultClientBilling,
+  normalizeClientTrafficMultiplier,
+  scaleClientTraffic,
   findClientBilling,
   upsertClientBilling,
   dateInputToStartMillis,

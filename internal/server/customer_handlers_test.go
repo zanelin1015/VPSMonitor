@@ -152,7 +152,10 @@ func TestBuildCustomerLinkViewIncludesBillingAndExpiry(t *testing.T) {
 	}
 	clientMap := map[string]customerClientRef{
 		customerAssignmentKey("entry", 1001, "alice@example.com"): {
-			Client: model.XUIClientView{InboundID: 1001, InboundTag: "vless-in", Email: "alice@example.com", ExpiryTime: 1760000000000},
+			Client: model.XUIClientView{
+				InboundID: 1001, InboundTag: "vless-in", Email: "alice@example.com", ExpiryTime: 1760000000000,
+				TotalGB: 100 * 1024 * 1024 * 1024, Up: 4 * 1024 * 1024 * 1024, Down: 6 * 1024 * 1024 * 1024,
+			},
 		},
 	}
 	agentMap := map[string]model.DashboardAgentView{
@@ -163,15 +166,16 @@ func TestBuildCustomerLinkViewIncludesBillingAndExpiry(t *testing.T) {
 				ExpireDate: "2099-01-02",
 				ClientBillings: []model.XUIClientBillingConfig{
 					{
-						InboundID:       1001,
-						InboundTag:      "vless-in",
-						Email:           "alice@example.com",
-						RevenueAmount:   88.5,
-						RevenueCurrency: "USDT",
-						RevenueCycle:    "quarter",
-						ExpireTime:      1770000000000,
-						ExpireCycle:     "year",
-						ExpireAutoRenew: true,
+						InboundID:         1001,
+						InboundTag:        "vless-in",
+						Email:             "alice@example.com",
+						TrafficMultiplier: 2,
+						RevenueAmount:     88.5,
+						RevenueCurrency:   "USDT",
+						RevenueCycle:      "quarter",
+						ExpireTime:        1770000000000,
+						ExpireCycle:       "year",
+						ExpireAutoRenew:   true,
 					},
 				},
 			},
@@ -188,6 +192,9 @@ func TestBuildCustomerLinkViewIncludesBillingAndExpiry(t *testing.T) {
 	}
 	if link.ExpireTime != 1770000000000 || link.ExpireCycle != "year" || !link.ExpireAutoRenew {
 		t.Fatalf("expected billing expiry to override client expiry, got %#v", link)
+	}
+	if link.TrafficMultiplier != 2 || link.TrafficUsedBytes != 20*1024*1024*1024 || link.TrafficLimitBytes != 200*1024*1024*1024 {
+		t.Fatalf("expected customer traffic to use configured multiplier, got %#v", link)
 	}
 }
 

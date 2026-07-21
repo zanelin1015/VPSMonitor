@@ -4,9 +4,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -359,6 +361,7 @@ func buildCustomerLinkView(
 		},
 	}
 	link.NodeExpireTime = customerNodeExpireTime(assignment.AgentID, agentMap)
+	trafficMultiplier := 1.0
 	var clientRef customerClientRef
 	if ref, ok := clientMap[customerAssignmentKey(assignment.AgentID, assignment.InboundID, assignment.ClientEmail)]; ok {
 		clientRef = ref
@@ -369,6 +372,7 @@ func buildCustomerLinkView(
 		}
 	}
 	if billing, ok := customerBillingForAssignment(assignment, agentMap); ok {
+		trafficMultiplier = normalizeClientTrafficMultiplier(billing.TrafficMultiplier)
 		if billing.RevenueAmount > 0 {
 			amount := billing.RevenueAmount
 			link.RevenueAmount = &amount
@@ -382,6 +386,9 @@ func buildCustomerLinkView(
 			link.ExpireAutoRenew = billing.ExpireAutoRenew
 		}
 	}
+	link.TrafficMultiplier = trafficMultiplier
+	link.TrafficUsedBytes = scaleCustomerTraffic(customerClientTrafficUsed(clientRef.Client), trafficMultiplier)
+	link.TrafficLimitBytes = scaleCustomerTraffic(clientRef.Client.TotalGB, trafficMultiplier)
 
 	chain, ok := findCustomerChain(assignment, chainMap)
 	if !ok {
@@ -424,6 +431,27 @@ func buildCustomerLinkView(
 		link.UnresolvedReason = chain.UnresolvedReason
 	}
 	return link
+}
+
+func customerClientTrafficUsed(client model.XUIClientView) int64 {
+	up := max(client.Up, int64(0))
+	down := max(client.Down, int64(0))
+	if up > 0 || down > 0 {
+		return up + down
+	}
+	return max(client.TrafficTotal, client.AllTime, int64(0))
+}
+
+func scaleCustomerTraffic(value int64, multiplier float64) int64 {
+	if value <= 0 {
+		return 0
+	}
+	scaled := float64(value) * normalizeClientTrafficMultiplier(multiplier)
+	const maxInt64 = int64(^uint64(0) >> 1)
+	if scaled >= float64(maxInt64) {
+		return maxInt64
+	}
+	return int64(math.Round(scaled))
 }
 
 func customerNodeExpireTime(agentID string, agentMap map[string]model.DashboardAgentView) int64 {
@@ -470,34 +498,69 @@ func customerRealmPublicEntry(assignment model.CustomerAssignment, chain model.C
 	if assignment.AgentID == "" || agentMap == nil {
 		return customerPublicEntry{}, false
 	}
-	targetAgent, ok := agentMap[assignment.AgentID]
-	if !ok {
+	if _, ok := agentMap[assignment.AgentID]; !ok {
 		return customerPublicEntry{}, false
 	}
 	inboundPort := customerChainRootInboundPort(assignment, chain)
+	if inboundPort <= 0 {
+		return customerPublicEntry{}, false
+	}
+	entry, _, ok := customerOutermostRealmEntry(assignment.AgentID, inboundPort, agentMap, make(map[string]struct{}))
+	return entry, ok
+}
+
+func customerOutermostRealmEntry(
+	targetAgentID string,
+	targetPort int,
+	agentMap map[string]model.DashboardAgentView,
+	visited map[string]struct{},
+) (customerPublicEntry, int, bool) {
+	endpointKey := realmForwardEndpointKey(targetAgentID, targetPort)
+	if _, seen := visited[endpointKey]; seen {
+		return customerPublicEntry{}, 0, false
+	}
+	visited[endpointKey] = struct{}{}
+	defer delete(visited, endpointKey)
+
+	targetAgent, ok := agentMap[targetAgentID]
+	if !ok {
+		return customerPublicEntry{}, 0, false
+	}
 	targetAddresses := customerAgentAddressSet(targetAgent)
-	for _, sourceAgent := range agentMap {
-		if sourceAgent.AgentID == "" || sourceAgent.AgentID == assignment.AgentID {
-			continue
-		}
+	agentIDs := make([]string, 0, len(agentMap))
+	for agentID := range agentMap {
+		agentIDs = append(agentIDs, agentID)
+	}
+	sort.Strings(agentIDs)
+
+	best := customerPublicEntry{}
+	bestDepth := 0
+	for _, sourceAgentID := range agentIDs {
+		sourceAgent := agentMap[sourceAgentID]
 		for _, rule := range sourceAgent.Entry.PortForwarding.Rules {
-			if !rule.Enabled || rule.ListenPort <= 0 || rule.TargetPort <= 0 {
+			if !rule.Enabled || rule.ListenPort <= 0 || rule.TargetPort != targetPort {
 				continue
 			}
-			if inboundPort > 0 && rule.TargetPort != inboundPort {
-				continue
-			}
-			if !customerRealmRuleTargetsAgent(rule, assignment.AgentID, targetAddresses) {
+			if !customerRealmRuleTargetsAgent(rule, targetAgentID, targetAddresses) {
 				continue
 			}
 			host := customerRealmSourceHost(sourceAgent, rule)
 			if host == "" {
 				continue
 			}
-			return customerPublicEntry{Host: host, Port: rule.ListenPort}, true
+			candidate := customerPublicEntry{Host: host, Port: rule.ListenPort}
+			depth := 1
+			if upstream, upstreamDepth, found := customerOutermostRealmEntry(sourceAgentID, rule.ListenPort, agentMap, visited); found {
+				candidate = upstream
+				depth += upstreamDepth
+			}
+			if depth > bestDepth {
+				best = candidate
+				bestDepth = depth
+			}
 		}
 	}
-	return customerPublicEntry{}, false
+	return best, bestDepth, bestDepth > 0
 }
 
 func customerChainRootInboundPort(assignment model.CustomerAssignment, chain model.ClientChainView) int {

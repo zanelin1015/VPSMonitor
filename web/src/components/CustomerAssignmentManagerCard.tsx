@@ -88,6 +88,19 @@ export function CustomerAssignmentManagerCard(props: CustomerAssignmentManagerCa
           <Text type="secondary">授权链路名称</Text>
           <Input value={assignmentForm.public_client_name} onChange={(event) => setAssignmentForm((current) => ({ ...current, public_client_name: event.target.value }))} />
         </Col>
+        {canViewFinance ? <Col xs={12} md={4}>
+          <Text type="secondary">流量倍率</Text>
+          <InputNumber
+            style={{ width: '100%' }}
+            min={0.1}
+            max={100}
+            precision={2}
+            step={0.1}
+            addonAfter="倍"
+            value={assignmentForm.traffic_multiplier}
+            onChange={(value) => setAssignmentForm((current) => ({ ...current, traffic_multiplier: Number(value || 1) }))}
+          />
+        </Col> : null}
         {canViewFinance ? <Col xs={24} md={4}>
           <Text type="secondary">费用</Text>
           <InputNumber

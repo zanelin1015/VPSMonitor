@@ -38,6 +38,7 @@ export function normalizeClientBillings(items: XUIClientBillingConfig[]): XUICli
       inbound_id: Number(item.inbound_id || 0),
       inbound_tag: item.inbound_tag || '',
       email: item.email || '',
+      traffic_multiplier: normalizeClientTrafficMultiplier(item.traffic_multiplier),
       revenue_amount: Math.max(0, Number(item.revenue_amount || 0)),
       revenue_currency: item.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
       revenue_cycle: billingCycle,
@@ -71,6 +72,7 @@ export function defaultClientBilling(client: XUIClientView): XUIClientBillingCon
     inbound_id: client.inbound_id,
     inbound_tag: client.inbound_tag || '',
     email: client.email || '',
+    traffic_multiplier: 1,
     revenue_amount: 0,
     revenue_currency: 'CNY',
     revenue_cycle: 'month',
@@ -79,6 +81,18 @@ export function defaultClientBilling(client: XUIClientView): XUIClientBillingCon
     expire_cycle: 'month',
     expire_auto_renew: false,
   }
+}
+
+export function normalizeClientTrafficMultiplier(value?: number): number {
+  const multiplier = Number(value || 0)
+  if (!Number.isFinite(multiplier) || multiplier <= 0) {
+    return 1
+  }
+  return Math.min(100, Math.max(0.1, multiplier))
+}
+
+export function scaleClientTraffic(value: number, multiplier?: number): number {
+  return Math.max(0, Number(value || 0)) * normalizeClientTrafficMultiplier(multiplier)
 }
 
 export function findClientBilling(items: XUIClientBillingConfig[] | undefined, client: XUIClientView): XUIClientBillingConfig | undefined {

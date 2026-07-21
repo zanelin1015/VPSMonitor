@@ -51,15 +51,16 @@ type CustomerAssignment struct {
 }
 
 type CustomerAssignmentRequest struct {
-	AgentID          string   `json:"agent_id"`
-	InboundID        int      `json:"inbound_id"`
-	InboundTag       string   `json:"inbound_tag,omitempty"`
-	ClientEmail      string   `json:"client_email,omitempty"`
-	PublicClientName string   `json:"public_client_name,omitempty"`
-	RevenueAmount    *float64 `json:"revenue_amount,omitempty"`
-	RevenueCurrency  string   `json:"revenue_currency,omitempty"`
-	RevenueCycle     string   `json:"revenue_cycle,omitempty"`
-	Enabled          *bool    `json:"enabled,omitempty"`
+	AgentID           string   `json:"agent_id"`
+	InboundID         int      `json:"inbound_id"`
+	InboundTag        string   `json:"inbound_tag,omitempty"`
+	ClientEmail       string   `json:"client_email,omitempty"`
+	PublicClientName  string   `json:"public_client_name,omitempty"`
+	TrafficMultiplier *float64 `json:"traffic_multiplier,omitempty"`
+	RevenueAmount     *float64 `json:"revenue_amount,omitempty"`
+	RevenueCurrency   string   `json:"revenue_currency,omitempty"`
+	RevenueCycle      string   `json:"revenue_cycle,omitempty"`
+	Enabled           *bool    `json:"enabled,omitempty"`
 }
 
 type CustomerAdminView struct {
@@ -89,29 +90,32 @@ type CustomerLinkStep struct {
 }
 
 type CustomerLinkView struct {
-	AssignmentID     int64              `json:"assignment_id"`
-	EntryClientName  string             `json:"entry_client_name"`
-	InboundTag       string             `json:"inbound_tag,omitempty"`
-	ClientEmail      string             `json:"client_email,omitempty"`
-	ClientRemark     string             `json:"client_remark,omitempty"`
-	ImportURL        string             `json:"import_url,omitempty"`
-	Remark           string             `json:"remark,omitempty"`
-	Summary          string             `json:"summary"`
-	ExitCountryCode  string             `json:"exit_country_code,omitempty"`
-	ExitCountryName  string             `json:"exit_country_name,omitempty"`
-	ExitIP           string             `json:"exit_ip,omitempty"`
-	Resolved         bool               `json:"resolved"`
-	UnresolvedReason string             `json:"unresolved_reason,omitempty"`
-	RevenueAmount    *float64           `json:"revenue_amount,omitempty"`
-	RevenueCurrency  string             `json:"revenue_currency,omitempty"`
-	RevenueCycle     string             `json:"revenue_cycle,omitempty"`
-	NodeExpireTime   int64              `json:"node_expire_time,omitempty"`
-	StartTime        int64              `json:"start_time,omitempty"`
-	ExpireTime       int64              `json:"expire_time,omitempty"`
-	ExpireCycle      string             `json:"expire_cycle,omitempty"`
-	ExpireAutoRenew  bool               `json:"expire_auto_renew,omitempty"`
-	Steps            []CustomerLinkStep `json:"steps"`
-	UpdatedAt        time.Time          `json:"updated_at"`
+	AssignmentID      int64              `json:"assignment_id"`
+	EntryClientName   string             `json:"entry_client_name"`
+	InboundTag        string             `json:"inbound_tag,omitempty"`
+	ClientEmail       string             `json:"client_email,omitempty"`
+	ClientRemark      string             `json:"client_remark,omitempty"`
+	ImportURL         string             `json:"import_url,omitempty"`
+	Remark            string             `json:"remark,omitempty"`
+	Summary           string             `json:"summary"`
+	ExitCountryCode   string             `json:"exit_country_code,omitempty"`
+	ExitCountryName   string             `json:"exit_country_name,omitempty"`
+	ExitIP            string             `json:"exit_ip,omitempty"`
+	Resolved          bool               `json:"resolved"`
+	UnresolvedReason  string             `json:"unresolved_reason,omitempty"`
+	RevenueAmount     *float64           `json:"revenue_amount,omitempty"`
+	RevenueCurrency   string             `json:"revenue_currency,omitempty"`
+	RevenueCycle      string             `json:"revenue_cycle,omitempty"`
+	TrafficMultiplier float64            `json:"traffic_multiplier,omitempty"`
+	TrafficUsedBytes  int64              `json:"traffic_used_bytes,omitempty"`
+	TrafficLimitBytes int64              `json:"traffic_limit_bytes,omitempty"`
+	NodeExpireTime    int64              `json:"node_expire_time,omitempty"`
+	StartTime         int64              `json:"start_time,omitempty"`
+	ExpireTime        int64              `json:"expire_time,omitempty"`
+	ExpireCycle       string             `json:"expire_cycle,omitempty"`
+	ExpireAutoRenew   bool               `json:"expire_auto_renew,omitempty"`
+	Steps             []CustomerLinkStep `json:"steps"`
+	UpdatedAt         time.Time          `json:"updated_at"`
 }
 
 type CustomerOverviewResponse struct {

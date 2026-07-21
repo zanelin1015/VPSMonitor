@@ -33,7 +33,10 @@ export function buildRealmForwardNodes(
       })
     })
   links.forEach((link, index) => {
-    const target = link.target
+    const target = link.final_target || link.target
+    if (!target.agent_id || (target.protocol || '').toLowerCase() === 'realm') {
+      return
+    }
     const targetInboundID = target.inbound_id || target.port || 0
     const sourceListenPort = link.source.listen_port || target.port || targetInboundID || index + 1
     const sourceTag = link.source.outbound_tag || target.inbound_tag || ''
@@ -98,7 +101,10 @@ export function buildRealmForwardClients(links: TopologyLinkView[], dashboardVie
     if (!dashboardView) {
       return
     }
-    const target = link.target
+    const target = link.final_target || link.target
+    if (!target.agent_id || (target.protocol || '').toLowerCase() === 'realm') {
+      return
+    }
     dashboardView.client_chains
       .filter((chain) => chainMatchesRealmTarget(chain, target.agent_id, target.inbound_tag, target.inbound_name, target.port))
       .forEach((chain) => {

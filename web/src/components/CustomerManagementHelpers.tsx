@@ -22,6 +22,7 @@ export interface AssignmentFormState {
   inbound_tag: string
   client_email: string
   public_client_name: string
+  traffic_multiplier: number
   revenue_amount: number
   revenue_currency: 'CNY' | 'USDT'
   revenue_cycle: 'month' | 'quarter' | 'year'
@@ -74,6 +75,7 @@ export const emptyAssignmentForm: AssignmentFormState = {
   inbound_tag: '',
   client_email: '',
   public_client_name: '',
+  traffic_multiplier: 1,
   revenue_amount: 0,
   revenue_currency: 'CNY',
   revenue_cycle: 'month',
@@ -596,6 +598,7 @@ export function assignmentFormFromAssignment(record: CustomerAssignment, agents:
     inbound_tag: record.inbound_tag || '',
     client_email: record.client_email || '',
     public_client_name: record.public_client_name || '',
+    traffic_multiplier: Number(billing?.traffic_multiplier || 1),
     revenue_amount: Number(billing?.revenue_amount || 0),
     revenue_currency: billing?.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
     revenue_cycle: billing?.revenue_cycle === 'quarter' || billing?.revenue_cycle === 'year' ? billing.revenue_cycle : 'month',
@@ -615,6 +618,7 @@ export function assignmentFormFromDraft(draft: CustomerAssignmentDraft, agents: 
     inbound_tag: inboundTag,
     client_email: clientEmail,
     public_client_name: publicClientName,
+    traffic_multiplier: Number(draft.traffic_multiplier ?? billing?.traffic_multiplier ?? 1),
     revenue_amount: Number(draft.revenue_amount ?? billing?.revenue_amount ?? 0),
     revenue_currency: draft.revenue_currency === 'USDT' ? 'USDT' : billing?.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
     revenue_cycle: draft.revenue_cycle === 'quarter' || draft.revenue_cycle === 'year'
@@ -663,8 +667,9 @@ export function clientBilling(agentID: string, inboundID: number, inboundTag: st
   })
 }
 
-export function billingFormPatch(billing?: XUIClientBillingConfig): Pick<AssignmentFormState, 'revenue_amount' | 'revenue_currency' | 'revenue_cycle'> {
+export function billingFormPatch(billing?: XUIClientBillingConfig): Pick<AssignmentFormState, 'traffic_multiplier' | 'revenue_amount' | 'revenue_currency' | 'revenue_cycle'> {
   return {
+    traffic_multiplier: Number(billing?.traffic_multiplier || 1),
     revenue_amount: Number(billing?.revenue_amount || 0),
     revenue_currency: billing?.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
     revenue_cycle: billing?.revenue_cycle === 'quarter' || billing?.revenue_cycle === 'year' ? billing.revenue_cycle : 'month',
