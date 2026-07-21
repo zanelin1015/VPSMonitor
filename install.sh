@@ -73,9 +73,24 @@ download_file() {
   local url="$1"
   local dst="$2"
   if command -v curl >/dev/null 2>&1; then
-    curl -fL --retry 3 --connect-timeout 15 "$url" -o "$dst"
+    local curl_args=(
+      -fL
+      --http1.1
+      --retry "${VPSMONITOR_DOWNLOAD_RETRIES:-2}"
+      --retry-delay 2
+      --connect-timeout "${VPSMONITOR_CONNECT_TIMEOUT_SECONDS:-15}"
+      --max-time "${VPSMONITOR_DOWNLOAD_TIMEOUT_SECONDS:-300}"
+      --speed-limit "${VPSMONITOR_DOWNLOAD_MIN_BYTES_PER_SECOND:-1024}"
+      --speed-time "${VPSMONITOR_DOWNLOAD_LOW_SPEED_SECONDS:-30}"
+    )
+    if curl --help all 2>/dev/null | grep -q -- '--retry-all-errors'; then
+      curl_args+=(--retry-all-errors)
+    fi
+    curl "${curl_args[@]}" "$url" -o "$dst"
   elif command -v wget >/dev/null 2>&1; then
-    wget -O "$dst" "$url"
+    wget --tries="${VPSMONITOR_DOWNLOAD_RETRIES:-2}" \
+      --timeout="${VPSMONITOR_CONNECT_TIMEOUT_SECONDS:-15}" \
+      -O "$dst" "$url"
   else
     die "curl or wget is required to download packages."
   fi
@@ -259,7 +274,7 @@ listen_port() {
   fi
 }
 
-package_url() {
+package_urls() {
   local component="$1"
   local arch="$2"
   local upper
@@ -279,8 +294,10 @@ package_url() {
     echo "${VPSMONITOR_BASE_URL%/}/${package_name}"
   elif [[ "$version" == "latest" ]]; then
     echo "https://github.com/${repo}/releases/latest/download/${package_name}"
+    echo "https://raw.githubusercontent.com/${repo}/main/dist/${package_name}"
   else
     echo "https://github.com/${repo}/releases/download/${version}/${package_name}"
+    echo "https://raw.githubusercontent.com/${repo}/${version}/dist/${package_name}"
   fi
 }
 
@@ -321,11 +338,19 @@ fetch_bundle() {
 
   tmp_dir="${tmp_dir:-$(make_temp_dir)}"
   local package_path="$tmp_dir/${package_prefix}-${component}.tar.gz"
-  local url
-  url="$(package_url "$component" "$arch")"
-  info "Downloading bridge-$component package:" >&2
-  echo "  $url" >&2
-  if ! download_file "$url" "$package_path"; then
+  local url downloaded="false"
+  while IFS= read -r url; do
+    [[ -n "$url" ]] || continue
+    info "Downloading bridge-$component package:" >&2
+    echo "  $url" >&2
+    rm -f "$package_path"
+    if download_file "$url" "$package_path"; then
+      downloaded="true"
+      break
+    fi
+    warn "Download source failed, trying the next source." >&2
+  done < <(package_urls "$component" "$arch")
+  if [[ "$downloaded" != "true" ]]; then
     local upper
     upper="$(printf '%s' "$component" | tr '[:lower:]' '[:upper:]')"
     die "Download failed. Set VPSMONITOR_${upper}_PACKAGE_URL or VPSMONITOR_BASE_URL and retry."
@@ -674,6 +699,11 @@ Environment overrides:
   VPSMONITOR_PACKAGE_PREFIX=VPSMonitor
   VPSMONITOR_TMP_DIR=/var/tmp
   VPSMONITOR_USE_LOCAL_BUNDLE=true
+  VPSMONITOR_DOWNLOAD_RETRIES=2
+  VPSMONITOR_CONNECT_TIMEOUT_SECONDS=15
+  VPSMONITOR_DOWNLOAD_TIMEOUT_SECONDS=300
+  VPSMONITOR_DOWNLOAD_LOW_SPEED_SECONDS=30
+  VPSMONITOR_DOWNLOAD_MIN_BYTES_PER_SECOND=1024
   VPSMONITOR_BASE_URL=https://example.com/downloads
   VPSMONITOR_SERVER_PACKAGE_URL=https://example.com/VPSMonitor-server-linux-amd64.tar.gz
   VPSMONITOR_CLIENT_PACKAGE_URL=https://example.com/VPSMonitor-client-linux-amd64.tar.gz
