@@ -294,9 +294,11 @@ package_urls() {
     echo "${VPSMONITOR_BASE_URL%/}/${package_name}"
   elif [[ "$version" == "latest" ]]; then
     echo "https://github.com/${repo}/releases/latest/download/${package_name}"
+    echo "https://cdn.jsdelivr.net/gh/${repo}@main/dist/${package_name}"
     echo "https://raw.githubusercontent.com/${repo}/main/dist/${package_name}"
   else
     echo "https://github.com/${repo}/releases/download/${version}/${package_name}"
+    echo "https://cdn.jsdelivr.net/gh/${repo}@${version}/dist/${package_name}"
     echo "https://raw.githubusercontent.com/${repo}/${version}/dist/${package_name}"
   fi
 }
