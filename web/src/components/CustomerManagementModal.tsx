@@ -151,6 +151,10 @@ export function CustomerManagementModal(props: {
       value: outbound.tag,
       label: [outbound.tag, outbound.protocol].filter(Boolean).join(' / '),
     }] : []), [areaManagerOutboundOverview])
+  const areaManagerOutboundAgentOptions = useMemo(() => {
+    const authorizedAgentIDs = new Set(areaManagerForm.assignments.map((assignment) => assignment.agent_id))
+    return agentOptions.filter((option) => authorizedAgentIDs.has(option.value))
+  }, [agentOptions, areaManagerForm.assignments])
 
   useEffect(() => {
     if (active) {
@@ -489,7 +493,7 @@ export function CustomerManagementModal(props: {
       width: 180,
       render: (_, record) => (
         <Space size={[4, 4]} wrap>
-          <Tag color={record.outbound_create_enabled ? 'green' : 'default'}>{record.outbound_create_enabled ? '允许新增' : '禁止新增'}</Tag>
+	          <Tag color={record.outbound_create_enabled ? 'green' : 'default'}>{record.outbound_create_enabled ? '允许节点落地' : '禁止节点落地'}</Tag>
           <Tag color={record.outbound_grants?.length ? 'cyan' : 'default'}>{record.outbound_grants?.length || 0} 个已有出站</Tag>
         </Space>
       ),
@@ -649,17 +653,16 @@ export function CustomerManagementModal(props: {
       return
     }
     const assignments = normalizeAreaManagerAssignmentDrafts(areaManagerForm.assignments)
+    const authorizedAgentIDs = new Set(assignments.map((assignment) => assignment.agent_id))
     const outboundGrants = normalizeAreaManagerOutboundGrants(areaManagerForm.outbound_grants)
+      .filter((grant) => authorizedAgentIDs.has(grant.agent_id))
     if (!assignments.length && !outboundGrants.length) {
       message.warning('请至少授权一个节点 / 客户端或已有出站')
       return
     }
     setSavingAreaManager(true)
     try {
-      const agentIDs = uniqueStrings([
-        ...assignments.map((assignment) => assignment.agent_id),
-        ...outboundGrants.map((grant) => grant.agent_id),
-      ])
+      const agentIDs = uniqueStrings(assignments.map((assignment) => assignment.agent_id))
       const payload = {
         username: areaManagerForm.username.trim(),
         password,
@@ -1159,6 +1162,8 @@ export function CustomerManagementModal(props: {
         ...current,
         assignments,
         agent_ids: uniqueStrings(assignments.map((assignment) => assignment.agent_id)),
+        outbound_grants: current.outbound_grants.filter((grant) => assignments.some((assignment) => assignment.agent_id === grant.agent_id)),
+        outbound_grant_agent_id: assignments.some((assignment) => assignment.agent_id === current.outbound_grant_agent_id) ? current.outbound_grant_agent_id : '',
       }
     })
   }
@@ -1180,10 +1185,7 @@ export function CustomerManagementModal(props: {
       return {
         ...current,
         outbound_grants: outboundGrants,
-        agent_ids: uniqueStrings([
-          ...current.assignments.map((assignment) => assignment.agent_id),
-          ...outboundGrants.map((grant) => grant.agent_id),
-        ]),
+        agent_ids: uniqueStrings(current.assignments.map((assignment) => assignment.agent_id)),
       }
     })
   }
@@ -1206,6 +1208,8 @@ export function CustomerManagementModal(props: {
         ...current,
         assignments,
         agent_ids: uniqueStrings(assignments.map((assignment) => assignment.agent_id)),
+        outbound_grants: current.outbound_grants.filter((grant) => assignments.some((assignment) => assignment.agent_id === grant.agent_id)),
+        outbound_grant_agent_id: assignments.some((assignment) => assignment.agent_id === current.outbound_grant_agent_id) ? current.outbound_grant_agent_id : '',
       }
     })
   }
@@ -1263,6 +1267,8 @@ export function CustomerManagementModal(props: {
         ...current,
         assignments,
         agent_ids: uniqueStrings(assignments.map((assignment) => assignment.agent_id)),
+        outbound_grants: current.outbound_grants.filter((grant) => assignments.some((assignment) => assignment.agent_id === grant.agent_id)),
+        outbound_grant_agent_id: assignments.some((assignment) => assignment.agent_id === current.outbound_grant_agent_id) ? current.outbound_grant_agent_id : '',
       }
     })
   }
@@ -1273,10 +1279,7 @@ export function CustomerManagementModal(props: {
       return {
         ...current,
         outbound_grants: outboundGrants,
-        agent_ids: uniqueStrings([
-          ...current.assignments.map((assignment) => assignment.agent_id),
-          ...outboundGrants.map((grant) => grant.agent_id),
-        ]),
+        agent_ids: uniqueStrings(current.assignments.map((assignment) => assignment.agent_id)),
       }
     })
   }
@@ -1466,6 +1469,7 @@ export function CustomerManagementModal(props: {
       canManageAreaManagers={canManageAreaManagers}
       agents={agents}
       agentOptions={agentOptions}
+      areaManagerOutboundAgentOptions={areaManagerOutboundAgentOptions}
       editingAreaManagerID={editingAreaManagerID}
       areaManagerModalOpen={areaManagerModalOpen}
       areaManagerForm={areaManagerForm}

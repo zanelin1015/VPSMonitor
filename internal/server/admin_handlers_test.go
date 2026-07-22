@@ -164,6 +164,14 @@ func TestAreaManagerXUIActionAllowedIncludesAddClient(t *testing.T) {
 	}
 }
 
+func cloneTestAnyMap(input map[string]any) map[string]any {
+	result := make(map[string]any, len(input))
+	for key, value := range input {
+		result[key] = value
+	}
+	return result
+}
+
 func TestAreaManagerXUIActionEnforcesOutboundScope(t *testing.T) {
 	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
 	if err != nil {
@@ -173,11 +181,21 @@ func TestAreaManagerXUIActionEnforcesOutboundScope(t *testing.T) {
 	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "agent-1", AgentName: "Agent 1"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "source-1", AgentName: "Source 1"}); err != nil {
+		t.Fatalf("RegisterAgent source: %v", err)
+	}
+	if _, err := sqliteStore.UpdateAgentConfig("source-1", model.ManagedAgentConfig{
+		AgentID: "source-1",
+		Entry:   model.AgentEntryConfig{ImportDomain: "source.example.com"},
+	}); err != nil {
+		t.Fatalf("UpdateAgentConfig source: %v", err)
+	}
 	enabled := true
 	manager, err := sqliteStore.CreateAreaManager(model.AreaManagerAccountRequest{
 		Username:              "outbound-area",
 		Password:              "password123",
 		Enabled:               &enabled,
+		AgentIDs:              []string{"agent-1", "source-1"},
 		OutboundCreateEnabled: &enabled,
 		OutboundGrants: []model.AreaManagerOutboundGrantRequest{
 			{AgentID: "agent-1", OutboundTag: "allowed-out"},
@@ -186,20 +204,49 @@ func TestAreaManagerXUIActionEnforcesOutboundScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAreaManager: %v", err)
 	}
+	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+		AgentID:     "source-1",
+		InboundID:   9,
+		InboundTag:  "source-node",
+		ClientEmail: "source@example.com",
+		Enabled:     &enabled,
+	}); err != nil {
+		t.Fatalf("CreateAreaManagerAssignment source: %v", err)
+	}
 	app := &App{store: sqliteStore}
+	now := time.Now().UTC()
 	if err := sqliteStore.SaveSnapshot(model.AgentSnapshot{
 		AgentID:    "agent-1",
-		ReportedAt: time.Now().UTC(),
+		ReportedAt: now,
 		XUI: &model.XUISnapshot{
 			Outbounds: []map[string]any{{"tag": "hidden-out", "protocol": "freedom"}},
 		},
 	}); err != nil {
 		t.Fatalf("SaveSnapshot: %v", err)
 	}
+	if err := sqliteStore.SaveSnapshot(model.AgentSnapshot{
+		AgentID:    "source-1",
+		ReportedAt: now,
+		Summary:    model.VPSSummary{PublicIPv4: "203.0.113.9"},
+		XUI: &model.XUISnapshot{
+			CollectedAt: now,
+			Inbounds: []map[string]any{{
+				"id":       9,
+				"tag":      "source-node",
+				"remark":   "Source VLESS",
+				"protocol": "vless",
+				"port":     443,
+				"enable":   true,
+				"settings": `{"clients":[{"email":"source@example.com","enable":true,"id":"11111111-1111-1111-1111-111111111111"}]}`,
+			}},
+		},
+	}); err != nil {
+		t.Fatalf("SaveSnapshot source: %v", err)
+	}
 	user := model.AdminUser{
 		ID:                    manager.ID,
 		Role:                  model.AdminRoleAreaManager,
-		AgentIDs:              []string{"agent-1"},
+		AgentIDs:              []string{"agent-1", "source-1"},
 		OutboundCreateEnabled: true,
 	}
 
@@ -247,11 +294,52 @@ func TestAreaManagerXUIActionEnforcesOutboundScope(t *testing.T) {
 		t.Fatal("expected unscoped balancer to be rejected")
 	}
 	createPayload := map[string]any{
-		"rule":     map[string]any{"type": "field", "outboundTag": "new-out"},
-		"outbound": map[string]any{"tag": "new-out", "protocol": "freedom"},
+		"rule": map[string]any{"type": "field", "outboundTag": "new-out"},
+		"outbound": map[string]any{
+			"tag":      "new-out",
+			"protocol": "vless",
+			"settings": map[string]any{
+				"address":    "source.example.com",
+				"port":       443,
+				"id":         "11111111-1111-1111-1111-111111111111",
+				"encryption": "none",
+			},
+		},
+		"outbound_source": map[string]any{
+			"type":         "authorized_client_node",
+			"agent_id":     "source-1",
+			"inbound_id":   9,
+			"inbound_tag":  "source-node",
+			"client_email": "source@example.com",
+		},
 	}
 	if !app.areaManagerXUIActionAllowed(user, "agent-1", model.XUIActionRequest{Kind: model.XUIActionUpsertRoutingRule, Payload: createPayload}) {
-		t.Fatal("expected outbound creation to be allowed when enabled")
+		t.Fatal("expected an authorized Client node to be usable as a new outbound")
+	}
+	missingSource := map[string]any{"rule": createPayload["rule"], "outbound": createPayload["outbound"]}
+	if app.areaManagerXUIActionAllowed(user, "agent-1", model.XUIActionRequest{Kind: model.XUIActionUpsertRoutingRule, Payload: missingSource}) {
+		t.Fatal("expected outbound creation without authorized source metadata to be rejected")
+	}
+	unauthorizedSource := cloneTestAnyMap(createPayload)
+	unauthorizedSource["outbound_source"] = map[string]any{
+		"type":         "authorized_client_node",
+		"agent_id":     "source-1",
+		"inbound_id":   9,
+		"inbound_tag":  "source-node",
+		"client_email": "other@example.com",
+	}
+	if app.areaManagerXUIActionAllowed(user, "agent-1", model.XUIActionRequest{Kind: model.XUIActionUpsertRoutingRule, Payload: unauthorizedSource}) {
+		t.Fatal("expected an unauthorized source client to be rejected")
+	}
+	spoofedEndpoint := cloneTestAnyMap(createPayload)
+	spoofedEndpoint["outbound"] = map[string]any{
+		"tag":      "spoofed-out",
+		"protocol": "vless",
+		"settings": map[string]any{"address": "other.example.com", "port": 443, "id": "11111111-1111-1111-1111-111111111111"},
+	}
+	spoofedEndpoint["rule"] = map[string]any{"type": "field", "outboundTag": "spoofed-out"}
+	if app.areaManagerXUIActionAllowed(user, "agent-1", model.XUIActionRequest{Kind: model.XUIActionUpsertRoutingRule, Payload: spoofedEndpoint}) {
+		t.Fatal("expected source metadata with a spoofed endpoint to be rejected")
 	}
 	user.OutboundCreateEnabled = false
 	if app.areaManagerXUIActionAllowed(user, "agent-1", model.XUIActionRequest{Kind: model.XUIActionUpsertRoutingRule, Payload: createPayload}) {

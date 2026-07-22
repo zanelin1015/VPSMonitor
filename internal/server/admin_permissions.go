@@ -1029,7 +1029,7 @@ func (a *App) areaManagerXUIActionAllowed(user model.AdminUser, agentID string, 
 	case model.XUIActionAddRoutingRule, model.XUIActionUpsertRoutingRule:
 		return a.areaManagerRoutingPayloadAllowed(user, agentID, req.Payload)
 	case model.XUIActionAddOutbound:
-		return a.areaManagerCanUpsertOutbound(user, agentID, outboundTagFromPayload(req.Payload))
+		return a.areaManagerCanCreateOutbound(user, agentID, req.Payload)
 	case model.XUIActionAddClient:
 		return a.areaManagerAddClientPayloadAllowed(user, agentID, req.Payload)
 	case model.XUIActionSetClientEnabled, model.XUIActionDeleteClient:
@@ -1060,36 +1060,9 @@ func (a *App) areaManagerRoutingPayloadAllowed(user model.AdminUser, agentID str
 		return false
 	}
 	if createdTag := outboundTagFromPayload(payload); createdTag != "" {
-		return createdTag == outboundTag && a.areaManagerCanUpsertOutbound(user, agentID, createdTag)
+		return createdTag == outboundTag && a.areaManagerCanCreateOutbound(user, agentID, payload)
 	}
 	return outboundScope.allows(agentID, outboundTag)
-}
-
-func (a *App) areaManagerCanUpsertOutbound(user model.AdminUser, agentID, outboundTag string) bool {
-	outboundTag = strings.TrimSpace(outboundTag)
-	if !user.OutboundCreateEnabled || outboundTag == "" {
-		return false
-	}
-	if !a.xuiOutboundTagExists(agentID, outboundTag) {
-		return true
-	}
-	return a.areaManagerOutboundScope(user).allows(agentID, outboundTag)
-}
-
-func (a *App) xuiOutboundTagExists(agentID, outboundTag string) bool {
-	if a == nil || a.store == nil {
-		return false
-	}
-	snapshot, ok := a.store.GetLatest(strings.TrimSpace(agentID))
-	if !ok || snapshot.XUI == nil {
-		return false
-	}
-	for _, outbound := range snapshot.XUI.Outbounds {
-		if strings.TrimSpace(stringFromAny(outbound["tag"])) == strings.TrimSpace(outboundTag) {
-			return true
-		}
-	}
-	return false
 }
 
 func outboundTagFromPayload(payload map[string]any) string {

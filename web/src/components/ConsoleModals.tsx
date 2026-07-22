@@ -292,6 +292,7 @@ export function ConsoleModals(props: ConsoleModalsProps) {
         sourceOverview={outboundSourceOverview}
         sourceLoading={outboundSourceLoading}
         allowCreateOutbound={adminUser?.role !== 'area_manager' || Boolean(adminUser.outbound_create_enabled)}
+        authorizedClientNodesOnly={adminUser?.role === 'area_manager'}
         onClose={onCloseXUIActionModal}
         onSubmit={onSubmitXUIAction}
         onActionKindChange={onXUIActionKindChange}

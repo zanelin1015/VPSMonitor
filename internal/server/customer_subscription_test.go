@@ -39,9 +39,10 @@ func TestBuildMihomoSubscriptionConvertsCustomerLinks(t *testing.T) {
 
 	content := buildMihomoSubscription(user, links)
 	assertContains(t, content, `mixed-port: 7890`)
-	assertContains(t, content, `rule-providers:`)
-	assertContains(t, content, `url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/reject.txt"`)
-	assertContains(t, content, `behavior: ipcidr`)
+	assertContains(t, content, `allow-lan: true`)
+	assertContains(t, content, `name: 🚀 节点选择`)
+	assertContains(t, content, `name: ♻️ 自动选择`)
+	assertContains(t, content, `name: 🐟 漏网之鱼`)
 	assertContains(t, content, `name: "CN-HK-VLESS"`)
 	assertContains(t, content, `type: "vless"`)
 	assertContains(t, content, `uuid: "11111111-1111-1111-1111-111111111111"`)
@@ -57,12 +58,26 @@ func TestBuildMihomoSubscriptionConvertsCustomerLinks(t *testing.T) {
 	assertContains(t, content, `- "CN-HK-VLESS"`)
 	assertContains(t, content, `- "HK SS"`)
 	assertContains(t, content, `- "GZ HTTP"`)
-	assertContains(t, content, `- RULE-SET,reject,REJECT`)
-	assertContains(t, content, `- RULE-SET,cncidr,DIRECT`)
-	assertContains(t, content, `- GEOIP,CN,DIRECT,no-resolve`)
-	assertContains(t, content, `- MATCH,PROXY`)
+	assertContains(t, content, `- DOMAIN-SUFFIX,acl4.ssr,🎯 全球直连`)
+	assertContains(t, content, `- GEOIP,CN,🎯 全球直连`)
+	assertContains(t, content, `- MATCH,🐟 漏网之鱼`)
+	if got := strings.Count(content, `      - "CN-HK-VLESS"`); got != 8 {
+		t.Fatalf("expected proxy in all 8 ACL4SSR groups, got %d", got)
+	}
 	if strings.Contains(content, "未解析") {
 		t.Fatalf("unresolved links should not be included:\n%s", content)
+	}
+	if strings.Contains(content, "US-NTT2") || strings.Contains(content, "usdm10g1.zanelin.top") {
+		t.Fatal("reference subscription proxy data must not leak into generated subscriptions")
+	}
+}
+
+func TestBuildMihomoSubscriptionWithoutLinksRemainsUsable(t *testing.T) {
+	content := buildMihomoSubscription(model.CustomerUser{Username: "empty"}, nil)
+	assertContains(t, content, "proxies:\n  []")
+	assertContains(t, content, "name: ♻️ 自动选择\n    type: url-test")
+	if strings.Contains(content, mihomoProxyMarker) || strings.Contains(content, mihomoProxyNameMarker) {
+		t.Fatal("subscription template markers must be fully rendered")
 	}
 }
 

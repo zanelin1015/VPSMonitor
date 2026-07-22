@@ -15,6 +15,7 @@ export function renderOutboundActionForm(props: {
   currentOverview: XUIOverview | null
   sourceOverview: XUIOverview | null
   sourceLoading: boolean
+  authorizedClientNodesOnly?: boolean
   onChange: (form: XUIOutboundActionForm) => void
 }) {
   return <XUIOutboundActionFormPanel {...props} />
@@ -27,9 +28,10 @@ function XUIOutboundActionFormPanel(props: {
   currentOverview: XUIOverview | null
   sourceOverview: XUIOverview | null
   sourceLoading: boolean
+  authorizedClientNodesOnly?: boolean
   onChange: (form: XUIOutboundActionForm) => void
 }) {
-  const { form, agents, targetAgentID, currentOverview, sourceOverview, sourceLoading, onChange } = props
+  const { form, agents, targetAgentID, currentOverview, sourceOverview, sourceLoading, authorizedClientNodesOnly = false, onChange } = props
   const update = (patch: Partial<XUIOutboundActionForm>) => onChange({ ...form, ...patch })
   const [libraryItems, setLibraryItems] = useState<OutboundLinkLibraryItem[]>([])
   const [selectedLibraryID, setSelectedLibraryID] = useState<string>()
@@ -42,10 +44,14 @@ function XUIOutboundActionFormPanel(props: {
     client,
   }))
   useEffect(() => {
+    if (authorizedClientNodesOnly) {
+      setLibraryItems([])
+      return
+    }
     void fetchJSON<OutboundLinkLibraryItem[]>('/api/v1/admin/outbound-links')
       .then((items) => setLibraryItems(Array.isArray(items) ? items : []))
       .catch(() => setLibraryItems([]))
-  }, [])
+  }, [authorizedClientNodesOnly])
 
   const applyImportedText = () => {
     try {
@@ -106,20 +112,22 @@ function XUIOutboundActionFormPanel(props: {
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
       <Card className="config-section-card" bordered={false}>
         <Title level={4}>出站来源</Title>
-        <Alert
-          type="info"
-          showIcon
-          className="compact-alert"
-          message="支持内部 Client、现有出站 JSON / 节点链接和公共出口链接库"
-          description="提交转发规则时会携带出站配置；client 上已有等价出站会复用，不存在则自动新增。支持 VLESS、VMess、SOCKS、HTTP、Shadowsocks。"
-        />
+        {!authorizedClientNodesOnly ? (
+          <Alert
+            type="info"
+            showIcon
+            className="compact-alert"
+            message="支持内部 Client、现有出站 JSON / 节点链接和公共出口链接库"
+            description="提交转发规则时会携带出站配置；client 上已有等价出站会复用，不存在则自动新增。支持 VLESS、VMess、SOCKS、HTTP、Shadowsocks。"
+          />
+        ) : null}
         <Tabs
-          activeKey={form.source_type || 'registered_client'}
+          activeKey={authorizedClientNodesOnly ? 'registered_client' : form.source_type || 'registered_client'}
           onChange={(key) => update({ source_type: key as XUIOutboundActionForm['source_type'] })}
           items={[
             {
               key: 'registered_client',
-              label: '已有 Client',
+              label: authorizedClientNodesOnly ? '已授权 Client 节点' : '已有 Client',
               children: (
                 <Row gutter={[16, 16]}>
                   <Col xs={24} md={12}>
@@ -135,6 +143,9 @@ function XUIOutboundActionFormPanel(props: {
                         update({
                           source_type: 'registered_client',
                           source_agent_id: value || '',
+                          source_inbound_id: 0,
+                          source_inbound_tag: '',
+                          source_client_email: '',
                           source_client_key: '',
                         })}
                     />
@@ -153,12 +164,21 @@ function XUIOutboundActionFormPanel(props: {
                       }))}
                       onChange={(value) => {
                         const nextKey = value || ''
-                        const patch: Partial<XUIOutboundActionForm> = { source_type: 'registered_client', source_client_key: nextKey }
+                        const patch: Partial<XUIOutboundActionForm> = {
+                          source_type: 'registered_client',
+                          source_inbound_id: 0,
+                          source_inbound_tag: '',
+                          source_client_email: '',
+                          source_client_key: nextKey,
+                        }
                         const nextClient = sourceClientOptions.find((item) => item.key === nextKey)?.client
                         const nextNode = activeSourceOverview?.nodes.find(
                           (node: XUINodeView) => node.id === nextClient?.inbound_id || node.tag === nextClient?.inbound_tag,
                         )
                         if (activeSourceOverview && nextClient && nextNode) {
+                          patch.source_inbound_id = nextClient.inbound_id || nextNode.id || 0
+                          patch.source_inbound_tag = nextClient.inbound_tag || nextNode.tag || ''
+                          patch.source_client_email = nextClient.email || ''
                           Object.assign(patch, buildOutboundImportPatch(activeSourceOverview, nextNode, nextClient as XUIClientView, form))
                         }
                         update(patch)
@@ -168,7 +188,7 @@ function XUIOutboundActionFormPanel(props: {
                 </Row>
               ),
             },
-            {
+            ...(!authorizedClientNodesOnly ? [{
               key: 'library',
               label: '出口链接库',
               children: (
@@ -209,7 +229,7 @@ function XUIOutboundActionFormPanel(props: {
                   </Space>
                 </Space>
               ),
-            },
+            }] : []),
           ]}
         />
       </Card>
@@ -217,7 +237,7 @@ function XUIOutboundActionFormPanel(props: {
         <Title level={4}>出站配置</Title>
         <Row gutter={[12, 12]}>
           <Col xs={24} md={8}><Text type="secondary">标签</Text><Input value={form.tag} onChange={(event) => update({ tag: event.target.value })} /></Col>
-          <Col xs={24} md={8}><Text type="secondary">协议</Text><Select style={{ width: '100%' }} value={form.protocol} options={[
+          <Col xs={24} md={8}><Text type="secondary">协议</Text><Select disabled={authorizedClientNodesOnly} style={{ width: '100%' }} value={form.protocol} options={[
             { value: 'vless', label: 'VLESS' },
             { value: 'vmess', label: 'VMess' },
             { value: 'socks', label: 'SOCKS' },
@@ -226,29 +246,29 @@ function XUIOutboundActionFormPanel(props: {
             { value: 'freedom', label: 'Freedom' },
             { value: 'blackhole', label: 'Blackhole' },
           ]} onChange={(value) => update({ protocol: value })} /></Col>
-          <Col xs={24} md={8}><Text type="secondary">发送通过</Text><Input value={form.send_through} onChange={(event) => update({ send_through: event.target.value })} /></Col>
-          <Col xs={24} md={12}><Text type="secondary">地址</Text><Input value={form.address} onChange={(event) => update({ address: event.target.value })} /></Col>
-          <Col xs={24} md={6}><Text type="secondary">端口</Text><InputNumber style={{ width: '100%' }} min={0} max={65535} value={form.port} onChange={(value) => update({ port: Number(value || 0) })} /></Col>
-          <Col xs={24} md={6}><Text type="secondary">传输</Text><Select style={{ width: '100%' }} value={form.network} options={[
+          <Col xs={24} md={8}><Text type="secondary">发送通过</Text><Input disabled={authorizedClientNodesOnly} value={form.send_through} onChange={(event) => update({ send_through: event.target.value })} /></Col>
+          <Col xs={24} md={12}><Text type="secondary">地址</Text><Input disabled={authorizedClientNodesOnly} value={form.address} onChange={(event) => update({ address: event.target.value })} /></Col>
+          <Col xs={24} md={6}><Text type="secondary">端口</Text><InputNumber disabled={authorizedClientNodesOnly} style={{ width: '100%' }} min={0} max={65535} value={form.port} onChange={(value) => update({ port: Number(value || 0) })} /></Col>
+          <Col xs={24} md={6}><Text type="secondary">传输</Text><Select disabled={authorizedClientNodesOnly} style={{ width: '100%' }} value={form.network} options={[
             { value: 'tcp', label: 'TCP' },
             { value: 'ws', label: 'WebSocket' },
             { value: 'grpc', label: 'gRPC' },
             { value: 'h2', label: 'HTTP/2' },
           ]} onChange={(value) => update({ network: value })} /></Col>
-          <Col xs={24} md={12}><Text type="secondary">ID / 用户名</Text><Input value={form.uuid} onChange={(event) => update({ uuid: event.target.value })} /></Col>
-          <Col xs={24} md={12}><Text type="secondary">密码 / SS 密码</Text><Input value={form.password} onChange={(event) => update({ password: event.target.value })} /></Col>
-          <Col xs={24} md={8}><Text type="secondary">加密 / 方法</Text><Input value={form.method} onChange={(event) => update({ method: event.target.value })} /></Col>
-          <Col xs={24} md={8}><Text type="secondary">安全</Text><Select style={{ width: '100%' }} value={form.security} options={[
+          <Col xs={24} md={12}><Text type="secondary">ID / 用户名</Text><Input disabled={authorizedClientNodesOnly} value={form.uuid} onChange={(event) => update({ uuid: event.target.value })} /></Col>
+          <Col xs={24} md={12}><Text type="secondary">密码 / SS 密码</Text><Input disabled={authorizedClientNodesOnly} value={form.password} onChange={(event) => update({ password: event.target.value })} /></Col>
+          <Col xs={24} md={8}><Text type="secondary">加密 / 方法</Text><Input disabled={authorizedClientNodesOnly} value={form.method} onChange={(event) => update({ method: event.target.value })} /></Col>
+          <Col xs={24} md={8}><Text type="secondary">安全</Text><Select disabled={authorizedClientNodesOnly} style={{ width: '100%' }} value={form.security} options={[
             { value: 'none', label: '无' },
             { value: 'tls', label: 'TLS' },
             { value: 'reality', label: 'Reality' },
           ]} onChange={(value) => update({ security: value })} /></Col>
-          <Col xs={24} md={8}><Text type="secondary">SNI / ServerName</Text><Input value={form.server_name} onChange={(event) => update({ server_name: event.target.value })} /></Col>
+          <Col xs={24} md={8}><Text type="secondary">SNI / ServerName</Text><Input disabled={authorizedClientNodesOnly} value={form.server_name} onChange={(event) => update({ server_name: event.target.value })} /></Col>
           {form.security === 'reality' ? (
             <>
-              <Col xs={24} md={12}><Text type="secondary">Reality PublicKey</Text><Input value={form.reality_public_key} onChange={(event) => update({ reality_public_key: event.target.value })} /></Col>
-              <Col xs={24} md={6}><Text type="secondary">Short ID</Text><Input value={form.reality_short_id} onChange={(event) => update({ reality_short_id: event.target.value })} /></Col>
-              <Col xs={24} md={6}><Text type="secondary">Fingerprint</Text><Input value={form.reality_fingerprint} onChange={(event) => update({ reality_fingerprint: event.target.value })} /></Col>
+              <Col xs={24} md={12}><Text type="secondary">Reality PublicKey</Text><Input disabled={authorizedClientNodesOnly} value={form.reality_public_key} onChange={(event) => update({ reality_public_key: event.target.value })} /></Col>
+              <Col xs={24} md={6}><Text type="secondary">Short ID</Text><Input disabled={authorizedClientNodesOnly} value={form.reality_short_id} onChange={(event) => update({ reality_short_id: event.target.value })} /></Col>
+              <Col xs={24} md={6}><Text type="secondary">Fingerprint</Text><Input disabled={authorizedClientNodesOnly} value={form.reality_fingerprint} onChange={(event) => update({ reality_fingerprint: event.target.value })} /></Col>
             </>
           ) : null}
           <Col xs={24}>

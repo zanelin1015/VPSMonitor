@@ -241,6 +241,9 @@ func TestSQLiteStoreAreaManagerOutboundGrantsAndCreatePermission(t *testing.T) {
 	if _, err := store.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
+	if _, err := store.RegisterAgent(model.AgentRegisterRequest{AgentID: "sg", AgentName: "SG"}); err != nil {
+		t.Fatalf("RegisterAgent sg: %v", err)
+	}
 	if err := store.EnsureAdminAccount("admin", "admin-password"); err != nil {
 		t.Fatalf("EnsureAdminAccount: %v", err)
 	}
@@ -249,6 +252,7 @@ func TestSQLiteStoreAreaManagerOutboundGrantsAndCreatePermission(t *testing.T) {
 		Username:              "outbound-manager",
 		Password:              "password123",
 		Enabled:               &enabled,
+		AgentIDs:              []string{"hk"},
 		OutboundCreateEnabled: &enabled,
 		OutboundGrants: []model.AreaManagerOutboundGrantRequest{
 			{AgentID: "hk", OutboundTag: "relay-vn"},
@@ -261,8 +265,19 @@ func TestSQLiteStoreAreaManagerOutboundGrantsAndCreatePermission(t *testing.T) {
 	if !manager.OutboundCreateEnabled || len(manager.OutboundGrants) != 1 || manager.OutboundGrants[0].OutboundTag != "relay-vn" {
 		t.Fatalf("unexpected outbound permissions: %#v", manager)
 	}
+	if err := store.UpsertAreaManagerOutboundGrant(manager.ID, model.AreaManagerOutboundGrantRequest{AgentID: "sg", OutboundTag: "relay-sg"}); err == nil {
+		t.Fatal("expected outbound grant not to assign an unauthorized agent implicitly")
+	}
+	if _, err := store.CreateAreaManager(model.AreaManagerAccountRequest{
+		Username:       "invalid-outbound-manager",
+		Password:       "password123",
+		Enabled:        &enabled,
+		OutboundGrants: []model.AreaManagerOutboundGrantRequest{{AgentID: "sg", OutboundTag: "relay-sg"}},
+	}); err == nil {
+		t.Fatal("expected outbound grant for an unassigned agent to be rejected")
+	}
 	if len(manager.AgentIDs) != 1 || manager.AgentIDs[0] != "hk" {
-		t.Fatalf("expected outbound grant agent to be assigned, got %#v", manager.AgentIDs)
+		t.Fatalf("expected explicitly assigned outbound agent, got %#v", manager.AgentIDs)
 	}
 	user, ok, err := store.AuthenticateAdmin("outbound-manager", "password123")
 	if err != nil || !ok || !user.OutboundCreateEnabled {

@@ -89,6 +89,9 @@ func (s *SQLiteStore) CreateAreaManager(req model.AreaManagerAccountRequest) (mo
 	if err != nil {
 		return model.AreaManagerAdminView{}, err
 	}
+	if err := validateAreaManagerOutboundGrantAgents(normalized.agentIDs, normalized.outboundGrants); err != nil {
+		return model.AreaManagerAdminView{}, err
+	}
 	if req.Password == "" {
 		req.Password = model.DefaultAccountPassword
 	}
@@ -189,7 +192,11 @@ func (s *SQLiteStore) UpdateAreaManager(id int64, req model.AreaManagerAccountRe
 	if normalized.agentIDs == nil {
 		normalized.agentIDs = current.view.AgentIDs
 	}
-	normalized.agentIDs = appendAreaManagerOutboundGrantAgents(normalized.agentIDs, normalized.outboundGrants)
+	if normalized.outboundGrants != nil {
+		if err := validateAreaManagerOutboundGrantAgents(normalized.agentIDs, normalized.outboundGrants); err != nil {
+			return model.AreaManagerAdminView{}, err
+		}
+	}
 	if err := s.ensureAreaManagerUsernameAvailable(normalized.username, id); err != nil {
 		return model.AreaManagerAdminView{}, err
 	}
@@ -613,7 +620,6 @@ func (s *SQLiteStore) normalizeAreaManagerRequest(req model.AreaManagerAccountRe
 		if err != nil {
 			return normalizedAreaManagerRequest{}, err
 		}
-		agentIDs = appendAreaManagerOutboundGrantAgents(agentIDs, outboundGrants)
 	}
 	return normalizedAreaManagerRequest{
 		username:              username,
@@ -627,29 +633,6 @@ func (s *SQLiteStore) normalizeAreaManagerRequest(req model.AreaManagerAccountRe
 		outboundCreateEnabled: outboundCreateEnabled,
 		outboundGrants:        outboundGrants,
 	}, nil
-}
-
-func appendAreaManagerOutboundGrantAgents(agentIDs []string, grants []model.AreaManagerOutboundGrantRequest) []string {
-	seen := make(map[string]struct{}, len(agentIDs)+len(grants))
-	result := make([]string, 0, len(agentIDs)+len(grants))
-	for _, agentID := range agentIDs {
-		if agentID = strings.TrimSpace(agentID); agentID == "" {
-			continue
-		}
-		if _, ok := seen[agentID]; ok {
-			continue
-		}
-		seen[agentID] = struct{}{}
-		result = append(result, agentID)
-	}
-	for _, grant := range grants {
-		if _, ok := seen[grant.AgentID]; ok {
-			continue
-		}
-		seen[grant.AgentID] = struct{}{}
-		result = append(result, grant.AgentID)
-	}
-	return result
 }
 
 func (s *SQLiteStore) normalizeAreaManagerAgentIDs(raw []string) ([]string, error) {

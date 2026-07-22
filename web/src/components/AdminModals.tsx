@@ -568,6 +568,7 @@ export function XUIActionModal(props: {
   sourceOverview: XUIOverview | null
   sourceLoading: boolean
   allowCreateOutbound?: boolean
+  authorizedClientNodesOnly?: boolean
   onClose: () => void
   onSubmit: () => void
   onActionKindChange: (kind: string) => void
@@ -589,6 +590,7 @@ export function XUIActionModal(props: {
     sourceOverview,
     sourceLoading,
     allowCreateOutbound = true,
+    authorizedClientNodesOnly = false,
     onClose,
     onSubmit,
     onActionKindChange,
@@ -625,6 +627,7 @@ export function XUIActionModal(props: {
               currentOverview,
               sourceOverview,
               sourceLoading,
+              authorizedClientNodesOnly,
               onChange: onOutboundFormChange,
             })
           : null}
@@ -643,6 +646,7 @@ export function XUIActionModal(props: {
               balancers: currentOverview?.balancers || [],
               rules: currentOverview?.routing_rules || [],
               allowCreateOutbound,
+              authorizedClientNodesOnly,
               onChange: onRoutingFormChange,
               onOutboundChange: onOutboundFormChange,
             })

@@ -64,13 +64,17 @@ func (s *SQLiteStore) UpsertAreaManagerOutboundGrant(managerID int64, req model.
 	if exists == 0 {
 		return fmt.Errorf("area manager not found")
 	}
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	if _, err := tx.Exec(`
-		INSERT OR IGNORE INTO area_manager_agents (manager_id, agent_id, created_at)
-		VALUES (?, ?, ?)
-	`, managerID, items[0].AgentID, now); err != nil {
-		return fmt.Errorf("assign outbound agent to area manager: %w", err)
+	var canAccess int
+	if err := tx.QueryRow(`
+		SELECT 1 FROM area_manager_agents
+		WHERE manager_id = ? AND agent_id = ?
+		LIMIT 1
+	`, managerID, items[0].AgentID).Scan(&canAccess); err == sql.ErrNoRows {
+		return fmt.Errorf("outbound grant agent is not assigned to area manager")
+	} else if err != nil {
+		return fmt.Errorf("check outbound grant agent access: %w", err)
 	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
 	if _, err := tx.Exec(`
 		INSERT OR IGNORE INTO area_manager_outbound_grants (manager_id, agent_id, outbound_tag, created_at)
 		VALUES (?, ?, ?, ?)
@@ -124,4 +128,19 @@ func (s *SQLiteStore) normalizeAreaManagerOutboundGrants(raw []model.AreaManager
 		items = append(items, item)
 	}
 	return items, nil
+}
+
+func validateAreaManagerOutboundGrantAgents(agentIDs []string, grants []model.AreaManagerOutboundGrantRequest) error {
+	assigned := make(map[string]struct{}, len(agentIDs))
+	for _, agentID := range agentIDs {
+		if agentID = strings.TrimSpace(agentID); agentID != "" {
+			assigned[agentID] = struct{}{}
+		}
+	}
+	for _, grant := range grants {
+		if _, ok := assigned[strings.TrimSpace(grant.AgentID)]; !ok {
+			return fmt.Errorf("outbound grant agent %s is not assigned to area manager", grant.AgentID)
+		}
+	}
+	return nil
 }

@@ -23,6 +23,7 @@ export interface CustomerManagementModalsProps {
   canManageAreaManagers: boolean
   agents: Parameters<typeof renderAssignmentHierarchy>[1]
   agentOptions: Array<{ value: string; label: string }>
+  areaManagerOutboundAgentOptions: Array<{ value: string; label: string }>
   editingAreaManagerID: number | null
   areaManagerModalOpen: boolean
   areaManagerForm: AreaManagerFormState
@@ -76,6 +77,7 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
     canManageAreaManagers,
     agents,
     agentOptions,
+    areaManagerOutboundAgentOptions,
     editingAreaManagerID,
     areaManagerModalOpen,
     areaManagerForm,
@@ -282,31 +284,32 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
                 onChange={(values) => onUpdateAreaManagerGrantTargets(values as string[])}
               />
             </Col>
-            <Col xs={24} md={12}>
-              <Text type="secondary">出站规则 Client</Text>
-              <Select
-                style={{ width: '100%' }}
-                showSearch
-                placeholder="选择需要授权出站的 Client"
-                options={agentOptions}
-                value={areaManagerForm.outbound_grant_agent_id || undefined}
-                optionFilterProp="label"
-                onChange={(value) => setAreaManagerForm((current) => ({ ...current, outbound_grant_agent_id: value }))}
-              />
-            </Col>
-            <Col xs={24} md={12}>
-              <Text type="secondary">新增出站权限</Text>
+            <Col xs={24}>
+              <Text type="secondary">节点落地权限</Text>
               <div className="customer-admin-switch-row">
                 <Switch
                   checked={areaManagerForm.outbound_create_enabled}
                   onChange={(checked) => setAreaManagerForm((current) => ({ ...current, outbound_create_enabled: checked }))}
                 />
-                <Text>{areaManagerForm.outbound_create_enabled ? '允许新增' : '仅可使用已授权出站'}</Text>
+                <Text>允许添加已授权 Client 的节点作为落地</Text>
               </div>
             </Col>
-            <Col xs={24}>
+            <Col xs={24} md={12}>
+              <Text type="secondary">当前 Client</Text>
+              <Select
+                style={{ width: '100%' }}
+                showSearch
+                allowClear
+                placeholder="选择已授权的 Client"
+                options={areaManagerOutboundAgentOptions}
+                value={areaManagerForm.outbound_grant_agent_id || undefined}
+                optionFilterProp="label"
+                onChange={(value) => setAreaManagerForm((current) => ({ ...current, outbound_grant_agent_id: value || '' }))}
+              />
+            </Col>
+            <Col xs={24} md={12}>
               <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                <Text type="secondary">已有出站规则授权</Text>
+                <Text type="secondary">当前 Client 已有出站规则</Text>
                 <Button
                   size="small"
                   disabled={!areaManagerForm.outbound_grant_agent_id || !areaManagerOutboundGrantOptions.length}
@@ -319,7 +322,7 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
                 mode="multiple"
                 style={{ width: '100%' }}
                 showSearch
-                placeholder="选择区域账号可使用的 Outbound Tag"
+                placeholder="选择允许区域账号使用的出站规则"
                 value={selectedAreaManagerOutboundTags}
                 options={areaManagerOutboundGrantOptions}
                 optionFilterProp="label"

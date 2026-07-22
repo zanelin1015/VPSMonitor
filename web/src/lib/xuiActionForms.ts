@@ -65,6 +65,9 @@ export interface XUIOutboundActionForm {
   ws_path: string
   ws_host: string
   source_agent_id: string
+  source_inbound_id: number
+  source_inbound_tag: string
+  source_client_email: string
   source_client_key: string
   restart: boolean
 }
@@ -165,6 +168,9 @@ export function defaultOutboundActionForm(): XUIOutboundActionForm {
     ws_path: '/',
     ws_host: '',
     source_agent_id: '',
+    source_inbound_id: 0,
+    source_inbound_tag: '',
+    source_client_email: '',
     source_client_key: '',
     restart: true,
   }
@@ -249,6 +255,7 @@ export function buildUpsertRoutingActionPayload(form: XUIRoutingActionForm, outb
   if (form.target_mode === 'registered_client') {
     const outboundPayload = buildOutboundActionPayload(outboundForm)
     payload.outbound = outboundPayload.outbound
+    payload.outbound_source = outboundPayload.outbound_source
     if (form.previous_outbound_tag.trim()) {
       payload.previous_outbound_tag = form.previous_outbound_tag.trim()
     }
@@ -369,6 +376,13 @@ export function buildOutboundActionPayload(form: XUIOutboundActionForm): Record<
   if (!tag) {
     throw new Error('未能从源节点生成出站标签')
   }
+  if (form.source_type === 'registered_client' && (
+    !form.source_agent_id.trim() ||
+    (!form.source_inbound_id && !form.source_inbound_tag.trim()) ||
+    !form.source_client_email.trim()
+  )) {
+    throw new Error('请选择已授权 Client 下的节点客户端')
+  }
 
   const outbound: Record<string, unknown> = {
     tag,
@@ -463,10 +477,20 @@ export function buildOutboundActionPayload(form: XUIOutboundActionForm): Record<
       throw new Error(`暂不支持该出站协议: ${form.protocol}`)
   }
 
-  return {
+  const payload: Record<string, unknown> = {
     outbound,
     restart: true,
   }
+  if (form.source_type === 'registered_client') {
+    payload.outbound_source = {
+      type: 'authorized_client_node',
+      agent_id: form.source_agent_id.trim(),
+      inbound_id: form.source_inbound_id,
+      inbound_tag: form.source_inbound_tag.trim(),
+      client_email: form.source_client_email.trim(),
+    }
+  }
+  return payload
 }
 
 function normalizeOutboundProtocol(value: unknown): string {

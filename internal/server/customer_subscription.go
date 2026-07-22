@@ -1,6 +1,7 @@
 package server
 
 import (
+	_ "embed"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,14 @@ import (
 
 	"bridge-core/internal/model"
 )
+
+const (
+	mihomoProxyMarker     = "{{VPSMONITOR_PROXIES}}"
+	mihomoProxyNameMarker = "{{VPSMONITOR_PROXY_NAMES}}"
+)
+
+//go:embed customer_subscription_acl4ssr.yaml.tmpl
+var mihomoSubscriptionTemplate string
 
 func (a *App) handleCustomerSubscription(w http.ResponseWriter, r *http.Request, parts []string) {
 	if r.Method != http.MethodGet {
@@ -76,108 +85,34 @@ func buildMihomoSubscription(user model.CustomerUser, links []model.CustomerLink
 		return proxies[i].Name < proxies[j].Name
 	})
 
-	var b strings.Builder
-	b.WriteString("mixed-port: 7890\n")
-	b.WriteString("allow-lan: false\n")
-	b.WriteString("mode: rule\n")
-	b.WriteString("log-level: info\n")
-	b.WriteString("ipv6: true\n")
-	b.WriteString("profile:\n")
-	b.WriteString("  store-selected: true\n")
-	b.WriteString("  store-fake-ip: true\n")
-	writeMihomoRuleProviders(&b)
-	b.WriteString("proxies:\n")
+	return renderMihomoSubscription(proxies)
+}
+
+func renderMihomoSubscription(proxies []mihomoProxy) string {
+	var proxyYAML strings.Builder
 	if len(proxies) == 0 {
-		b.WriteString("  []\n")
+		proxyYAML.WriteString("  []")
 	} else {
 		for _, proxy := range proxies {
-			proxy.writeYAML(&b)
+			proxy.writeYAML(&proxyYAML)
 		}
 	}
-	b.WriteString("proxy-groups:\n")
-	b.WriteString("  - name: \"PROXY\"\n")
-	b.WriteString("    type: select\n")
-	b.WriteString("    proxies:\n")
+
+	var proxyNames strings.Builder
 	if len(proxies) == 0 {
-		b.WriteString("      - DIRECT\n")
+		proxyNames.WriteString("      - DIRECT")
 	} else {
-		for _, proxy := range proxies {
-			b.WriteString("      - ")
-			b.WriteString(yamlString(proxy.Name))
-			b.WriteString("\n")
+		for index, proxy := range proxies {
+			if index > 0 {
+				proxyNames.WriteByte('\n')
+			}
+			proxyNames.WriteString("      - ")
+			proxyNames.WriteString(yamlString(proxy.Name))
 		}
-		b.WriteString("      - DIRECT\n")
 	}
-	writeMihomoRules(&b)
-	return b.String()
-}
 
-type mihomoRuleProvider struct {
-	Name     string
-	Behavior string
-	URL      string
-}
-
-var defaultMihomoRuleProviders = []mihomoRuleProvider{
-	{Name: "reject", Behavior: "domain", URL: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/reject.txt"},
-	{Name: "icloud", Behavior: "domain", URL: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/icloud.txt"},
-	{Name: "apple", Behavior: "domain", URL: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/apple.txt"},
-	{Name: "google", Behavior: "domain", URL: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/google.txt"},
-	{Name: "proxy", Behavior: "domain", URL: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/proxy.txt"},
-	{Name: "direct", Behavior: "domain", URL: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/direct.txt"},
-	{Name: "private", Behavior: "domain", URL: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/private.txt"},
-	{Name: "telegramcidr", Behavior: "ipcidr", URL: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/telegramcidr.txt"},
-	{Name: "cncidr", Behavior: "ipcidr", URL: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/cncidr.txt"},
-	{Name: "lancidr", Behavior: "ipcidr", URL: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/lancidr.txt"},
-	{Name: "applications", Behavior: "classical", URL: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/applications.txt"},
-}
-
-var defaultMihomoRules = []string{
-	"RULE-SET,applications,DIRECT",
-	"DOMAIN,clash.razord.top,DIRECT",
-	"DOMAIN,yacd.haishan.me,DIRECT",
-	"RULE-SET,private,DIRECT",
-	"RULE-SET,reject,REJECT",
-	"RULE-SET,icloud,DIRECT",
-	"RULE-SET,apple,DIRECT",
-	"RULE-SET,google,PROXY",
-	"RULE-SET,proxy,PROXY",
-	"RULE-SET,direct,DIRECT",
-	"RULE-SET,lancidr,DIRECT",
-	"RULE-SET,cncidr,DIRECT",
-	"RULE-SET,telegramcidr,PROXY",
-	"GEOIP,LAN,DIRECT,no-resolve",
-	"GEOIP,CN,DIRECT,no-resolve",
-	"MATCH,PROXY",
-}
-
-func writeMihomoRuleProviders(b *strings.Builder) {
-	b.WriteString("rule-providers:\n")
-	for _, provider := range defaultMihomoRuleProviders {
-		b.WriteString("  ")
-		b.WriteString(provider.Name)
-		b.WriteString(":\n")
-		b.WriteString("    type: http\n")
-		b.WriteString("    behavior: ")
-		b.WriteString(provider.Behavior)
-		b.WriteString("\n")
-		b.WriteString("    url: ")
-		b.WriteString(yamlString(provider.URL))
-		b.WriteString("\n")
-		b.WriteString("    path: ")
-		b.WriteString(yamlString("./ruleset/" + provider.Name + ".yaml"))
-		b.WriteString("\n")
-		b.WriteString("    interval: 86400\n")
-	}
-}
-
-func writeMihomoRules(b *strings.Builder) {
-	b.WriteString("rules:\n")
-	for _, rule := range defaultMihomoRules {
-		b.WriteString("  - ")
-		b.WriteString(rule)
-		b.WriteString("\n")
-	}
+	content := strings.Replace(mihomoSubscriptionTemplate, mihomoProxyMarker, strings.TrimSuffix(proxyYAML.String(), "\n"), 1)
+	return strings.ReplaceAll(content, mihomoProxyNameMarker, proxyNames.String())
 }
 
 type mihomoProxy struct {
