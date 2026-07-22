@@ -941,12 +941,23 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 				return
 			}
 			if isAreaManager(user) && !a.areaManagerXUIActionAllowed(user, agentID, req) {
-				writeError(w, http.StatusForbidden, "area manager can only create routing rule actions or add/delete clients under assigned nodes")
+				writeError(w, http.StatusForbidden, "outbound or node is outside the area manager authorization scope")
 				return
 			}
 			if isRootOnlyXUIActionKind(req.Kind) && !isRootAdmin(user) {
 				writeError(w, http.StatusForbidden, "only root admin can create this x-ui action")
 				return
+			}
+			if isAreaManager(user) && user.OutboundCreateEnabled {
+				if outboundTag := outboundTagFromPayload(req.Payload); outboundTag != "" {
+					if err := a.store.UpsertAreaManagerOutboundGrant(user.ID, model.AreaManagerOutboundGrantRequest{
+						AgentID:     agentID,
+						OutboundTag: outboundTag,
+					}); err != nil {
+						writeError(w, http.StatusInternalServerError, err.Error())
+						return
+					}
+				}
 			}
 			action, err := a.store.CreateXUIAction(agentID, req)
 			if err != nil {

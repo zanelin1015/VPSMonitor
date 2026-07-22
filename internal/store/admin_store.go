@@ -287,16 +287,17 @@ func (s *SQLiteStore) UpdateAdminAccount(req model.AdminAccountUpdateRequest, ke
 
 func (s *SQLiteStore) authenticateAreaManager(username, password string) (model.AdminUser, bool, error) {
 	var (
-		user          model.AdminUser
-		passwordHash  string
-		enabled       int
-		updatedAtText string
+		user                  model.AdminUser
+		passwordHash          string
+		enabled               int
+		outboundCreateEnabled int
+		updatedAtText         string
 	)
 	err := s.db.QueryRow(`
-		SELECT id, username, password_hash, display_name, enabled, updated_at
+		SELECT id, username, password_hash, display_name, enabled, outbound_create_enabled, updated_at
 		FROM area_manager_accounts
 		WHERE username = ?
-	`, username).Scan(&user.ID, &user.Username, &passwordHash, &user.DisplayName, &enabled, &updatedAtText)
+	`, username).Scan(&user.ID, &user.Username, &passwordHash, &user.DisplayName, &enabled, &outboundCreateEnabled, &updatedAtText)
 	if err == sql.ErrNoRows {
 		return model.AdminUser{}, false, nil
 	}
@@ -317,6 +318,7 @@ func (s *SQLiteStore) authenticateAreaManager(username, password string) (model.
 		return model.AdminUser{}, false, nil
 	}
 	user.Role = model.AdminRoleAreaManager
+	user.OutboundCreateEnabled = outboundCreateEnabled != 0
 	user.UpdatedAt = parseTime(updatedAtText)
 	user.AgentIDs, err = s.ListAreaManagerAgentIDs(user.ID)
 	if err != nil {
@@ -350,15 +352,16 @@ func (s *SQLiteStore) loadAreaManagerAdminUser(id int64) (model.AdminUser, bool,
 		return model.AdminUser{}, false, nil
 	}
 	var (
-		user          model.AdminUser
-		enabled       int
-		updatedAtText string
+		user                  model.AdminUser
+		enabled               int
+		outboundCreateEnabled int
+		updatedAtText         string
 	)
 	err := s.db.QueryRow(`
-		SELECT id, username, display_name, enabled, updated_at
+		SELECT id, username, display_name, enabled, outbound_create_enabled, updated_at
 		FROM area_manager_accounts
 		WHERE id = ?
-	`, id).Scan(&user.ID, &user.Username, &user.DisplayName, &enabled, &updatedAtText)
+	`, id).Scan(&user.ID, &user.Username, &user.DisplayName, &enabled, &outboundCreateEnabled, &updatedAtText)
 	if err == sql.ErrNoRows {
 		return model.AdminUser{}, false, nil
 	}
@@ -369,6 +372,7 @@ func (s *SQLiteStore) loadAreaManagerAdminUser(id int64) (model.AdminUser, bool,
 		return model.AdminUser{}, false, nil
 	}
 	user.Role = model.AdminRoleAreaManager
+	user.OutboundCreateEnabled = outboundCreateEnabled != 0
 	user.UpdatedAt = parseTime(updatedAtText)
 	agentIDs, err := s.ListAreaManagerAgentIDs(user.ID)
 	if err != nil {

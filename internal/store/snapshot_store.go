@@ -22,7 +22,7 @@ func (s *SQLiteStore) SaveSnapshot(snapshot model.AgentSnapshot) error {
 	}
 	reportedAt := snapshot.ReportedAt.Format(time.RFC3339Nano)
 
-	body, err := json.Marshal(snapshot)
+	latestBody, err := json.Marshal(snapshot)
 	if err != nil {
 		return fmt.Errorf("marshal snapshot: %w", err)
 	}
@@ -42,8 +42,9 @@ func (s *SQLiteStore) SaveSnapshot(snapshot model.AgentSnapshot) error {
 		INSERT INTO snapshots (
 			agent_id, agent_name, reported_at, hostname, public_ipv4, public_ipv6, cpu, mem_used, mem_total,
 			xray_state, inbound_count, outbound_count, routing_rule_count, nezha_server_id, nezha_server_name,
-			last_collection_err, snapshot_json
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			last_collection_err, disk_used, disk_total, net_traffic_sent, net_traffic_recv, net_traffic_total,
+			net_io_up, net_io_down, history_version, snapshot_json
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		snapshot.AgentID,
 		snapshot.AgentName,
@@ -61,7 +62,15 @@ func (s *SQLiteStore) SaveSnapshot(snapshot model.AgentSnapshot) error {
 		summary.NezhaServerID,
 		summary.NezhaServerName,
 		summary.LastCollectionErr,
-		string(body),
+		summary.DiskUsed,
+		summary.DiskTotal,
+		summary.NetTrafficSent,
+		summary.NetTrafficRecv,
+		summary.NetTrafficTotal,
+		summary.NetIOUp,
+		summary.NetIODown,
+		compactSnapshotHistoryVersion,
+		emptySnapshotHistoryJSON,
 	)
 	if err != nil {
 		return fmt.Errorf("insert snapshot: %w", err)
@@ -107,10 +116,13 @@ func (s *SQLiteStore) SaveSnapshot(snapshot model.AgentSnapshot) error {
 		summary.NezhaServerID,
 		summary.NezhaServerName,
 		summary.LastCollectionErr,
-		string(body),
+		string(latestBody),
 	)
 	if err != nil {
 		return fmt.Errorf("upsert latest snapshot: %w", err)
+	}
+	if err = s.saveSnapshotComponentEventsTx(tx, snapshot); err != nil {
+		return err
 	}
 
 	nowText := time.Now().UTC().Format(time.RFC3339Nano)
@@ -212,40 +224,6 @@ func (s *SQLiteStore) GetLatest(agentID string) (model.AgentSnapshot, bool) {
 		return model.AgentSnapshot{}, false
 	}
 	return snapshot, true
-}
-
-func (s *SQLiteStore) ListHistory(agentID string, limit int) ([]model.AgentSnapshot, error) {
-	query := `
-		SELECT snapshot_json
-		FROM snapshots
-		WHERE agent_id = ?
-		ORDER BY reported_at DESC, id DESC
-	`
-	args := []any{agentID}
-	if limit > 0 {
-		query += ` LIMIT ?`
-		args = append(args, limit)
-	}
-
-	rows, err := s.db.Query(query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("query history: %w", err)
-	}
-	defer rows.Close()
-
-	var snapshots []model.AgentSnapshot
-	for rows.Next() {
-		var body string
-		if err := rows.Scan(&body); err != nil {
-			return nil, fmt.Errorf("scan history row: %w", err)
-		}
-		var snapshot model.AgentSnapshot
-		if err := json.Unmarshal([]byte(body), &snapshot); err != nil {
-			return nil, fmt.Errorf("decode history snapshot: %w", err)
-		}
-		snapshots = append(snapshots, snapshot)
-	}
-	return snapshots, nil
 }
 
 func (s *SQLiteStore) pruneSnapshotHistoryTx(tx *sql.Tx, agentID string, referenceTime time.Time) error {

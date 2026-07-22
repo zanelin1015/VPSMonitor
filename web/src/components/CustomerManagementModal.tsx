@@ -11,6 +11,7 @@ import {
   type AreaBatchAssignmentFormState,
   type AreaManagerAssignmentDraft,
   type AreaManagerFormState,
+  type AreaManagerOutboundGrantDraft,
   type AssignmentFormState,
   type CustomerFormState,
   type ManagementTabKey,
@@ -46,6 +47,7 @@ import {
   nodeKey,
   nodeLabel,
   normalizeAreaManagerAssignmentDrafts,
+  normalizeAreaManagerOutboundGrants,
   realmRuleTargetAgentID,
   renderAssignmentHierarchy,
   revenueCycleLabel,
@@ -111,6 +113,8 @@ export function CustomerManagementModal(props: {
   const [areaBatchOverviewLoading, setAreaBatchOverviewLoading] = useState(false)
   const [areaManagerOverview, setAreaManagerOverview] = useState<XUIOverview | null>(null)
   const [areaManagerOverviewLoading, setAreaManagerOverviewLoading] = useState(false)
+  const [areaManagerOutboundOverview, setAreaManagerOutboundOverview] = useState<XUIOverview | null>(null)
+  const [areaManagerOutboundOverviewLoading, setAreaManagerOutboundOverviewLoading] = useState(false)
   const skipAssignmentResetRef = useRef(false)
 
   const selectedCustomer = customers.find((item) => item.id === selectedCustomerID) || null
@@ -138,9 +142,15 @@ export function CustomerManagementModal(props: {
   const areaBatchClientTreeData = useMemo(() => buildAreaAssignmentTreeData(areaBatchXUIAgentID, areaBatchOverview, agents), [areaBatchXUIAgentID, areaBatchOverview, agents])
   const areaBatchRealmOptions = useMemo(() => buildRealmGrantOptions(areaBatchForm.agent_id, agents), [areaBatchForm.agent_id, agents])
   const areaManagerXUIGrantAgentID = areaManagerForm.xui_grant_agent_id
+  const areaManagerOutboundGrantAgentID = areaManagerForm.outbound_grant_agent_id
   const areaManagerGrantOptions = useMemo(() => buildAssignmentTargetOptions(areaManagerOverview), [areaManagerOverview])
   const areaManagerGrantTreeData = useMemo(() => buildAreaAssignmentTreeData(areaManagerXUIGrantAgentID, areaManagerOverview, agents), [areaManagerXUIGrantAgentID, areaManagerOverview, agents])
   const areaManagerRealmGrantOptions = useMemo(() => buildRealmGrantOptions(areaManagerForm.grant_agent_id, agents), [areaManagerForm.grant_agent_id, agents])
+  const areaManagerOutboundGrantOptions = useMemo(() => (areaManagerOutboundOverview?.outbounds || [])
+    .flatMap((outbound) => outbound.tag ? [{
+      value: outbound.tag,
+      label: [outbound.tag, outbound.protocol].filter(Boolean).join(' / '),
+    }] : []), [areaManagerOutboundOverview])
 
   useEffect(() => {
     if (active) {
@@ -294,6 +304,35 @@ export function CustomerManagementModal(props: {
     }
   }, [areaManagerXUIGrantAgentID])
 
+  useEffect(() => {
+    if (!areaManagerOutboundGrantAgentID) {
+      setAreaManagerOutboundOverview(null)
+      return
+    }
+    let cancelled = false
+    setAreaManagerOutboundOverviewLoading(true)
+    void fetchJSON<XUIOverview>(`/api/v1/agents/${areaManagerOutboundGrantAgentID}/xui/overview?assignment_scope=1`)
+      .then((data) => {
+        if (!cancelled) {
+          setAreaManagerOutboundOverview(data)
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setAreaManagerOutboundOverview(null)
+          message.warning(error instanceof Error ? error.message : '加载 x-ui 出站失败')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setAreaManagerOutboundOverviewLoading(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [areaManagerOutboundGrantAgentID])
+
   const assignmentColumns: ColumnsType<CustomerAssignment> = [
     {
       title: '授权链路名称',
@@ -444,6 +483,16 @@ export function CustomerManagementModal(props: {
       render: (_, record) => record.billing_enabled && Number(record.revenue_amount || 0) > 0
         ? `${record.revenue_currency || 'CNY'} ${Number(record.revenue_amount || 0).toFixed(2)} / ${revenueCycleLabel(record.revenue_cycle)}`
         : <Tag>未统计</Tag>,
+    },
+    {
+      title: '出站权限',
+      width: 180,
+      render: (_, record) => (
+        <Space size={[4, 4]} wrap>
+          <Tag color={record.outbound_create_enabled ? 'green' : 'default'}>{record.outbound_create_enabled ? '允许新增' : '禁止新增'}</Tag>
+          <Tag color={record.outbound_grants?.length ? 'cyan' : 'default'}>{record.outbound_grants?.length || 0} 个已有出站</Tag>
+        </Space>
+      ),
     },
     {
       title: '状态',
@@ -600,13 +649,17 @@ export function CustomerManagementModal(props: {
       return
     }
     const assignments = normalizeAreaManagerAssignmentDrafts(areaManagerForm.assignments)
-    if (!assignments.length) {
-      message.warning('请选择区域账号允许管理的具体节点 / 客户端')
+    const outboundGrants = normalizeAreaManagerOutboundGrants(areaManagerForm.outbound_grants)
+    if (!assignments.length && !outboundGrants.length) {
+      message.warning('请至少授权一个节点 / 客户端或已有出站')
       return
     }
     setSavingAreaManager(true)
     try {
-      const agentIDs = uniqueStrings(assignments.map((assignment) => assignment.agent_id))
+      const agentIDs = uniqueStrings([
+        ...assignments.map((assignment) => assignment.agent_id),
+        ...outboundGrants.map((grant) => grant.agent_id),
+      ])
       const payload = {
         username: areaManagerForm.username.trim(),
         password,
@@ -617,6 +670,8 @@ export function CustomerManagementModal(props: {
         revenue_amount: areaManagerForm.revenue_amount,
         revenue_currency: areaManagerForm.revenue_currency,
         revenue_cycle: areaManagerForm.revenue_cycle,
+        outbound_create_enabled: areaManagerForm.outbound_create_enabled,
+        outbound_grants: outboundGrants,
       }
       if (editingAreaManagerID) {
         const currentManager = areaManagers.find((item) => item.id === editingAreaManagerID)
@@ -776,6 +831,9 @@ export function CustomerManagementModal(props: {
       revenue_cycle: record.revenue_cycle === 'quarter' || record.revenue_cycle === 'year' ? record.revenue_cycle : 'month',
       grant_agent_id: firstRealmAssignmentAgentID(record.assignments || [], agents) || '',
       xui_grant_agent_id: firstXUIAssignmentAgentID(record.assignments || [], agents) || '',
+      outbound_create_enabled: Boolean(record.outbound_create_enabled),
+      outbound_grant_agent_id: record.outbound_grants?.[0]?.agent_id || '',
+      outbound_grants: normalizeAreaManagerOutboundGrants(record.outbound_grants || []),
       assignments: normalizeAreaManagerAssignmentDrafts(record.assignments || []),
     })
     setAreaManagerModalOpen(true)
@@ -1105,6 +1163,31 @@ export function CustomerManagementModal(props: {
     })
   }
 
+  function updateAreaManagerOutboundGrantTargets(tags: string[]) {
+    const agentID = areaManagerOutboundGrantAgentID
+    if (!agentID) {
+      return
+    }
+    const allowedTags = new Set(areaManagerOutboundGrantOptions.map((option) => option.value))
+    const nextForAgent: AreaManagerOutboundGrantDraft[] = tags
+      .filter((tag): tag is string => Boolean(tag) && allowedTags.has(tag))
+      .map((outboundTag) => ({ agent_id: agentID, outbound_tag: outboundTag }))
+    setAreaManagerForm((current) => {
+      const outboundGrants = normalizeAreaManagerOutboundGrants([
+        ...current.outbound_grants.filter((grant) => grant.agent_id !== agentID),
+        ...nextForAgent,
+      ])
+      return {
+        ...current,
+        outbound_grants: outboundGrants,
+        agent_ids: uniqueStrings([
+          ...current.assignments.map((assignment) => assignment.agent_id),
+          ...outboundGrants.map((grant) => grant.agent_id),
+        ]),
+      }
+    })
+  }
+
   async function updateAreaManagerRealmGrantTargets(keys: string[]) {
     const agentID = areaManagerForm.grant_agent_id
     if (!agentID) {
@@ -1180,6 +1263,20 @@ export function CustomerManagementModal(props: {
         ...current,
         assignments,
         agent_ids: uniqueStrings(assignments.map((assignment) => assignment.agent_id)),
+      }
+    })
+  }
+
+  function removeAreaManagerOutboundGrant(agentID: string, outboundTag: string) {
+    setAreaManagerForm((current) => {
+      const outboundGrants = current.outbound_grants.filter((grant) => grant.agent_id !== agentID || grant.outbound_tag !== outboundTag)
+      return {
+        ...current,
+        outbound_grants: outboundGrants,
+        agent_ids: uniqueStrings([
+          ...current.assignments.map((assignment) => assignment.agent_id),
+          ...outboundGrants.map((grant) => grant.agent_id),
+        ]),
       }
     })
   }
@@ -1359,6 +1456,9 @@ export function CustomerManagementModal(props: {
   const selectedAreaManagerXUIKeys = areaManagerForm.assignments
     .filter((assignment) => assignment.agent_id === areaManagerXUIGrantAgentID && !isRealmAssignmentDraft(assignment, agents))
     .map(areaAssignmentKey)
+  const selectedAreaManagerOutboundTags = areaManagerForm.outbound_grants
+    .filter((grant) => grant.agent_id === areaManagerOutboundGrantAgentID)
+    .map((grant) => grant.outbound_tag)
   const selectedCustomerTitle = selectedCustomer ? selectedCustomer.display_name || selectedCustomer.username : '未选择用户'
 
   const accountEditorModals = (
@@ -1376,13 +1476,18 @@ export function CustomerManagementModal(props: {
       areaManagerXUIGrantAgentID={areaManagerXUIGrantAgentID}
       areaManagerOverview={areaManagerOverview}
       areaManagerOverviewLoading={areaManagerOverviewLoading}
+      areaManagerOutboundOverviewLoading={areaManagerOutboundOverviewLoading}
       areaManagerGrantTreeData={areaManagerGrantTreeData}
       areaManagerRealmGrantOptions={areaManagerRealmGrantOptions.map((option) => ({ value: option.value, label: option.label }))}
+      areaManagerOutboundGrantOptions={areaManagerOutboundGrantOptions}
       selectedAreaManagerRealmKeys={selectedAreaManagerRealmKeys}
       selectedAreaManagerXUIKeys={selectedAreaManagerXUIKeys}
+      selectedAreaManagerOutboundTags={selectedAreaManagerOutboundTags}
       onUpdateAreaManagerRealmGrantTargets={(values) => void updateAreaManagerRealmGrantTargets(values)}
       onUpdateAreaManagerGrantTargets={(values) => updateAreaManagerGrantTargets(values)}
+      onUpdateAreaManagerOutboundGrantTargets={updateAreaManagerOutboundGrantTargets}
       onRemoveAreaManagerGrant={removeAreaManagerGrant}
+      onRemoveAreaManagerOutboundGrant={removeAreaManagerOutboundGrant}
       customerCreateModalOpen={customerCreateModalOpen}
       setCustomerCreateModalOpen={setCustomerCreateModalOpen}
       customerCreateForm={customerCreateForm}

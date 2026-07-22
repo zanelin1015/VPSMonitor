@@ -567,6 +567,7 @@ export function XUIActionModal(props: {
   currentOverview: XUIOverview | null
   sourceOverview: XUIOverview | null
   sourceLoading: boolean
+  allowCreateOutbound?: boolean
   onClose: () => void
   onSubmit: () => void
   onActionKindChange: (kind: string) => void
@@ -587,6 +588,7 @@ export function XUIActionModal(props: {
     currentOverview,
     sourceOverview,
     sourceLoading,
+    allowCreateOutbound = true,
     onClose,
     onSubmit,
     onActionKindChange,
@@ -640,6 +642,7 @@ export function XUIActionModal(props: {
               outbounds: currentOverview?.outbounds || [],
               balancers: currentOverview?.balancers || [],
               rules: currentOverview?.routing_rules || [],
+              allowCreateOutbound,
               onChange: onRoutingFormChange,
               onOutboundChange: onOutboundFormChange,
             })

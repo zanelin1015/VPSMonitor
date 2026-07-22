@@ -3,6 +3,7 @@ package server
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
 	"bridge-core/internal/model"
 	"bridge-core/internal/store"
@@ -160,6 +161,101 @@ func TestAreaManagerXUIActionAllowedIncludesAddClient(t *testing.T) {
 		Kind: model.XUIActionExecuteCommand,
 	}) {
 		t.Fatal("expected remote command to remain root-only")
+	}
+}
+
+func TestAreaManagerXUIActionEnforcesOutboundScope(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "agent-1", AgentName: "Agent 1"}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	enabled := true
+	manager, err := sqliteStore.CreateAreaManager(model.AreaManagerAccountRequest{
+		Username:              "outbound-area",
+		Password:              "password123",
+		Enabled:               &enabled,
+		OutboundCreateEnabled: &enabled,
+		OutboundGrants: []model.AreaManagerOutboundGrantRequest{
+			{AgentID: "agent-1", OutboundTag: "allowed-out"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateAreaManager: %v", err)
+	}
+	app := &App{store: sqliteStore}
+	if err := sqliteStore.SaveSnapshot(model.AgentSnapshot{
+		AgentID:    "agent-1",
+		ReportedAt: time.Now().UTC(),
+		XUI: &model.XUISnapshot{
+			Outbounds: []map[string]any{{"tag": "hidden-out", "protocol": "freedom"}},
+		},
+	}); err != nil {
+		t.Fatalf("SaveSnapshot: %v", err)
+	}
+	user := model.AdminUser{
+		ID:                    manager.ID,
+		Role:                  model.AdminRoleAreaManager,
+		AgentIDs:              []string{"agent-1"},
+		OutboundCreateEnabled: true,
+	}
+
+	if !app.areaManagerXUIActionAllowed(user, "agent-1", model.XUIActionRequest{
+		Kind: model.XUIActionUpsertRoutingRule,
+		Payload: map[string]any{
+			"rule": map[string]any{"type": "field", "outboundTag": "allowed-out"},
+		},
+	}) {
+		t.Fatal("expected granted outbound to be usable")
+	}
+	if app.areaManagerXUIActionAllowed(user, "agent-1", model.XUIActionRequest{
+		Kind: model.XUIActionUpsertRoutingRule,
+		Payload: map[string]any{
+			"rule": map[string]any{"type": "field", "outboundTag": "hidden-out"},
+		},
+	}) {
+		t.Fatal("expected ungranted outbound to be rejected")
+	}
+	if app.areaManagerXUIActionAllowed(user, "agent-1", model.XUIActionRequest{
+		Kind: model.XUIActionUpsertRoutingRule,
+		Payload: map[string]any{
+			"rule":     map[string]any{"type": "field", "outboundTag": "hidden-out"},
+			"outbound": map[string]any{"tag": "hidden-out", "protocol": "freedom"},
+		},
+	}) {
+		t.Fatal("expected create permission not to overwrite an existing ungranted outbound")
+	}
+	if app.areaManagerXUIActionAllowed(user, "agent-1", model.XUIActionRequest{
+		Kind: model.XUIActionUpsertRoutingRule,
+		Payload: map[string]any{
+			"previous_outbound_tag": "hidden-out",
+			"rule":                  map[string]any{"type": "field", "outboundTag": "new-out"},
+			"outbound":              map[string]any{"tag": "new-out", "protocol": "freedom"},
+		},
+	}) {
+		t.Fatal("expected an ungranted previous outbound tag to be rejected")
+	}
+	if app.areaManagerXUIActionAllowed(user, "agent-1", model.XUIActionRequest{
+		Kind: model.XUIActionUpsertRoutingRule,
+		Payload: map[string]any{
+			"rule": map[string]any{"type": "field", "balancerTag": "hidden-balancer"},
+		},
+	}) {
+		t.Fatal("expected unscoped balancer to be rejected")
+	}
+	createPayload := map[string]any{
+		"rule":     map[string]any{"type": "field", "outboundTag": "new-out"},
+		"outbound": map[string]any{"tag": "new-out", "protocol": "freedom"},
+	}
+	if !app.areaManagerXUIActionAllowed(user, "agent-1", model.XUIActionRequest{Kind: model.XUIActionUpsertRoutingRule, Payload: createPayload}) {
+		t.Fatal("expected outbound creation to be allowed when enabled")
+	}
+	user.OutboundCreateEnabled = false
+	if app.areaManagerXUIActionAllowed(user, "agent-1", model.XUIActionRequest{Kind: model.XUIActionUpsertRoutingRule, Payload: createPayload}) {
+		t.Fatal("expected outbound creation to be rejected when disabled")
 	}
 }
 

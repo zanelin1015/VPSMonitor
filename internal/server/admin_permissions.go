@@ -206,7 +206,10 @@ func (a *App) sanitizeXUIOverviewForAdmin(user model.AdminUser, overview *model.
 	}
 	overview.Nodes = filteredNodes
 	overview.NodeCount = len(filteredNodes)
-	overview.RoutingRules = filterRoutingRulesForAreaManager(overview.RoutingRules, overview.AgentID, filteredClients, filteredNodes, clientScope)
+	outboundScope := a.areaManagerOutboundScope(user)
+	overview.Outbounds = filterOutboundsForAreaManager(overview.Outbounds, overview.AgentID, outboundScope)
+	overview.Balancers = nil
+	overview.RoutingRules = filterRoutingRulesForAreaManager(overview.RoutingRules, overview.AgentID, filteredClients, filteredNodes, clientScope, outboundScope)
 	for index := range overview.Outbounds {
 		overview.Outbounds[index].Address = redactEndpointIP(overview.Outbounds[index].Address)
 		overview.Outbounds[index].Target = redactEndpointIP(overview.Outbounds[index].Target)
@@ -214,7 +217,17 @@ func (a *App) sanitizeXUIOverviewForAdmin(user model.AdminUser, overview *model.
 	}
 }
 
-func filterRoutingRulesForAreaManager(rules []model.XUIRoutingRuleView, agentID string, visibleClients []model.XUIClientView, visibleNodes []model.XUINodeView, clientScope areaManagerClientScope) []model.XUIRoutingRuleView {
+func filterOutboundsForAreaManager(outbounds []model.XUIOutboundView, agentID string, scope areaManagerOutboundScope) []model.XUIOutboundView {
+	filtered := make([]model.XUIOutboundView, 0, len(outbounds))
+	for _, outbound := range outbounds {
+		if scope.allows(agentID, outbound.Tag) {
+			filtered = append(filtered, outbound)
+		}
+	}
+	return filtered
+}
+
+func filterRoutingRulesForAreaManager(rules []model.XUIRoutingRuleView, agentID string, visibleClients []model.XUIClientView, visibleNodes []model.XUINodeView, clientScope areaManagerClientScope, outboundScope areaManagerOutboundScope) []model.XUIRoutingRuleView {
 	if len(rules) == 0 {
 		return rules
 	}
@@ -240,6 +253,9 @@ func filterRoutingRulesForAreaManager(rules []model.XUIRoutingRuleView, agentID 
 	filtered := make([]model.XUIRoutingRuleView, 0, len(rules))
 	for _, rule := range rules {
 		next := rule
+		if next.BalancerTag != "" || !outboundScope.allows(agentID, next.OutboundTag) {
+			continue
+		}
 		if len(next.Users) > 0 {
 			next.Users = filterStringsBySet(next.Users, allowedUsers)
 			if len(next.Users) == 0 {
@@ -317,6 +333,9 @@ func (a *App) sanitizeXUIOverviewForAreaAssignment(user model.AdminUser, overvie
 		overview.Nodes[index].AllTime = 0
 	}
 	overview.NodeCount = len(overview.Nodes)
+	outboundScope := a.areaManagerOutboundScope(user)
+	overview.Outbounds = filterOutboundsForAreaManager(overview.Outbounds, overview.AgentID, outboundScope)
+	overview.Balancers = nil
 	for index := range overview.Outbounds {
 		overview.Outbounds[index].Address = redactEndpointIP(overview.Outbounds[index].Address)
 		overview.Outbounds[index].Target = redactEndpointIP(overview.Outbounds[index].Target)
@@ -482,6 +501,37 @@ type areaManagerClientScope struct {
 	inbounds     map[string]struct{}
 	realmPorts   map[string]struct{}
 	agents       map[string]struct{}
+}
+
+type areaManagerOutboundScope struct {
+	tags map[string]struct{}
+}
+
+func (a *App) areaManagerOutboundScope(user model.AdminUser) areaManagerOutboundScope {
+	scope := areaManagerOutboundScope{tags: make(map[string]struct{})}
+	if !isAreaManager(user) || user.ID <= 0 || a == nil || a.store == nil {
+		return scope
+	}
+	grants, err := a.store.ListAreaManagerOutboundGrants(user.ID)
+	if err != nil {
+		return scope
+	}
+	for _, grant := range grants {
+		scope.tags[outboundGrantKey(grant.AgentID, grant.OutboundTag)] = struct{}{}
+	}
+	return scope
+}
+
+func (s areaManagerOutboundScope) allows(agentID, outboundTag string) bool {
+	if strings.TrimSpace(agentID) == "" || strings.TrimSpace(outboundTag) == "" {
+		return false
+	}
+	_, ok := s.tags[outboundGrantKey(agentID, outboundTag)]
+	return ok
+}
+
+func outboundGrantKey(agentID, outboundTag string) string {
+	return strings.TrimSpace(agentID) + "\x00" + strings.TrimSpace(outboundTag)
 }
 
 func (a *App) areaManagerClientScope(user model.AdminUser) areaManagerClientScope {
@@ -977,7 +1027,9 @@ func (a *App) areaManagerXUIActionAllowed(user model.AdminUser, agentID string, 
 	}
 	switch strings.TrimSpace(req.Kind) {
 	case model.XUIActionAddRoutingRule, model.XUIActionUpsertRoutingRule:
-		return true
+		return a.areaManagerRoutingPayloadAllowed(user, agentID, req.Payload)
+	case model.XUIActionAddOutbound:
+		return a.areaManagerCanUpsertOutbound(user, agentID, outboundTagFromPayload(req.Payload))
 	case model.XUIActionAddClient:
 		return a.areaManagerAddClientPayloadAllowed(user, agentID, req.Payload)
 	case model.XUIActionSetClientEnabled, model.XUIActionDeleteClient:
@@ -985,6 +1037,70 @@ func (a *App) areaManagerXUIActionAllowed(user model.AdminUser, agentID string, 
 	default:
 		return false
 	}
+}
+
+func (a *App) areaManagerRoutingPayloadAllowed(user model.AdminUser, agentID string, payload map[string]any) bool {
+	if payload == nil {
+		return false
+	}
+	rule, ok := payload["rule"].(map[string]any)
+	if !ok || rule == nil || strings.TrimSpace(stringFromAny(rule["balancerTag"])) != "" {
+		return false
+	}
+	outboundTag := strings.TrimSpace(stringFromAny(rule["outboundTag"]))
+	if outboundTag == "" {
+		return false
+	}
+	outboundScope := a.areaManagerOutboundScope(user)
+	previousTag := strings.TrimSpace(firstNonEmptyString(
+		stringFromAny(payload["previous_outbound_tag"]),
+		stringFromAny(payload["old_outbound_tag"]),
+	))
+	if previousTag != "" && !outboundScope.allows(agentID, previousTag) {
+		return false
+	}
+	if createdTag := outboundTagFromPayload(payload); createdTag != "" {
+		return createdTag == outboundTag && a.areaManagerCanUpsertOutbound(user, agentID, createdTag)
+	}
+	return outboundScope.allows(agentID, outboundTag)
+}
+
+func (a *App) areaManagerCanUpsertOutbound(user model.AdminUser, agentID, outboundTag string) bool {
+	outboundTag = strings.TrimSpace(outboundTag)
+	if !user.OutboundCreateEnabled || outboundTag == "" {
+		return false
+	}
+	if !a.xuiOutboundTagExists(agentID, outboundTag) {
+		return true
+	}
+	return a.areaManagerOutboundScope(user).allows(agentID, outboundTag)
+}
+
+func (a *App) xuiOutboundTagExists(agentID, outboundTag string) bool {
+	if a == nil || a.store == nil {
+		return false
+	}
+	snapshot, ok := a.store.GetLatest(strings.TrimSpace(agentID))
+	if !ok || snapshot.XUI == nil {
+		return false
+	}
+	for _, outbound := range snapshot.XUI.Outbounds {
+		if strings.TrimSpace(stringFromAny(outbound["tag"])) == strings.TrimSpace(outboundTag) {
+			return true
+		}
+	}
+	return false
+}
+
+func outboundTagFromPayload(payload map[string]any) string {
+	if payload == nil {
+		return ""
+	}
+	outbound, ok := payload["outbound"].(map[string]any)
+	if !ok || outbound == nil {
+		return ""
+	}
+	return strings.TrimSpace(stringFromAny(outbound["tag"]))
 }
 
 func (a *App) areaManagerAddClientPayloadAllowed(user model.AdminUser, agentID string, payload map[string]any) bool {

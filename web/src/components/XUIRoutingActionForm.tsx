@@ -19,6 +19,7 @@ export function renderRoutingActionForm(props: {
   outbounds: { tag?: string }[]
   balancers: XUIBalancerView[]
   rules: XUIRoutingRuleView[]
+  allowCreateOutbound?: boolean
   onChange: (form: XUIRoutingActionForm) => void
   onOutboundChange: (form: XUIOutboundActionForm) => void
 }) {
@@ -35,6 +36,7 @@ export function renderRoutingActionForm(props: {
     outbounds,
     balancers,
     rules,
+    allowCreateOutbound = true,
     onChange,
     onOutboundChange,
   } = props
@@ -105,7 +107,7 @@ export function renderRoutingActionForm(props: {
               value={form.target_mode}
               options={[
                 { value: 'existing_outbound', label: '已存在出站规则' },
-                { value: 'registered_client', label: '新增 / 复用出站（Client / 链接库）' },
+                ...(allowCreateOutbound ? [{ value: 'registered_client' as const, label: '新增 / 复用出站（Client / 链接库）' }] : []),
               ]}
               onChange={(value: XUIRoutingActionForm['target_mode']) =>
                 update({

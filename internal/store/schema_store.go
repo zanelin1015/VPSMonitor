@@ -93,6 +93,17 @@ func (s *SQLiteStore) init() error {
 		);
 		`,
 		`
+		CREATE TABLE IF NOT EXISTS area_manager_outbound_grants (
+			manager_id INTEGER NOT NULL,
+			agent_id TEXT NOT NULL,
+			outbound_tag TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			PRIMARY KEY(manager_id, agent_id, outbound_tag),
+			FOREIGN KEY(manager_id) REFERENCES area_manager_accounts(id) ON DELETE CASCADE,
+			FOREIGN KEY(agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE
+		);
+		`,
+		`
 		CREATE TABLE IF NOT EXISTS customer_accounts (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			username TEXT NOT NULL COLLATE NOCASE UNIQUE,
@@ -195,7 +206,25 @@ func (s *SQLiteStore) init() error {
 			nezha_server_id INTEGER NOT NULL DEFAULT 0,
 			nezha_server_name TEXT NOT NULL DEFAULT '',
 			last_collection_err TEXT NOT NULL DEFAULT '',
+			disk_used INTEGER,
+			disk_total INTEGER,
+			net_traffic_sent INTEGER,
+			net_traffic_recv INTEGER,
+			net_traffic_total INTEGER,
+			net_io_up INTEGER,
+			net_io_down INTEGER,
+			history_version INTEGER,
 			snapshot_json TEXT NOT NULL
+		);
+		`,
+		`
+		CREATE TABLE IF NOT EXISTS snapshot_component_events (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			agent_id TEXT NOT NULL,
+			component TEXT NOT NULL,
+			observed_at TEXT NOT NULL,
+			content_hash TEXT NOT NULL,
+			payload_json TEXT NOT NULL
 		);
 		`,
 		`
@@ -337,13 +366,35 @@ func (s *SQLiteStore) init() error {
 	if err := s.ensureColumn("area_manager_accounts", "revenue_cycle", "TEXT NOT NULL DEFAULT 'month'"); err != nil {
 		return err
 	}
+	if err := s.ensureColumn("area_manager_accounts", "outbound_create_enabled", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	for _, column := range []struct {
+		name       string
+		definition string
+	}{
+		{name: "disk_used", definition: "INTEGER"},
+		{name: "disk_total", definition: "INTEGER"},
+		{name: "net_traffic_sent", definition: "INTEGER"},
+		{name: "net_traffic_recv", definition: "INTEGER"},
+		{name: "net_traffic_total", definition: "INTEGER"},
+		{name: "net_io_up", definition: "INTEGER"},
+		{name: "net_io_down", definition: "INTEGER"},
+		{name: "history_version", definition: "INTEGER"},
+	} {
+		if err := s.ensureColumn("snapshots", column.name, column.definition); err != nil {
+			return err
+		}
+	}
 	indexes := []string{
 		`CREATE INDEX IF NOT EXISTS idx_snapshots_agent_reported_at ON snapshots(agent_id, reported_at DESC, id DESC);`,
+		`CREATE INDEX IF NOT EXISTS idx_snapshot_component_events_agent_component ON snapshot_component_events(agent_id, component, id DESC);`,
 		`CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires_at ON admin_sessions(expires_at);`,
 		`CREATE INDEX IF NOT EXISTS idx_area_manager_agents_agent ON area_manager_agents(agent_id, manager_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_area_manager_agent_tags_agent ON area_manager_agent_tags(agent_id, manager_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_area_manager_assignments_manager ON area_manager_assignments(manager_id, enabled, id);`,
 		`CREATE INDEX IF NOT EXISTS idx_area_manager_assignments_agent ON area_manager_assignments(agent_id, inbound_id, client_email);`,
+		`CREATE INDEX IF NOT EXISTS idx_area_manager_outbound_grants_agent ON area_manager_outbound_grants(agent_id, outbound_tag, manager_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_accounts_owner ON customer_accounts(owner_type, owner_id, id);`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_accounts_subscription_token ON customer_accounts(subscription_token) WHERE subscription_token <> '';`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_sessions_expires_at ON customer_sessions(expires_at);`,

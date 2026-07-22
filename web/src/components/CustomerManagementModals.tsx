@@ -33,13 +33,18 @@ export interface CustomerManagementModalsProps {
   areaManagerXUIGrantAgentID: string
   areaManagerOverview: XUIOverview | null
   areaManagerOverviewLoading: boolean
+  areaManagerOutboundOverviewLoading: boolean
   areaManagerGrantTreeData: TreeSelectProps['treeData']
   areaManagerRealmGrantOptions: Array<{ value: string; label: string }>
+  areaManagerOutboundGrantOptions: Array<{ value: string; label: string }>
   selectedAreaManagerRealmKeys: string[]
   selectedAreaManagerXUIKeys: string[]
+  selectedAreaManagerOutboundTags: string[]
   onUpdateAreaManagerRealmGrantTargets: (values: string[]) => void
   onUpdateAreaManagerGrantTargets: (values: string[]) => void
+  onUpdateAreaManagerOutboundGrantTargets: (values: string[]) => void
   onRemoveAreaManagerGrant: (key: string) => void
+  onRemoveAreaManagerOutboundGrant: (agentID: string, outboundTag: string) => void
 
   customerCreateModalOpen: boolean
   setCustomerCreateModalOpen: Dispatch<SetStateAction<boolean>>
@@ -81,13 +86,18 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
     areaManagerXUIGrantAgentID,
     areaManagerOverview,
     areaManagerOverviewLoading,
+    areaManagerOutboundOverviewLoading,
     areaManagerGrantTreeData,
     areaManagerRealmGrantOptions,
+    areaManagerOutboundGrantOptions,
     selectedAreaManagerRealmKeys,
     selectedAreaManagerXUIKeys,
+    selectedAreaManagerOutboundTags,
     onUpdateAreaManagerRealmGrantTargets,
     onUpdateAreaManagerGrantTargets,
+    onUpdateAreaManagerOutboundGrantTargets,
     onRemoveAreaManagerGrant,
+    onRemoveAreaManagerOutboundGrant,
     customerCreateModalOpen,
     setCustomerCreateModalOpen,
     customerCreateForm,
@@ -127,7 +137,8 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
               </Button>
             </Space>
           )}
-          width={860}
+          width={920}
+          styles={{ body: { maxHeight: 'calc(100vh - 190px)', overflowY: 'auto', paddingRight: 6 } }}
           destroyOnClose
         >
           <Row gutter={[12, 12]}>
@@ -271,10 +282,76 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
                 onChange={(values) => onUpdateAreaManagerGrantTargets(values as string[])}
               />
             </Col>
+            <Col xs={24} md={12}>
+              <Text type="secondary">出站规则 Client</Text>
+              <Select
+                style={{ width: '100%' }}
+                showSearch
+                placeholder="选择需要授权出站的 Client"
+                options={agentOptions}
+                value={areaManagerForm.outbound_grant_agent_id || undefined}
+                optionFilterProp="label"
+                onChange={(value) => setAreaManagerForm((current) => ({ ...current, outbound_grant_agent_id: value }))}
+              />
+            </Col>
+            <Col xs={24} md={12}>
+              <Text type="secondary">新增出站权限</Text>
+              <div className="customer-admin-switch-row">
+                <Switch
+                  checked={areaManagerForm.outbound_create_enabled}
+                  onChange={(checked) => setAreaManagerForm((current) => ({ ...current, outbound_create_enabled: checked }))}
+                />
+                <Text>{areaManagerForm.outbound_create_enabled ? '允许新增' : '仅可使用已授权出站'}</Text>
+              </div>
+            </Col>
+            <Col xs={24}>
+              <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                <Text type="secondary">已有出站规则授权</Text>
+                <Button
+                  size="small"
+                  disabled={!areaManagerForm.outbound_grant_agent_id || !areaManagerOutboundGrantOptions.length}
+                  onClick={() => onUpdateAreaManagerOutboundGrantTargets(areaManagerOutboundGrantOptions.map((option) => option.value))}
+                >
+                  全选
+                </Button>
+              </Space>
+              <Select
+                mode="multiple"
+                style={{ width: '100%' }}
+                showSearch
+                placeholder="选择区域账号可使用的 Outbound Tag"
+                value={selectedAreaManagerOutboundTags}
+                options={areaManagerOutboundGrantOptions}
+                optionFilterProp="label"
+                loading={areaManagerOutboundOverviewLoading}
+                disabled={!areaManagerForm.outbound_grant_agent_id}
+                maxTagCount="responsive"
+                onChange={onUpdateAreaManagerOutboundGrantTargets}
+              />
+            </Col>
             <Col xs={24}>
               <Text type="secondary">已授权范围</Text>
               <div style={{ marginTop: 6 }}>
                 {areaManagerForm.assignments.length ? renderAssignmentHierarchy(areaManagerForm.assignments, agents, onRemoveAreaManagerGrant) : <Tag>未选择节点</Tag>}
+              </div>
+            </Col>
+            <Col xs={24}>
+              <Text type="secondary">已授权出站</Text>
+              <div style={{ marginTop: 6 }}>
+                {areaManagerForm.outbound_grants.length ? (
+                  <Space wrap size={[6, 6]}>
+                    {areaManagerForm.outbound_grants.map((grant) => (
+                      <Tag
+                        key={`${grant.agent_id}::${grant.outbound_tag}`}
+                        color="cyan"
+                        closable
+                        onClose={() => onRemoveAreaManagerOutboundGrant(grant.agent_id, grant.outbound_tag)}
+                      >
+                        {(agents.find((agent) => agent.agent_id === grant.agent_id)?.agent_name || grant.agent_id)} / {grant.outbound_tag}
+                      </Tag>
+                    ))}
+                  </Space>
+                ) : <Tag>未授权出站</Tag>}
               </div>
             </Col>
           </Row>

@@ -1,6 +1,6 @@
 import { Space, Tag, Typography } from 'antd'
 
-import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, DashboardAgentView, RealmForwardRule, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
+import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, AreaManagerOutboundGrant, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, DashboardAgentView, RealmForwardRule, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
 
 const { Text } = Typography
 
@@ -38,6 +38,11 @@ export interface AreaManagerAssignmentDraft {
   enabled: boolean
 }
 
+export interface AreaManagerOutboundGrantDraft {
+  agent_id: string
+  outbound_tag: string
+}
+
 export interface AreaManagerFormState {
   username: string
   password: string
@@ -50,6 +55,9 @@ export interface AreaManagerFormState {
   revenue_cycle: 'month' | 'quarter' | 'year'
   grant_agent_id: string
   xui_grant_agent_id: string
+  outbound_create_enabled: boolean
+  outbound_grant_agent_id: string
+  outbound_grants: AreaManagerOutboundGrantDraft[]
   assignments: AreaManagerAssignmentDraft[]
 }
 
@@ -94,6 +102,9 @@ export const emptyAreaManagerForm: AreaManagerFormState = {
   revenue_cycle: 'month',
   grant_agent_id: '',
   xui_grant_agent_id: '',
+  outbound_create_enabled: false,
+  outbound_grant_agent_id: '',
+  outbound_grants: [],
   assignments: [],
 }
 
@@ -407,6 +418,31 @@ export function dedupeAreaManagerAssignmentDrafts(items: AreaManagerAssignmentDr
     }
     seen.add(key)
     result.push(item)
+  }
+  return result
+}
+
+export function areaOutboundGrantKey(item: { agent_id: string; outbound_tag: string }): string {
+  return `${encodeURIComponent(item.agent_id || '')}::${encodeURIComponent(item.outbound_tag || '')}`
+}
+
+export function normalizeAreaManagerOutboundGrants(items: Array<AreaManagerOutboundGrant | AreaManagerOutboundGrantDraft>): AreaManagerOutboundGrantDraft[] {
+  const result: AreaManagerOutboundGrantDraft[] = []
+  const seen = new Set<string>()
+  for (const item of items || []) {
+    const grant = {
+      agent_id: (item.agent_id || '').trim(),
+      outbound_tag: (item.outbound_tag || '').trim(),
+    }
+    if (!grant.agent_id || !grant.outbound_tag) {
+      continue
+    }
+    const key = areaOutboundGrantKey(grant)
+    if (seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    result.push(grant)
   }
   return result
 }

@@ -9,13 +9,14 @@ const (
 )
 
 type AdminUser struct {
-	ID          int64     `json:"id,omitempty"`
-	Username    string    `json:"username"`
-	DisplayName string    `json:"display_name,omitempty"`
-	AvatarURL   string    `json:"avatar_url,omitempty"`
-	Role        string    `json:"role,omitempty"`
-	AgentIDs    []string  `json:"agent_ids,omitempty"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID                    int64     `json:"id,omitempty"`
+	Username              string    `json:"username"`
+	DisplayName           string    `json:"display_name,omitempty"`
+	AvatarURL             string    `json:"avatar_url,omitempty"`
+	Role                  string    `json:"role,omitempty"`
+	AgentIDs              []string  `json:"agent_ids,omitempty"`
+	OutboundCreateEnabled bool      `json:"outbound_create_enabled,omitempty"`
+	UpdatedAt             time.Time `json:"updated_at"`
 }
 
 type AdminSession struct {
@@ -51,15 +52,29 @@ type AdminAccountUpdateRequest struct {
 }
 
 type AreaManagerAccountRequest struct {
-	Username        string   `json:"username"`
-	Password        string   `json:"password,omitempty"`
-	DisplayName     string   `json:"display_name,omitempty"`
-	Enabled         *bool    `json:"enabled,omitempty"`
-	AgentIDs        []string `json:"agent_ids,omitempty"`
-	BillingEnabled  *bool    `json:"billing_enabled,omitempty"`
-	RevenueAmount   *float64 `json:"revenue_amount,omitempty"`
-	RevenueCurrency string   `json:"revenue_currency,omitempty"`
-	RevenueCycle    string   `json:"revenue_cycle,omitempty"`
+	Username              string                            `json:"username"`
+	Password              string                            `json:"password,omitempty"`
+	DisplayName           string                            `json:"display_name,omitempty"`
+	Enabled               *bool                             `json:"enabled,omitempty"`
+	AgentIDs              []string                          `json:"agent_ids,omitempty"`
+	BillingEnabled        *bool                             `json:"billing_enabled,omitempty"`
+	RevenueAmount         *float64                          `json:"revenue_amount,omitempty"`
+	RevenueCurrency       string                            `json:"revenue_currency,omitempty"`
+	RevenueCycle          string                            `json:"revenue_cycle,omitempty"`
+	OutboundCreateEnabled *bool                             `json:"outbound_create_enabled,omitempty"`
+	OutboundGrants        []AreaManagerOutboundGrantRequest `json:"outbound_grants,omitempty"`
+}
+
+type AreaManagerOutboundGrantRequest struct {
+	AgentID     string `json:"agent_id"`
+	OutboundTag string `json:"outbound_tag"`
+}
+
+type AreaManagerOutboundGrant struct {
+	ManagerID   int64     `json:"manager_id"`
+	AgentID     string    `json:"agent_id"`
+	OutboundTag string    `json:"outbound_tag"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 type AreaManagerAssignment struct {
@@ -89,19 +104,21 @@ type AreaManagerAssignmentBatchRequest struct {
 }
 
 type AreaManagerAdminView struct {
-	ID              int64                   `json:"id"`
-	Username        string                  `json:"username"`
-	DisplayName     string                  `json:"display_name,omitempty"`
-	Enabled         bool                    `json:"enabled"`
-	AgentIDs        []string                `json:"agent_ids,omitempty"`
-	BillingEnabled  bool                    `json:"billing_enabled"`
-	RevenueAmount   float64                 `json:"revenue_amount,omitempty"`
-	RevenueCurrency string                  `json:"revenue_currency,omitempty"`
-	RevenueCycle    string                  `json:"revenue_cycle,omitempty"`
-	Assignments     []AreaManagerAssignment `json:"assignments,omitempty"`
-	Customers       []CustomerAdminView     `json:"customers,omitempty"`
-	CreatedAt       time.Time               `json:"created_at"`
-	UpdatedAt       time.Time               `json:"updated_at"`
+	ID                    int64                      `json:"id"`
+	Username              string                     `json:"username"`
+	DisplayName           string                     `json:"display_name,omitempty"`
+	Enabled               bool                       `json:"enabled"`
+	AgentIDs              []string                   `json:"agent_ids,omitempty"`
+	BillingEnabled        bool                       `json:"billing_enabled"`
+	RevenueAmount         float64                    `json:"revenue_amount,omitempty"`
+	RevenueCurrency       string                     `json:"revenue_currency,omitempty"`
+	RevenueCycle          string                     `json:"revenue_cycle,omitempty"`
+	OutboundCreateEnabled bool                       `json:"outbound_create_enabled"`
+	OutboundGrants        []AreaManagerOutboundGrant `json:"outbound_grants,omitempty"`
+	Assignments           []AreaManagerAssignment    `json:"assignments,omitempty"`
+	Customers             []CustomerAdminView        `json:"customers,omitempty"`
+	CreatedAt             time.Time                  `json:"created_at"`
+	UpdatedAt             time.Time                  `json:"updated_at"`
 }
 
 type ClientInstallInfo struct {

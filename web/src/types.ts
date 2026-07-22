@@ -254,6 +254,7 @@ export interface AdminUser {
   avatar_url?: string
   role?: 'admin' | 'area_manager'
   agent_ids?: string[]
+  outbound_create_enabled?: boolean
   updated_at: string
 }
 
@@ -305,6 +306,13 @@ export interface AreaManagerAssignment {
   updated_at: string
 }
 
+export interface AreaManagerOutboundGrant {
+  manager_id: number
+  agent_id: string
+  outbound_tag: string
+  created_at: string
+}
+
 export interface CustomerAssignmentDraft {
   agent_id: string
   inbound_id: number
@@ -331,6 +339,8 @@ export interface AreaManagerAdminView {
   revenue_amount?: number
   revenue_currency?: 'CNY' | 'USDT'
   revenue_cycle?: 'month' | 'quarter' | 'year'
+  outbound_create_enabled?: boolean
+  outbound_grants?: AreaManagerOutboundGrant[]
   assignments?: AreaManagerAssignment[]
   customers?: CustomerAdminView[]
   created_at: string

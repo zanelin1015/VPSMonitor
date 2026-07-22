@@ -232,6 +232,56 @@ func TestSQLiteStoreAreaManagersIncludeOwnedCustomersAndAssignments(t *testing.T
 	}
 }
 
+func TestSQLiteStoreAreaManagerOutboundGrantsAndCreatePermission(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	if _, err := store.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK"}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	if err := store.EnsureAdminAccount("admin", "admin-password"); err != nil {
+		t.Fatalf("EnsureAdminAccount: %v", err)
+	}
+	enabled := true
+	manager, err := store.CreateAreaManager(model.AreaManagerAccountRequest{
+		Username:              "outbound-manager",
+		Password:              "password123",
+		Enabled:               &enabled,
+		OutboundCreateEnabled: &enabled,
+		OutboundGrants: []model.AreaManagerOutboundGrantRequest{
+			{AgentID: "hk", OutboundTag: "relay-vn"},
+			{AgentID: "hk", OutboundTag: "relay-vn"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateAreaManager: %v", err)
+	}
+	if !manager.OutboundCreateEnabled || len(manager.OutboundGrants) != 1 || manager.OutboundGrants[0].OutboundTag != "relay-vn" {
+		t.Fatalf("unexpected outbound permissions: %#v", manager)
+	}
+	if len(manager.AgentIDs) != 1 || manager.AgentIDs[0] != "hk" {
+		t.Fatalf("expected outbound grant agent to be assigned, got %#v", manager.AgentIDs)
+	}
+	user, ok, err := store.AuthenticateAdmin("outbound-manager", "password123")
+	if err != nil || !ok || !user.OutboundCreateEnabled {
+		t.Fatalf("expected login to include outbound create permission, ok=%v err=%v user=%#v", ok, err, user)
+	}
+
+	disabled := false
+	updated, err := store.UpdateAreaManager(manager.ID, model.AreaManagerAccountRequest{
+		OutboundCreateEnabled: &disabled,
+		OutboundGrants:        []model.AreaManagerOutboundGrantRequest{},
+	})
+	if err != nil {
+		t.Fatalf("UpdateAreaManager: %v", err)
+	}
+	if updated.OutboundCreateEnabled || len(updated.OutboundGrants) != 0 {
+		t.Fatalf("expected outbound permissions to be cleared, got %#v", updated)
+	}
+}
+
 func sqliteColumnExists(t *testing.T, db *sql.DB, tableName string, columnName string) bool {
 	t.Helper()
 	rows, err := db.Query(`PRAGMA table_info(` + tableName + `)`)

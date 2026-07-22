@@ -392,6 +392,10 @@ func TestAreaManagerXUIOverviewFiltersUnassignedClients(t *testing.T) {
 		Password: "password123",
 		Enabled:  &enabled,
 		AgentIDs: []string{"hk"},
+		OutboundGrants: []model.AreaManagerOutboundGrantRequest{
+			{AgentID: "hk", OutboundTag: "assigned-out"},
+			{AgentID: "hk", OutboundTag: "mixed-out"},
+		},
 	})
 	if err != nil {
 		t.Fatalf("CreateAreaManager: %v", err)
@@ -441,6 +445,11 @@ func TestAreaManagerXUIOverviewFiltersUnassignedClients(t *testing.T) {
 			{InboundID: 1001, InboundTag: "HK:20001", Email: "hidden@example.com"},
 			{InboundID: 1002, InboundTag: "HK:20002", Email: "other@example.com"},
 		},
+		Outbounds: []model.XUIOutboundView{
+			{Tag: "assigned-out", Address: "203.0.113.10"},
+			{Tag: "mixed-out", Address: "203.0.113.11"},
+			{Tag: "hidden-out", Address: "203.0.113.12"},
+		},
 		RoutingRules: []model.XUIRoutingRuleView{
 			{Index: 1, Users: []string{"assigned@example.com"}, OutboundTag: "assigned-out", Summary: "user=assigned@example.com | outbound=assigned-out"},
 			{Index: 2, Users: []string{"hidden@example.com"}, OutboundTag: "hidden-out", Summary: "user=hidden@example.com | outbound=hidden-out"},
@@ -478,6 +487,9 @@ func TestAreaManagerXUIOverviewFiltersUnassignedClients(t *testing.T) {
 	}
 	if overview.RoutingRules[1].Index != 3 || len(overview.RoutingRules[1].Users) != 1 || overview.RoutingRules[1].Users[0] != "assigned@example.com" || overview.RoutingRules[1].Summary != "" {
 		t.Fatalf("expected mixed user rule to be sanitized, got %#v", overview.RoutingRules[1])
+	}
+	if len(overview.Outbounds) != 2 || overview.Outbounds[0].Tag != "assigned-out" || overview.Outbounds[1].Tag != "mixed-out" {
+		t.Fatalf("expected only granted outbounds, got %#v", overview.Outbounds)
 	}
 }
 
