@@ -114,6 +114,7 @@ import {
   defaultOutboundActionForm,
   defaultRoutingActionForm,
   defaultTelegramBotForm,
+  effectiveClientBillingExpiryTime,
   findOutboundLinkedClient,
   findClientBilling,
   fetchJSON,
@@ -1202,6 +1203,7 @@ export default function App() {
           payload: {
             inbound_id: targetInboundID,
             inbound_tag: targetInboundTag,
+            protocol: record.protocol || '',
             email: record.email || '',
             client_id: record.auth_uuid || record.auth_password || '',
             restart: false,
@@ -1905,6 +1907,12 @@ export default function App() {
     const savingKey = billingKeyForClient(record)
     const baseConfig = savedManagedConfig || createEmptyManagedConfig(selectedAgentId, selectedAgent?.agent_name)
     const billing = findClientBilling(managedConfig.renewal?.client_billings, record) || defaultClientBilling(record)
+    const expiryTime = effectiveClientBillingExpiryTime(billing, record.expiry_time || 0)
+    const accountBasedProxy = ['http', 'socks', 'socks5'].includes((record.protocol || '').toLowerCase())
+    const shouldSyncExpiry = !accountBasedProxy && expiryTime > 0 && expiryTime !== Math.max(0, Number(record.expiry_time || 0))
+    const targetAgentID = record.realm_target_agent_id || selectedAgentId
+    const targetInboundID = record.realm_target_inbound_id || record.inbound_id
+    const targetInboundTag = record.realm_target_inbound_tag || record.inbound_tag || ''
     const nextConfig: ManagedAgentConfig = {
       ...managedConfig,
       renewal: {
@@ -1931,7 +1939,47 @@ export default function App() {
       setSavedManagedConfig(normalized)
       managedConfigDirtyRef.current = false
       setManagedConfig(normalized)
-      message.success('客户端收费已保存')
+      let expirySyncError = ''
+      let expirySyncAction: XUIAction | null = null
+      if (shouldSyncExpiry && targetAgentID && record.email) {
+        try {
+          expirySyncAction = await fetchJSON<XUIAction>(`/api/v1/agents/${targetAgentID}/xui/actions`, {
+            method: 'POST',
+            body: JSON.stringify({
+              kind: 'update_client_expiry',
+              payload: {
+                inbound_id: targetInboundID,
+                inbound_tag: targetInboundTag,
+                email: record.email,
+                expiry_time: expiryTime,
+                persist_billing: false,
+              },
+            }),
+          })
+          await loadXUIActions(targetAgentID, { silent: true })
+          scheduleXUIActionResultRefresh(targetAgentID)
+          window.setTimeout(() => {
+            void loadOverview(targetAgentID, { silent: true })
+            if (selectedAgentId && targetAgentID !== selectedAgentId) {
+              void loadOverview(selectedAgentId, { silent: true })
+            }
+          }, 2500)
+        } catch (error) {
+          if (isUnauthorized(error)) {
+            setAdminUser(null)
+          }
+          expirySyncError = error instanceof Error ? error.message : '下发 x-ui 到期时间失败'
+        }
+      }
+      if (expirySyncError) {
+        message.warning(`客户端收费已保存，但 x-ui 到期时间同步失败：${expirySyncError}`)
+      } else if (expirySyncAction) {
+        message.success(expirySyncAction.status === 'running'
+          ? '客户端收费已保存，x-ui 到期时间已通过 WS 下发'
+          : '客户端收费已保存，x-ui 到期时间同步任务已创建')
+      } else {
+        message.success('客户端收费已保存')
+      }
       await loadAgents()
       await loadConfigAudits(selectedAgentId, { silent: true })
     } catch (error) {

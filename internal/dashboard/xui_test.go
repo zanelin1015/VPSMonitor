@@ -223,6 +223,40 @@ func TestBuildXUIOverviewImportURLUsesConfiguredDomain(t *testing.T) {
 	}
 }
 
+func TestBuildXUIOverviewSupportsHTTPAccounts(t *testing.T) {
+	now := time.Now().UTC()
+	snapshot := model.AgentSnapshot{
+		AgentID:    "http-agent",
+		ReportedAt: now,
+		XUI: &model.XUISnapshot{
+			CollectedAt: now,
+			Inbounds: []map[string]any{{
+				"id":       8,
+				"tag":      "http-18080",
+				"remark":   "HTTP Proxy",
+				"protocol": "http",
+				"port":     18080,
+				"enable":   true,
+				"settings": `{"accounts":[{"user":"proxy-user","pass":"p@ss:word"}],"allowTransparent":false}`,
+			}},
+		},
+	}
+
+	overview := BuildXUIOverviewWithOptions(snapshot, XUIOverviewOptions{Entry: model.AgentEntryConfig{ImportDomain: "proxy.example.com"}})
+	if overview == nil || len(overview.Clients) != 1 {
+		t.Fatalf("expected one HTTP account, got %#v", overview)
+	}
+	client := overview.Clients[0]
+	if client.Protocol != "http" || client.Email != "proxy-user" || client.AuthUUID != "proxy-user" || client.AuthPassword != "p@ss:word" || !client.Enabled {
+		t.Fatalf("unexpected HTTP account client: %#v", client)
+	}
+	parsed := mustParseURL(t, client.ImportURL)
+	password, hasPassword := parsed.User.Password()
+	if parsed.Scheme != "http" || parsed.Host != "proxy.example.com:18080" || parsed.User.Username() != "proxy-user" || !hasPassword || password != "p@ss:word" {
+		t.Fatalf("unexpected HTTP import URL %q", client.ImportURL)
+	}
+}
+
 func TestBuildXUIOverviewImportURLDefaultsToDomainCertificate(t *testing.T) {
 	now := time.Now().UTC()
 	snapshot := model.AgentSnapshot{

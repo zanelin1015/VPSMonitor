@@ -29,6 +29,12 @@ func TestBuildMihomoSubscriptionConvertsCustomerLinks(t *testing.T) {
 			ImportURL:       "vless://22222222-2222-2222-2222-222222222222@example.com:443?encryption=none",
 			Resolved:        false,
 		},
+		{
+			AssignmentID:    4,
+			EntryClientName: "GZ HTTP",
+			ImportURL:       "http://proxy-user:p%40ss%3Aword@gz.example.com:20080#HTTP",
+			Resolved:        true,
+		},
 	}
 
 	content := buildMihomoSubscription(user, links)
@@ -44,8 +50,13 @@ func TestBuildMihomoSubscriptionConvertsCustomerLinks(t *testing.T) {
 	assertContains(t, content, `type: "ss"`)
 	assertContains(t, content, `cipher: "aes-256-gcm"`)
 	assertContains(t, content, `password: "pass"`)
+	assertContains(t, content, `name: "GZ HTTP"`)
+	assertContains(t, content, `type: "http"`)
+	assertContains(t, content, `username: "proxy-user"`)
+	assertContains(t, content, `password: "p@ss:word"`)
 	assertContains(t, content, `- "CN-HK-VLESS"`)
 	assertContains(t, content, `- "HK SS"`)
+	assertContains(t, content, `- "GZ HTTP"`)
 	assertContains(t, content, `- RULE-SET,reject,REJECT`)
 	assertContains(t, content, `- RULE-SET,cncidr,DIRECT`)
 	assertContains(t, content, `- GEOIP,CN,DIRECT,no-resolve`)

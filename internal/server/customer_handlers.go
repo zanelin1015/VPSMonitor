@@ -223,10 +223,7 @@ func (a *App) customerOverview(user model.CustomerUser) (model.CustomerOverviewR
 	}
 	a.realtime.applyToDashboard(&view)
 	clientMap := buildCustomerClientMap(snapshots, agents)
-	chainMap := make(map[string]model.ClientChainView, len(view.ClientChains))
-	for _, chain := range view.ClientChains {
-		chainMap[chain.Key] = chain
-	}
+	chainMap := buildCustomerChainMap(view.ClientChains, view.Links)
 	agentMap := make(map[string]model.DashboardAgentView, len(view.Agents))
 	for _, agent := range view.Agents {
 		agentMap[agent.AgentID] = agent
@@ -241,6 +238,48 @@ func (a *App) customerOverview(user model.CustomerUser) (model.CustomerOverviewR
 		GeneratedAt: time.Now().UTC(),
 		Links:       links,
 	}, nil
+}
+
+func buildCustomerChainMap(chains []model.ClientChainView, links []model.TopologyLinkView) map[string]model.ClientChainView {
+	result := make(map[string]model.ClientChainView, len(chains))
+	for _, chain := range chains {
+		result[chain.Key] = chain
+	}
+	for _, link := range links {
+		if !strings.EqualFold(strings.TrimSpace(link.Source.Protocol), "realm") || link.Source.ListenPort <= 0 || link.FinalTarget == nil {
+			continue
+		}
+		for _, chain := range chains {
+			if !customerChainMatchesInbound(chain, *link.FinalTarget) || chain.RootClientEmail == "" {
+				continue
+			}
+			addCustomerRealmChainAlias(result, link.Source.AgentID, link.Source.ListenPort, chain)
+			for _, hop := range link.RealmHops {
+				addCustomerRealmChainAlias(result, hop.AgentID, hop.Port, chain)
+			}
+		}
+	}
+	return result
+}
+
+func customerChainMatchesInbound(chain model.ClientChainView, inbound model.TopologyInboundRef) bool {
+	if chain.RootAgentID == "" || !strings.EqualFold(chain.RootAgentID, inbound.AgentID) {
+		return false
+	}
+	if chain.RootInboundID > 0 && inbound.InboundID > 0 {
+		return chain.RootInboundID == inbound.InboundID
+	}
+	return chain.RootInboundTag != "" && inbound.InboundTag != "" && strings.EqualFold(chain.RootInboundTag, inbound.InboundTag)
+}
+
+func addCustomerRealmChainAlias(result map[string]model.ClientChainView, agentID string, listenPort int, chain model.ClientChainView) {
+	if agentID == "" || listenPort <= 0 || chain.RootClientEmail == "" {
+		return
+	}
+	key := customerAssignmentKey(agentID, listenPort, chain.RootClientEmail)
+	if _, exists := result[key]; !exists {
+		result[key] = chain
+	}
 }
 
 func (a *App) customerOverviewContext() (model.GlobalDashboardView, []model.AgentRecord, []model.AgentSnapshot, error) {
@@ -361,10 +400,14 @@ func buildCustomerLinkView(
 		},
 	}
 	link.NodeExpireTime = customerNodeExpireTime(assignment.AgentID, agentMap)
+	chain, chainFound := findCustomerChain(assignment, chainMap)
 	trafficMultiplier := 1.0
 	var clientRef customerClientRef
-	if ref, ok := clientMap[customerAssignmentKey(assignment.AgentID, assignment.InboundID, assignment.ClientEmail)]; ok {
-		clientRef = ref
+	clientRef, clientFound := clientMap[customerAssignmentKey(assignment.AgentID, assignment.InboundID, assignment.ClientEmail)]
+	if !clientFound && chainFound {
+		clientRef, clientFound = clientMap[customerAssignmentKey(chain.RootAgentID, chain.RootInboundID, chain.RootClientEmail)]
+	}
+	if clientFound {
 		link.ImportURL = clientRef.Client.ImportURL
 		link.ClientRemark = firstNonEmptyString(clientRef.Client.Comment, clientRef.Client.SubID)
 		if clientRef.Client.ExpiryTime > 0 {
@@ -390,8 +433,7 @@ func buildCustomerLinkView(
 	link.TrafficUsedBytes = scaleCustomerTraffic(customerClientTrafficUsed(clientRef.Client), trafficMultiplier)
 	link.TrafficLimitBytes = scaleCustomerTraffic(clientRef.Client.TotalGB, trafficMultiplier)
 
-	chain, ok := findCustomerChain(assignment, chainMap)
-	if !ok {
+	if !chainFound {
 		link.UnresolvedReason = "当前最新上报中没有找到该用户链路"
 		link.Summary = entryName + " 暂无链路数据"
 		return link
@@ -498,8 +540,16 @@ func customerRealmPublicEntry(assignment model.CustomerAssignment, chain model.C
 	if assignment.AgentID == "" || agentMap == nil {
 		return customerPublicEntry{}, false
 	}
-	if _, ok := agentMap[assignment.AgentID]; !ok {
+	assignmentAgent, ok := agentMap[assignment.AgentID]
+	if !ok {
 		return customerPublicEntry{}, false
+	}
+	if !strings.EqualFold(chain.RootAgentID, assignment.AgentID) {
+		if rule, found := realmRuleListeningOnPort(assignmentAgent.Entry.PortForwarding.Rules, assignment.InboundID); found {
+			if host := customerRealmSourceHost(assignmentAgent, rule); host != "" {
+				return customerPublicEntry{Host: host, Port: rule.ListenPort}, true
+			}
+		}
 	}
 	inboundPort := customerChainRootInboundPort(assignment, chain)
 	if inboundPort <= 0 {

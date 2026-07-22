@@ -8,9 +8,13 @@ import (
 )
 
 func TestBuildGlobalDashboardResolvesMultiHopRealmToXUIInbound(t *testing.T) {
-	for _, protocol := range []string{"vless", "shadowsocks"} {
+	for _, protocol := range []string{"vless", "shadowsocks", "http"} {
 		t.Run(protocol, func(t *testing.T) {
 			now := time.Now().UTC()
+			inboundSettings := `{"clients":[{"email":"alice@example.com","enable":true}]}`
+			if protocol == "http" {
+				inboundSettings = `{"accounts":[{"user":"proxy-user","pass":"proxy-pass"}]}`
+			}
 			agents := []model.AgentRecord{
 				{
 					AgentID: "gz", AgentName: "Guangzhou", RegisteredAt: now, UpdatedAt: now,
@@ -32,13 +36,16 @@ func TestBuildGlobalDashboardResolvesMultiHopRealmToXUIInbound(t *testing.T) {
 				AgentID: "dmit", AgentName: "DMIT", ReportedAt: now, Summary: model.VPSSummary{PublicIPv4: "192.0.2.30"},
 				XUI: &model.XUISnapshot{CollectedAt: now, Inbounds: []map[string]any{{
 					"id": 7, "tag": "dmit-in", "remark": "DMIT inbound", "protocol": protocol, "port": 443, "enable": true,
-					"settings": `{"clients":[{"email":"alice@example.com","enable":true}]}`,
+					"settings": inboundSettings,
 				}}},
 			}}
 
 			view := BuildGlobalDashboardWithOptions(agents, snapshots, GlobalDashboardOptions{IncludeTopology: true})
 			if len(view.Links) != 2 {
 				t.Fatalf("expected two Realm hops, got %d: %#v", len(view.Links), view.Links)
+			}
+			if len(view.ClientChains) != 1 {
+				t.Fatalf("expected final %s account to produce one customer chain, got %#v", protocol, view.ClientChains)
 			}
 			gzLink := topologyLinkFromAgent(t, view.Links, "gz")
 			if gzLink.Target.AgentID != "hk" || gzLink.Target.Protocol != "realm" {

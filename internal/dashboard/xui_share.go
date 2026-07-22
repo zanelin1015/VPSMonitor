@@ -165,7 +165,11 @@ func buildSingleNodeImportURL(inbound inboundRecord, cfg clientConfig) string {
 	case "hysteria", "hysteria2":
 		return buildHysteriaImportURL(inbound, cfg)
 	case "http":
-		return buildUserPassURL("http", inbound, cfg)
+		scheme := "http"
+		if strings.EqualFold(inbound.view.Security, "tls") {
+			scheme = "https"
+		}
+		return buildUserPassURL(scheme, inbound, cfg)
 	case "socks", "socks5":
 		return buildUserPassURL("socks", inbound, cfg)
 	default:

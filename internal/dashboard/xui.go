@@ -192,7 +192,7 @@ func normalizeInbounds(rawInbounds []map[string]any, rules []routeRule, defaultO
 				AuthKeys:           authKeysForInbound(stringValue(raw["protocol"]), raw["settings"]),
 			},
 			clientStats:         parseClientStats(raw["clientStats"]),
-			clients:             parseInboundClients(raw["settings"]),
+			clients:             parseInboundClients(raw["settings"], stringValue(raw["protocol"])),
 			importHost:          importHost,
 			vlessEncryption:     protocolMeta.vlessEncryption,
 			shadowsocksMethod:   protocolMeta.shadowsocksMethod,
@@ -662,10 +662,30 @@ func parseClientStats(raw any) map[string]clientStat {
 	return result
 }
 
-func parseInboundClients(raw any) []clientConfig {
+func parseInboundClients(raw any, protocol string) []clientConfig {
 	payload := decodeStringObject(raw)
 	if len(payload) == 0 {
 		return nil
+	}
+
+	protocol = normalizedTopologyProtocol(protocol)
+	if protocol == "http" || protocol == "socks" {
+		accounts := objectList(payload["accounts"])
+		result := make([]clientConfig, 0, len(accounts))
+		for _, account := range accounts {
+			username := stringValue(account["user"])
+			password := stringValue(account["pass"])
+			if username == "" || password == "" {
+				continue
+			}
+			result = append(result, clientConfig{
+				email:        username,
+				enable:       true,
+				authUUID:     username,
+				authPassword: password,
+			})
+		}
+		return result
 	}
 
 	items := objectList(payload["clients"])

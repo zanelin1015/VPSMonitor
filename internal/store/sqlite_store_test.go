@@ -578,6 +578,42 @@ func TestSQLiteStoreXUIActionLifecycle(t *testing.T) {
 	}
 }
 
+func TestCompleteXUIClientExpiryActionCanSkipBillingPersistence(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "bridge.db")
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+
+	if _, err := store.RegisterAgent(model.AgentRegisterRequest{AgentID: "target", AgentName: "Target"}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	action, err := store.CreateXUIAction("target", model.XUIActionRequest{
+		Kind: model.XUIActionUpdateClientExpiry,
+		Payload: map[string]any{
+			"inbound_id":      7,
+			"inbound_tag":     "node-7",
+			"email":           "alice@example.com",
+			"expiry_time":     int64(1896048000000),
+			"persist_billing": false,
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateXUIAction: %v", err)
+	}
+	if _, err := store.CompleteXUIAction("target", action.ID, model.XUIActionResultRequest{Status: model.XUIActionStatusSucceeded}); err != nil {
+		t.Fatalf("CompleteXUIAction: %v", err)
+	}
+	cfg, found, err := store.GetAgentConfig("target")
+	if err != nil || !found {
+		t.Fatalf("GetAgentConfig found=%v err=%v", found, err)
+	}
+	if len(cfg.Renewal.ClientBillings) != 0 {
+		t.Fatalf("expiry-only sync must not add billing to target agent, got %#v", cfg.Renewal.ClientBillings)
+	}
+}
+
 func TestSQLiteStoreRenewalTrafficBaselineResetsByCycle(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "bridge.db")
 	store, err := NewSQLiteStore(dbPath)

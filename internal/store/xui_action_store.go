@@ -229,7 +229,7 @@ func (s *SQLiteStore) CompleteXUIAction(agentID string, id int64, req model.XUIA
 	if !found {
 		return model.XUIAction{}, fmt.Errorf("completed x-ui action not found")
 	}
-	if status == model.XUIActionStatusSucceeded && action.Kind == model.XUIActionUpdateClientExpiry {
+	if status == model.XUIActionStatusSucceeded && action.Kind == model.XUIActionUpdateClientExpiry && shouldPersistXUIClientExpiry(action.Payload) {
 		if err := s.applyXUIClientExpiryConfig(agentID, action.Payload); err != nil {
 			return model.XUIAction{}, err
 		}
@@ -240,6 +240,11 @@ func (s *SQLiteStore) CompleteXUIAction(agentID string, id int64, req model.XUIA
 		}
 	}
 	return action, nil
+}
+
+func shouldPersistXUIClientExpiry(payload map[string]any) bool {
+	persist, specified := payload["persist_billing"].(bool)
+	return !specified || persist
 }
 
 func (s *SQLiteStore) applyXUIClientDeleteConfig(agentID string, payload map[string]any) error {

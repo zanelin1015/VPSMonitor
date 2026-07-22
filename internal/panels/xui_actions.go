@@ -115,6 +115,9 @@ func (c *XUIClient) addClient(ctx context.Context, payload map[string]any) (map[
 	}
 	inboundID = intValue(inbound["id"])
 	effectiveProtocol := firstNonEmptyString(protocol, stringValue(inbound["protocol"]))
+	if isAccountBasedInboundProtocol(effectiveProtocol) {
+		return c.addInboundAccount(ctx, inbound, client)
+	}
 	ensureNewInboundClientAuth(client, effectiveProtocol, collectInboundClientUUIDs(inbounds))
 	if result, err := c.addClientViaAPI(ctx, inboundID, client); err == nil {
 		return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": false}, nil
@@ -160,6 +163,64 @@ func (c *XUIClient) addClient(ctx context.Context, payload map[string]any) (map[
 		return nil, err
 	}
 	return map[string]any{"message": result.Msg, "email": email, "client_id": clientPrimaryID(client), "inbound_id": inboundID, "restarted": false}, nil
+}
+
+func (c *XUIClient) addInboundAccount(ctx context.Context, inbound map[string]any, client map[string]any) (map[string]any, error) {
+	settings, settingsText, err := decodeInboundSettings(inbound["settings"])
+	if err != nil {
+		return nil, err
+	}
+	username := strings.TrimSpace(firstNonEmptyString(
+		stringFromMap(client, "user"),
+		stringFromMap(client, "email"),
+		stringFromMap(client, "id"),
+	))
+	password := firstNonEmptyString(stringFromMap(client, "pass"), stringFromMap(client, "password"))
+	if username == "" {
+		return nil, fmt.Errorf("account username is required")
+	}
+	if password == "" {
+		password = randomHexString(12)
+	}
+	accounts := objectSlice(settings["accounts"])
+	for _, account := range accounts {
+		if strings.EqualFold(strings.TrimSpace(stringValue(account["user"])), username) {
+			return nil, fmt.Errorf("account already exists in inbound: %s", username)
+		}
+	}
+	accounts = append(accounts, map[string]any{"user": username, "pass": password})
+	settings["accounts"] = accounts
+	if err := encodeInboundSettings(inbound, settings, settingsText); err != nil {
+		return nil, err
+	}
+	inboundID := intValue(inbound["id"])
+	result, err := c.postJSON(ctx, fmt.Sprintf("/panel/api/inbounds/update/%d", inboundID), inbound)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"message": result.Msg, "email": username, "client_id": username, "inbound_id": inboundID, "restarted": false}, nil
+}
+
+func encodeInboundSettings(inbound map[string]any, settings map[string]any, encoded bool) error {
+	body, err := json.Marshal(settings)
+	if err != nil {
+		return fmt.Errorf("marshal inbound settings: %w", err)
+	}
+	if encoded {
+		inbound["settings"] = string(body)
+	} else {
+		inbound["settings"] = settings
+	}
+	return nil
+}
+
+func isAccountBasedInboundProtocol(protocol string) bool {
+	switch strings.ToLower(strings.TrimSpace(protocol)) {
+	case "http", "socks", "socks5":
+		return true
+	default:
+		return false
+	}
 }
 
 func (c *XUIClient) addClientViaAPI(ctx context.Context, inboundID int, client map[string]any) (xuiEnvelope, error) {
@@ -754,17 +815,7 @@ func (c *XUIClient) updateClientExpiry(ctx context.Context, payload map[string]a
 	inboundID := intValue(payload["inbound_id"])
 	inboundTag := strings.TrimSpace(stringFromMap(payload, "inbound_tag"))
 	email := strings.TrimSpace(stringFromMap(payload, "email"))
-	previousEmail := firstNonEmptyString(
-		stringFromMap(payload, "previous_email"),
-		stringFromMap(payload, "old_email"),
-	)
-	lookupEmail := firstNonEmptyString(previousEmail, email)
 	expiryTime := int64Value(payload["expiry_time"])
-	enabled, hasEnabled := boolPayloadValue(payload, "enabled")
-	if value, ok := boolPayloadValue(payload, "enable"); ok {
-		enabled = value
-		hasEnabled = true
-	}
 	if inboundID <= 0 && inboundTag == "" {
 		return nil, fmt.Errorf("inbound_id or inbound_tag is required")
 	}
@@ -800,14 +851,8 @@ func (c *XUIClient) updateClientExpiry(ctx context.Context, payload map[string]a
 	clients := objectSlice(settings["clients"])
 	var updatedClient map[string]any
 	for _, client := range clients {
-		if strings.TrimSpace(stringValue(client["email"])) == lookupEmail {
+		if strings.TrimSpace(stringValue(client["email"])) == email {
 			client["expiryTime"] = expiryTime
-			if hasEnabled {
-				client["enable"] = enabled
-			}
-			if previousEmail != "" && previousEmail != email {
-				client["email"] = email
-			}
 			updatedClient = client
 			break
 		}
@@ -831,11 +876,7 @@ func (c *XUIClient) updateClientExpiry(ctx context.Context, payload map[string]a
 	if err != nil {
 		return nil, err
 	}
-	routingRefsUpdated, err := c.replaceRoutingUserReferences(ctx, previousEmail, email)
-	if err != nil {
-		return nil, err
-	}
-	return map[string]any{"message": result.Msg, "email": email, "expiry_time": expiryTime, "enabled": updatedClient["enable"], "routing_refs": routingRefsUpdated, "restarted": false}, nil
+	return map[string]any{"message": result.Msg, "email": email, "expiry_time": expiryTime, "enabled": updatedClient["enable"], "restarted": false}, nil
 }
 
 func (c *XUIClient) setClientEnabled(ctx context.Context, payload map[string]any) (map[string]any, error) {
@@ -964,6 +1005,9 @@ func (c *XUIClient) deleteClient(ctx context.Context, payload map[string]any) (m
 	if email == "" && clientID == "" {
 		return nil, fmt.Errorf("email or client_id is required")
 	}
+	if isAccountBasedInboundProtocol(stringFromMap(payload, "protocol")) {
+		return c.deleteInboundAccount(ctx, inboundID, inboundTag, email, clientID)
+	}
 	if email != "" {
 		routingRefsUpdated, err := c.removeRoutingUserReferences(ctx, email)
 		if err != nil {
@@ -1048,6 +1092,49 @@ func (c *XUIClient) deleteClient(ctx context.Context, payload map[string]any) (m
 		return nil, err
 	}
 	return map[string]any{"message": result.Msg, "email": email, "client_id": removedClientID, "inbound_id": inboundID, "routing_refs": routingRefsUpdated, "restarted": false}, nil
+}
+
+func (c *XUIClient) deleteInboundAccount(ctx context.Context, inboundID int, inboundTag, username, clientID string) (map[string]any, error) {
+	inbounds, err := c.loadInboundsForAction(ctx)
+	if err != nil {
+		return nil, err
+	}
+	inbound := findInboundForAction(inbounds, inboundID, inboundTag)
+	if inbound == nil {
+		return nil, fmt.Errorf("inbound not found for account %s", firstNonEmptyString(username, clientID))
+	}
+	settings, settingsText, err := decodeInboundSettings(inbound["settings"])
+	if err != nil {
+		return nil, err
+	}
+	lookup := firstNonEmptyString(username, clientID)
+	accounts := objectSlice(settings["accounts"])
+	removedIndex := -1
+	for index, account := range accounts {
+		if strings.EqualFold(strings.TrimSpace(stringValue(account["user"])), lookup) {
+			removedIndex = index
+			username = strings.TrimSpace(stringValue(account["user"]))
+			break
+		}
+	}
+	if removedIndex < 0 {
+		return nil, fmt.Errorf("account not found in inbound: %s", lookup)
+	}
+	accounts = append(accounts[:removedIndex], accounts[removedIndex+1:]...)
+	settings["accounts"] = accounts
+	if err := encodeInboundSettings(inbound, settings, settingsText); err != nil {
+		return nil, err
+	}
+	inboundID = intValue(inbound["id"])
+	routingRefsUpdated, err := c.removeRoutingUserReferences(ctx, username)
+	if err != nil {
+		return nil, err
+	}
+	result, err := c.postJSON(ctx, fmt.Sprintf("/panel/api/inbounds/update/%d", inboundID), inbound)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"message": result.Msg, "email": username, "client_id": username, "inbound_id": inboundID, "routing_refs": routingRefsUpdated, "restarted": false}, nil
 }
 
 func (c *XUIClient) removeRoutingUserReferences(ctx context.Context, email string) (int, error) {

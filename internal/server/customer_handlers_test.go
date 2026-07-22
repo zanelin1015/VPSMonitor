@@ -266,3 +266,133 @@ func TestBuildCustomerLinkViewRewritesImportURLToRealmEntry(t *testing.T) {
 		t.Fatalf("expected HK-produced stream parameters to stay unchanged, got %q", link.ImportURL)
 	}
 }
+
+func TestBuildCustomerLinkViewResolvesFirstRealmHopToFinalClient(t *testing.T) {
+	finalInbound := model.TopologyInboundRef{
+		AgentID:    "dmit",
+		InboundID:  1,
+		InboundTag: "DMIT",
+		Protocol:   "vless",
+		Port:       20001,
+	}
+	hkRealm := model.TopologyInboundRef{
+		AgentID:    "hk",
+		InboundID:  20001,
+		InboundTag: "realm:hk:20001",
+		Protocol:   "realm",
+		Port:       20001,
+	}
+	chains := []model.ClientChainView{{
+		Key:               customerAssignmentKey("dmit", 1, "xq"),
+		RootAgentID:       "dmit",
+		RootInboundID:     1,
+		RootInboundTag:    "DMIT",
+		RootClientEmail:   "xq",
+		RootClientRemark:  "DMIT customer",
+		MatchedLinkCount:  1,
+		RootClientEnabled: true,
+		Steps: []model.ClientChainStep{
+			{StepType: "client", AgentID: "dmit", Label: "xq"},
+			{StepType: "inbound", AgentID: "dmit", Label: "DMIT", Protocol: "vless", Port: 20001},
+		},
+	}}
+	links := []model.TopologyLinkView{
+		{
+			Key:         "gz::realm:20001",
+			Source:      model.TopologyOutboundRef{AgentID: "gz", Protocol: "realm", ListenPort: 20001},
+			Target:      hkRealm,
+			FinalTarget: &finalInbound,
+			RealmHops:   []model.TopologyInboundRef{hkRealm},
+		},
+		{
+			Key:         "hk::realm:20001",
+			Source:      model.TopologyOutboundRef{AgentID: "hk", Protocol: "realm", ListenPort: 20001},
+			Target:      finalInbound,
+			FinalTarget: &finalInbound,
+		},
+	}
+	chainMap := buildCustomerChainMap(chains, links)
+	clientMap := map[string]customerClientRef{
+		customerAssignmentKey("dmit", 1, "xq"): {
+			Client: model.XUIClientView{
+				InboundID:  1,
+				InboundTag: "DMIT",
+				Email:      "xq",
+				Comment:    "final client",
+				ImportURL:  "vless://6dd06a03-4987-4ffb-9cbf-6f04daa05d82@dmit.example.com:20001?encryption=none&fp=chrome&pbk=public-key&security=reality&sid=bc&sni=shop.example.com&type=tcp#DMIT",
+				TotalGB:    100 * 1024 * 1024 * 1024,
+				Up:         2 * 1024 * 1024 * 1024,
+				Down:       3 * 1024 * 1024 * 1024,
+			},
+		},
+	}
+	agentMap := map[string]model.DashboardAgentView{
+		"gz": {
+			AgentID:             "gz",
+			CustomerDisplayName: "Guangzhou Entry",
+			Entry: model.AgentEntryConfig{
+				ImportDomain: "gz.example.com",
+				PortForwarding: model.RealmForwardConfig{Rules: []model.RealmForwardRule{{
+					Enabled:       true,
+					ListenPort:    20001,
+					TargetAgentID: "hk",
+					TargetPort:    20001,
+				}}},
+			},
+		},
+		"hk": {
+			AgentID: "hk",
+			Entry: model.AgentEntryConfig{PortForwarding: model.RealmForwardConfig{Rules: []model.RealmForwardRule{{
+				Enabled:       true,
+				ListenPort:    20001,
+				TargetAgentID: "dmit",
+				TargetPort:    20001,
+			}}}},
+		},
+		"dmit": {AgentID: "dmit"},
+	}
+	assignment := model.CustomerAssignment{
+		AgentID:     "gz",
+		InboundID:   20001,
+		InboundTag:  "DMIT",
+		ClientEmail: "xq",
+	}
+
+	link := buildCustomerLinkView(assignment, chainMap, clientMap, agentMap)
+	if !link.Resolved || link.UnresolvedReason != "" {
+		t.Fatalf("expected first Realm assignment to resolve, got %#v", link)
+	}
+	parsed, err := url.Parse(link.ImportURL)
+	if err != nil {
+		t.Fatalf("parse rewritten import URL: %v", err)
+	}
+	if parsed.Host != "gz.example.com:20001" {
+		t.Fatalf("expected first Realm entry, got %q from %q", parsed.Host, link.ImportURL)
+	}
+	if parsed.User.Username() != "6dd06a03-4987-4ffb-9cbf-6f04daa05d82" || parsed.Query().Get("pbk") != "public-key" || parsed.Query().Get("sni") != "shop.example.com" {
+		t.Fatalf("expected final client credentials and Reality parameters to remain unchanged, got %q", link.ImportURL)
+	}
+	if link.ClientRemark != "final client" || link.TrafficUsedBytes != 5*1024*1024*1024 || link.TrafficLimitBytes != 100*1024*1024*1024 {
+		t.Fatalf("expected final client metadata and traffic, got %#v", link)
+	}
+
+	unauthorized := assignment
+	unauthorized.ClientEmail = "other-user"
+	unauthorizedLink := buildCustomerLinkView(unauthorized, chainMap, clientMap, agentMap)
+	if unauthorizedLink.Resolved || unauthorizedLink.ImportURL != "" {
+		t.Fatalf("must not resolve another client on the same Realm port, got %#v", unauthorizedLink)
+	}
+}
+
+func TestRewriteCustomerHTTPImportURLPreservesAccount(t *testing.T) {
+	raw := "http://proxy-user:p%40ss%3Aword@hk.example.com:18080#HTTP"
+	rewritten := rewriteCustomerImportURL(raw, "gz.example.com", 20080)
+	parsed, err := url.Parse(rewritten)
+	if err != nil {
+		t.Fatalf("parse rewritten HTTP URL: %v", err)
+	}
+	password, hasPassword := parsed.User.Password()
+	if parsed.Scheme != "http" || parsed.Host != "gz.example.com:20080" || parsed.User.Username() != "proxy-user" || !hasPassword || password != "p@ss:word" {
+		t.Fatalf("expected Realm rewrite to preserve HTTP credentials, got %q", rewritten)
+	}
+}

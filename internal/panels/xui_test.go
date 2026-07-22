@@ -1998,7 +1998,7 @@ func TestXUIExecuteUpdateClientExpiryUsesFullInboundUpdateAndPreservesUUID(t *te
 							"id":       7,
 							"tag":      "in-vless-443",
 							"protocol": "vless",
-							"settings": `{"clients":[{"id":"uuid-1","email":"alice@example.com","enable":true,"expiryTime":1893456000000,"flow":"xtls-rprx-vision"}]}`,
+							"settings": `{"clients":[{"id":"uuid-1","email":"alice@example.com","enable":true,"expiryTime":1893456000000,"flow":"xtls-rprx-vision","totalGB":107374182400,"limitIp":2,"subId":"stable-sub-id","comment":"keep-me"}]}`,
 						},
 					},
 				}), nil
@@ -2012,8 +2012,25 @@ func TestXUIExecuteUpdateClientExpiryUsesFullInboundUpdateAndPreservesUUID(t *te
 					t.Fatalf("decode update body: %v", err)
 				}
 				settings := stringValue(body["settings"])
-				if !strings.Contains(settings, `"id":"uuid-1"`) || !strings.Contains(settings, `"expiryTime":1896048000000`) || !strings.Contains(settings, `"flow":"xtls-rprx-vision"`) {
-					t.Fatalf("expected immutable client fields to be preserved and expiry updated, got %s", settings)
+				var decoded map[string]any
+				if err := json.Unmarshal([]byte(settings), &decoded); err != nil {
+					t.Fatalf("decode updated settings: %v", err)
+				}
+				clients := objectSlice(decoded["clients"])
+				if len(clients) != 1 {
+					t.Fatalf("expected one client, got %#v", clients)
+				}
+				updated := clients[0]
+				if stringValue(updated["id"]) != "uuid-1" ||
+					stringValue(updated["email"]) != "alice@example.com" ||
+					updated["enable"] != true ||
+					int64Value(updated["expiryTime"]) != 1896048000000 ||
+					stringValue(updated["flow"]) != "xtls-rprx-vision" ||
+					int64Value(updated["totalGB"]) != 107374182400 ||
+					intValue(updated["limitIp"]) != 2 ||
+					stringValue(updated["subId"]) != "stable-sub-id" ||
+					stringValue(updated["comment"]) != "keep-me" {
+					t.Fatalf("expected expiry-only update with all other fields preserved, got %#v", updated)
 				}
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "updated"}), nil
 			default:
@@ -2029,6 +2046,7 @@ func TestXUIExecuteUpdateClientExpiryUsesFullInboundUpdateAndPreservesUUID(t *te
 			"inbound_id":  7,
 			"email":       "alice@example.com",
 			"expiry_time": int64(1896048000000),
+			"enabled":     false,
 		},
 	})
 	if err != nil {
@@ -2117,6 +2135,164 @@ func TestXUIExecuteAddClientUsesAddClientAPI(t *testing.T) {
 	}
 	if !addCalled {
 		t.Fatalf("expected v3 add client API to be called")
+	}
+}
+
+func TestXUIExecuteAddClientUpdatesHTTPAccounts(t *testing.T) {
+	client, err := NewXUIClient(config.XUIConfig{
+		Enabled:  true,
+		BaseURL:  "https://xui.local",
+		Username: "admin",
+		Password: "pass",
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewXUIClient: %v", err)
+	}
+
+	var updatedInbound map[string]any
+	client.client = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/login":
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
+			case "/panel/api/inbounds/list":
+				return jsonResponse(t, req, map[string]any{
+					"success": true,
+					"obj": []map[string]any{{
+						"id":       8,
+						"tag":      "http-18080",
+						"protocol": "http",
+						"settings": `{"accounts":[{"user":"alice","pass":"alice-pass"}],"allowTransparent":false}`,
+					}},
+				}), nil
+			case "/panel/api/inbounds/update/8":
+				if err := json.NewDecoder(req.Body).Decode(&updatedInbound); err != nil {
+					t.Fatalf("decode HTTP inbound update: %v", err)
+				}
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "updated"}), nil
+			case "/panel/api/clients/add", "/panel/api/inbounds/addClient":
+				t.Fatalf("HTTP accounts must not use the x-ui UUID client API: %s", req.URL.Path)
+				return nil, nil
+			default:
+				t.Fatalf("unexpected path: %s", req.URL.Path)
+				return nil, nil
+			}
+		}),
+	}
+
+	result, err := client.ExecuteAction(context.Background(), model.XUIAction{
+		Kind: model.XUIActionAddClient,
+		Payload: map[string]any{
+			"inbound_id": 8,
+			"protocol":   "http",
+			"client": map[string]any{
+				"email": "bob",
+				"user":  "bob",
+				"pass":  "bob-pass",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteAction: %v", err)
+	}
+	if result["email"] != "bob" || result["client_id"] != "bob" {
+		t.Fatalf("unexpected HTTP account result: %#v", result)
+	}
+	settingsText, ok := updatedInbound["settings"].(string)
+	if !ok {
+		t.Fatalf("expected encoded HTTP settings, got %#v", updatedInbound["settings"])
+	}
+	var settings map[string]any
+	if err := json.Unmarshal([]byte(settingsText), &settings); err != nil {
+		t.Fatalf("decode updated HTTP settings: %v", err)
+	}
+	accounts := objectSlice(settings["accounts"])
+	if len(accounts) != 2 || accounts[1]["user"] != "bob" || accounts[1]["pass"] != "bob-pass" {
+		t.Fatalf("expected HTTP account to be appended, got %#v", accounts)
+	}
+	if _, exists := settings["clients"]; exists {
+		t.Fatalf("HTTP account update must not create settings.clients: %#v", settings)
+	}
+}
+
+func TestXUIExecuteDeleteClientUpdatesHTTPAccounts(t *testing.T) {
+	client, err := NewXUIClient(config.XUIConfig{
+		Enabled:  true,
+		BaseURL:  "https://xui.local",
+		Username: "admin",
+		Password: "pass",
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewXUIClient: %v", err)
+	}
+
+	var updatedInbound map[string]any
+	client.client = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/login":
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
+			case "/panel/api/inbounds/list":
+				return jsonResponse(t, req, map[string]any{
+					"success": true,
+					"obj": []map[string]any{{
+						"id":       8,
+						"tag":      "http-18080",
+						"protocol": "http",
+						"settings": `{"accounts":[{"user":"alice","pass":"alice-pass"},{"user":"bob","pass":"bob-pass"}]}`,
+					}},
+				}), nil
+			case "/panel/xray/":
+				wrapper, err := json.Marshal(map[string]any{
+					"xraySetting": map[string]any{"routing": map[string]any{"rules": []any{}}},
+				})
+				if err != nil {
+					t.Fatalf("marshal xray wrapper: %v", err)
+				}
+				return jsonResponse(t, req, map[string]any{"success": true, "obj": string(wrapper)}), nil
+			case "/panel/api/inbounds/update/8":
+				if err := json.NewDecoder(req.Body).Decode(&updatedInbound); err != nil {
+					t.Fatalf("decode HTTP inbound update: %v", err)
+				}
+				return jsonResponse(t, req, map[string]any{"success": true, "msg": "updated"}), nil
+			case "/panel/api/clients/del/bob":
+				t.Fatal("HTTP accounts must not use the x-ui UUID client delete API")
+				return nil, nil
+			default:
+				t.Fatalf("unexpected path: %s", req.URL.Path)
+				return nil, nil
+			}
+		}),
+	}
+
+	result, err := client.ExecuteAction(context.Background(), model.XUIAction{
+		Kind: model.XUIActionDeleteClient,
+		Payload: map[string]any{
+			"inbound_id": 8,
+			"protocol":   "http",
+			"email":      "bob",
+			"client_id":  "bob",
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteAction: %v", err)
+	}
+	if result["email"] != "bob" || result["client_id"] != "bob" {
+		t.Fatalf("unexpected HTTP account result: %#v", result)
+	}
+	settingsText, ok := updatedInbound["settings"].(string)
+	if !ok {
+		t.Fatalf("expected encoded HTTP settings, got %#v", updatedInbound["settings"])
+	}
+	var settings map[string]any
+	if err := json.Unmarshal([]byte(settingsText), &settings); err != nil {
+		t.Fatalf("decode updated HTTP settings: %v", err)
+	}
+	accounts := objectSlice(settings["accounts"])
+	if len(accounts) != 1 || accounts[0]["user"] != "alice" {
+		t.Fatalf("expected only alice to remain, got %#v", accounts)
 	}
 }
 

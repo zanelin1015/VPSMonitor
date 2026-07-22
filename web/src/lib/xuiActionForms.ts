@@ -351,6 +351,9 @@ export function buildInboundClientPayload(client: XUIInboundClientForm, protocol
 
   if (protocol === 'trojan') {
     payload.password = client.password.trim() || `trojan-${index + 1}`
+  } else if (protocol === 'http' || protocol === 'socks') {
+    payload.user = email
+    payload.pass = client.password.trim()
   }
   return payload
 }

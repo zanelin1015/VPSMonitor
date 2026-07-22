@@ -51,7 +51,6 @@ import {
   outboundElementId,
   parseAddressInput,
   ruleElementId,
-  scaleClientTraffic,
   shortJSON,
   summarizeRule,
 } from '../lib/appHelpers'
@@ -172,6 +171,10 @@ function billingCycleLabel(cycle?: string): string {
     default:
       return '月'
   }
+}
+
+function isAccountBasedProxyClient(client: XUIClientView): boolean {
+  return ['http', 'socks', 'socks5'].includes((client.protocol || '').toLowerCase())
 }
 
 export function AgentDetailPanel(props: AgentDetailPanelProps) {
@@ -497,39 +500,43 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       title: '状态',
       key: 'status',
       width: 120,
-      render: (_, record) => (
-        <Space wrap size={[6, 6]}>
-          <Tag color={record.enabled ? 'success' : 'default'}>{record.enabled ? '启用' : '停用'}</Tag>
-          <Tag color={isClientOnline(record.last_online, overview?.reported_at) ? 'processing' : 'default'}>
-            {isClientOnline(record.last_online, overview?.reported_at) ? '在线' : '离线'}
-          </Tag>
-          <Switch
-            size="small"
-            checked={record.enabled}
-            checkedChildren="开"
-            unCheckedChildren="关"
-            disabled={!canManageConfig && !restrictedView}
-            loading={xuiClientToggleLoadingKey === xuiClientActionKey(record)}
-            onChange={(checked) => onSetXUIClientEnabled(record, checked)}
-          />
-        </Space>
-      ),
+      render: (_, record) => {
+        const accountBasedProxy = isAccountBasedProxyClient(record)
+        return (
+          <Space wrap size={[6, 6]}>
+            <Tag color={record.enabled ? 'success' : 'default'}>{record.enabled ? '启用' : '停用'}</Tag>
+            {accountBasedProxy ? <Tag>节点账号</Tag> : (
+              <>
+                <Tag color={isClientOnline(record.last_online, overview?.reported_at) ? 'processing' : 'default'}>
+                  {isClientOnline(record.last_online, overview?.reported_at) ? '在线' : '离线'}
+                </Tag>
+                <Switch
+                  size="small"
+                  checked={record.enabled}
+                  checkedChildren="开"
+                  unCheckedChildren="关"
+                  disabled={!canManageConfig && !restrictedView}
+                  loading={xuiClientToggleLoadingKey === xuiClientActionKey(record)}
+                  onChange={(checked) => onSetXUIClientEnabled(record, checked)}
+                />
+              </>
+            )}
+          </Space>
+        )
+      },
     },
     {
       title: '总 / 上传 / 下载',
       key: 'traffic',
       width: 170,
       render: (_, record) => {
-        const billing = findClientBilling(managedConfig?.renewal?.client_billings, record) || defaultClientBilling(record)
-        const multiplier = normalizeClientTrafficMultiplier(billing.traffic_multiplier)
-        const up = scaleClientTraffic(Number(record.up || 0), multiplier)
-        const down = scaleClientTraffic(Number(record.down || 0), multiplier)
-        const total = scaleClientTraffic(clientBidirectionalTrafficTotal(record), multiplier)
-        const limit = scaleClientTraffic(Number(record.total_gb || 0), multiplier)
+        const up = Math.max(0, Number(record.up || 0))
+        const down = Math.max(0, Number(record.down || 0))
+        const total = clientBidirectionalTrafficTotal(record)
+        const limit = Math.max(0, Number(record.total_gb || 0))
         return (
           <div className="client-traffic-cell">
             <span>已用 {formatBytes(total)}{limit > 0 ? ` / 限额 ${formatBytes(limit)}` : ' / 无上限'}</span>
-            {multiplier !== 1 ? <span>流量倍率 ×{multiplier}</span> : null}
             {!restrictedView ? <span>上传 {formatBytes(up)}</span> : null}
             {!restrictedView ? <span>下载 {formatBytes(down)}</span> : null}
           </div>
@@ -683,7 +690,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       width: 180,
       render: (_, record) => (
         <Space wrap size={[6, 6]}>
-          {restrictedView ? (
+          {restrictedView && !isAccountBasedProxyClient(record) ? (
             <Button
               size="small"
               disabled={!canManageConfig && !restrictedView}

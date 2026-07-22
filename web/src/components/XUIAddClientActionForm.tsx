@@ -54,14 +54,14 @@ export function renderAddClientActionForm(props: {
         <Title level={4}>客户端账号</Title>
         <Row gutter={[16, 16]}>
           <Col xs={24} md={12}>
-            <Text type="secondary">邮箱 / 标识</Text>
+            <Text type="secondary">{form.protocol === 'http' || form.protocol === 'socks' ? '用户名' : '邮箱 / 标识'}</Text>
             <Input value={form.client.email} onChange={(event) => updateClient({ email: event.target.value })} />
           </Col>
           <Col xs={24} md={12}>
             <Text type="secondary">备注</Text>
             <Input value={form.client.comment} onChange={(event) => updateClient({ comment: event.target.value })} />
           </Col>
-          {form.protocol === 'trojan' ? (
+          {form.protocol === 'trojan' || form.protocol === 'http' || form.protocol === 'socks' ? (
             <Col xs={24} md={12}>
               <Text type="secondary">密码</Text>
               <Input value={form.client.password} placeholder="留空自动生成" onChange={(event) => updateClient({ password: event.target.value })} />
@@ -83,7 +83,7 @@ export function renderAddClientActionForm(props: {
             <Text type="secondary">到期天数</Text>
             <InputNumber style={{ width: '100%' }} min={0} value={form.client.expiry_days} onChange={(value) => updateClient({ expiry_days: Number(value || 0) })} />
           </Col>
-          {form.protocol !== 'trojan' ? (
+          {form.protocol !== 'trojan' && form.protocol !== 'http' && form.protocol !== 'socks' ? (
             <Col xs={24} md={12}>
               <Text type="secondary">Flow</Text>
               <Input value={form.client.flow} placeholder="例如 xtls-rprx-vision，可留空" onChange={(event) => updateClient({ flow: event.target.value })} />
