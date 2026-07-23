@@ -204,8 +204,9 @@ func (a *App) handleExecuteXUIControl(ctx context.Context, message model.AgentCo
 	var xuiClient *panels.XUIClient
 	var xuiErr error
 	if err == nil && effectiveConfig.XUI.Enabled {
-		xuiClient, xuiErr = a.xuiClientFor(effectiveConfig.XUI)
+		xuiClient, xuiErr = a.xuiClientForAction(effectiveConfig.XUI, message.XUIAuth)
 	}
+	message.XUIAuth = nil
 	var result model.XUIActionResultRequest
 	if err != nil {
 		result = model.XUIActionResultRequest{

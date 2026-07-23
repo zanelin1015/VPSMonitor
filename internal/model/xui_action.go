@@ -32,12 +32,17 @@ type XUIActionResultRequest struct {
 	Error  string         `json:"error,omitempty"`
 }
 
+type XUIActionAuth struct {
+	APIToken string `json:"api_token,omitempty"`
+}
+
 type XUIAction struct {
 	ID          int64          `json:"id"`
 	AgentID     string         `json:"agent_id"`
 	Kind        string         `json:"kind"`
 	Status      string         `json:"status"`
 	Payload     map[string]any `json:"payload,omitempty"`
+	XUIAuth     *XUIActionAuth `json:"xui_auth,omitempty"`
 	Result      map[string]any `json:"result,omitempty"`
 	Error       string         `json:"error,omitempty"`
 	CreatedAt   time.Time      `json:"created_at"`

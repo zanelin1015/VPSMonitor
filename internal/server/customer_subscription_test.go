@@ -81,6 +81,37 @@ func TestBuildMihomoSubscriptionWithoutLinksRemainsUsable(t *testing.T) {
 	}
 }
 
+func TestCustomerSubscriptionContentDispositionUsesUsername(t *testing.T) {
+	tests := []struct {
+		name     string
+		username string
+		expected string
+	}{
+		{
+			name:     "ascii username",
+			username: "TT",
+			expected: "inline; filename=TT; filename*=UTF-8''TT",
+		},
+		{
+			name:     "unicode username",
+			username: "测试 TT",
+			expected: "inline; filename=TT; filename*=UTF-8''%E6%B5%8B%E8%AF%95%20TT",
+		},
+		{
+			name:     "empty username",
+			username: "  ",
+			expected: "inline; filename=vpsmonitor; filename*=UTF-8''vpsmonitor",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := customerSubscriptionContentDisposition(test.username); got != test.expected {
+				t.Fatalf("unexpected Content-Disposition: got %q, want %q", got, test.expected)
+			}
+		})
+	}
+}
+
 func TestParseMihomoProxySupportsHTTPAndSocks(t *testing.T) {
 	httpProxy, ok := parseMihomoProxy("https://user:pass@proxy.example.com:8443", "HTTP Exit")
 	if !ok {

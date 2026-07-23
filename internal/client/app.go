@@ -98,12 +98,13 @@ func (a *App) executePendingXUIActions(ctx context.Context, effectiveConfig mode
 	if err != nil || len(actions) == 0 {
 		return
 	}
-	var xuiClient *panels.XUIClient
-	var xuiErr error
-	if effectiveConfig.XUI.Enabled {
-		xuiClient, xuiErr = a.xuiClientFor(effectiveConfig.XUI)
-	}
 	for _, action := range actions {
+		var xuiClient *panels.XUIClient
+		var xuiErr error
+		if effectiveConfig.XUI.Enabled {
+			xuiClient, xuiErr = a.xuiClientForAction(effectiveConfig.XUI, action.XUIAuth)
+		}
+		action.XUIAuth = nil
 		result := a.executeXUIAction(ctx, effectiveConfig, xuiClient, xuiErr, action)
 		resultCtx, resultCancel := context.WithTimeout(ctx, a.requestTimeout)
 		_ = a.reportXUIActionResult(resultCtx, action.ID, result)
@@ -360,6 +361,9 @@ func xuiLogEntry(message string) model.AgentLogEntry {
 }
 
 func (a *App) xuiClientFor(cfg config.XUIConfig) (*panels.XUIClient, error) {
+	if strings.TrimSpace(cfg.APIToken) != "" {
+		return panels.NewXUIClient(cfg, a.requestTimeout)
+	}
 	key := xuiClientCacheKey(cfg)
 	if a.xuiClient != nil && a.xuiClientKey == key {
 		return a.xuiClient, nil
@@ -371,6 +375,14 @@ func (a *App) xuiClientFor(cfg config.XUIConfig) (*panels.XUIClient, error) {
 	a.xuiClient = xuiClient
 	a.xuiClientKey = key
 	return xuiClient, nil
+}
+
+func (a *App) xuiClientForAction(cfg config.XUIConfig, auth *model.XUIActionAuth) (*panels.XUIClient, error) {
+	if auth == nil || strings.TrimSpace(auth.APIToken) == "" {
+		return a.xuiClientFor(cfg)
+	}
+	cfg.APIToken = auth.APIToken
+	return panels.NewXUIClient(cfg, a.requestTimeout)
 }
 
 func xuiClientCacheKey(cfg config.XUIConfig) string {

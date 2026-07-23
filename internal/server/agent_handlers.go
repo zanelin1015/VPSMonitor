@@ -929,6 +929,7 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
+			a.attachXUIActionAuth(agentID, actions)
 			writeJSON(w, http.StatusOK, actions)
 		case http.MethodPost:
 			user, _, ok := a.requireAgentAdmin(w, r, agentID)
@@ -1254,6 +1255,7 @@ func (a *App) dispatchXUIActionRealtime(agentID string, action model.XUIAction) 
 	control := model.AgentControlMessage{
 		ActionID: action.ID,
 		Payload:  action.Payload,
+		XUIAuth:  a.xuiActionAuth(agentID, action.Kind),
 	}
 	switch {
 	case action.Kind == model.XUIActionRestartXUI:
@@ -1272,6 +1274,47 @@ func (a *App) dispatchXUIActionRealtime(agentID string, action model.XUIAction) 
 		return action, true
 	}
 	return running, true
+}
+
+func (a *App) attachXUIActionAuth(agentID string, actions []model.XUIAction) {
+	var auth *model.XUIActionAuth
+	for index := range actions {
+		if !xuiActionUsesPanelAuth(actions[index].Kind) {
+			continue
+		}
+		if auth == nil {
+			auth = a.xuiActionAuth(agentID, actions[index].Kind)
+		}
+		if auth != nil {
+			actions[index].XUIAuth = &model.XUIActionAuth{APIToken: auth.APIToken}
+		}
+	}
+}
+
+func (a *App) xuiActionAuth(agentID, kind string) *model.XUIActionAuth {
+	if !xuiActionUsesPanelAuth(kind) {
+		return nil
+	}
+	cfg, found, err := a.store.GetAgentConfig(agentID)
+	if err != nil || !found || strings.TrimSpace(cfg.XUI.APIToken) == "" {
+		return nil
+	}
+	return &model.XUIActionAuth{APIToken: cfg.XUI.APIToken}
+}
+
+func xuiActionUsesPanelAuth(kind string) bool {
+	switch kind {
+	case model.XUIActionAddOutbound,
+		model.XUIActionAddClient,
+		model.XUIActionAddRoutingRule,
+		model.XUIActionUpsertRoutingRule,
+		model.XUIActionUpdateClientExpiry,
+		model.XUIActionSetClientEnabled,
+		model.XUIActionDeleteClient:
+		return true
+	default:
+		return false
+	}
 }
 
 func (a *App) dispatchPendingXUIActionsRealtime(agentID string) {

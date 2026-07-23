@@ -52,10 +52,21 @@ func (a *App) handleCustomerSubscription(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	content := buildMihomoSubscription(user, overview.Links)
-	filename := safeSubscriptionFilename(firstNonEmptyString(user.DisplayName, user.Username, "vpsmonitor"))
 	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", filename+"-mihomo.yaml"))
+	w.Header().Set("Content-Disposition", customerSubscriptionContentDisposition(user.Username))
 	_, _ = w.Write([]byte(content))
+}
+
+func customerSubscriptionContentDisposition(username string) string {
+	title := strings.TrimSpace(username)
+	if title == "" {
+		title = "vpsmonitor"
+	}
+	return fmt.Sprintf(
+		"inline; filename=%s; filename*=UTF-8''%s",
+		safeSubscriptionFilename(title),
+		url.PathEscape(title),
+	)
 }
 
 func isMihomoSubscriptionFile(value string) bool {

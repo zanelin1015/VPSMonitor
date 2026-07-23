@@ -36,6 +36,7 @@ type AgentControlMessage struct {
 	Kind     string              `json:"kind,omitempty"`
 	ActionID int64               `json:"action_id,omitempty"`
 	Payload  map[string]any      `json:"payload,omitempty"`
+	XUIAuth  *XUIActionAuth      `json:"xui_auth,omitempty"`
 	Config   *ManagedAgentConfig `json:"config,omitempty"`
 }
 

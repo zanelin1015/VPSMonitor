@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"bridge-core/internal/config"
 	"bridge-core/internal/model"
 	"bridge-core/internal/store"
 )
@@ -31,6 +32,92 @@ func TestRealtimeHubAgentControlLifecycle(t *testing.T) {
 	hub.unregisterAgentControl("agent-1", session)
 	if hub.sendAgentControl("agent-1", model.AgentControlMessage{Type: model.AgentControlCollectNow}) {
 		t.Fatal("send should fail after unregistering realtime control session")
+	}
+}
+
+func TestDispatchXUIActionRealtimeAttachesCurrentAPITokenWithoutPersistingIt(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "agent-token", AgentName: "Agent Token"}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	cfg, found, err := sqliteStore.GetAgentConfig("agent-token")
+	if err != nil || !found {
+		t.Fatalf("GetAgentConfig found=%v err=%v", found, err)
+	}
+	cfg.XUI = config.XUIConfig{Enabled: true, BaseURL: "https://xui.example", APIToken: "latest-server-token"}
+	if _, err := sqliteStore.UpdateAgentConfig("agent-token", cfg); err != nil {
+		t.Fatalf("UpdateAgentConfig: %v", err)
+	}
+	action, err := sqliteStore.CreateXUIAction("agent-token", model.XUIActionRequest{
+		Kind: model.XUIActionUpdateClientExpiry,
+		Payload: map[string]any{
+			"inbound_id":  1,
+			"email":       "client@example.com",
+			"expiry_time": int64(1896048000000),
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateXUIAction: %v", err)
+	}
+
+	app := &App{store: sqliteStore, realtime: newRealtimeHub()}
+	session := app.realtime.registerAgentControl("agent-token")
+	defer app.realtime.unregisterAgentControl("agent-token", session)
+	if _, ok := app.dispatchXUIActionRealtime("agent-token", action); !ok {
+		t.Fatal("expected action to dispatch over realtime websocket")
+	}
+	select {
+	case message := <-session.ch:
+		if message.XUIAuth == nil || message.XUIAuth.APIToken != "latest-server-token" {
+			t.Fatalf("expected current API token in one-use control message, got %#v", message.XUIAuth)
+		}
+	default:
+		t.Fatal("expected websocket control message")
+	}
+
+	stored, found, err := sqliteStore.GetXUIAction("agent-token", action.ID)
+	if err != nil || !found {
+		t.Fatalf("GetXUIAction found=%v err=%v", found, err)
+	}
+	if stored.XUIAuth != nil {
+		t.Fatalf("API token must not be persisted with an action: %#v", stored.XUIAuth)
+	}
+}
+
+func TestAttachXUIActionAuthOnlyTargetsPanelActions(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "agent-poll", AgentName: "Agent Poll"}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	cfg, found, err := sqliteStore.GetAgentConfig("agent-poll")
+	if err != nil || !found {
+		t.Fatalf("GetAgentConfig found=%v err=%v", found, err)
+	}
+	cfg.XUI = config.XUIConfig{Enabled: true, APIToken: "poll-token"}
+	if _, err := sqliteStore.UpdateAgentConfig("agent-poll", cfg); err != nil {
+		t.Fatalf("UpdateAgentConfig: %v", err)
+	}
+	actions := []model.XUIAction{
+		{Kind: model.XUIActionSetClientEnabled},
+		{Kind: model.XUIActionUpdateClient},
+		{Kind: model.XUIActionExecuteCommand},
+	}
+
+	app := &App{store: sqliteStore}
+	app.attachXUIActionAuth("agent-poll", actions)
+	if actions[0].XUIAuth == nil || actions[0].XUIAuth.APIToken != "poll-token" {
+		t.Fatalf("expected panel action auth, got %#v", actions[0].XUIAuth)
+	}
+	if actions[1].XUIAuth != nil || actions[2].XUIAuth != nil {
+		t.Fatalf("non-panel actions must not carry API tokens: %#v", actions)
 	}
 }
 
