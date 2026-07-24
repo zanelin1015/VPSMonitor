@@ -2060,6 +2060,105 @@ func TestXUIExecuteUpdateClientExpiryUsesFullInboundUpdateAndPreservesUUID(t *te
 	}
 }
 
+func TestXUIExecuteUpdateClientTrafficLimitPreservesOtherClientFields(t *testing.T) {
+	tests := []struct {
+		name       string
+		totalBytes int64
+	}{
+		{name: "reduce limit", totalBytes: 50 * 1024 * 1024 * 1024},
+		{name: "remove limit", totalBytes: 0},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client, err := NewXUIClient(config.XUIConfig{
+				Enabled:  true,
+				BaseURL:  "https://xui.local",
+				Username: "admin",
+				Password: "pass",
+			}, 5*time.Second)
+			if err != nil {
+				t.Fatalf("NewXUIClient: %v", err)
+			}
+
+			updateCalled := false
+			client.client = &http.Client{
+				Timeout: 5 * time.Second,
+				Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					switch req.URL.Path {
+					case "/login":
+						return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
+					case "/panel/api/inbounds/list":
+						return jsonResponse(t, req, map[string]any{
+							"success": true,
+							"obj": []map[string]any{{
+								"id":       7,
+								"tag":      "in-vless-443",
+								"protocol": "vless",
+								"settings": `{"clients":[{"id":"uuid-1","email":"alice@example.com","enable":true,"expiryTime":1893456000000,"flow":"xtls-rprx-vision","totalGB":107374182400,"limitIp":2,"subId":"stable-sub-id","comment":"keep-me"}]}`,
+							}},
+						}), nil
+					case "/panel/api/inbounds/updateClient/uuid-1":
+						t.Fatalf("must not call single-client update API because some x-ui versions reset UUIDs")
+						return nil, nil
+					case "/panel/api/inbounds/update/7":
+						updateCalled = true
+						var body map[string]any
+						if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+							t.Fatalf("decode update body: %v", err)
+						}
+						settings := stringValue(body["settings"])
+						var decoded map[string]any
+						if err := json.Unmarshal([]byte(settings), &decoded); err != nil {
+							t.Fatalf("decode updated settings: %v", err)
+						}
+						clients := objectSlice(decoded["clients"])
+						if len(clients) != 1 {
+							t.Fatalf("expected one client, got %#v", clients)
+						}
+						updated := clients[0]
+						if stringValue(updated["id"]) != "uuid-1" ||
+							stringValue(updated["email"]) != "alice@example.com" ||
+							updated["enable"] != true ||
+							int64Value(updated["expiryTime"]) != 1893456000000 ||
+							stringValue(updated["flow"]) != "xtls-rprx-vision" ||
+							int64Value(updated["totalGB"]) != test.totalBytes ||
+							intValue(updated["limitIp"]) != 2 ||
+							stringValue(updated["subId"]) != "stable-sub-id" ||
+							stringValue(updated["comment"]) != "keep-me" {
+							t.Fatalf("expected traffic-only update with all other fields preserved, got %#v", updated)
+						}
+						return jsonResponse(t, req, map[string]any{"success": true, "msg": "updated"}), nil
+					default:
+						t.Fatalf("unexpected path (traffic updates must not restart Xray): %s", req.URL.Path)
+						return nil, nil
+					}
+				}),
+			}
+
+			result, err := client.ExecuteAction(context.Background(), model.XUIAction{
+				Kind: model.XUIActionUpdateClientTraffic,
+				Payload: map[string]any{
+					"inbound_id":  7,
+					"email":       "alice@example.com",
+					"total_bytes": test.totalBytes,
+					"expiry_time": int64(0),
+					"enabled":     false,
+				},
+			})
+			if err != nil {
+				t.Fatalf("ExecuteAction: %v", err)
+			}
+			if int64Value(result["total_bytes"]) != test.totalBytes || result["restarted"] != false {
+				t.Fatalf("unexpected result: %#v", result)
+			}
+			if !updateCalled {
+				t.Fatalf("expected full inbound update API to be called")
+			}
+		})
+	}
+}
+
 func TestXUIExecuteAddClientUsesAddClientAPI(t *testing.T) {
 	client, err := NewXUIClient(config.XUIConfig{
 		Enabled:  true,

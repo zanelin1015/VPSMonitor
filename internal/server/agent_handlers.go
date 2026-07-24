@@ -1240,6 +1240,7 @@ func realtimeXUIActionAllowed(kind string) bool {
 		model.XUIActionAddRoutingRule,
 		model.XUIActionUpsertRoutingRule,
 		model.XUIActionUpdateClientExpiry,
+		model.XUIActionUpdateClientTraffic,
 		model.XUIActionSetClientEnabled,
 		model.XUIActionDeleteClient,
 		model.XUIActionUpdateClient,
@@ -1309,6 +1310,7 @@ func xuiActionUsesPanelAuth(kind string) bool {
 		model.XUIActionAddRoutingRule,
 		model.XUIActionUpsertRoutingRule,
 		model.XUIActionUpdateClientExpiry,
+		model.XUIActionUpdateClientTraffic,
 		model.XUIActionSetClientEnabled,
 		model.XUIActionDeleteClient:
 		return true

@@ -213,6 +213,7 @@ export default function App() {
   const [configLoading, setConfigLoading] = useState(false)
   const [configSavingSection, setConfigSavingSection] = useState<ConfigSectionKey | null>(null)
   const [clientBillingSavingKey, setClientBillingSavingKey] = useState('')
+  const [xuiClientTrafficSavingKey, setXUIClientTrafficSavingKey] = useState('')
   const [configError, setConfigError] = useState('')
   const [configAudits, setConfigAudits] = useState<ConfigAuditLog[]>([])
   const [configAuditsLoading, setConfigAuditsLoading] = useState(false)
@@ -1271,6 +1272,51 @@ export default function App() {
       message.error(error instanceof Error ? error.message : `${enabled ? '启用' : '停用'} Client 失败`)
     } finally {
       setXUIClientToggleLoadingKey('')
+    }
+  }
+
+  async function saveXUIClientTrafficLimit(record: XUIClientView, totalGB: number, agentID = selectedAgentId) {
+    const targetAgentID = record.realm_target_agent_id || agentID
+    const targetInboundID = record.realm_target_inbound_id || record.inbound_id
+    const targetInboundTag = record.realm_target_inbound_tag || record.inbound_tag || ''
+    if (!targetAgentID || !record.email) {
+      return
+    }
+    const key = xuiClientActionKey(record)
+    const normalizedGB = Math.max(0, Number(totalGB || 0))
+    const totalBytes = Math.round(normalizedGB * 1024 * 1024 * 1024)
+    setXUIClientTrafficSavingKey(key)
+    try {
+      const action = await fetchJSON<XUIAction>(`/api/v1/agents/${targetAgentID}/xui/actions`, {
+        method: 'POST',
+        body: JSON.stringify({
+          kind: 'update_client_traffic_limit',
+          payload: {
+            inbound_id: targetInboundID,
+            inbound_tag: targetInboundTag,
+            email: record.email,
+            total_bytes: totalBytes,
+          },
+        }),
+      })
+      message.success(action.status === 'running'
+        ? `流量上限已通过 WS 下发到 x-ui（${normalizedGB > 0 ? `${normalizedGB} GB` : '无上限'}）`
+        : '流量上限同步任务已创建，Client 在线后会自动执行')
+      await loadXUIActions(targetAgentID, { silent: true })
+      scheduleXUIActionResultRefresh(targetAgentID)
+      window.setTimeout(() => {
+        void loadOverview(targetAgentID, { silent: true })
+        if (selectedAgentId && targetAgentID !== selectedAgentId) {
+          void loadOverview(selectedAgentId, { silent: true })
+        }
+      }, 2500)
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      message.error(error instanceof Error ? error.message : '同步 x-ui 流量上限失败')
+    } finally {
+      setXUIClientTrafficSavingKey('')
     }
   }
 
@@ -2589,6 +2635,7 @@ export default function App() {
                 xuiActions={xuiActions}
                 xuiActionsLoading={xuiActionsLoading}
                 xuiClientDeleteLoadingKey={xuiClientDeleteLoadingKey}
+                xuiClientTrafficSavingKey={xuiClientTrafficSavingKey}
                 xuiClientToggleLoadingKey={xuiClientToggleLoadingKey}
                 agentDeleteLoading={agentDeleteLoading}
                 onActiveTabChange={setActiveTabKey}
@@ -2651,6 +2698,7 @@ export default function App() {
                 onAuthorizeCustomer={openCustomerAuthorization}
                 onDeleteCurrentAgent={() => void deleteAgent(selectedAgentId)}
                 onDeleteXUIClient={(client) => void deleteXUIClient(client, selectedAgentId)}
+                onSaveXUIClientTrafficLimit={(client, totalGB) => void saveXUIClientTrafficLimit(client, totalGB, selectedAgentId)}
                 onSetXUIClientEnabled={(client, enabled) => void setXUIClientEnabled(client, enabled, selectedAgentId)}
                 onRefreshCurrentAgent={() => void requestAgentSnapshot(selectedAgentId)}
                 onRestartXUI={() => void restartXUIService(selectedAgentId)}

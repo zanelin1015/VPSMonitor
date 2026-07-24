@@ -180,6 +180,7 @@ func (a *App) xuiActionTimeout(kind string) time.Duration {
 		model.XUIActionAddRoutingRule,
 		model.XUIActionUpsertRoutingRule,
 		model.XUIActionUpdateClientExpiry,
+		model.XUIActionUpdateClientTraffic,
 		model.XUIActionSetClientEnabled,
 		model.XUIActionDeleteClient:
 		if timeout < 90*time.Second {

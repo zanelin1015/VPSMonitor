@@ -1009,6 +1009,15 @@
   color: var(--muted);
 }
 
+.client-traffic-limit-editor {
+  width: 148px;
+}
+
+.client-traffic-limit-editor .ant-input-number {
+  min-width: 0;
+  width: 108px;
+}
+
 .mini-progress {
   min-width: 0;
   padding: 7px 8px;

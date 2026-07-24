@@ -53,11 +53,11 @@ func TestDispatchXUIActionRealtimeAttachesCurrentAPITokenWithoutPersistingIt(t *
 		t.Fatalf("UpdateAgentConfig: %v", err)
 	}
 	action, err := sqliteStore.CreateXUIAction("agent-token", model.XUIActionRequest{
-		Kind: model.XUIActionUpdateClientExpiry,
+		Kind: model.XUIActionUpdateClientTraffic,
 		Payload: map[string]any{
 			"inbound_id":  1,
 			"email":       "client@example.com",
-			"expiry_time": int64(1896048000000),
+			"total_bytes": int64(50 * 1024 * 1024 * 1024),
 		},
 	})
 	if err != nil {
@@ -107,6 +107,7 @@ func TestAttachXUIActionAuthOnlyTargetsPanelActions(t *testing.T) {
 	}
 	actions := []model.XUIAction{
 		{Kind: model.XUIActionSetClientEnabled},
+		{Kind: model.XUIActionUpdateClientTraffic},
 		{Kind: model.XUIActionUpdateClient},
 		{Kind: model.XUIActionExecuteCommand},
 	}
@@ -116,7 +117,10 @@ func TestAttachXUIActionAuthOnlyTargetsPanelActions(t *testing.T) {
 	if actions[0].XUIAuth == nil || actions[0].XUIAuth.APIToken != "poll-token" {
 		t.Fatalf("expected panel action auth, got %#v", actions[0].XUIAuth)
 	}
-	if actions[1].XUIAuth != nil || actions[2].XUIAuth != nil {
+	if actions[1].XUIAuth == nil || actions[1].XUIAuth.APIToken != "poll-token" {
+		t.Fatalf("expected traffic action auth, got %#v", actions[1].XUIAuth)
+	}
+	if actions[2].XUIAuth != nil || actions[3].XUIAuth != nil {
 		t.Fatalf("non-panel actions must not carry API tokens: %#v", actions)
 	}
 }

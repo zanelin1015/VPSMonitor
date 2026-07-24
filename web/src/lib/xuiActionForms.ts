@@ -683,6 +683,8 @@ export function actionKindLabel(kind: string): string {
       return '删除 Client'
     case 'set_client_enabled':
       return '启用 / 停用 Client'
+    case 'update_client_traffic_limit':
+      return '修改 Client 流量上限'
     default:
       return kind
   }

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Alert, AutoComplete, Badge, Button, Card, Empty, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, Tag, Typography } from 'antd'
+import { Alert, AutoComplete, Badge, Button, Card, Empty, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, Tag, Tooltip, Typography } from 'antd'
 import type { TabsProps } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { ReloadOutlined, SettingOutlined } from '@ant-design/icons'
+import { ReloadOutlined, SaveOutlined, SettingOutlined } from '@ant-design/icons'
 
 import type {
   AgentEntryConfig,
@@ -107,6 +107,7 @@ export interface AgentDetailPanelProps {
   xuiActions: XUIAction[]
   xuiActionsLoading: boolean
   xuiClientDeleteLoadingKey: string
+  xuiClientTrafficSavingKey: string
   xuiClientToggleLoadingKey: string
   agentDeleteLoading: boolean
   canOpenXUI: boolean
@@ -138,6 +139,7 @@ export interface AgentDetailPanelProps {
   onAuthorizeCustomer: (draft: CustomerAssignmentDraft) => void
   onDeleteCurrentAgent: () => void
   onDeleteXUIClient: (client: XUIClientView) => void
+  onSaveXUIClientTrafficLimit: (client: XUIClientView, totalGB: number) => void
   onSetXUIClientEnabled: (client: XUIClientView, enabled: boolean) => void
   onRefreshCurrentAgent: () => void
   onRestartXUI: () => void
@@ -212,6 +214,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     xuiActions,
     xuiActionsLoading,
     xuiClientDeleteLoadingKey,
+    xuiClientTrafficSavingKey,
     xuiClientToggleLoadingKey,
     agentDeleteLoading,
     canOpenXUI,
@@ -243,6 +246,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onAuthorizeCustomer,
     onDeleteCurrentAgent,
     onDeleteXUIClient,
+    onSaveXUIClientTrafficLimit,
     onSetXUIClientEnabled,
     onRefreshCurrentAgent,
     onRestartXUI,
@@ -267,6 +271,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const [remoteShell, setRemoteShell] = useState('bash')
   const [remoteTimeout, setRemoteTimeout] = useState(120)
   const xuiClientActionKey = (record: XUIClientView) => [record.inbound_id, record.inbound_tag || '', record.email || '', record.auth_uuid || record.auth_password || ''].join(':')
+  const [clientTrafficLimitDrafts, setClientTrafficLimitDrafts] = useState<Record<string, number>>({})
   const [commandOutputAction, setCommandOutputAction] = useState<XUIAction | null>(null)
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [terminalShell, setTerminalShell] = useState(defaultTerminalShell(selectedAgent.client_os))
@@ -526,17 +531,45 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       },
     },
     {
-      title: '总 / 上传 / 下载',
+      title: '流量 / 上传 / 下载',
       key: 'traffic',
-      width: 170,
+      width: 240,
       render: (_, record) => {
         const up = Math.max(0, Number(record.up || 0))
         const down = Math.max(0, Number(record.down || 0))
         const total = clientBidirectionalTrafficTotal(record)
         const limit = Math.max(0, Number(record.total_gb || 0))
+        const actionKey = xuiClientActionKey(record)
+        const limitGB = clientTrafficLimitDrafts[actionKey] ?? limit / (1024 * 1024 * 1024)
         return (
           <div className="client-traffic-cell">
             <span>已用 {formatBytes(total)}{limit > 0 ? ` / 限额 ${formatBytes(limit)}` : ' / 无上限'}</span>
+            {!restrictedView ? (
+              <Space.Compact size="small" className="client-traffic-limit-editor">
+                <InputNumber
+                  min={0}
+                  precision={2}
+                  step={1}
+                  addonAfter="GB"
+                  disabled={!canManageConfig}
+                  value={limitGB}
+                  onChange={(value) => setClientTrafficLimitDrafts((current) => ({
+                    ...current,
+                    [actionKey]: Math.max(0, Number(value || 0)),
+                  }))}
+                />
+                <Tooltip title="同步到 x-ui；0 GB 表示无上限">
+                  <Button
+                    type="primary"
+                    aria-label="保存流量上限"
+                    icon={<SaveOutlined />}
+                    disabled={!canManageConfig || !record.email}
+                    loading={xuiClientTrafficSavingKey === actionKey}
+                    onClick={() => onSaveXUIClientTrafficLimit(record, limitGB)}
+                  />
+                </Tooltip>
+              </Space.Compact>
+            ) : null}
             {!restrictedView ? <span>上传 {formatBytes(up)}</span> : null}
             {!restrictedView ? <span>下载 {formatBytes(down)}</span> : null}
           </div>
