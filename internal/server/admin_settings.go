@@ -224,7 +224,10 @@ func (a *App) handleClientInstallInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, a.clientInstallInfo(r, settings))
 }
 
-const defaultClientInstallScriptURL = "https://raw.githubusercontent.com/zanelin1015/VPSMonitor/main/install.sh"
+const (
+	defaultClientInstallScriptURL = "https://raw.githubusercontent.com/zanelin1015/VPSMonitor/main/install.sh"
+	defaultRealmVersion           = "v2.9.4"
+)
 
 func (a *App) clientInstallInfo(r *http.Request, settings model.ClientInstallSettingsRequest) model.ClientInstallInfo {
 	serverURL := firstNonEmptyString(settings.ServerURL, requestPublicBaseURL(r))
@@ -241,6 +244,9 @@ func (a *App) clientInstallInfo(r *http.Request, settings model.ClientInstallSet
 		PollInterval:          pollInterval,
 		RequestTimeoutSeconds: requestTimeoutSeconds,
 		ServerSkipTLSVerify:   settings.ServerSkipTLSVerify,
+		RealmAutoInstall:      settings.RealmAutoInstall,
+		RealmVersion:          firstNonEmptyString(settings.RealmVersion, defaultRealmVersion),
+		RealmDownloadBaseURL:  settings.RealmDownloadBaseURL,
 		XUIAutoInstall:        false,
 	}
 }
@@ -249,6 +255,8 @@ func validateClientInstallSettings(req model.ClientInstallSettingsRequest) (mode
 	req.ServerURL = strings.TrimSpace(req.ServerURL)
 	req.InstallScriptURL = strings.TrimSpace(req.InstallScriptURL)
 	req.PollInterval = strings.TrimSpace(req.PollInterval)
+	req.RealmVersion = strings.TrimSpace(req.RealmVersion)
+	req.RealmDownloadBaseURL = strings.TrimRight(strings.TrimSpace(req.RealmDownloadBaseURL), "/")
 	req.XUIUsername = strings.TrimSpace(req.XUIUsername)
 	req.XUIPassword = strings.TrimSpace(req.XUIPassword)
 	req.XUIInstallScriptURL = strings.TrimSpace(req.XUIInstallScriptURL)
@@ -279,6 +287,17 @@ func validateClientInstallSettings(req model.ClientInstallSettingsRequest) (mode
 	}
 	if req.RequestTimeoutSeconds <= 0 {
 		req.RequestTimeoutSeconds = 15
+	}
+	if req.RealmVersion == "" {
+		req.RealmVersion = defaultRealmVersion
+	}
+	if len(req.RealmVersion) > 32 || strings.Trim(req.RealmVersion, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-") != "" {
+		return req, fmt.Errorf("realm version contains unsupported characters")
+	}
+	if req.RealmDownloadBaseURL != "" {
+		if err := validateHTTPURL(req.RealmDownloadBaseURL, "realm download base url"); err != nil {
+			return req, err
+		}
 	}
 	return req, nil
 }

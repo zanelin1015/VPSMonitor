@@ -68,7 +68,7 @@ export CGO_ENABLED=0
 if [[ "$#" -gt 0 ]]; then
   TARGETS=("$@")
 else
-  TARGETS=("linux/amd64" "windows/amd64")
+  TARGETS=("linux/amd64" "linux/arm64" "linux/arm" "windows/amd64" "windows/arm64")
 fi
 
 mkdir -p "$DIST_DIR" "$GOCACHE"
@@ -82,7 +82,14 @@ package_component() {
   local app_name="$1"
   local entrypoint="$2"
   local goos="$3"
-  local goarch="$4"
+  local target_arch="$4"
+  local goarch="$target_arch"
+  local goarm=""
+  if [[ "$target_arch" == "arm" || "$target_arch" == "armv7" ]]; then
+    goarch="arm"
+    goarm="7"
+    target_arch="arm"
+  fi
   local package_role="${app_name#bridge-}"
   local package_prefix="${PACKAGE_PREFIX:-VPSMonitor}"
   local build_version="$SERVER_BUILD_VERSION"
@@ -98,7 +105,7 @@ package_component() {
     ext=".exe"
   fi
 
-  local package_name="${package_prefix}-${package_role}-${goos}-${goarch}"
+  local package_name="${package_prefix}-${package_role}-${goos}-${target_arch}"
   local output_dir="${DIST_DIR}/${package_name}"
   local config_src="${ROOT_DIR}/config/${package_role}.example.json"
   local config_dst="${output_dir}/config/${package_role}.json"
@@ -110,7 +117,7 @@ package_component() {
   rm -f "${DIST_DIR}/${app_name}-${goos}-${goarch}.tar.gz" "${DIST_DIR}/${app_name}-${goos}-${goarch}.zip"
   mkdir -p "${output_dir}/config"
 
-  GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags="$go_ldflags" -o "$binary_path" "$entrypoint"
+  GOOS="$goos" GOARCH="$goarch" GOARM="$goarm" go build -trimpath -ldflags="$go_ldflags" -o "$binary_path" "$entrypoint"
 
   cp "$config_src" "$config_dst"
   cp "${ROOT_DIR}/README.md" "${output_dir}/README.md"
@@ -128,9 +135,11 @@ package_component() {
     )
   else
     cp "${ROOT_DIR}/scripts/templates/run-${app_name}.sh" "${output_dir}/run.sh"
-    if [[ "$app_name" == "bridge-server" ]]; then
-      cp "${ROOT_DIR}/install.sh" "${output_dir}/install.sh"
-      chmod +x "${output_dir}/install.sh"
+    cp "${ROOT_DIR}/install.sh" "${output_dir}/install.sh"
+    chmod +x "${output_dir}/install.sh"
+    if [[ "$app_name" == "bridge-client" ]]; then
+      cp "${ROOT_DIR}/install-openwrt.sh" "${output_dir}/install-openwrt.sh"
+      chmod +x "${output_dir}/install-openwrt.sh"
     fi
     chmod +x "${output_dir}/run.sh" "$binary_path"
     (

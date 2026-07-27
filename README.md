@@ -223,6 +223,25 @@ go run ./cmd/bridge-client -config ./config/client.json -once
 
 ## 打包
 
+Client 支持矩阵：
+
+| 系统 | 服务管理 | 架构 |
+| --- | --- | --- |
+| Debian / Ubuntu / CentOS | systemd | x86_64、ARM64、ARMv7 |
+| Alpine Linux | OpenRC | x86_64、ARM64、ARMv7 |
+| iStoreOS / OpenWrt | procd | x86_64、ARM64、ARMv7 |
+| Windows Server / Windows 10 Pro / Windows 11 | Windows Service | x86_64、ARM64 |
+
+普通 Linux 使用 `install.sh`，iStoreOS/OpenWrt 使用 `install-openwrt.sh`，Windows 使用 `install.ps1`。三种安装器都会自动识别架构，升级时保留现有 `client.json`。
+
+Linux 与 OpenWrt Client 可以选择同时安装 Realm，默认关闭。安装器会复用已有 Realm 二进制，不覆盖现有配置；Realm 转发服务在 Server 下发首条转发规则时创建并启动。管理员可以在“Client 安装命令”中开启安装、固定 Realm 版本或填写国内镜像目录。相关环境变量如下：
+
+```bash
+VPSMONITOR_REALM_AUTO_INSTALL=false
+VPSMONITOR_REALM_VERSION=v2.9.4
+VPSMONITOR_REALM_DOWNLOAD_BASE_URL=https://mirror.example.com/realm/v2.9.4
+```
+
 Linux/macOS：
 
 ```bash
@@ -261,4 +280,6 @@ server / client 二进制都支持查看版本：
 - Node.js 18+
 - npm
 
-脚本会先构建前端静态资源，再把页面嵌入 `bridge-server` 二进制，并输出 Linux / Windows 可直接运行的包，默认包名为 `VPSMonitor-server-linux-amd64.tar.gz`、`VPSMonitor-client-linux-amd64.tar.gz`。
+脚本会先构建前端静态资源，再把页面嵌入 `bridge-server` 二进制，并输出 Linux `amd64/arm64/arm` 与 Windows `amd64/arm64` 的 Server、Client 安装包。OpenWrt 的 `arm` 包按 ARMv7 构建。
+
+OpenWrt/iStoreOS 默认启用监控、远程终端、Realm procd 管理和 X-UI API 操作。端口策略不会在 OpenWrt 上自动执行，以免覆盖 firewall4、SQM、Cake 或 qosify 的现有规则。

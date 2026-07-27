@@ -941,6 +941,9 @@ func TestSQLiteStoreClientInstallSettings(t *testing.T) {
 		PollInterval:          "45s",
 		RequestTimeoutSeconds: 20,
 		ServerSkipTLSVerify:   true,
+		RealmAutoInstall:      true,
+		RealmVersion:          " v2.9.4 ",
+		RealmDownloadBaseURL:  " https://mirror.example.com/realm/v2.9.4/ ",
 		XUIAutoInstall:        true,
 		XUIUsername:           " admin ",
 		XUIPassword:           " secret ",
@@ -957,6 +960,9 @@ func TestSQLiteStoreClientInstallSettings(t *testing.T) {
 	if saved.XUIUsername != "admin" || saved.XUIPassword != "secret" || saved.XUIWebPath != "/xui/" {
 		t.Fatalf("x-ui bootstrap settings were not normalized: %#v", saved)
 	}
+	if !saved.RealmAutoInstall || saved.RealmVersion != "v2.9.4" || saved.RealmDownloadBaseURL != "https://mirror.example.com/realm/v2.9.4" {
+		t.Fatalf("realm install settings were not normalized: %#v", saved)
+	}
 
 	loaded, found, err := store.GetClientInstallSettings()
 	if err != nil {
@@ -967,6 +973,38 @@ func TestSQLiteStoreClientInstallSettings(t *testing.T) {
 	}
 	if loaded != saved {
 		t.Fatalf("unexpected loaded settings: got %#v want %#v", loaded, saved)
+	}
+}
+
+func TestSQLiteStoreClientInstallSettingsKeepsLegacyRealmInstallDisabled(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+
+	legacy := `{"server_url":"https://panel.example.com","install_script_url":"https://example.com/install.sh"}`
+	if _, err := store.db.Exec(`INSERT INTO app_settings (key, value_json, updated_at) VALUES (?, ?, ?)`, clientInstallSettingsKey, legacy, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		t.Fatalf("insert legacy client install settings: %v", err)
+	}
+	loaded, found, err := store.GetClientInstallSettings()
+	if err != nil || !found {
+		t.Fatalf("GetClientInstallSettings: found=%v err=%v", found, err)
+	}
+	if loaded.RealmAutoInstall {
+		t.Fatal("expected legacy settings without realm_auto_install to keep realm installation disabled")
+	}
+
+	loaded.RealmAutoInstall = false
+	if _, err := store.SaveClientInstallSettings(loaded); err != nil {
+		t.Fatalf("SaveClientInstallSettings disabled: %v", err)
+	}
+	reloaded, _, err := store.GetClientInstallSettings()
+	if err != nil {
+		t.Fatalf("GetClientInstallSettings disabled: %v", err)
+	}
+	if reloaded.RealmAutoInstall {
+		t.Fatal("expected an explicitly disabled realm auto install setting to remain disabled")
 	}
 }
 

@@ -469,6 +469,9 @@ export interface ClientInstallInfo {
   poll_interval: string
   request_timeout_seconds: number
   server_skip_tls_verify: boolean
+  realm_auto_install: boolean
+  realm_version?: string
+  realm_download_base_url?: string
   xui_auto_install?: boolean
   xui_username?: string
   xui_password?: string

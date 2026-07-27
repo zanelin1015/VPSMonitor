@@ -57,6 +57,9 @@ service_manager() {
 }
 
 require_service_manager() {
+  if [[ -f /etc/openwrt_release ]]; then
+    die "OpenWrt/iStoreOS detected. Use install-openwrt.sh so the client is managed by procd."
+  fi
   [[ -n "$(service_manager)" ]] || die "systemd or OpenRC is required for service installation."
 }
 
@@ -64,7 +67,7 @@ detect_arch() {
   case "$(uname -m)" in
     x86_64 | amd64) echo "amd64" ;;
     aarch64 | arm64) echo "arm64" ;;
-    armv7l | armv7*) echo "armv7" ;;
+    armv7l | armv7* | armhf) echo "arm" ;;
     *) die "Unsupported CPU architecture: $(uname -m)" ;;
   esac
 }
@@ -93,6 +96,77 @@ download_file() {
       -O "$dst" "$url"
   else
     die "curl or wget is required to download packages."
+  fi
+}
+
+realm_binary() {
+  local candidate
+  if candidate="$(command -v realm 2>/dev/null)" && [[ -x "$candidate" ]]; then
+    echo "$candidate"
+    return 0
+  fi
+  for candidate in /usr/local/bin/realm /usr/bin/realm /opt/realm/realm; do
+    if [[ -x "$candidate" ]]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+realm_target() {
+  local arch="$1"
+  local libc="gnu"
+  if ldd --version 2>&1 | grep -qi musl || compgen -G '/lib/ld-musl-*.so.1' >/dev/null; then
+    libc="musl"
+  fi
+  case "$arch" in
+    amd64) echo "x86_64-unknown-linux-$libc" ;;
+    arm64) echo "aarch64-unknown-linux-$libc" ;;
+    arm) echo "armv7-unknown-linux-${libc}eabihf" ;;
+    *) return 1 ;;
+  esac
+}
+
+install_realm_binary() {
+  local arch="$1"
+  local realm_version="${VPSMONITOR_REALM_VERSION:-v2.9.4}"
+  local target
+  target="$(realm_target "$arch")" || return 1
+  local package_name="realm-${target}.tar.gz"
+  local base_url="${VPSMONITOR_REALM_DOWNLOAD_BASE_URL:-https://github.com/zhboner/realm/releases/download/${realm_version}}"
+  local package_url="${VPSMONITOR_REALM_PACKAGE_URL:-${base_url%/}/${package_name}}"
+  local install_path="${VPSMONITOR_REALM_BINARY_PATH:-/usr/local/bin/realm}"
+  local work_dir package_path
+  tmp_dir="${tmp_dir:-$(make_temp_dir)}"
+  work_dir="$tmp_dir/realm-install"
+  package_path="$tmp_dir/$package_name"
+  rm -rf "$work_dir"
+  mkdir -p "$work_dir" "$(dirname "$install_path")"
+  info "Downloading Realm $realm_version for $target:"
+  echo "  $package_url"
+  download_file "$package_url" "$package_path" || return 1
+  tar -xzf "$package_path" -C "$work_dir" || return 1
+  [[ -f "$work_dir/realm" ]] || return 1
+  install -m 0755 "$work_dir/realm" "$install_path" || return 1
+  ok "Realm installed: $install_path"
+  "$install_path" -v 2>/dev/null || true
+}
+
+install_realm_if_enabled() {
+  local arch="$1"
+  is_truthy "${VPSMONITOR_REALM_AUTO_INSTALL:-false}" || return 0
+  local existing=""
+  existing="$(realm_binary 2>/dev/null || true)"
+  if [[ -n "$existing" ]] && ! is_truthy "${VPSMONITOR_REALM_FORCE_INSTALL:-false}"; then
+    info "Keeping existing Realm binary: $existing"
+    return 0
+  fi
+  if ! install_realm_binary "$arch"; then
+    if is_truthy "${VPSMONITOR_REALM_REQUIRED:-false}"; then
+      die "Realm installation failed. Set VPSMONITOR_REALM_DOWNLOAD_BASE_URL to a reachable mirror and retry."
+    fi
+    warn "Realm installation failed; bridge-client installation will continue. Set VPSMONITOR_REALM_REQUIRED=true to make this fatal."
   fi
 }
 
@@ -676,6 +750,8 @@ install_client() {
   install -m 0755 "$source_dir/bridge-client" "$install_dir/bridge-client"
   [[ -f "$source_dir/README.md" ]] && install -m 0644 "$source_dir/README.md" "$install_dir/README.md"
 
+  install_realm_if_enabled "$arch"
+
   local service_name="${VPSMONITOR_CLIENT_SERVICE:-vpsmonitor-client}"
   prompt_default service_name "Service name" "$service_name"
   install_service "$service_name" "VPSMonitor Bridge Client" "$install_dir" "bridge-client" "$config_path"
@@ -714,6 +790,14 @@ Environment overrides:
   VPSMONITOR_SERVER_SKIP_TLS_VERIFY=false
   VPSMONITOR_POLL_INTERVAL=30s
   VPSMONITOR_REQUEST_TIMEOUT_SECONDS=15
+
+  VPSMONITOR_REALM_AUTO_INSTALL=false
+  VPSMONITOR_REALM_VERSION=v2.9.4
+  VPSMONITOR_REALM_DOWNLOAD_BASE_URL=https://example.com/realm/v2.9.4
+  VPSMONITOR_REALM_PACKAGE_URL=https://example.com/realm-x86_64-unknown-linux-gnu.tar.gz
+  VPSMONITOR_REALM_BINARY_PATH=/usr/local/bin/realm
+  VPSMONITOR_REALM_FORCE_INSTALL=false
+  VPSMONITOR_REALM_REQUIRED=false
   VPSMONITOR_ASSUME_YES=true
   VPSMONITOR_FORCE_CONFIG=true
 EOF

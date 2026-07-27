@@ -5,7 +5,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
-$InstallerVersion = "2026.05.10.1"
+$InstallerVersion = "2026.07.27.1"
 
 $Repo = if ($env:VPSMONITOR_REPO) { $env:VPSMONITOR_REPO } else { "zanelin1015/VPSMonitor" }
 $Version = if ($env:VPSMONITOR_VERSION) { $env:VPSMONITOR_VERSION } else { "latest" }
@@ -30,10 +30,11 @@ function Assert-Admin {
 }
 
 function Get-Arch {
-  switch ($env:PROCESSOR_ARCHITECTURE.ToLowerInvariant()) {
+  $architecture = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+  switch ($architecture.ToLowerInvariant()) {
     "amd64" { "amd64"; break }
     "arm64" { "arm64"; break }
-    default { throw "Unsupported CPU architecture: $env:PROCESSOR_ARCHITECTURE" }
+    default { throw "Unsupported CPU architecture: $architecture" }
   }
 }
 

@@ -29,6 +29,11 @@ func (a *App) applyNetworkPolicyIfNeeded(ctx context.Context, cfg model.NetworkP
 	if signature == a.networkPolicySignature {
 		return
 	}
+	if isOpenWrtLike() && cfg.Enabled && len(activeNetworkPolicyRules(cfg.Rules)) > 0 {
+		log.Printf("apply network policy skipped: OpenWrt/iStoreOS port policies are disabled to protect firewall4 and SQM/Cake configuration")
+		a.networkPolicySignature = signature
+		return
+	}
 	policyCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if err := applyNetworkPolicy(policyCtx, cfg, osCommandRunner{}); err != nil {
@@ -80,6 +85,12 @@ func resolveCommandPath(file string) (string, error) {
 
 func applyNetworkPolicy(ctx context.Context, cfg model.NetworkPolicyConfig, runner commandRunner) error {
 	if runtime.GOOS != "linux" {
+		return nil
+	}
+	if isOpenWrtLike() {
+		if cfg.Enabled && len(activeNetworkPolicyRules(cfg.Rules)) > 0 {
+			return fmt.Errorf("port policies are disabled on OpenWrt/iStoreOS to protect firewall4 and SQM/Cake configuration")
+		}
 		return nil
 	}
 	rules := activeNetworkPolicyRules(cfg.Rules)
@@ -496,7 +507,7 @@ func clearTCPolicy(ctx context.Context, runner commandRunner, iface string) erro
 }
 
 func collectNetworkPolicySnapshot(ctx context.Context, cfg model.NetworkPolicyConfig) *model.NetworkPolicySnapshot {
-	if runtime.GOOS != "linux" {
+	if runtime.GOOS != "linux" || isOpenWrtLike() {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)

@@ -169,6 +169,10 @@ func (a *App) createClientUpdateActions(req model.UpdateRequest) (model.UpdateRe
 	scriptURL := firstNonEmptyString(req.ScriptURL, "https://raw.githubusercontent.com/"+repo+"/main/install.sh")
 	psScriptURL := firstNonEmptyString(req.PSScriptURL, "https://raw.githubusercontent.com/"+repo+"/main/install.ps1")
 	serviceName := firstNonEmptyString(req.ServiceName, "")
+	installSettings, _, err := a.store.GetClientInstallSettings()
+	if err != nil {
+		return model.UpdateResponse{}, err
+	}
 	count := 0
 	skipped := 0
 	statuses := make([]model.UpdateAgentStatus, 0, len(agents))
@@ -185,13 +189,16 @@ func (a *App) createClientUpdateActions(req model.UpdateRequest) (model.UpdateRe
 			continue
 		}
 		payload := map[string]any{
-			"version":        version,
-			"repo":           repo,
-			"package_prefix": packagePrefix,
-			"script_url":     scriptURL,
-			"ps_script_url":  psScriptURL,
-			"target_os":      status.OS,
-			"target_arch":    status.Arch,
+			"version":                 version,
+			"repo":                    repo,
+			"package_prefix":          packagePrefix,
+			"script_url":              scriptURL,
+			"ps_script_url":           psScriptURL,
+			"target_os":               status.OS,
+			"target_arch":             status.Arch,
+			"realm_auto_install":      installSettings.RealmAutoInstall,
+			"realm_version":           firstNonEmptyString(installSettings.RealmVersion, defaultRealmVersion),
+			"realm_download_base_url": installSettings.RealmDownloadBaseURL,
 		}
 		if serviceName != "" {
 			payload["service_name"] = serviceName

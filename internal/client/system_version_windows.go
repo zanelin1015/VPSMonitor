@@ -7,6 +7,8 @@ import (
 	"strings"
 )
 
+func isOpenWrtLike() bool { return false }
+
 func detectSystemVersion() string {
 	const script = `$cv=Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue; $name=''; if ($cv) { $name=$cv.ProductName }; if (-not $name) { $name=(Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue).Caption }; if ($name) { $name.Trim() }`
 	output, err := exec.Command("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script).Output()

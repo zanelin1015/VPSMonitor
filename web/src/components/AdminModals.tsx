@@ -137,6 +137,7 @@ export function ClientInstallModal(props: {
   form: ClientInstallCommandForm
   commandKind: ClientInstallCommandKind
   linuxCommand: string
+  openWrtCommand: string
   windowsPowerShellCommand: string
   windowsCMDCommand: string
   onClose: () => void
@@ -152,6 +153,7 @@ export function ClientInstallModal(props: {
     form,
     commandKind,
     linuxCommand,
+    openWrtCommand,
     windowsPowerShellCommand,
     windowsCMDCommand,
     onClose,
@@ -162,6 +164,7 @@ export function ClientInstallModal(props: {
   } = props
   const activeCommand = clientInstallCommandByKind(commandKind, {
     linux: linuxCommand,
+    openWrt: openWrtCommand,
     windowsPowerShell: windowsPowerShellCommand,
     windowsCMD: windowsCMDCommand,
   })
@@ -173,6 +176,8 @@ export function ClientInstallModal(props: {
       open={open}
       onCancel={onClose}
       width={820}
+      style={{ top: 24 }}
+      styles={{ body: { maxHeight: 'calc(100vh - 180px)', overflowY: 'auto', paddingRight: 4 } }}
       footer={[
         <Button key="cancel" onClick={onClose}>关闭</Button>,
         <Button key="save" loading={saving} onClick={onSave}>保存参数</Button>,
@@ -219,19 +224,49 @@ export function ClientInstallModal(props: {
               </div>
             </Col>
           </Row>
+          <Divider style={{ margin: '4px 0' }} />
+          <Row gutter={[14, 14]} align="bottom">
+            <Col xs={24} md={7}>
+              <Text type="secondary">同时安装 Realm</Text>
+              <div className="client-install-switch">
+                <Switch checked={form.realm_auto_install} onChange={(checked) => update({ realm_auto_install: checked })} />
+                <Text type="secondary">Linux / OpenWrt</Text>
+              </div>
+            </Col>
+            <Col xs={24} md={5}>
+              <Text type="secondary">Realm 版本</Text>
+              <Input disabled={!form.realm_auto_install} value={form.realm_version} placeholder="v2.9.4" onChange={(event) => update({ realm_version: event.target.value })} />
+            </Col>
+            <Col xs={24} md={12}>
+              <Text type="secondary">Realm 下载镜像目录</Text>
+              <Input disabled={!form.realm_auto_install} value={form.realm_download_base_url} placeholder="留空使用 GitHub 官方 Release" onChange={(event) => update({ realm_download_base_url: event.target.value })} />
+            </Col>
+          </Row>
           <Tabs
             activeKey={commandKind}
             onChange={(key) => onCommandKindChange(key as ClientInstallCommandKind)}
             items={[
               {
                 key: 'linux',
-                label: 'Linux / Alpine',
+                label: 'Debian / Ubuntu / CentOS',
                 children: (
                   <ClientInstallCommandBox
-                    title="Linux / Alpine 安装命令"
-                    description="在目标 Linux VPS 上使用 root 执行；支持 systemd 和 OpenRC。"
+                    title="Linux 安装命令"
+                    description="在目标 Linux VPS 上使用 root 执行；自动识别 x86_64、ARM64、ARMv7，支持 systemd 和 OpenRC，并按上方设置安装 Realm。"
                     command={linuxCommand}
                     onCopy={() => onCopy(linuxCommand)}
+                  />
+                ),
+              },
+              {
+                key: 'openwrt',
+                label: 'iStoreOS / OpenWrt',
+                children: (
+                  <ClientInstallCommandBox
+                    title="iStoreOS / OpenWrt 安装命令"
+                    description="在路由系统 SSH 中使用 root 执行；自动识别 x86_64、ARM64、ARMv7，并按上方设置安装 Realm。"
+                    command={openWrtCommand}
+                    onCopy={() => onCopy(openWrtCommand)}
                   />
                 ),
               },

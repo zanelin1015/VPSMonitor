@@ -42,7 +42,14 @@ function Resolve-BuildVersion() {
   return $next
 }
 
-function Package-Component([string]$AppName, [string]$Entrypoint, [string]$GoOs, [string]$GoArch, [string]$BuildVersion, [string]$BuildTime, [string]$GitCommit) {
+function Package-Component([string]$AppName, [string]$Entrypoint, [string]$GoOs, [string]$TargetArch, [string]$BuildVersion, [string]$BuildTime, [string]$GitCommit) {
+  $GoArch = $TargetArch
+  $GoArm = ""
+  if ($TargetArch -eq "arm" -or $TargetArch -eq "armv7") {
+    $GoArch = "arm"
+    $GoArm = "7"
+    $TargetArch = "arm"
+  }
   $ext = ""
   if ($GoOs -eq "windows") {
     $ext = ".exe"
@@ -50,7 +57,7 @@ function Package-Component([string]$AppName, [string]$Entrypoint, [string]$GoOs,
 
   $packagePrefix = if ($env:PACKAGE_PREFIX) { $env:PACKAGE_PREFIX } else { "VPSMonitor" }
   $packageRole = $AppName -replace "^bridge-", ""
-  $packageName = "$packagePrefix-$packageRole-$GoOs-$GoArch"
+  $packageName = "$packagePrefix-$packageRole-$GoOs-$TargetArch"
   $outputDir = Join-Path $DistDir $packageName
   $configName = "$packageRole.json"
   $configExample = Join-Path $RootDir "config\$packageRole.example.json"
@@ -68,6 +75,7 @@ function Package-Component([string]$AppName, [string]$Entrypoint, [string]$GoOs,
 
   $env:GOOS = $GoOs
   $env:GOARCH = $GoArch
+  $env:GOARM = $GoArm
   $ldflags = "-s -w -X $VersionPackage.Version=$BuildVersion -X $VersionPackage.BuildTime=$BuildTime -X $VersionPackage.GitCommit=$GitCommit"
   go build -trimpath -ldflags=$ldflags -o $binaryPath $Entrypoint
 
@@ -85,8 +93,9 @@ function Package-Component([string]$AppName, [string]$Entrypoint, [string]$GoOs,
   }
   else {
     Copy-Item (Join-Path $RootDir "scripts\templates\run-$AppName.sh") (Join-Path $outputDir "run.sh")
-    if ($AppName -eq "bridge-server") {
-      Copy-Item (Join-Path $RootDir "install.sh") (Join-Path $outputDir "install.sh")
+    Copy-Item (Join-Path $RootDir "install.sh") (Join-Path $outputDir "install.sh")
+    if ($AppName -eq "bridge-client") {
+      Copy-Item (Join-Path $RootDir "install-openwrt.sh") (Join-Path $outputDir "install-openwrt.sh")
     }
     if (Get-Command tar -ErrorAction SilentlyContinue) {
       & tar -czf (Join-Path $DistDir "$packageName.tar.gz") -C $DistDir $packageName
@@ -137,7 +146,7 @@ try {
 
   go test ./...
 
-  $targets = @("linux/amd64", "windows/amd64")
+  $targets = @("linux/amd64", "linux/arm64", "linux/arm", "windows/amd64", "windows/arm64")
 
   foreach ($target in $targets) {
     $parts = $target.Split("/")

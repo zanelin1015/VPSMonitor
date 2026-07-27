@@ -128,6 +128,9 @@ type ClientInstallInfo struct {
 	PollInterval          string `json:"poll_interval"`
 	RequestTimeoutSeconds int    `json:"request_timeout_seconds"`
 	ServerSkipTLSVerify   bool   `json:"server_skip_tls_verify"`
+	RealmAutoInstall      bool   `json:"realm_auto_install"`
+	RealmVersion          string `json:"realm_version,omitempty"`
+	RealmDownloadBaseURL  string `json:"realm_download_base_url,omitempty"`
 	XUIAutoInstall        bool   `json:"xui_auto_install"`
 	XUIUsername           string `json:"xui_username,omitempty"`
 	XUIPassword           string `json:"xui_password,omitempty"`
@@ -142,6 +145,9 @@ type ClientInstallSettingsRequest struct {
 	PollInterval          string `json:"poll_interval"`
 	RequestTimeoutSeconds int    `json:"request_timeout_seconds"`
 	ServerSkipTLSVerify   bool   `json:"server_skip_tls_verify"`
+	RealmAutoInstall      bool   `json:"realm_auto_install"`
+	RealmVersion          string `json:"realm_version,omitempty"`
+	RealmDownloadBaseURL  string `json:"realm_download_base_url,omitempty"`
 	XUIAutoInstall        bool   `json:"xui_auto_install"`
 	XUIUsername           string `json:"xui_username,omitempty"`
 	XUIPassword           string `json:"xui_password,omitempty"`

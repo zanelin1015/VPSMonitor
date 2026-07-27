@@ -97,6 +97,7 @@ import { useAppTheme } from './theme'
 import {
   DASHBOARD_AUTO_REFRESH_MS,
   buildClientInstallCommand,
+  buildOpenWrtInstallCommand,
   billingKeyForClient,
   buildDashboardRealtimeURL,
   buildSectionSavePayload,
@@ -1523,6 +1524,9 @@ export default function App() {
           poll_interval: clientInstallForm.poll_interval,
           request_timeout_seconds: clientInstallForm.request_timeout_seconds,
           server_skip_tls_verify: clientInstallForm.server_skip_tls_verify,
+          realm_auto_install: clientInstallForm.realm_auto_install,
+          realm_version: clientInstallForm.realm_version,
+          realm_download_base_url: clientInstallForm.realm_download_base_url,
           xui_auto_install: false,
         }),
       })
@@ -2195,6 +2199,7 @@ export default function App() {
   }
 
   const clientInstallCommand = buildClientInstallCommand(clientInstallForm)
+  const clientOpenWrtCommand = buildOpenWrtInstallCommand(clientInstallForm)
   const clientWindowsPowerShellCommand = buildWindowsPowerShellInstallCommand(clientInstallForm)
   const clientWindowsCMDCommand = buildWindowsCMDInstallCommand(clientInstallForm)
   const consoleModalOpen = accountModalOpen ||
@@ -2287,6 +2292,7 @@ export default function App() {
             clientInstallModalOpen={clientInstallModalOpen}
             clientInstallSaving={clientInstallSaving}
             clientInstallLinuxCommand={clientInstallCommand}
+            clientInstallOpenWrtCommand={clientOpenWrtCommand}
             clientInstallWindowsCMDCommand={clientWindowsCMDCommand}
             clientInstallWindowsPowerShellCommand={clientWindowsPowerShellCommand}
             customerModalOpen={customerModalOpen}

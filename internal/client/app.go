@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -221,12 +222,41 @@ func (a *App) startSelfUpdate(payload map[string]any) (map[string]any, error) {
 
 	scriptURL := payloadString(payload, "script_url", "https://raw.githubusercontent.com/"+repo+"/main/install.sh")
 	serviceName := payloadString(payload, "service_name", "vpsmonitor-client")
-	command := fmt.Sprintf(`(sleep 2; tmp="$(mktemp /tmp/vpsmonitor-install.XXXXXX.sh)"; (curl -fsSL %[1]q -o "$tmp" || wget -O "$tmp" %[1]q) && chmod +x "$tmp" && env VPSMONITOR_ASSUME_YES=true VPSMONITOR_VERSION=%[2]q VPSMONITOR_REPO=%[3]q VPSMONITOR_PACKAGE_PREFIX=%[4]q VPSMONITOR_CLIENT_DIR=%[5]q VPSMONITOR_CLIENT_SERVICE=%[6]q bash "$tmp" client >>/tmp/vpsmonitor-client-update.log 2>&1) >/dev/null 2>&1 &`, scriptURL, version, repo, packagePrefix, installDir, serviceName)
+	realmAutoInstall := payloadBool(payload, "realm_auto_install", false)
+	realmVersion := payloadString(payload, "realm_version", "v2.9.4")
+	realmDownloadBaseURL := payloadString(payload, "realm_download_base_url", "")
+	if isOpenWrtLike() {
+		openWrtScriptURL := payloadString(payload, "openwrt_script_url", openWrtInstallerURL(scriptURL))
+		command := fmt.Sprintf(`(sleep 2; { tmp="$(mktemp /tmp/vpsmonitor-install.XXXXXX.sh)"; if command -v uclient-fetch >/dev/null 2>&1; then uclient-fetch -O "$tmp" %[1]q; elif command -v wget >/dev/null 2>&1; then wget -O "$tmp" %[1]q; else curl -fL %[1]q -o "$tmp"; fi && chmod +x "$tmp" && env VPSMONITOR_ASSUME_YES=true VPSMONITOR_VERSION=%[2]q VPSMONITOR_REPO=%[3]q VPSMONITOR_PACKAGE_PREFIX=%[4]q VPSMONITOR_CLIENT_DIR=%[5]q VPSMONITOR_CLIENT_SERVICE=%[6]q VPSMONITOR_REALM_AUTO_INSTALL=%[7]q VPSMONITOR_REALM_VERSION=%[8]q VPSMONITOR_REALM_DOWNLOAD_BASE_URL=%[9]q sh "$tmp" client; } >>/tmp/vpsmonitor-client-update.log 2>&1) >/dev/null 2>&1 &`, openWrtScriptURL, version, repo, packagePrefix, installDir, serviceName, strconv.FormatBool(realmAutoInstall), realmVersion, realmDownloadBaseURL)
+		cmd := exec.Command("sh", "-c", command)
+		if err := cmd.Start(); err != nil {
+			return nil, fmt.Errorf("start OpenWrt update: %w", err)
+		}
+		return map[string]any{"status": "started", "install_dir": installDir, "service_name": serviceName, "service_manager": "procd"}, nil
+	}
+	command := fmt.Sprintf(`(sleep 2; tmp="$(mktemp /tmp/vpsmonitor-install.XXXXXX.sh)"; (curl -fsSL %[1]q -o "$tmp" || wget -O "$tmp" %[1]q) && chmod +x "$tmp" && env VPSMONITOR_ASSUME_YES=true VPSMONITOR_VERSION=%[2]q VPSMONITOR_REPO=%[3]q VPSMONITOR_PACKAGE_PREFIX=%[4]q VPSMONITOR_CLIENT_DIR=%[5]q VPSMONITOR_CLIENT_SERVICE=%[6]q VPSMONITOR_REALM_AUTO_INSTALL=%[7]q VPSMONITOR_REALM_VERSION=%[8]q VPSMONITOR_REALM_DOWNLOAD_BASE_URL=%[9]q bash "$tmp" client >>/tmp/vpsmonitor-client-update.log 2>&1) >/dev/null 2>&1 &`, scriptURL, version, repo, packagePrefix, installDir, serviceName, strconv.FormatBool(realmAutoInstall), realmVersion, realmDownloadBaseURL)
 	cmd := exec.Command("sh", "-c", command)
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start linux update: %w", err)
 	}
 	return map[string]any{"status": "started", "install_dir": installDir, "service_name": serviceName}, nil
+}
+
+func openWrtInstallerURL(scriptURL string) string {
+	scriptURL = strings.TrimSpace(scriptURL)
+	if scriptURL == "" {
+		return scriptURL
+	}
+	base := scriptURL
+	suffix := ""
+	if index := strings.IndexAny(base, "?#"); index >= 0 {
+		suffix = base[index:]
+		base = base[:index]
+	}
+	if strings.HasSuffix(base, "/install.sh") {
+		return strings.TrimSuffix(base, "/install.sh") + "/install-openwrt.sh" + suffix
+	}
+	return scriptURL
 }
 
 func payloadString(payload map[string]any, key string, fallback string) string {

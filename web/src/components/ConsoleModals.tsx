@@ -52,6 +52,7 @@ export interface ConsoleModalsProps {
   clientInstallModalOpen: boolean
   clientInstallSaving: boolean
   clientInstallLinuxCommand: string
+  clientInstallOpenWrtCommand: string
   clientInstallWindowsCMDCommand: string
   clientInstallWindowsPowerShellCommand: string
   customerModalOpen: boolean
@@ -133,6 +134,7 @@ export function ConsoleModals(props: ConsoleModalsProps) {
     clientInstallModalOpen,
     clientInstallSaving,
     clientInstallLinuxCommand,
+    clientInstallOpenWrtCommand,
     clientInstallWindowsCMDCommand,
     clientInstallWindowsPowerShellCommand,
     customerModalOpen,
@@ -223,6 +225,7 @@ export function ConsoleModals(props: ConsoleModalsProps) {
         form={clientInstallForm}
         commandKind={clientInstallCommandKind}
         linuxCommand={clientInstallLinuxCommand}
+        openWrtCommand={clientInstallOpenWrtCommand}
         windowsPowerShellCommand={clientInstallWindowsPowerShellCommand}
         windowsCMDCommand={clientInstallWindowsCMDCommand}
         onClose={onCloseClientInstall}

@@ -46,3 +46,23 @@ func Test3XUIUpdateForceAllowsUpToDateVersion(t *testing.T) {
 		t.Fatalf("force update should create a task even when versions match")
 	}
 }
+
+func TestUpdateClientPackageNameSupportsPublishedArchitectures(t *testing.T) {
+	tests := []struct {
+		osName string
+		arch   string
+		want   string
+	}{
+		{osName: "linux", arch: "amd64", want: "VPSMonitor-client-linux-amd64.tar.gz"},
+		{osName: "linux", arch: "arm64", want: "VPSMonitor-client-linux-arm64.tar.gz"},
+		{osName: "linux", arch: "arm", want: "VPSMonitor-client-linux-arm.tar.gz"},
+		{osName: "windows", arch: "amd64", want: "VPSMonitor-client-windows-amd64.zip"},
+		{osName: "windows", arch: "arm64", want: "VPSMonitor-client-windows-arm64.zip"},
+	}
+	for _, test := range tests {
+		got, ok := updateClientPackageName("VPSMonitor", test.osName, test.arch)
+		if !ok || got != test.want {
+			t.Fatalf("updateClientPackageName(%q, %q) = %q, %v; want %q, true", test.osName, test.arch, got, ok, test.want)
+		}
+	}
+}

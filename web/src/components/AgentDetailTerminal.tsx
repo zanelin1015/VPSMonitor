@@ -17,8 +17,12 @@ interface TerminalWSMessage {
   shell?: string
 }
 
-export function defaultTerminalShell(clientOS?: string): string {
-  return String(clientOS || '').toLowerCase().includes('windows') ? 'powershell' : 'bash'
+export function defaultTerminalShell(clientOS?: string, systemVersion?: string): string {
+  if (String(clientOS || '').toLowerCase().includes('windows')) {
+    return 'powershell'
+  }
+  const version = String(systemVersion || '').toLowerCase()
+  return version.includes('openwrt') || version.includes('istoreos') ? 'sh' : 'bash'
 }
 
 export function FeatureSwitch({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {

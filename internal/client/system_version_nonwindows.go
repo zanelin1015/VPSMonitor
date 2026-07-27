@@ -28,7 +28,47 @@ func detectLinuxSystemVersion() string {
 			return version
 		}
 	}
+	if version := readOpenWrtSystemVersion("/etc/openwrt_release"); version != "" {
+		return version
+	}
 	return "Linux"
+}
+
+func isOpenWrtLike() bool {
+	if runtime.GOOS != "linux" {
+		return false
+	}
+	if _, err := os.Stat("/etc/openwrt_release"); err == nil {
+		return true
+	}
+	for _, path := range []string{"/etc/os-release", "/usr/lib/os-release"} {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		text := strings.ToLower(string(body))
+		if strings.Contains(text, "openwrt") || strings.Contains(text, "istoreos") {
+			return true
+		}
+	}
+	return false
+}
+
+func readOpenWrtSystemVersion(path string) string {
+	file, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		key, value, found := strings.Cut(line, "=")
+		if found && strings.TrimSpace(key) == "DISTRIB_DESCRIPTION" {
+			return parseOSReleaseValue(value)
+		}
+	}
+	return ""
 }
 
 func readLinuxSystemVersion(path string) string {

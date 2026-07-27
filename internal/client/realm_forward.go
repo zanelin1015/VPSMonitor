@@ -689,8 +689,39 @@ depend() {
 			return fmt.Errorf("rc-service restart %s: %w: %s", serviceName, err, strings.TrimSpace(string(output)))
 		}
 		return nil
+	case commandAvailableWithRunner("procd", runner) && commandAvailableWithRunner("ubus", runner):
+		serviceFile := filepath.Join("/etc/init.d", serviceName)
+		content := fmt.Sprintf(`#!/bin/sh /etc/rc.common
+
+START=96
+STOP=10
+USE_PROCD=1
+
+start_service() {
+  procd_open_instance
+  procd_set_param command %q -c %q
+  procd_set_param respawn 3600 5 5
+  procd_set_param stdout 1
+  procd_set_param stderr 1
+  procd_set_param file %q
+  procd_close_instance
+}
+`, binaryPath, configPath, configPath)
+		if err := fs.WriteFile(serviceFile, []byte(content), 0755); err != nil {
+			return fmt.Errorf("write procd service: %w", err)
+		}
+		if err := fs.Chmod(serviceFile, 0755); err != nil {
+			return fmt.Errorf("chmod procd service: %w", err)
+		}
+		if output, err := runner.Run(ctx, serviceFile, "enable"); err != nil {
+			return fmt.Errorf("enable procd service %s: %w: %s", serviceName, err, strings.TrimSpace(string(output)))
+		}
+		if output, err := runner.Run(ctx, serviceFile, "restart"); err != nil {
+			return fmt.Errorf("restart procd service %s: %w: %s", serviceName, err, strings.TrimSpace(string(output)))
+		}
+		return nil
 	default:
-		return errors.New("systemd or OpenRC is required to manage realm service")
+		return errors.New("systemd, OpenRC, or OpenWrt procd is required to manage realm service")
 	}
 }
 
@@ -703,6 +734,12 @@ func stopRealmForwardService(ctx context.Context, serviceName string, runner com
 	if commandAvailableWithRunner("rc-service", runner) && commandAvailableWithRunner("rc-update", runner) {
 		_, _ = runner.Run(ctx, "rc-service", serviceName, "stop")
 		_, _ = runner.Run(ctx, "rc-update", "del", serviceName)
+		return nil
+	}
+	if commandAvailableWithRunner("procd", runner) && commandAvailableWithRunner("ubus", runner) {
+		serviceFile := filepath.Join("/etc/init.d", serviceName)
+		_, _ = runner.Run(ctx, serviceFile, "stop")
+		_, _ = runner.Run(ctx, serviceFile, "disable")
 	}
 	return nil
 }

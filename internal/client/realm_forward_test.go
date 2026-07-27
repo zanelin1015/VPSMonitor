@@ -216,3 +216,24 @@ func TestInstallRealmServiceWritesSystemdUnit(t *testing.T) {
 		}
 	}
 }
+
+func TestInstallRealmServiceWritesOpenWrtProcdScript(t *testing.T) {
+	runner := &fakeCommandRunner{paths: map[string]bool{"procd": true, "ubus": true}}
+	fs := &fakeRealmFileSystem{}
+	err := installOrRestartRealmService(context.Background(), "vpsmonitor-realm", "/usr/bin/realm", "/etc/vpsmonitor/realm.toml", runner, fs)
+	if err != nil {
+		t.Fatalf("installOrRestartRealmService: %v", err)
+	}
+	service := fs.files["/etc/init.d/vpsmonitor-realm"]
+	for _, want := range []string{"#!/bin/sh /etc/rc.common", "USE_PROCD=1", `procd_set_param command "/usr/bin/realm" -c "/etc/vpsmonitor/realm.toml"`} {
+		if !strings.Contains(service, want) {
+			t.Fatalf("expected %q in procd service:\n%s", want, service)
+		}
+	}
+	joined := strings.Join(runner.commands, "\n")
+	for _, want := range []string{"/etc/init.d/vpsmonitor-realm enable", "/etc/init.d/vpsmonitor-realm restart"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("expected command %q in:\n%s", want, joined)
+		}
+	}
+}

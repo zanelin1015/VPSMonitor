@@ -19,18 +19,22 @@ func scheduleDisableUnixClientService(ctx context.Context, payload map[string]an
 	serviceName := payloadString(payload, "service_name", "vpsmonitor-client")
 	logPath := payloadString(payload, "log_path", "/tmp/vpsmonitor-client-disable.log")
 	command := fmt.Sprintf(`(sleep 2; {
-if command -v systemctl >/dev/null 2>&1; then
-  systemctl disable --now %[1]q || { systemctl disable %[1]q || true; systemctl stop %[1]q || true; }
-elif command -v rc-service >/dev/null 2>&1 && command -v rc-update >/dev/null 2>&1; then
-  rc-update del %[1]q default || true
-  rc-service %[1]q stop || true
-elif command -v service >/dev/null 2>&1; then
-  service %[1]q stop || true
-  if command -v update-rc.d >/dev/null 2>&1; then update-rc.d -f %[1]q remove || true; fi
-  if command -v chkconfig >/dev/null 2>&1; then chkconfig %[1]q off || true; fi
-else
-  pkill -f bridge-client || true
-fi
+	service_name=%[1]q
+	if command -v systemctl >/dev/null 2>&1; then
+	  systemctl disable --now "$service_name" || { systemctl disable "$service_name" || true; systemctl stop "$service_name" || true; }
+	elif command -v rc-service >/dev/null 2>&1 && command -v rc-update >/dev/null 2>&1; then
+	  rc-update del "$service_name" default || true
+	  rc-service "$service_name" stop || true
+	elif [ -x "/etc/init.d/$service_name" ] && [ -f /etc/openwrt_release ]; then
+	  "/etc/init.d/$service_name" disable || true
+	  "/etc/init.d/$service_name" stop || true
+	elif command -v service >/dev/null 2>&1; then
+	  service "$service_name" stop || true
+	  if command -v update-rc.d >/dev/null 2>&1; then update-rc.d -f "$service_name" remove || true; fi
+	  if command -v chkconfig >/dev/null 2>&1; then chkconfig "$service_name" off || true; fi
+	else
+	  pkill -f bridge-client || true
+	fi
 } >>%[2]q 2>&1) >/dev/null 2>&1 &`, serviceName, logPath)
 	return exec.CommandContext(ctx, "sh", "-c", command).Start()
 }

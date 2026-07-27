@@ -274,7 +274,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const [clientTrafficLimitDrafts, setClientTrafficLimitDrafts] = useState<Record<string, number>>({})
   const [commandOutputAction, setCommandOutputAction] = useState<XUIAction | null>(null)
   const [terminalOpen, setTerminalOpen] = useState(false)
-  const [terminalShell, setTerminalShell] = useState(defaultTerminalShell(selectedAgent.client_os))
+  const [terminalShell, setTerminalShell] = useState(defaultTerminalShell(selectedAgent.client_os, selectedAgent.system_version))
   const [terminalFontSize, setTerminalFontSize] = useState(13)
   const [terminalExpanded, setTerminalExpanded] = useState(false)
   const currentAgentLinks = filteredTagLinks.filter((link) => link.source.agent_id === selectedAgentId || link.target.agent_id === selectedAgentId)
@@ -383,8 +383,13 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   }
 
   function openRealtimeTerminal() {
-    setTerminalShell(defaultTerminalShell(selectedAgent.client_os))
+    setTerminalShell(defaultTerminalShell(selectedAgent.client_os, selectedAgent.system_version))
     setTerminalOpen(true)
+  }
+
+  function openRemoteCommand() {
+    setRemoteShell(defaultTerminalShell(selectedAgent.client_os, selectedAgent.system_version))
+    setRemoteCommandOpen(true)
   }
 
   function zoomTerminal(delta: number) {
@@ -1189,7 +1194,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
           <Space wrap>
             <Button type="primary" disabled={!selectedAgentId} onClick={onCreateRoutingAction}>新增操作</Button>
             {!restrictedView ? <Button danger onClick={openRealtimeTerminal}>实时 TTY</Button> : null}
-            {!restrictedView ? <Button loading={remoteCommandLoading} onClick={() => setRemoteCommandOpen(true)}>单次命令</Button> : null}
+            {!restrictedView ? <Button loading={remoteCommandLoading} onClick={openRemoteCommand}>单次命令</Button> : null}
             {!restrictedView ? (
               <Popconfirm
                 title="升级 3x-ui？"
@@ -1457,7 +1462,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
             {canShowXUIControls ? <Button disabled={!canOpenXUI} onClick={onOpenXUI}>打开 x-ui 面板</Button> : null}
             {!restrictedView ? <Button icon={<ReloadOutlined />} loading={currentAgentLoading} onClick={onRefreshCurrentAgent}>立即获取 Client 信息</Button> : null}
             {!restrictedView ? <Button danger onClick={openRealtimeTerminal}>实时 TTY</Button> : null}
-            {!restrictedView ? <Button loading={remoteCommandLoading} onClick={() => setRemoteCommandOpen(true)}>单次命令</Button> : null}
+            {!restrictedView ? <Button loading={remoteCommandLoading} onClick={openRemoteCommand}>单次命令</Button> : null}
             {canShowXUIControls ? (
               <Popconfirm
                 title="升级 3x-ui？"
