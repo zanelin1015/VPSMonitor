@@ -158,6 +158,7 @@ func (a *App) sanitizeDashboardForAdmin(user model.AdminUser, view *model.Global
 	view.ClientChains = sanitizeClientChainsForAreaManager(view.ClientChains, allowed, tagMap, agentNames, clientScope)
 	view.Links = filterTopologyLinksVisibleToAreaManager(view.Links, view.ClientChains, clientScope)
 	applyAreaManagerClientCounts(view, clientScope)
+	a.applyAreaManagerDashboardTraffic(user, view, clientScope)
 	rebuildAreaManagerDashboardStats(view)
 }
 
@@ -165,6 +166,7 @@ func (a *App) sanitizeXUIOverviewForAdmin(user model.AdminUser, overview *model.
 	if overview == nil || isRootAdmin(user) {
 		return
 	}
+	a.sanitizeRealmTargetNamesForAreaManager(overview)
 	overview.AgentName = areaManagerDisplayName("", overview.AgentName, overview.AgentID)
 	overview.BaseURL = ""
 	overview.Summary = sanitizeAreaManagerSummary(overview.Summary)
@@ -198,14 +200,12 @@ func (a *App) sanitizeXUIOverviewForAdmin(user model.AdminUser, overview *model.
 		}
 		node.ClientCount = 0
 		node.OnlineCount = 0
-		node.Up = 0
-		node.Down = 0
-		node.Total = 0
-		node.AllTime = 0
 		filteredNodes = append(filteredNodes, node)
 	}
 	overview.Nodes = filteredNodes
 	overview.NodeCount = len(filteredNodes)
+	applyScopedClientTrafficToNodes(overview.AgentID, overview.Nodes, filteredClients, clientScope)
+	overview.Summary = a.areaManagerScopedTrafficSummary(user, overview)
 	outboundScope := a.areaManagerOutboundScope(user)
 	overview.Outbounds = filterOutboundsForAreaManager(overview.Outbounds, overview.AgentID, outboundScope)
 	overview.Balancers = nil
@@ -312,6 +312,7 @@ func (a *App) sanitizeXUIOverviewForAreaAssignment(user model.AdminUser, overvie
 	if overview == nil || isRootAdmin(user) {
 		return
 	}
+	a.sanitizeRealmTargetNamesForAreaManager(overview)
 	overview.AgentName = areaManagerDisplayName("", overview.AgentName, overview.AgentID)
 	overview.BaseURL = ""
 	overview.Summary = sanitizeAreaManagerSummary(overview.Summary)
@@ -340,6 +341,39 @@ func (a *App) sanitizeXUIOverviewForAreaAssignment(user model.AdminUser, overvie
 		overview.Outbounds[index].Address = redactEndpointIP(overview.Outbounds[index].Address)
 		overview.Outbounds[index].Target = redactEndpointIP(overview.Outbounds[index].Target)
 		overview.Outbounds[index].SendThrough = ""
+	}
+}
+
+func (a *App) sanitizeRealmTargetNamesForAreaManager(overview *model.XUIOverview) {
+	if overview == nil || a == nil || a.store == nil {
+		return
+	}
+	agents, err := a.store.ListAgents()
+	if err != nil {
+		return
+	}
+	displayNames := make(map[string]string, len(agents))
+	for _, agent := range agents {
+		displayNames[agent.AgentID] = firstNonEmptyString(agent.CustomerDisplayName, agent.AgentID)
+	}
+	publicName := func(agentID string) string {
+		agentID = strings.TrimSpace(agentID)
+		if name := strings.TrimSpace(displayNames[agentID]); name != "" {
+			return name
+		}
+		return agentID
+	}
+	for index := range overview.Nodes {
+		node := &overview.Nodes[index]
+		if node.RealmTargetAgentID != "" || node.RealmTargetAgentName != "" {
+			node.RealmTargetAgentName = publicName(node.RealmTargetAgentID)
+		}
+	}
+	for index := range overview.Clients {
+		client := &overview.Clients[index]
+		if client.RealmTargetAgentID != "" || client.RealmTargetAgentName != "" {
+			client.RealmTargetAgentName = publicName(client.RealmTargetAgentID)
+		}
 	}
 }
 
@@ -389,13 +423,8 @@ func sanitizeAreaManagerRenewal(cfg model.VPSRenewalConfig) model.VPSRenewalConf
 
 func sanitizeAreaManagerSummary(summary model.VPSSummary) model.VPSSummary {
 	return model.VPSSummary{
-		NetTrafficSent:  summary.NetTrafficSent,
-		NetTrafficRecv:  summary.NetTrafficRecv,
-		NetTrafficTotal: summary.NetTrafficTotal,
-		NetIOUp:         summary.NetIOUp,
-		NetIODown:       summary.NetIODown,
-		DiskUsed:        summary.DiskUsed,
-		DiskTotal:       summary.DiskTotal,
+		DiskUsed:  summary.DiskUsed,
+		DiskTotal: summary.DiskTotal,
 	}
 }
 

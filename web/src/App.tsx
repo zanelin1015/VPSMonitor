@@ -893,6 +893,9 @@ export default function App() {
       if (!current) {
         return current
       }
+      if (isAreaManagerAccount) {
+        return current
+      }
       const metric = visibleMetrics.find((item) => item.agent_id === current.agent_id)
       if (!metric) {
         return current
@@ -2051,6 +2054,9 @@ export default function App() {
     }
     const timer = window.setInterval(() => {
       void loadAgents({ silent: true })
+      if (selectedAgentId) {
+        void loadOverview(selectedAgentId, { silent: true })
+      }
       if (selectedAgentId && activeTabKey === 'actions') {
         void loadXUIActions(selectedAgentId, { silent: true })
       }

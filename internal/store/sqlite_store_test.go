@@ -147,6 +147,51 @@ func TestSQLiteStoreMigratesLegacyCustomerOwnerColumnsBeforeIndexes(t *testing.T
 	}
 }
 
+func TestSQLiteStoreMigratesLegacyXUIActionActorColumnsBeforeIndex(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "bridge.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open legacy db: %v", err)
+	}
+	_, err = db.Exec(`
+		CREATE TABLE xui_actions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			agent_id TEXT NOT NULL,
+			kind TEXT NOT NULL,
+			status TEXT NOT NULL,
+			payload_json TEXT NOT NULL DEFAULT '{}',
+			result_json TEXT NOT NULL DEFAULT '{}',
+			error TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			claimed_at TEXT NOT NULL DEFAULT '',
+			completed_at TEXT NOT NULL DEFAULT ''
+		);
+	`)
+	if err != nil {
+		_ = db.Close()
+		t.Fatalf("create legacy xui_actions table: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close legacy db: %v", err)
+	}
+
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore should migrate legacy xui_actions: %v", err)
+	}
+	defer store.Close()
+	for _, column := range []string{"created_by_role", "created_by_account_id", "created_by_username"} {
+		if !sqliteColumnExists(t, store.db, "xui_actions", column) {
+			t.Fatalf("expected migrated xui_actions.%s column", column)
+		}
+	}
+	var indexName string
+	if err := store.db.QueryRow(`SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?`, "idx_xui_actions_agent_actor_id").Scan(&indexName); err != nil {
+		t.Fatalf("expected actor index after column migration: %v", err)
+	}
+}
+
 func TestSQLiteStoreAreaManagersIncludeOwnedCustomersAndAssignments(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "bridge.db")
 	store, err := NewSQLiteStore(dbPath)
@@ -640,6 +685,57 @@ func TestSQLiteStoreXUIActionLifecycle(t *testing.T) {
 	}
 	if !store.ValidateAgentToken("sg-01", registerResp.AgentToken) {
 		t.Fatalf("expected agent token to remain valid")
+	}
+}
+
+func TestSQLiteStoreXUIActionsAreScopedByActor(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+
+	if _, err := store.RegisterAgent(model.AgentRegisterRequest{AgentID: "actor-agent", AgentName: "Actor Agent"}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	managerOne := model.XUIActionActor{Role: model.AdminRoleAreaManager, AccountID: 10, Username: "area-one"}
+	managerTwo := model.XUIActionActor{Role: model.AdminRoleAreaManager, AccountID: 11, Username: "area-two"}
+	first, err := store.CreateXUIActionWithActor("actor-agent", model.XUIActionRequest{
+		Kind:    model.XUIActionAddClient,
+		Payload: map[string]any{"email": "one@example.com"},
+	}, managerOne)
+	if err != nil {
+		t.Fatalf("CreateXUIActionWithActor first: %v", err)
+	}
+	if _, err := store.CreateXUIActionWithActor("actor-agent", model.XUIActionRequest{
+		Kind:    model.XUIActionDeleteClient,
+		Payload: map[string]any{"email": "two@example.com"},
+	}, managerTwo); err != nil {
+		t.Fatalf("CreateXUIActionWithActor second: %v", err)
+	}
+	if _, err := store.CreateXUIAction("actor-agent", model.XUIActionRequest{
+		Kind:    model.XUIActionRestartXUI,
+		Payload: map[string]any{},
+	}); err != nil {
+		t.Fatalf("CreateXUIAction legacy: %v", err)
+	}
+
+	oneActions, err := store.ListXUIActionsByActor("actor-agent", managerOne.Role, managerOne.AccountID, 30)
+	if err != nil {
+		t.Fatalf("ListXUIActionsByActor: %v", err)
+	}
+	if len(oneActions) != 1 || oneActions[0].ID != first.ID {
+		t.Fatalf("expected only the first manager action, got %#v", oneActions)
+	}
+	if oneActions[0].CreatedByUsername != managerOne.Username {
+		t.Fatalf("expected actor username to be retained, got %#v", oneActions[0])
+	}
+	allActions, err := store.ListXUIActions("actor-agent", 30)
+	if err != nil {
+		t.Fatalf("ListXUIActions: %v", err)
+	}
+	if len(allActions) != 3 {
+		t.Fatalf("expected admin listing to include all actions, got %#v", allActions)
 	}
 }
 

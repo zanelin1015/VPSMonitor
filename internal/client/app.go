@@ -42,6 +42,7 @@ type App struct {
 	xuiBootstrapSignature  string
 	realmForwardSignature  string
 	accessLogState         accessLogTailState
+	capabilities           model.AgentCapabilities
 }
 
 func New(cfg config.ClientConfig) (*App, error) {
@@ -56,6 +57,7 @@ func New(cfg config.ClientConfig) (*App, error) {
 		},
 		requestTimeout: timeout,
 		agentToken:     cfg.AgentToken,
+		capabilities:   detectAgentCapabilities(osCommandRunner{}),
 	}, nil
 }
 
@@ -468,6 +470,7 @@ func (a *App) register(ctx context.Context) (model.AgentRegisterResponse, error)
 		Arch:          runtime.GOARCH,
 		SystemVersion: currentSystemVersion(),
 		Hostname:      currentHostname(),
+		Capabilities:  a.capabilities,
 		SeedConfig: model.ManagedAgentConfig{
 			AgentID:   a.config.AgentID,
 			AgentName: firstNonEmpty(a.config.AgentName, a.config.AgentID),

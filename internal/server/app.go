@@ -26,6 +26,8 @@ type App struct {
 	topologyCache      map[string]dashboardCacheEntry
 	customerViewCache  map[string]customerOverviewCacheEntry
 	topologyBuilds     map[string]chan struct{}
+	areaTrafficMu      sync.Mutex
+	areaTrafficSamples map[string]areaManagerTrafficSample
 	lookupCacheMu      sync.Mutex
 	updateLatestMu     sync.Mutex
 	updateLatestCache  map[string]updateLatestCacheEntry

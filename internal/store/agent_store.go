@@ -86,6 +86,9 @@ func (s *SQLiteStore) RegisterAgent(req model.AgentRegisterRequest) (model.Agent
 		if sortErr != nil {
 			return model.AgentRegisterResponse{}, sortErr
 		}
+		features := req.SeedConfig.Features
+		features.RealmExplicitlyConfigured = false
+		features = applyAgentCapabilities(features, req.Capabilities)
 		record = model.AgentRecord{
 			AgentID:      req.AgentID,
 			AgentName:    firstNonEmpty(req.AgentName, req.SeedConfig.AgentName, req.AgentID),
@@ -103,7 +106,7 @@ func (s *SQLiteStore) RegisterAgent(req model.AgentRegisterRequest) (model.Agent
 				CustomerDisplayName: strings.TrimSpace(req.SeedConfig.CustomerDisplayName),
 				SortOrder:           sortOrder,
 				Tags:                normalizeTags(req.SeedConfig.Tags),
-				Features:            req.SeedConfig.Features,
+				Features:            features,
 				Renewal:             normalizeRenewalConfig(req.SeedConfig.Renewal),
 				Entry:               normalizeEntryConfig(req.SeedConfig.Entry),
 				XUI:                 req.SeedConfig.XUI,
@@ -168,6 +171,7 @@ func (s *SQLiteStore) RegisterAgent(req model.AgentRegisterRequest) (model.Agent
 			record.Config.Tags = normalizeTags(req.SeedConfig.Tags)
 		}
 		record.Config.Features = mergeAgentFeatures(record.Config.Features, req.SeedConfig.Features)
+		record.Config.Features = applyAgentCapabilities(record.Config.Features, req.Capabilities)
 		if record.CustomerDisplayName == "" && req.SeedConfig.CustomerDisplayName != "" {
 			record.CustomerDisplayName = strings.TrimSpace(req.SeedConfig.CustomerDisplayName)
 		}

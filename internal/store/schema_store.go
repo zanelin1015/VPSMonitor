@@ -233,6 +233,9 @@ func (s *SQLiteStore) init() error {
 			agent_id TEXT NOT NULL,
 			kind TEXT NOT NULL,
 			status TEXT NOT NULL,
+			created_by_role TEXT NOT NULL DEFAULT '',
+			created_by_account_id INTEGER NOT NULL DEFAULT 0,
+			created_by_username TEXT NOT NULL DEFAULT '',
 			payload_json TEXT NOT NULL DEFAULT '{}',
 			result_json TEXT NOT NULL DEFAULT '{}',
 			error TEXT NOT NULL DEFAULT '',
@@ -369,6 +372,15 @@ func (s *SQLiteStore) init() error {
 	if err := s.ensureColumn("area_manager_accounts", "outbound_create_enabled", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	if err := s.ensureColumn("xui_actions", "created_by_role", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("xui_actions", "created_by_account_id", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("xui_actions", "created_by_username", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	for _, column := range []struct {
 		name       string
 		definition string
@@ -401,6 +413,7 @@ func (s *SQLiteStore) init() error {
 		`CREATE INDEX IF NOT EXISTS idx_customer_assignments_customer ON customer_assignments(customer_id, enabled, id);`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_assignments_agent ON customer_assignments(agent_id, inbound_id, client_email);`,
 		`CREATE INDEX IF NOT EXISTS idx_xui_actions_agent_status_id ON xui_actions(agent_id, status, id);`,
+		`CREATE INDEX IF NOT EXISTS idx_xui_actions_agent_actor_id ON xui_actions(agent_id, created_by_role, created_by_account_id, id DESC);`,
 		`CREATE INDEX IF NOT EXISTS idx_config_audit_agent_id ON config_audit_logs(agent_id, id DESC);`,
 		`CREATE INDEX IF NOT EXISTS idx_access_logs_created ON access_logs(created_at DESC, id DESC);`,
 		`CREATE INDEX IF NOT EXISTS idx_access_logs_agent_created ON access_logs(agent_id, created_at DESC, id DESC);`,

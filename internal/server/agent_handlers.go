@@ -908,7 +908,13 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 					return
 				}
 				limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-				actions, err := a.store.ListXUIActions(agentID, limit)
+				var actions []model.XUIAction
+				var err error
+				if isRootAdmin(user) {
+					actions, err = a.store.ListXUIActions(agentID, limit)
+				} else {
+					actions, err = a.store.ListXUIActionsByActor(agentID, user.Role, user.ID, limit)
+				}
 				if err != nil {
 					writeError(w, http.StatusInternalServerError, err.Error())
 					return
@@ -960,7 +966,11 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 					}
 				}
 			}
-			action, err := a.store.CreateXUIAction(agentID, req)
+			action, err := a.store.CreateXUIActionWithActor(agentID, req, model.XUIActionActor{
+				Role:      user.Role,
+				AccountID: user.ID,
+				Username:  user.Username,
+			})
 			if err != nil {
 				status := http.StatusInternalServerError
 				if err.Error() == "agent not found" || strings.Contains(err.Error(), "unsupported") {
@@ -1112,6 +1122,12 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 		}
 		cfg = disableXUIAutoInstall(cfg)
 		cfg = a.hydrateRealmForwardTargets(cfg)
+		if featuresRaw, ok := raw["features"]; ok {
+			var featureFields map[string]json.RawMessage
+			if json.Unmarshal(featuresRaw, &featureFields) == nil {
+				_, cfg.Features.RealmExplicitlyConfigured = featureFields["realm"]
+			}
+		}
 		if err := validateRealmForwardTargets(r.Context(), cfg.Entry.PortForwarding); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return

@@ -20,11 +20,12 @@ type ManagedAgentConfig struct {
 }
 
 type AgentFeatureConfig struct {
-	XUI        bool `json:"xui"`
-	Realm      bool `json:"realm"`
-	NAT        bool `json:"nat"`
-	PortPolicy bool `json:"port_policy"`
-	Configured bool `json:"-"`
+	XUI                       bool `json:"xui"`
+	Realm                     bool `json:"realm"`
+	NAT                       bool `json:"nat"`
+	PortPolicy                bool `json:"port_policy"`
+	Configured                bool `json:"-"`
+	RealmExplicitlyConfigured bool `json:"-"`
 }
 
 func (c *AgentFeatureConfig) UnmarshalJSON(data []byte) error {
@@ -145,7 +146,12 @@ type AgentRegisterRequest struct {
 	Hostname      string             `json:"hostname,omitempty"`
 	PublicIPv4    string             `json:"public_ipv4,omitempty"`
 	PublicIPv6    string             `json:"public_ipv6,omitempty"`
+	Capabilities  AgentCapabilities  `json:"capabilities,omitempty"`
 	SeedConfig    ManagedAgentConfig `json:"seed_config"`
+}
+
+type AgentCapabilities struct {
+	Realm bool `json:"realm,omitempty"`
 }
 
 type AgentRegisterResponse struct {

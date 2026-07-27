@@ -117,12 +117,14 @@ func (s *SQLiteStore) parseManagedConfig(agentID, agentName, customerDisplayName
 		cfg.Tags = normalizeTags(cfg.Tags)
 		if strings.HasPrefix(strings.TrimSpace(tagsJSON), "{") {
 			var tagPayload struct {
-				Tags     []string                 `json:"tags"`
-				Features model.AgentFeatureConfig `json:"features"`
+				Tags             []string                 `json:"tags"`
+				Features         model.AgentFeatureConfig `json:"features"`
+				ExplicitFeatures []string                 `json:"explicit_features"`
 			}
 			if err := json.Unmarshal([]byte(tagsJSON), &tagPayload); err == nil {
 				cfg.Tags = normalizeTags(tagPayload.Tags)
 				cfg.Features = tagPayload.Features
+				cfg.Features.RealmExplicitlyConfigured = containsStringFold(tagPayload.ExplicitFeatures, "realm")
 			}
 		}
 	}
@@ -162,16 +164,34 @@ func mustJSON(v any) string {
 }
 
 func managedTagsJSON(cfg model.ManagedAgentConfig) string {
-	if cfg.Features.Configured || hasAgentFeatures(cfg.Features) {
+	if cfg.Features.Configured || hasAgentFeatures(cfg.Features) || cfg.Features.RealmExplicitlyConfigured {
 		return mustJSON(struct {
-			Tags     []string                 `json:"tags"`
-			Features model.AgentFeatureConfig `json:"features"`
+			Tags             []string                 `json:"tags"`
+			Features         model.AgentFeatureConfig `json:"features"`
+			ExplicitFeatures []string                 `json:"explicit_features,omitempty"`
 		}{
-			Tags:     cfg.Tags,
-			Features: cfg.Features,
+			Tags:             cfg.Tags,
+			Features:         cfg.Features,
+			ExplicitFeatures: explicitAgentFeatures(cfg.Features),
 		})
 	}
 	return mustJSON(cfg.Tags)
+}
+
+func explicitAgentFeatures(features model.AgentFeatureConfig) []string {
+	if features.RealmExplicitlyConfigured {
+		return []string{"realm"}
+	}
+	return nil
+}
+
+func containsStringFold(values []string, target string) bool {
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), target) {
+			return true
+		}
+	}
+	return false
 }
 
 func randomToken() (string, error) {
@@ -288,11 +308,21 @@ func hasAgentFeatures(features model.AgentFeatureConfig) bool {
 
 func mergeAgentFeatures(base model.AgentFeatureConfig, incoming model.AgentFeatureConfig) model.AgentFeatureConfig {
 	return model.AgentFeatureConfig{
-		XUI:        base.XUI || incoming.XUI,
-		Realm:      base.Realm || incoming.Realm,
-		NAT:        base.NAT || incoming.NAT,
-		PortPolicy: base.PortPolicy || incoming.PortPolicy,
+		XUI:                       base.XUI || incoming.XUI,
+		Realm:                     base.Realm || incoming.Realm,
+		NAT:                       base.NAT || incoming.NAT,
+		PortPolicy:                base.PortPolicy || incoming.PortPolicy,
+		Configured:                base.Configured || incoming.Configured,
+		RealmExplicitlyConfigured: base.RealmExplicitlyConfigured,
 	}
+}
+
+func applyAgentCapabilities(features model.AgentFeatureConfig, capabilities model.AgentCapabilities) model.AgentFeatureConfig {
+	if capabilities.Realm && !features.RealmExplicitlyConfigured {
+		features.Realm = true
+		features.Configured = true
+	}
+	return features
 }
 
 func normalizeRenewalConfig(cfg model.VPSRenewalConfig) model.VPSRenewalConfig {

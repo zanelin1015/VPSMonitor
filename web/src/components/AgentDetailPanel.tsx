@@ -310,8 +310,9 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const internalNodeCount = overview?.nodes.length ?? selectedAgent.node_count ?? 0
   const internalClientCount = overview?.clients.length ?? selectedAgent.client_count ?? 0
   const internalOnlineClientCount = overview?.online_client_count ?? selectedAgent.online_client_count ?? 0
-  const internalTrafficSent = Number(selectedAgent.summary.net_traffic_sent || 0)
-  const internalTrafficRecv = Number(selectedAgent.summary.net_traffic_recv || 0)
+  const internalSummary = overview?.summary || selectedAgent.summary
+  const internalTrafficSent = Number(internalSummary.net_traffic_sent || 0)
+  const internalTrafficRecv = Number(internalSummary.net_traffic_recv || 0)
   const internalTrafficTotal = internalTrafficSent + internalTrafficRecv
   const internalTrafficMax = Math.max(1, internalTrafficSent, internalTrafficRecv)
   const internalOverviewStats = (
@@ -327,10 +328,10 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         <section className="overview-stat-card overview-network-card">
           <div className="overview-stat-title">实时速度</div>
           <div className="overview-network-total">
-            <span className="network-up">↑ {formatSpeed(Number(selectedAgent.summary.net_io_up || 0))}</span>
-            <span className="network-down">↓ {formatSpeed(Number(selectedAgent.summary.net_io_down || 0))}</span>
+            <span className="network-up">↑ {formatSpeed(Number(internalSummary.net_io_up || 0))}</span>
+            <span className="network-down">↓ {formatSpeed(Number(internalSummary.net_io_down || 0))}</span>
           </div>
-          <div className="overview-stat-foot">总速 {formatSpeed(Number(selectedAgent.summary.net_io_up || 0) + Number(selectedAgent.summary.net_io_down || 0))}</div>
+          <div className="overview-stat-foot">总速 {formatSpeed(Number(internalSummary.net_io_up || 0) + Number(internalSummary.net_io_down || 0))}</div>
         </section>
       ) : null}
       {featureEnabled.realm && realmRuleCount > 0 ? (
@@ -1165,7 +1166,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         {featureSwitchPanel}
         {internalOverviewStats}
-        {renderGlobalOverviewPanel({
+        {!restrictedView ? renderGlobalOverviewPanel({
           dashboardView: currentAgentDashboardView,
           selectedTag,
           links: currentAgentLinks,
@@ -1174,7 +1175,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
           scopeAgentName: selectedAgent.agent_name || selectedAgent.agent_id,
           showRealm: featureEnabled.realm,
           showMatchedLinks: featureEnabled.xui,
-        })}
+        }) : null}
       </Space>
     ),
   }

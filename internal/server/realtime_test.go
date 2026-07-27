@@ -375,8 +375,8 @@ func TestAreaManagerRealtimeMetricsAreSanitized(t *testing.T) {
 	if got.Summary.Hostname != "" || got.Summary.ObservedIP != "" || got.Summary.ServerSeenIP != "" || got.Summary.PublicIPv4 != "" || got.Summary.CPU != 0 || got.Summary.MemTotal != 0 {
 		t.Fatalf("expected host/system metrics to be stripped, got %#v", got.Summary)
 	}
-	if got.Summary.NetTrafficSent != 100 || got.Summary.NetTrafficRecv != 200 || got.Summary.NetTrafficTotal != 300 || got.Summary.NetIOUp != 10 || got.Summary.NetIODown != 20 {
-		t.Fatalf("expected traffic metrics to remain, got %#v", got.Summary)
+	if got.Summary.NetTrafficSent != 0 || got.Summary.NetTrafficRecv != 0 || got.Summary.NetTrafficTotal != 0 || got.Summary.NetIOUp != 0 || got.Summary.NetIODown != 0 {
+		t.Fatalf("whole-agent traffic must not be exposed to an area manager, got %#v", got.Summary)
 	}
 }
 
@@ -520,10 +520,19 @@ func TestAreaManagerXUIOverviewFiltersUnassignedClients(t *testing.T) {
 	}
 
 	app := &App{store: sqliteStore}
+	base := time.Now().UTC()
 	overview := &model.XUIOverview{
-		AgentID:           "hk",
-		AgentName:         "HK Internal",
-		BaseURL:           "https://x-ui.example",
+		AgentID:    "hk",
+		AgentName:  "HK Internal",
+		BaseURL:    "https://x-ui.example",
+		ReportedAt: base,
+		Summary: model.VPSSummary{
+			NetTrafficSent:  10_000,
+			NetTrafficRecv:  20_000,
+			NetTrafficTotal: 30_000,
+			NetIOUp:         1_000,
+			NetIODown:       2_000,
+		},
 		ClientCount:       3,
 		OnlineClientCount: 2,
 		NodeCount:         2,
@@ -532,9 +541,9 @@ func TestAreaManagerXUIOverviewFiltersUnassignedClients(t *testing.T) {
 			{ID: 1002, Tag: "HK:20002", ClientCount: 1},
 		},
 		Clients: []model.XUIClientView{
-			{InboundID: 1001, InboundTag: "HK:20001", Email: "assigned@example.com", TotalGB: 100, ExpiryTime: 200, LastOnline: 300},
-			{InboundID: 1001, InboundTag: "HK:20001", Email: "hidden@example.com"},
-			{InboundID: 1002, InboundTag: "HK:20002", Email: "other@example.com"},
+			{InboundID: 1001, InboundTag: "HK:20001", Email: "assigned@example.com", TotalGB: 100, ExpiryTime: 200, LastOnline: 300, Up: 100, Down: 200, AllTime: 300, TrafficTotal: 300},
+			{InboundID: 1001, InboundTag: "HK:20001", Email: "hidden@example.com", Up: 1_000, Down: 2_000},
+			{InboundID: 1002, InboundTag: "HK:20002", Email: "other@example.com", Up: 4_000, Down: 5_000},
 		},
 		Outbounds: []model.XUIOutboundView{
 			{Tag: "assigned-out", Address: "203.0.113.10"},
@@ -567,8 +576,14 @@ func TestAreaManagerXUIOverviewFiltersUnassignedClients(t *testing.T) {
 	if len(overview.Nodes) != 1 || overview.Nodes[0].ID != 1001 {
 		t.Fatalf("expected only assigned client inbound node, got %#v", overview.Nodes)
 	}
-	if overview.Nodes[0].ClientCount != 0 || overview.Nodes[0].Up != 0 || overview.BaseURL != "" {
+	if overview.Nodes[0].ClientCount != 1 || overview.Nodes[0].Up != 100 || overview.Nodes[0].Down != 200 || overview.BaseURL != "" {
 		t.Fatalf("expected node metrics and base URL sanitized, got node=%#v base=%q", overview.Nodes[0], overview.BaseURL)
+	}
+	if overview.Summary.NetTrafficSent != 100 || overview.Summary.NetTrafficRecv != 200 || overview.Summary.NetTrafficTotal != 300 {
+		t.Fatalf("expected only assigned client traffic in area summary, got %#v", overview.Summary)
+	}
+	if overview.Summary.NetIOUp != 0 || overview.Summary.NetIODown != 0 {
+		t.Fatalf("first scoped sample should not infer speed, got %#v", overview.Summary)
 	}
 	if len(overview.RoutingRules) != 2 {
 		t.Fatalf("expected only assigned routing rules, got %#v", overview.RoutingRules)
@@ -581,6 +596,113 @@ func TestAreaManagerXUIOverviewFiltersUnassignedClients(t *testing.T) {
 	}
 	if len(overview.Outbounds) != 2 || overview.Outbounds[0].Tag != "assigned-out" || overview.Outbounds[1].Tag != "mixed-out" {
 		t.Fatalf("expected only granted outbounds, got %#v", overview.Outbounds)
+	}
+
+	nextOverview := &model.XUIOverview{
+		AgentID:    "hk",
+		ReportedAt: base.Add(10 * time.Second),
+		Summary: model.VPSSummary{
+			NetTrafficSent:  100_000,
+			NetTrafficRecv:  200_000,
+			NetTrafficTotal: 300_000,
+			NetIOUp:         10_000,
+			NetIODown:       20_000,
+		},
+		Nodes: []model.XUINodeView{{ID: 1001, Tag: "HK:20001"}},
+		Clients: []model.XUIClientView{
+			{InboundID: 1001, InboundTag: "HK:20001", Email: "assigned@example.com", Up: 150, Down: 260},
+			{InboundID: 1001, InboundTag: "HK:20001", Email: "hidden@example.com", Up: 50_000, Down: 60_000},
+		},
+	}
+	app.sanitizeXUIOverviewForAdmin(model.AdminUser{
+		ID:       manager.ID,
+		Role:     model.AdminRoleAreaManager,
+		AgentIDs: []string{"hk"},
+	}, nextOverview)
+	if nextOverview.Summary.NetTrafficSent != 150 || nextOverview.Summary.NetTrafficRecv != 260 {
+		t.Fatalf("expected next scoped totals to exclude hidden client, got %#v", nextOverview.Summary)
+	}
+	if nextOverview.Summary.NetIOUp != 5 || nextOverview.Summary.NetIODown != 6 {
+		t.Fatalf("expected scoped speed from visible client delta, got %#v", nextOverview.Summary)
+	}
+}
+
+func TestAreaManagerDashboardTrafficUsesAssignedClients(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK"}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	enabled := true
+	manager, err := sqliteStore.CreateAreaManager(model.AreaManagerAccountRequest{
+		Username: "area-traffic", Password: "password123", Enabled: &enabled, AgentIDs: []string{"hk"},
+	})
+	if err != nil {
+		t.Fatalf("CreateAreaManager: %v", err)
+	}
+	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+		AgentID: "hk", InboundID: 1, InboundTag: "node-1", ClientEmail: "assigned@example.com", Enabled: &enabled,
+	}); err != nil {
+		t.Fatalf("CreateAreaManagerAssignment: %v", err)
+	}
+
+	base := time.Now().UTC()
+	saveSnapshot := func(at time.Time, assignedUp, assignedDown, hiddenUp, hiddenDown int64) {
+		t.Helper()
+		if err := sqliteStore.SaveSnapshot(model.AgentSnapshot{
+			AgentID:    "hk",
+			AgentName:  "HK",
+			ReportedAt: at,
+			Summary: model.VPSSummary{
+				NetTrafficSent:  99_000,
+				NetTrafficRecv:  88_000,
+				NetTrafficTotal: 187_000,
+				NetIOUp:         9_000,
+				NetIODown:       8_000,
+			},
+			XUI: &model.XUISnapshot{
+				CollectedAt: at,
+				Inbounds: []map[string]any{{
+					"id": 1, "tag": "node-1", "enable": true,
+					"settings": `{"clients":[{"id":"uuid-1","email":"assigned@example.com","enable":true},{"id":"uuid-2","email":"hidden@example.com","enable":true}]}`,
+					"clientStats": []map[string]any{
+						{"email": "assigned@example.com", "enable": true, "up": assignedUp, "down": assignedDown},
+						{"email": "hidden@example.com", "enable": true, "up": hiddenUp, "down": hiddenDown},
+					},
+				}},
+			},
+		}); err != nil {
+			t.Fatalf("SaveSnapshot: %v", err)
+		}
+	}
+	saveSnapshot(base, 100, 200, 10_000, 20_000)
+
+	app := &App{store: sqliteStore}
+	user := model.AdminUser{ID: manager.ID, Role: model.AdminRoleAreaManager, AgentIDs: []string{"hk"}}
+	view := model.GlobalDashboardView{Agents: []model.DashboardAgentView{{AgentID: "hk"}}}
+	app.applyAreaManagerDashboardTraffic(user, &view, app.areaManagerClientScope(user))
+	if got := view.Agents[0].Summary; got.NetTrafficSent != 100 || got.NetTrafficRecv != 200 || got.NetIOUp != 0 || got.NetIODown != 0 {
+		t.Fatalf("unexpected first dashboard traffic sample: %#v", got)
+	}
+
+	saveSnapshot(base.Add(10*time.Second), 150, 260, 90_000, 100_000)
+	app.applyAreaManagerDashboardTraffic(user, &view, app.areaManagerClientScope(user))
+	if got := view.Agents[0].Summary; got.NetTrafficSent != 150 || got.NetTrafficRecv != 260 || got.NetIOUp != 5 || got.NetIODown != 6 {
+		t.Fatalf("dashboard must use assigned client totals and speed, got %#v", got)
+	}
+}
+
+func TestScopedClientTrafficTotalsDeduplicatesRealmAliases(t *testing.T) {
+	clients := []model.XUIClientView{
+		{InboundID: 20001, Email: "same@example.com", Up: 100, Down: 200, IsRealmForwarded: true, RealmTargetAgentID: "target", RealmTargetInboundID: 7, RealmTargetInboundTag: "node-7"},
+		{InboundID: 20002, Email: "same@example.com", Up: 100, Down: 200, IsRealmForwarded: true, RealmTargetAgentID: "target", RealmTargetInboundID: 7, RealmTargetInboundTag: "node-7"},
+	}
+	totals, _ := scopedClientTrafficTotals("source", clients)
+	if totals.Sent != 100 || totals.Recv != 200 || totals.Count != 1 {
+		t.Fatalf("realm aliases for the same target client must only be counted once: %#v", totals)
 	}
 }
 
@@ -595,6 +717,14 @@ func TestAreaManagerXUIOverviewAllowsRealmForwardedClientsFromAssignedEntry(t *t
 	}
 	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK Exit"}); err != nil {
 		t.Fatalf("RegisterAgent hk: %v", err)
+	}
+	hkConfig, found, err := sqliteStore.GetAgentConfig("hk")
+	if err != nil || !found {
+		t.Fatalf("GetAgentConfig hk: found=%v err=%v", found, err)
+	}
+	hkConfig.CustomerDisplayName = "HK Public"
+	if _, err := sqliteStore.UpdateAgentConfig("hk", hkConfig); err != nil {
+		t.Fatalf("UpdateAgentConfig hk display name: %v", err)
 	}
 	enabled := true
 	manager, err := sqliteStore.CreateAreaManager(model.AreaManagerAccountRequest{
@@ -634,7 +764,7 @@ func TestAreaManagerXUIOverviewAllowsRealmForwardedClientsFromAssignedEntry(t *t
 		OnlineClientCount: 1,
 		Clients: []model.XUIClientView{
 			{
-				InboundID:             1001,
+				InboundID:             20001,
 				InboundTag:            "Realm 20001 -> HK VLESS",
 				Email:                 "alice@example.com",
 				ImportURL:             "vless://uuid@gz.example.com:20001?security=reality#HK",
@@ -643,12 +773,19 @@ func TestAreaManagerXUIOverviewAllowsRealmForwardedClientsFromAssignedEntry(t *t
 				LastOnline:            300,
 				RealmSourceAgentID:    "gz",
 				RealmTargetAgentID:    "hk",
+				RealmTargetAgentName:  "HK Exit",
 				RealmTargetInboundID:  1001,
 				RealmTargetInboundTag: "HK:20001",
 				RealmListenPort:       20001,
 			},
 			{InboundID: 1002, InboundTag: "local-hidden", Email: "hidden@example.com"},
 		},
+		Nodes: []model.XUINodeView{{
+			ID:                   20001,
+			Tag:                  "Realm 20001 -> HK VLESS",
+			RealmTargetAgentID:   "hk",
+			RealmTargetAgentName: "HK Exit",
+		}},
 	}
 
 	app.sanitizeXUIOverviewForAdmin(model.AdminUser{
@@ -662,6 +799,12 @@ func TestAreaManagerXUIOverviewAllowsRealmForwardedClientsFromAssignedEntry(t *t
 	}
 	if overview.Clients[0].ImportURL == "" {
 		t.Fatalf("expected Realm-exported import URL to stay visible")
+	}
+	if overview.Clients[0].RealmTargetAgentName != "HK Public" {
+		t.Fatalf("expected public target Client name, got %q", overview.Clients[0].RealmTargetAgentName)
+	}
+	if len(overview.Nodes) != 1 || overview.Nodes[0].RealmTargetAgentName != "HK Public" {
+		t.Fatalf("expected public target node Client name, got %#v", overview.Nodes)
 	}
 	if overview.Clients[0].TotalGB != 0 || overview.Clients[0].ExpiryTime != 0 || overview.Clients[0].LastOnline != 0 {
 		t.Fatalf("expected sensitive client metrics stripped, got %#v", overview.Clients[0])

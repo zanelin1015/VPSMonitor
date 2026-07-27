@@ -324,6 +324,24 @@ func TestHandleAgentConfigPreservesExplicitFeatureSwitches(t *testing.T) {
 	if putRec.Code != http.StatusOK {
 		t.Fatalf("handleAgentConfig put status=%d body=%s", putRec.Code, putRec.Body.String())
 	}
+	storedConfig, found, err := sqliteStore.GetAgentConfig("agent-1")
+	if err != nil || !found {
+		t.Fatalf("GetAgentConfig after put: found=%v err=%v", found, err)
+	}
+	if !storedConfig.Features.RealmExplicitlyConfigured {
+		t.Fatal("expected the admin Realm switch choice to be persisted")
+	}
+	registerResponse, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{
+		AgentID:      "agent-1",
+		AgentName:    "Agent 1",
+		Capabilities: model.AgentCapabilities{Realm: true},
+	})
+	if err != nil {
+		t.Fatalf("RegisterAgent capability after admin disable: %v", err)
+	}
+	if registerResponse.Config.Features.Realm {
+		t.Fatal("expected Realm capability discovery to preserve the admin disable")
+	}
 
 	now := time.Now().UTC()
 	if err := sqliteStore.SaveSnapshot(model.AgentSnapshot{
@@ -358,6 +376,121 @@ func TestHandleAgentConfigPreservesExplicitFeatureSwitches(t *testing.T) {
 	}
 	if cfg.Features.XUI || cfg.Features.Realm || cfg.Features.NAT || cfg.Features.PortPolicy {
 		t.Fatalf("expected explicit disabled feature switches to be preserved, got %#v", cfg.Features)
+	}
+}
+
+func TestHandleXUIActionsScopesAreaManagerLogsToCurrentAccount(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+
+	if err := sqliteStore.EnsureAdminAccount("admin", "password123"); err != nil {
+		t.Fatalf("EnsureAdminAccount: %v", err)
+	}
+	admin, ok, err := sqliteStore.AuthenticateAdmin("admin", "password123")
+	if err != nil || !ok {
+		t.Fatalf("AuthenticateAdmin ok=%v err=%v", ok, err)
+	}
+	adminToken, _, err := sqliteStore.CreateAdminSession(admin, time.Hour)
+	if err != nil {
+		t.Fatalf("CreateAdminSession admin: %v", err)
+	}
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "shared-agent", AgentName: "Shared Agent"}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	enabled := true
+	managerOne, err := sqliteStore.CreateAreaManager(model.AreaManagerAccountRequest{
+		Username: "area-one", Password: "password123", Enabled: &enabled, AgentIDs: []string{"shared-agent"},
+	})
+	if err != nil {
+		t.Fatalf("CreateAreaManager one: %v", err)
+	}
+	managerTwo, err := sqliteStore.CreateAreaManager(model.AreaManagerAccountRequest{
+		Username: "area-two", Password: "password123", Enabled: &enabled, AgentIDs: []string{"shared-agent"},
+	})
+	if err != nil {
+		t.Fatalf("CreateAreaManager two: %v", err)
+	}
+	for _, managerID := range []int64{managerOne.ID, managerTwo.ID} {
+		if _, err := sqliteStore.CreateAreaManagerAssignment(managerID, model.AreaManagerAssignmentRequest{
+			AgentID: "shared-agent", InboundID: 7, InboundTag: "node-7", Enabled: &enabled,
+		}); err != nil {
+			t.Fatalf("CreateAreaManagerAssignment manager=%d: %v", managerID, err)
+		}
+	}
+	oneUser, ok, err := sqliteStore.AuthenticateAdmin("area-one", "password123")
+	if err != nil || !ok {
+		t.Fatalf("AuthenticateAdmin area-one ok=%v err=%v", ok, err)
+	}
+	twoUser, ok, err := sqliteStore.AuthenticateAdmin("area-two", "password123")
+	if err != nil || !ok {
+		t.Fatalf("AuthenticateAdmin area-two ok=%v err=%v", ok, err)
+	}
+	oneToken, _, err := sqliteStore.CreateAdminSession(oneUser, time.Hour)
+	if err != nil {
+		t.Fatalf("CreateAdminSession area-one: %v", err)
+	}
+	twoToken, _, err := sqliteStore.CreateAdminSession(twoUser, time.Hour)
+	if err != nil {
+		t.Fatalf("CreateAdminSession area-two: %v", err)
+	}
+
+	app := &App{store: sqliteStore, realtime: newRealtimeHub()}
+	createAction := func(token, email string) {
+		t.Helper()
+		body, marshalErr := json.Marshal(model.XUIActionRequest{
+			Kind: model.XUIActionAddClient,
+			Payload: map[string]any{
+				"inbound_id": 7, "inbound_tag": "node-7", "client": map[string]any{"email": email},
+			},
+		})
+		if marshalErr != nil {
+			t.Fatalf("Marshal action: %v", marshalErr)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/shared-agent/xui/actions", bytes.NewReader(body))
+		req.AddCookie(&http.Cookie{Name: adminSessionCookieName, Value: token})
+		rec := httptest.NewRecorder()
+		app.handleXUIActions(rec, req, "shared-agent", nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("create action status=%d body=%s", rec.Code, rec.Body.String())
+		}
+	}
+	createAction(oneToken, "one@example.com")
+	createAction(twoToken, "two@example.com")
+	if _, err := sqliteStore.CreateXUIAction("shared-agent", model.XUIActionRequest{
+		Kind: model.XUIActionRestartXUI, Payload: map[string]any{},
+	}); err != nil {
+		t.Fatalf("CreateXUIAction legacy: %v", err)
+	}
+
+	listActions := func(token string) []model.XUIAction {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/agents/shared-agent/xui/actions", nil)
+		req.AddCookie(&http.Cookie{Name: adminSessionCookieName, Value: token})
+		rec := httptest.NewRecorder()
+		app.handleXUIActions(rec, req, "shared-agent", nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("list actions status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		var actions []model.XUIAction
+		if err := json.NewDecoder(rec.Body).Decode(&actions); err != nil {
+			t.Fatalf("Decode actions: %v", err)
+		}
+		return actions
+	}
+	oneActions := listActions(oneToken)
+	if len(oneActions) != 1 || oneActions[0].CreatedByAccountID != managerOne.ID || oneActions[0].CreatedByUsername != "area-one" {
+		t.Fatalf("area-one must only see its own action, got %#v", oneActions)
+	}
+	twoActions := listActions(twoToken)
+	if len(twoActions) != 1 || twoActions[0].CreatedByAccountID != managerTwo.ID || twoActions[0].CreatedByUsername != "area-two" {
+		t.Fatalf("area-two must only see its own action, got %#v", twoActions)
+	}
+	adminActions := listActions(adminToken)
+	if len(adminActions) != 3 {
+		t.Fatalf("admin must see all actions, got %#v", adminActions)
 	}
 }
 

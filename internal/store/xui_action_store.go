@@ -11,6 +11,10 @@ import (
 )
 
 func (s *SQLiteStore) CreateXUIAction(agentID string, req model.XUIActionRequest) (model.XUIAction, error) {
+	return s.CreateXUIActionWithActor(agentID, req, model.XUIActionActor{})
+}
+
+func (s *SQLiteStore) CreateXUIActionWithActor(agentID string, req model.XUIActionRequest, actor model.XUIActionActor) (model.XUIAction, error) {
 	if agentID == "" {
 		return model.XUIAction{}, fmt.Errorf("agent_id is required")
 	}
@@ -32,9 +36,13 @@ func (s *SQLiteStore) CreateXUIAction(agentID string, req model.XUIActionRequest
 		return model.XUIAction{}, fmt.Errorf("marshal action payload: %w", err)
 	}
 	result, err := s.db.Exec(`
-		INSERT INTO xui_actions (agent_id, kind, status, payload_json, result_json, error, created_at, updated_at, claimed_at, completed_at)
-		VALUES (?, ?, ?, ?, '{}', '', ?, ?, '', '')
-	`, agentID, req.Kind, model.XUIActionStatusPending, string(payloadJSON), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
+		INSERT INTO xui_actions (
+			agent_id, kind, status, created_by_role, created_by_account_id, created_by_username,
+			payload_json, result_json, error, created_at, updated_at, claimed_at, completed_at
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, '{}', '', ?, ?, '', '')
+	`, agentID, req.Kind, model.XUIActionStatusPending, strings.TrimSpace(actor.Role), actor.AccountID,
+		strings.TrimSpace(actor.Username), string(payloadJSON), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
 	if err != nil {
 		return model.XUIAction{}, fmt.Errorf("create x-ui action: %w", err)
 	}
@@ -54,7 +62,8 @@ func (s *SQLiteStore) CreateXUIAction(agentID string, req model.XUIActionRequest
 
 func (s *SQLiteStore) GetXUIAction(agentID string, id int64) (model.XUIAction, bool, error) {
 	row := s.db.QueryRow(`
-		SELECT id, agent_id, kind, status, payload_json, result_json, error, created_at, updated_at, claimed_at, completed_at
+		SELECT id, agent_id, kind, status, created_by_role, created_by_account_id, created_by_username,
+		       payload_json, result_json, error, created_at, updated_at, claimed_at, completed_at
 		FROM xui_actions
 		WHERE agent_id = ? AND id = ?
 	`, agentID, id)
@@ -73,7 +82,8 @@ func (s *SQLiteStore) ListXUIActions(agentID string, limit int) ([]model.XUIActi
 		limit = 30
 	}
 	rows, err := s.db.Query(`
-		SELECT id, agent_id, kind, status, payload_json, result_json, error, created_at, updated_at, claimed_at, completed_at
+		SELECT id, agent_id, kind, status, created_by_role, created_by_account_id, created_by_username,
+		       payload_json, result_json, error, created_at, updated_at, claimed_at, completed_at
 		FROM xui_actions
 		WHERE agent_id = ?
 		ORDER BY id DESC
@@ -81,6 +91,28 @@ func (s *SQLiteStore) ListXUIActions(agentID string, limit int) ([]model.XUIActi
 	`, agentID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list x-ui actions: %w", err)
+	}
+	defer rows.Close()
+	return scanXUIActions(rows)
+}
+
+func (s *SQLiteStore) ListXUIActionsByActor(agentID, role string, accountID int64, limit int) ([]model.XUIAction, error) {
+	if strings.TrimSpace(role) == "" || accountID <= 0 {
+		return []model.XUIAction{}, nil
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 30
+	}
+	rows, err := s.db.Query(`
+		SELECT id, agent_id, kind, status, created_by_role, created_by_account_id, created_by_username,
+		       payload_json, result_json, error, created_at, updated_at, claimed_at, completed_at
+		FROM xui_actions
+		WHERE agent_id = ? AND created_by_role = ? AND created_by_account_id = ?
+		ORDER BY id DESC
+		LIMIT ?
+	`, agentID, strings.TrimSpace(role), accountID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list x-ui actions by actor: %w", err)
 	}
 	defer rows.Close()
 	return scanXUIActions(rows)
@@ -149,7 +181,8 @@ func (s *SQLiteStore) ClaimPendingXUIActions(agentID string, limit int) ([]model
 		args = append(args, id)
 	}
 	claimedRows, err := tx.Query(`
-		SELECT id, agent_id, kind, status, payload_json, result_json, error, created_at, updated_at, claimed_at, completed_at
+		SELECT id, agent_id, kind, status, created_by_role, created_by_account_id, created_by_username,
+		       payload_json, result_json, error, created_at, updated_at, claimed_at, completed_at
 		FROM xui_actions
 		WHERE agent_id = ? AND id IN (`+placeholders+`)
 		ORDER BY id ASC
@@ -383,6 +416,9 @@ func scanXUIAction(row rowScanner) (model.XUIAction, error) {
 		&action.AgentID,
 		&action.Kind,
 		&action.Status,
+		&action.CreatedByRole,
+		&action.CreatedByAccountID,
+		&action.CreatedByUsername,
 		&payloadJSON,
 		&resultJSON,
 		&action.Error,

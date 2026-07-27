@@ -37,17 +37,26 @@ type XUIActionAuth struct {
 	APIToken string `json:"api_token,omitempty"`
 }
 
+type XUIActionActor struct {
+	Role      string `json:"role,omitempty"`
+	AccountID int64  `json:"account_id,omitempty"`
+	Username  string `json:"username,omitempty"`
+}
+
 type XUIAction struct {
-	ID          int64          `json:"id"`
-	AgentID     string         `json:"agent_id"`
-	Kind        string         `json:"kind"`
-	Status      string         `json:"status"`
-	Payload     map[string]any `json:"payload,omitempty"`
-	XUIAuth     *XUIActionAuth `json:"xui_auth,omitempty"`
-	Result      map[string]any `json:"result,omitempty"`
-	Error       string         `json:"error,omitempty"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
-	ClaimedAt   *time.Time     `json:"claimed_at,omitempty"`
-	CompletedAt *time.Time     `json:"completed_at,omitempty"`
+	ID                 int64          `json:"id"`
+	AgentID            string         `json:"agent_id"`
+	Kind               string         `json:"kind"`
+	Status             string         `json:"status"`
+	CreatedByRole      string         `json:"created_by_role,omitempty"`
+	CreatedByAccountID int64          `json:"created_by_account_id,omitempty"`
+	CreatedByUsername  string         `json:"created_by_username,omitempty"`
+	Payload            map[string]any `json:"payload,omitempty"`
+	XUIAuth            *XUIActionAuth `json:"xui_auth,omitempty"`
+	Result             map[string]any `json:"result,omitempty"`
+	Error              string         `json:"error,omitempty"`
+	CreatedAt          time.Time      `json:"created_at"`
+	UpdatedAt          time.Time      `json:"updated_at"`
+	ClaimedAt          *time.Time     `json:"claimed_at,omitempty"`
+	CompletedAt        *time.Time     `json:"completed_at,omitempty"`
 }
