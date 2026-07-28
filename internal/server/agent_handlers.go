@@ -51,6 +51,11 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if hydrated, hydrateErr := a.hydrateHAProxyTargets(result.Config); hydrateErr == nil {
+		result.Config = hydrated
+	} else {
+		log.Printf("hydrate HAProxy targets for %s during registration failed: %v", req.AgentID, hydrateErr)
+	}
 	observedIP := requestObservedIP(r)
 	a.clearCustomerOverviewCache()
 	go a.refreshTopologyLookupCacheFromRegister(req, observedIP)
@@ -1076,6 +1081,7 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 				cfg = inferLegacyAgentFeatures(cfg, nil)
 			}
 			cfg = a.hydrateRealmForwardTargets(cfg)
+			cfg, _ = a.hydrateHAProxyTargets(cfg)
 			cfg = a.sanitizeManagedConfigForAdmin(user, cfg)
 		} else {
 			if snapshot, exists := a.store.GetLatest(agentID); exists {
@@ -1084,6 +1090,7 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 				cfg = inferLegacyAgentFeatures(cfg, nil)
 			}
 			cfg = a.hydrateRealmForwardTargets(cfg)
+			cfg, _ = a.hydrateHAProxyTargets(cfg)
 		}
 		cfg = disableXUIAutoInstall(cfg)
 		writeJSON(w, http.StatusOK, cfg)
@@ -1126,9 +1133,19 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 			var featureFields map[string]json.RawMessage
 			if json.Unmarshal(featuresRaw, &featureFields) == nil {
 				_, cfg.Features.RealmExplicitlyConfigured = featureFields["realm"]
+				_, cfg.Features.HAProxyExplicitlyConfigured = featureFields["haproxy"]
 			}
 		}
+		cfg, err = a.hydrateHAProxyTargets(cfg)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		if err := validateRealmForwardTargets(r.Context(), cfg.Entry.PortForwarding); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := validateHAProxyConfig(cfg.Entry.HAProxy, cfg.Entry.PortForwarding); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -1169,6 +1186,10 @@ func inferLegacyAgentFeatures(cfg model.ManagedAgentConfig, snapshot *model.Agen
 			strings.TrimSpace(entry.PortForwarding.ConfigPath) != "" ||
 			strings.TrimSpace(entry.PortForwarding.ServiceName) != "" ||
 			snapshotHasRealm(snapshot),
+		HAProxy: entry.HAProxy.Enabled ||
+			len(entry.HAProxy.Rules) > 0 ||
+			strings.TrimSpace(entry.HAProxy.ConfigPath) != "" ||
+			strings.TrimSpace(entry.HAProxy.ServiceName) != "",
 		NAT: len(entry.Mappings) > 0 ||
 			len(entry.Addresses) > 0 ||
 			strings.TrimSpace(entry.ImportDomain) != "",

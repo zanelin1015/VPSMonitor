@@ -4,7 +4,7 @@ import type { ColumnsType } from 'antd/es/table'
 import type { GlobalDashboardView, TopologyLinkView, XUIClientView, XUILocalCertificate, XUINodeView } from '../types'
 import { nodeElementId } from '../lib/appHelpers'
 
-export type AgentFeatureKey = 'xui' | 'realm' | 'nat' | 'port_policy'
+export type AgentFeatureKey = 'xui' | 'realm' | 'haproxy' | 'nat' | 'port_policy'
 
 export type RealmForwardNodeView = XUINodeView & {
   realm_target_agent_id?: string

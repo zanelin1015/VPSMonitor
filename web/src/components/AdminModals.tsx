@@ -242,6 +242,15 @@ export function ClientInstallModal(props: {
               <Input disabled={!form.realm_auto_install} value={form.realm_download_base_url} placeholder="留空使用 GitHub 官方 Release" onChange={(event) => update({ realm_download_base_url: event.target.value })} />
             </Col>
           </Row>
+          <Row gutter={[14, 14]} align="bottom">
+            <Col xs={24} md={7}>
+              <Text type="secondary">同时安装 HAProxy</Text>
+              <div className="client-install-switch">
+                <Switch checked={form.haproxy_auto_install} onChange={(checked) => update({ haproxy_auto_install: checked })} />
+                <Text type="secondary">Linux / OpenWrt</Text>
+              </div>
+            </Col>
+          </Row>
           <Tabs
             activeKey={commandKind}
             onChange={(key) => onCommandKindChange(key as ClientInstallCommandKind)}
@@ -252,7 +261,7 @@ export function ClientInstallModal(props: {
                 children: (
                   <ClientInstallCommandBox
                     title="Linux 安装命令"
-                    description="在目标 Linux VPS 上使用 root 执行；自动识别 x86_64、ARM64、ARMv7，支持 systemd 和 OpenRC，并按上方设置安装 Realm。"
+                    description="在目标 Linux VPS 上使用 root 执行；自动识别 x86_64、ARM64、ARMv7，支持 systemd 和 OpenRC，并按上方设置安装 Realm / HAProxy。"
                     command={linuxCommand}
                     onCopy={() => onCopy(linuxCommand)}
                   />
@@ -264,7 +273,7 @@ export function ClientInstallModal(props: {
                 children: (
                   <ClientInstallCommandBox
                     title="iStoreOS / OpenWrt 安装命令"
-                    description="在路由系统 SSH 中使用 root 执行；自动识别 x86_64、ARM64、ARMv7，并按上方设置安装 Realm。"
+                    description="在路由系统 SSH 中使用 root 执行；自动识别 x86_64、ARM64、ARMv7，并按上方设置安装 Realm / HAProxy。"
                     command={openWrtCommand}
                     onCopy={() => onCopy(openWrtCommand)}
                   />

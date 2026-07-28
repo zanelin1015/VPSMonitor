@@ -7,10 +7,11 @@ import { DEFAULT_COST_CURRENCY, type CurrencyCode } from '../lib/currency'
 import { bytesToGB, gbToBytes } from '../lib/traffic'
 import type { ConfigSectionKey } from '../lib/appHelpers'
 import { formatDateTime, formatRenewalHint, summarizeConfigAudit } from '../lib/appHelpers'
+import { HAProxyConfigSection } from './HAProxyConfigSection'
 
 const { Text, Title } = Typography
 
-export type ConfigPanelSection = 'all' | 'basic' | 'xui' | 'nat' | 'network' | 'realm' | 'audit'
+export type ConfigPanelSection = 'all' | 'basic' | 'xui' | 'nat' | 'network' | 'realm' | 'haproxy' | 'audit'
 
 export interface ConfigPanelProps {
   selectedAgent?: AgentListItem
@@ -99,6 +100,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
     mappings: managedConfig.entry?.mappings || [],
     network_policy: managedConfig.entry?.network_policy || { enabled: false, interface: '', firewall_backend: 'auto', rate_limit_backend: 'auto', rules: [] },
     port_forwarding: managedConfig.entry?.port_forwarding || selectedAgent.entry?.port_forwarding || { enabled: false, backend: 'realm', binary_path: '', config_path: '', service_name: '', log_level: 'info', rules: [] },
+    haproxy: managedConfig.entry?.haproxy || selectedAgent.entry?.haproxy || { enabled: false, binary_path: '', config_path: '', service_name: '', rules: [] },
   }
   const observedNetworkPolicy = selectedAgent.network_policy
   const observedNetworkRules = observedNetworkPolicy?.rules || []
@@ -119,6 +121,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
       }
     : configuredNetworkPolicy
   const portForwarding = entryConfig.port_forwarding || { enabled: false, backend: 'realm', binary_path: '', config_path: '', service_name: '', log_level: 'info', rules: [] }
+  const haProxy = entryConfig.haproxy || { enabled: false, binary_path: '', config_path: '', service_name: '', rules: [] }
   const observedRealm = selectedAgent.realm
   const observedRealmRules = observedRealm?.rules || []
   const targetAgentOptions = agents
@@ -942,6 +945,17 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
           </Col>
         </Row>
       </Card>
+
+      <HAProxyConfigSection
+        visible={showSection('haproxy')}
+        selectedAgent={selectedAgent}
+        agents={agents}
+        config={haProxy}
+        saving={configSavingSection === 'entry'}
+        saveDisabled={sectionSaving && configSavingSection !== 'entry'}
+        onChange={(next) => onEntryChange({ haproxy: next })}
+        onSave={() => onSave('entry')}
+      />
 
       <Card className="config-section-card" bordered={false} style={hiddenSectionStyle('audit')}>
         <Title level={4}>配置修改记录</Title>

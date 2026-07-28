@@ -160,7 +160,7 @@ function XUIOutboundActionFormPanel(props: {
                       value={form.source_client_key || undefined}
                       options={sourceClientOptions.map(({ key, client }) => ({
                         value: key,
-                        label: `${client.email || '-'} · ${client.inbound_remark || client.inbound_tag || client.protocol || '-'}`,
+                        label: sourceClientOptionLabel(client, activeSourceOverview, authorizedClientNodesOnly),
                       }))}
                       onChange={(value) => {
                         const nextKey = value || ''
@@ -281,4 +281,11 @@ function XUIOutboundActionFormPanel(props: {
       </Card>
     </Space>
   )
+}
+
+function sourceClientOptionLabel(client: XUIClientView, overview: XUIOverview | null, publicNamesOnly: boolean): string {
+  const nodeName = publicNamesOnly
+    ? client.realm_target_agent_name || overview?.agent_name || '已授权节点'
+    : client.inbound_remark || client.inbound_tag || client.protocol || '-'
+  return `${client.email || '-'} · ${nodeName}`
 }

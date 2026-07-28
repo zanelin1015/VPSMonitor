@@ -114,6 +114,7 @@ func BuildXUIOverviewWithOptions(snapshot model.AgentSnapshot, options XUIOvervi
 	certificates := filterDomainCertificates(snapshot.XUI.Certificates)
 	inbounds := normalizeInbounds(snapshot.XUI.Inbounds, rules, defaultOutboundTag, globalRuleIndexes, snapshot, certificates, options.Entry)
 	clients, onlineCount := normalizeClients(inbounds, rules, defaultOutboundTag, globalRuleIndexes, snapshot.ReportedAt)
+	applyClientTrafficFallbackToOutbounds(outbounds, clients, trafficByTag)
 
 	nodes := make([]model.XUINodeView, 0, len(inbounds))
 	for _, inbound := range inbounds {
@@ -155,6 +156,33 @@ func BuildXUIOverviewWithOptions(snapshot model.AgentSnapshot, options XUIOvervi
 		Balancers:         balancers,
 		RoutingRules:      unwrapRules(rules),
 		Certificates:      append([]model.XUILocalCertificate{}, certificates...),
+	}
+}
+
+func applyClientTrafficFallbackToOutbounds(outbounds []model.XUIOutboundView, clients []model.XUIClientView, trafficByTag map[string]outboundTraffic) {
+	byTag := make(map[string]outboundTraffic)
+	for _, client := range clients {
+		tag := strings.TrimSpace(client.Route.OutboundTag)
+		if tag == "" || strings.TrimSpace(client.Route.BalancerTag) != "" {
+			continue
+		}
+		traffic := byTag[tag]
+		traffic.up += client.Up
+		traffic.down += client.Down
+		traffic.total += chooseInt64(client.TrafficTotal, client.Up+client.Down)
+		byTag[tag] = traffic
+	}
+	for index := range outbounds {
+		if collected, found := trafficByTag[outbounds[index].Tag]; found && (collected.up != 0 || collected.down != 0 || collected.total != 0) {
+			continue
+		}
+		traffic, found := byTag[outbounds[index].Tag]
+		if !found {
+			continue
+		}
+		outbounds[index].Up = traffic.up
+		outbounds[index].Down = traffic.down
+		outbounds[index].Total = chooseInt64(traffic.total, traffic.up+traffic.down)
 	}
 }
 

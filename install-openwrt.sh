@@ -134,6 +134,23 @@ install_realm_if_enabled() {
   fi
 }
 
+install_haproxy_if_enabled() {
+  is_truthy "${VPSMONITOR_HAPROXY_AUTO_INSTALL:-false}" || return 0
+  if command -v haproxy >/dev/null 2>&1; then
+    info "Keeping existing HAProxy binary: $(command -v haproxy)"
+    return 0
+  fi
+  info "Installing HAProxy with opkg..."
+  if opkg update && opkg install haproxy && command -v haproxy >/dev/null 2>&1; then
+    info "HAProxy installed: $(command -v haproxy)"
+    return 0
+  fi
+  if is_truthy "${VPSMONITOR_HAPROXY_REQUIRED:-false}"; then
+    die "HAProxy installation failed."
+  fi
+  warn "HAProxy installation failed; bridge-client installation will continue."
+}
+
 make_temp_dir() {
   base="${VPSMONITOR_TMP_DIR:-/tmp}"
   mkdir -p "$base"
@@ -354,6 +371,7 @@ install_client() {
   [ ! -f "$source_dir/README.md" ] || cp "$source_dir/README.md" "$install_dir/README.md"
 
   install_realm_if_enabled "$arch"
+  install_haproxy_if_enabled
 
   service_name="${VPSMONITOR_CLIENT_SERVICE:-vpsmonitor-client}"
   install_procd_service "$service_name" "$install_dir" "$config_path"
@@ -375,8 +393,9 @@ Usage:
 Supported architectures: x86_64, arm64/aarch64, armv7
 Service manager: OpenWrt procd
 
-Realm overrides:
+Realm / HAProxy overrides:
   VPSMONITOR_REALM_AUTO_INSTALL=false
+  VPSMONITOR_HAPROXY_AUTO_INSTALL=false
   VPSMONITOR_REALM_VERSION=v2.9.4
   VPSMONITOR_REALM_DOWNLOAD_BASE_URL=https://example.com/realm/v2.9.4
   VPSMONITOR_REALM_PACKAGE_URL=https://example.com/realm-x86_64-unknown-linux-musl.tar.gz

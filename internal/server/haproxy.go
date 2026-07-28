@@ -1,0 +1,213 @@
+package server
+
+import (
+	"fmt"
+	"net"
+	"strings"
+
+	"bridge-core/internal/dashboard"
+	"bridge-core/internal/model"
+)
+
+func (a *App) hydrateHAProxyTargets(cfg model.ManagedAgentConfig) (model.ManagedAgentConfig, error) {
+	if !cfg.Entry.HAProxy.Enabled || len(cfg.Entry.HAProxy.Rules) == 0 {
+		return cfg, nil
+	}
+	agents, err := a.store.ListAgents()
+	if err != nil {
+		return cfg, fmt.Errorf("加载 HAProxy 目标 Client 失败: %w", err)
+	}
+	latest := latestSnapshotsByAgent(a.store.ListLatest())
+	for index := range agents {
+		if snapshot, ok := latest[agents[index].AgentID]; ok {
+			agents[index].Config.Entry = dashboard.MergeRealmSnapshotIntoEntry(agents[index].Config.Entry, snapshot.Realm)
+		}
+	}
+	return hydrateHAProxyTargetsFromAgents(cfg, agents)
+}
+
+func hydrateHAProxyTargetsFromAgents(cfg model.ManagedAgentConfig, agents []model.AgentRecord) (model.ManagedAgentConfig, error) {
+	agentByID := make(map[string]model.AgentRecord, len(agents))
+	for _, agent := range agents {
+		agentByID[agent.AgentID] = agent
+	}
+	for ruleIndex := range cfg.Entry.HAProxy.Rules {
+		rule := &cfg.Entry.HAProxy.Rules[ruleIndex]
+		if !rule.Enabled {
+			continue
+		}
+		rule.ListenAddress = strings.TrimSpace(rule.ListenAddress)
+		if rule.ListenAddress == "" {
+			rule.ListenAddress = "0.0.0.0"
+		}
+		if rule.CheckIntervalSeconds <= 0 {
+			rule.CheckIntervalSeconds = 3
+		}
+		if rule.ConnectTimeoutSeconds <= 0 {
+			rule.ConnectTimeoutSeconds = 5
+		}
+		if rule.Fall <= 0 {
+			rule.Fall = 3
+		}
+		if rule.Rise <= 0 {
+			rule.Rise = 2
+		}
+		label := haProxyRuleLabel(*rule)
+		primary, err := hydrateHAProxyRealmTarget(cfg.AgentID, label, "主节点", rule.Primary, agentByID)
+		if err != nil {
+			return cfg, err
+		}
+		rule.Primary = primary
+		for backupIndex := range rule.Backups {
+			backup, err := hydrateHAProxyRealmTarget(cfg.AgentID, label, fmt.Sprintf("备用节点 %d", backupIndex+1), rule.Backups[backupIndex], agentByID)
+			if err != nil {
+				return cfg, err
+			}
+			rule.Backups[backupIndex] = backup
+		}
+	}
+	return cfg, nil
+}
+
+func hydrateHAProxyRealmTarget(sourceAgentID, ruleLabel, targetLabel string, target model.HAProxyRealmTarget, agents map[string]model.AgentRecord) (model.HAProxyRealmTarget, error) {
+	target.AgentID = strings.TrimSpace(target.AgentID)
+	target.RealmRuleID = strings.TrimSpace(target.RealmRuleID)
+	if target.AgentID == "" {
+		return target, fmt.Errorf("HAProxy %s 的%s未选择 Client Realm 规则", ruleLabel, targetLabel)
+	}
+	if target.AgentID == sourceAgentID {
+		return target, fmt.Errorf("HAProxy %s 的%s不能选择当前 Client", ruleLabel, targetLabel)
+	}
+	agent, ok := agents[target.AgentID]
+	if !ok {
+		return target, fmt.Errorf("HAProxy %s 的%s引用了不存在的 Client %q", ruleLabel, targetLabel, target.AgentID)
+	}
+	if !agent.Config.Entry.PortForwarding.Enabled || strings.EqualFold(strings.TrimSpace(agent.Config.Entry.PortForwarding.Backend), "none") {
+		return target, fmt.Errorf("HAProxy %s 的%s Client %q 未启用 Realm", ruleLabel, targetLabel, firstNonEmptyString(agent.AgentName, agent.AgentID))
+	}
+	realmRule, ok := findHAProxyRealmRule(agent.Config.Entry.PortForwarding.Rules, target.RealmRuleID, target.Port)
+	if !ok {
+		return target, fmt.Errorf("HAProxy %s 的%s在 Client %q 中找不到对应的 Realm 监听规则", ruleLabel, targetLabel, firstNonEmptyString(agent.AgentName, agent.AgentID))
+	}
+	if !realmRule.Enabled {
+		return target, fmt.Errorf("HAProxy %s 的%s引用的 Realm 规则未启用", ruleLabel, targetLabel)
+	}
+	network := strings.ToLower(strings.TrimSpace(realmRule.Network))
+	if network == "udp" {
+		return target, fmt.Errorf("HAProxy %s 的%s引用了仅 UDP 的 Realm 规则，HAProxy 主备仅支持 TCP", ruleLabel, targetLabel)
+	}
+	address := preferredRealmForwardTargetAddress(agent)
+	if address == "" {
+		return target, fmt.Errorf("HAProxy %s 的%s Client %q 没有可用的主域名或公网 IP", ruleLabel, targetLabel, firstNonEmptyString(agent.AgentName, agent.AgentID))
+	}
+	target.RealmRuleID = realmRule.ID
+	target.Address = address
+	target.Port = realmRule.ListenPort
+	return target, nil
+}
+
+func findHAProxyRealmRule(rules []model.RealmForwardRule, ruleID string, listenPort int) (model.RealmForwardRule, bool) {
+	ruleID = strings.TrimSpace(ruleID)
+	if ruleID != "" {
+		for _, rule := range rules {
+			if strings.EqualFold(strings.TrimSpace(rule.ID), ruleID) {
+				return rule, true
+			}
+		}
+	}
+	if listenPort > 0 {
+		for _, rule := range rules {
+			if rule.ListenPort == listenPort {
+				return rule, true
+			}
+		}
+	}
+	return model.RealmForwardRule{}, false
+}
+
+func validateHAProxyConfig(cfg model.HAProxyConfig, realm model.RealmForwardConfig) error {
+	if !cfg.Enabled {
+		return nil
+	}
+	realmPorts := make(map[int]struct{}, len(realm.Rules))
+	if realm.Enabled && !strings.EqualFold(strings.TrimSpace(realm.Backend), "none") {
+		for _, rule := range realm.Rules {
+			if rule.Enabled {
+				realmPorts[rule.ListenPort] = struct{}{}
+			}
+		}
+	}
+	listenPorts := make(map[int]struct{}, len(cfg.Rules))
+	for _, rule := range cfg.Rules {
+		if !rule.Enabled {
+			continue
+		}
+		label := haProxyRuleLabel(rule)
+		if rule.ListenPort <= 0 || rule.ListenPort > 65535 {
+			return fmt.Errorf("HAProxy %s 的监听端口无效", label)
+		}
+		if _, exists := listenPorts[rule.ListenPort]; exists {
+			return fmt.Errorf("HAProxy 监听端口 %d 重复，一个端口只能配置一条主备规则", rule.ListenPort)
+		}
+		listenPorts[rule.ListenPort] = struct{}{}
+		if _, exists := realmPorts[rule.ListenPort]; exists {
+			return fmt.Errorf("HAProxy %s 的监听端口 %d 已被当前 Client 的 Realm 使用", label, rule.ListenPort)
+		}
+		listenAddress := strings.TrimSpace(rule.ListenAddress)
+		if listenAddress != "" && listenAddress != "*" && net.ParseIP(strings.Trim(listenAddress, "[]")) == nil {
+			return fmt.Errorf("HAProxy %s 的监听地址必须是本机 IP、0.0.0.0 或 ::", label)
+		}
+		if err := validateHydratedHAProxyTarget(label, "主节点", rule.Primary); err != nil {
+			return err
+		}
+		if len(rule.Backups) == 0 {
+			return fmt.Errorf("HAProxy %s 至少需要一个备用节点", label)
+		}
+		seenTargets := map[string]struct{}{haProxyResolvedTargetKey(rule.Primary): {}}
+		for index, target := range rule.Backups {
+			if err := validateHydratedHAProxyTarget(label, fmt.Sprintf("备用节点 %d", index+1), target); err != nil {
+				return err
+			}
+			key := haProxyResolvedTargetKey(target)
+			if _, exists := seenTargets[key]; exists {
+				return fmt.Errorf("HAProxy %s 的主备节点存在重复目标 %s:%d", label, target.Address, target.Port)
+			}
+			seenTargets[key] = struct{}{}
+		}
+		if rule.CheckIntervalSeconds < 1 || rule.CheckIntervalSeconds > 300 {
+			return fmt.Errorf("HAProxy %s 的健康检查间隔必须在 1 到 300 秒之间", label)
+		}
+		if rule.ConnectTimeoutSeconds < 1 || rule.ConnectTimeoutSeconds > 60 {
+			return fmt.Errorf("HAProxy %s 的连接超时必须在 1 到 60 秒之间", label)
+		}
+		if rule.Fall < 1 || rule.Fall > 20 || rule.Rise < 1 || rule.Rise > 20 {
+			return fmt.Errorf("HAProxy %s 的失败/恢复次数必须在 1 到 20 之间", label)
+		}
+	}
+	return nil
+}
+
+func validateHydratedHAProxyTarget(ruleLabel, targetLabel string, target model.HAProxyRealmTarget) error {
+	if strings.TrimSpace(target.AgentID) == "" || strings.TrimSpace(target.RealmRuleID) == "" {
+		return fmt.Errorf("HAProxy %s 的%s必须从 Client Realm 规则中选择", ruleLabel, targetLabel)
+	}
+	if target.Port <= 0 || target.Port > 65535 {
+		return fmt.Errorf("HAProxy %s 的%s端口无效", ruleLabel, targetLabel)
+	}
+	host := strings.TrimSpace(target.Address)
+	if host == "" || strings.Contains(host, "://") || strings.ContainsAny(host, "/?# \t\r\n") {
+		return fmt.Errorf("HAProxy %s 的%s地址无效", ruleLabel, targetLabel)
+	}
+	return nil
+}
+
+func haProxyRuleLabel(rule model.HAProxyRule) string {
+	if label := strings.TrimSpace(rule.Name); label != "" {
+		return label
+	}
+	return fmt.Sprintf("监听端口 %d", rule.ListenPort)
+}
+
+func haProxyResolvedTargetKey(target model.HAProxyRealmTarget) string {
+	return strings.ToLower(strings.TrimSpace(target.Address)) + "\x00" + fmt.Sprint(target.Port)
+}

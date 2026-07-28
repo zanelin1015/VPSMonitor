@@ -147,6 +147,10 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 				writeError(w, http.StatusForbidden, "agent is not assigned to this account")
 				return
 			}
+			if isAreaManager(user) && !a.areaManagerCustomerAssignmentAllowed(user, req) {
+				writeError(w, http.StatusForbidden, "node or client is outside the area manager authorization scope")
+				return
+			}
 			if isAreaManager(user) {
 				req.RevenueAmount = nil
 				req.RevenueCurrency = ""
@@ -184,6 +188,10 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 		}
 		if !a.adminCanAccessAgent(user, req.AgentID) {
 			writeError(w, http.StatusForbidden, "agent is not assigned to this account")
+			return
+		}
+		if isAreaManager(user) && !a.areaManagerCustomerAssignmentAllowed(user, req) {
+			writeError(w, http.StatusForbidden, "node or client is outside the area manager authorization scope")
 			return
 		}
 		if isAreaManager(user) {

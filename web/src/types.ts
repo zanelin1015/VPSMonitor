@@ -168,6 +168,7 @@ export interface ManagedAgentConfig {
 export interface AgentFeatureConfig {
   xui?: boolean
   realm?: boolean
+  haproxy?: boolean
   nat?: boolean
   port_policy?: boolean
 }
@@ -178,6 +179,7 @@ export interface AgentEntryConfig {
   mappings?: AgentEntryMapping[]
   network_policy?: NetworkPolicyConfig
   port_forwarding?: RealmForwardConfig
+  haproxy?: HAProxyConfig
 }
 
 export interface AgentEntryMapping {
@@ -245,6 +247,35 @@ export interface RealmForwardRule {
   target_port?: number
   network?: 'tcp' | 'udp' | 'both' | string
   note?: string
+}
+
+export interface HAProxyConfig {
+  enabled?: boolean
+  binary_path?: string
+  config_path?: string
+  service_name?: string
+  rules?: HAProxyRule[]
+}
+
+export interface HAProxyRule {
+  id?: string
+  name?: string
+  enabled?: boolean
+  listen_address?: string
+  listen_port?: number
+  primary?: HAProxyRealmTarget
+  backups?: HAProxyRealmTarget[]
+  check_interval_seconds?: number
+  connect_timeout_seconds?: number
+  fall?: number
+  rise?: number
+}
+
+export interface HAProxyRealmTarget {
+  agent_id?: string
+  realm_rule_id?: string
+  address?: string
+  port?: number
 }
 
 export interface AdminUser {
@@ -472,6 +503,7 @@ export interface ClientInstallInfo {
   realm_auto_install: boolean
   realm_version?: string
   realm_download_base_url?: string
+  haproxy_auto_install?: boolean
   xui_auto_install?: boolean
   xui_username?: string
   xui_password?: string
@@ -560,6 +592,7 @@ export interface XUINodeView {
   all_time?: number
   client_count?: number
   online_count?: number
+  can_assign_all_clients?: boolean
   route: XUIRouteTrace
   realm_target_agent_id?: string
   realm_target_agent_name?: string

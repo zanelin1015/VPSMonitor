@@ -118,6 +118,27 @@ func (s *SQLiteStore) ListXUIActionsByActor(agentID, role string, accountID int6
 	return scanXUIActions(rows)
 }
 
+func (s *SQLiteStore) ListSucceededXUIActionsByActorKind(agentID, role string, accountID int64, kind string) ([]model.XUIAction, error) {
+	agentID = strings.TrimSpace(agentID)
+	role = strings.TrimSpace(role)
+	kind = strings.TrimSpace(kind)
+	if agentID == "" || role == "" || accountID <= 0 || kind == "" {
+		return []model.XUIAction{}, nil
+	}
+	rows, err := s.db.Query(`
+		SELECT id, agent_id, kind, status, created_by_role, created_by_account_id, created_by_username,
+		       payload_json, result_json, error, created_at, updated_at, claimed_at, completed_at
+		FROM xui_actions
+		WHERE agent_id = ? AND created_by_role = ? AND created_by_account_id = ? AND kind = ? AND status = ?
+		ORDER BY id ASC
+	`, agentID, role, accountID, kind, model.XUIActionStatusSucceeded)
+	if err != nil {
+		return nil, fmt.Errorf("list succeeded x-ui actions by actor and kind: %w", err)
+	}
+	defer rows.Close()
+	return scanXUIActions(rows)
+}
+
 func (s *SQLiteStore) ClaimPendingXUIActions(agentID string, limit int) ([]model.XUIAction, error) {
 	if limit <= 0 || limit > 20 {
 		limit = 10

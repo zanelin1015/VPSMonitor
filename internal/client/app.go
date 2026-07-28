@@ -41,6 +41,7 @@ type App struct {
 	networkPolicySignature string
 	xuiBootstrapSignature  string
 	realmForwardSignature  string
+	haProxySignature       string
 	accessLogState         accessLogTailState
 	capabilities           model.AgentCapabilities
 }
@@ -77,6 +78,7 @@ func (a *App) runOnceWithConfig(ctx context.Context, effectiveConfig model.Manag
 	effectiveConfig.Entry = mergeLocalRealmConfigIntoEntry(effectiveConfig.Entry)
 	a.applyNetworkPolicyIfNeeded(ctx, effectiveConfig.Entry.NetworkPolicy)
 	a.applyRealmForwardingIfNeeded(ctx, effectiveConfig.Entry.PortForwarding)
+	a.applyHAProxyIfNeeded(ctx, effectiveConfig.Entry.HAProxy)
 	a.ensureXUIBootstrapIfNeeded(ctx, effectiveConfig.XUI)
 	a.executePendingXUIActions(ctx, effectiveConfig)
 	snapshot := a.collect(ctx, effectiveConfig)
@@ -227,16 +229,17 @@ func (a *App) startSelfUpdate(payload map[string]any) (map[string]any, error) {
 	realmAutoInstall := payloadBool(payload, "realm_auto_install", false)
 	realmVersion := payloadString(payload, "realm_version", "v2.9.4")
 	realmDownloadBaseURL := payloadString(payload, "realm_download_base_url", "")
+	haProxyAutoInstall := payloadBool(payload, "haproxy_auto_install", false)
 	if isOpenWrtLike() {
 		openWrtScriptURL := payloadString(payload, "openwrt_script_url", openWrtInstallerURL(scriptURL))
-		command := fmt.Sprintf(`(sleep 2; { tmp="$(mktemp /tmp/vpsmonitor-install.XXXXXX.sh)"; if command -v uclient-fetch >/dev/null 2>&1; then uclient-fetch -O "$tmp" %[1]q; elif command -v wget >/dev/null 2>&1; then wget -O "$tmp" %[1]q; else curl -fL %[1]q -o "$tmp"; fi && chmod +x "$tmp" && env VPSMONITOR_ASSUME_YES=true VPSMONITOR_VERSION=%[2]q VPSMONITOR_REPO=%[3]q VPSMONITOR_PACKAGE_PREFIX=%[4]q VPSMONITOR_CLIENT_DIR=%[5]q VPSMONITOR_CLIENT_SERVICE=%[6]q VPSMONITOR_REALM_AUTO_INSTALL=%[7]q VPSMONITOR_REALM_VERSION=%[8]q VPSMONITOR_REALM_DOWNLOAD_BASE_URL=%[9]q sh "$tmp" client; } >>/tmp/vpsmonitor-client-update.log 2>&1) >/dev/null 2>&1 &`, openWrtScriptURL, version, repo, packagePrefix, installDir, serviceName, strconv.FormatBool(realmAutoInstall), realmVersion, realmDownloadBaseURL)
+		command := fmt.Sprintf(`(sleep 2; { tmp="$(mktemp /tmp/vpsmonitor-install.XXXXXX.sh)"; if command -v uclient-fetch >/dev/null 2>&1; then uclient-fetch -O "$tmp" %[1]q; elif command -v wget >/dev/null 2>&1; then wget -O "$tmp" %[1]q; else curl -fL %[1]q -o "$tmp"; fi && chmod +x "$tmp" && env VPSMONITOR_ASSUME_YES=true VPSMONITOR_VERSION=%[2]q VPSMONITOR_REPO=%[3]q VPSMONITOR_PACKAGE_PREFIX=%[4]q VPSMONITOR_CLIENT_DIR=%[5]q VPSMONITOR_CLIENT_SERVICE=%[6]q VPSMONITOR_REALM_AUTO_INSTALL=%[7]q VPSMONITOR_REALM_VERSION=%[8]q VPSMONITOR_REALM_DOWNLOAD_BASE_URL=%[9]q VPSMONITOR_HAPROXY_AUTO_INSTALL=%[10]q sh "$tmp" client; } >>/tmp/vpsmonitor-client-update.log 2>&1) >/dev/null 2>&1 &`, openWrtScriptURL, version, repo, packagePrefix, installDir, serviceName, strconv.FormatBool(realmAutoInstall), realmVersion, realmDownloadBaseURL, strconv.FormatBool(haProxyAutoInstall))
 		cmd := exec.Command("sh", "-c", command)
 		if err := cmd.Start(); err != nil {
 			return nil, fmt.Errorf("start OpenWrt update: %w", err)
 		}
 		return map[string]any{"status": "started", "install_dir": installDir, "service_name": serviceName, "service_manager": "procd"}, nil
 	}
-	command := fmt.Sprintf(`(sleep 2; tmp="$(mktemp /tmp/vpsmonitor-install.XXXXXX.sh)"; (curl -fsSL %[1]q -o "$tmp" || wget -O "$tmp" %[1]q) && chmod +x "$tmp" && env VPSMONITOR_ASSUME_YES=true VPSMONITOR_VERSION=%[2]q VPSMONITOR_REPO=%[3]q VPSMONITOR_PACKAGE_PREFIX=%[4]q VPSMONITOR_CLIENT_DIR=%[5]q VPSMONITOR_CLIENT_SERVICE=%[6]q VPSMONITOR_REALM_AUTO_INSTALL=%[7]q VPSMONITOR_REALM_VERSION=%[8]q VPSMONITOR_REALM_DOWNLOAD_BASE_URL=%[9]q bash "$tmp" client >>/tmp/vpsmonitor-client-update.log 2>&1) >/dev/null 2>&1 &`, scriptURL, version, repo, packagePrefix, installDir, serviceName, strconv.FormatBool(realmAutoInstall), realmVersion, realmDownloadBaseURL)
+	command := fmt.Sprintf(`(sleep 2; tmp="$(mktemp /tmp/vpsmonitor-install.XXXXXX.sh)"; (curl -fsSL %[1]q -o "$tmp" || wget -O "$tmp" %[1]q) && chmod +x "$tmp" && env VPSMONITOR_ASSUME_YES=true VPSMONITOR_VERSION=%[2]q VPSMONITOR_REPO=%[3]q VPSMONITOR_PACKAGE_PREFIX=%[4]q VPSMONITOR_CLIENT_DIR=%[5]q VPSMONITOR_CLIENT_SERVICE=%[6]q VPSMONITOR_REALM_AUTO_INSTALL=%[7]q VPSMONITOR_REALM_VERSION=%[8]q VPSMONITOR_REALM_DOWNLOAD_BASE_URL=%[9]q VPSMONITOR_HAPROXY_AUTO_INSTALL=%[10]q bash "$tmp" client >>/tmp/vpsmonitor-client-update.log 2>&1) >/dev/null 2>&1 &`, scriptURL, version, repo, packagePrefix, installDir, serviceName, strconv.FormatBool(realmAutoInstall), realmVersion, realmDownloadBaseURL, strconv.FormatBool(haProxyAutoInstall))
 	cmd := exec.Command("sh", "-c", command)
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start linux update: %w", err)

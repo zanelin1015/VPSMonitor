@@ -199,6 +199,7 @@ func (a *App) createClientUpdateActions(req model.UpdateRequest) (model.UpdateRe
 			"realm_auto_install":      installSettings.RealmAutoInstall,
 			"realm_version":           firstNonEmptyString(installSettings.RealmVersion, defaultRealmVersion),
 			"realm_download_base_url": installSettings.RealmDownloadBaseURL,
+			"haproxy_auto_install":    installSettings.HAProxyAutoInstall,
 		}
 		if serviceName != "" {
 			payload["service_name"] = serviceName

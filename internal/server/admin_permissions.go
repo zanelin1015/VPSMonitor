@@ -208,11 +208,10 @@ func (a *App) sanitizeXUIOverviewForAdmin(user model.AdminUser, overview *model.
 	overview.Summary = a.areaManagerScopedTrafficSummary(user, overview)
 	outboundScope := a.areaManagerOutboundScope(user)
 	overview.Outbounds = filterOutboundsForAreaManager(overview.Outbounds, overview.AgentID, outboundScope)
+	applyScopedClientTrafficToOutbounds(overview.Outbounds, filteredClients)
 	overview.Balancers = nil
 	overview.RoutingRules = filterRoutingRulesForAreaManager(overview.RoutingRules, overview.AgentID, filteredClients, filteredNodes, clientScope, outboundScope)
 	for index := range overview.Outbounds {
-		overview.Outbounds[index].Address = redactEndpointIP(overview.Outbounds[index].Address)
-		overview.Outbounds[index].Target = redactEndpointIP(overview.Outbounds[index].Target)
 		overview.Outbounds[index].SendThrough = ""
 	}
 }
@@ -316,30 +315,48 @@ func (a *App) sanitizeXUIOverviewForAreaAssignment(user model.AdminUser, overvie
 	overview.AgentName = areaManagerDisplayName("", overview.AgentName, overview.AgentID)
 	overview.BaseURL = ""
 	overview.Summary = sanitizeAreaManagerSummary(overview.Summary)
-	for index := range overview.Clients {
-		overview.Clients[index].TotalGB = 0
-		overview.Clients[index].ExpiryTime = 0
-		overview.Clients[index].CreatedAt = 0
-		overview.Clients[index].UpdatedAt = 0
-		overview.Clients[index].LastOnline = 0
+	clientScope := a.areaManagerAssignmentClientScope(user, overview.AgentID)
+	filteredClients := make([]model.XUIClientView, 0, len(overview.Clients))
+	visibleInbounds := make(map[string]struct{})
+	for _, client := range overview.Clients {
+		if !clientScope.allowsClient(overview.AgentID, client.InboundID, client.InboundTag, client.Email) &&
+			!a.areaManagerCanViewRealmForwardedClient(user, overview.AgentID, client, clientScope) {
+			continue
+		}
+		client.TotalGB = 0
+		client.ExpiryTime = 0
+		client.CreatedAt = 0
+		client.UpdatedAt = 0
+		client.LastOnline = 0
+		filteredClients = append(filteredClients, client)
+		visibleInbounds[overviewInboundKey(client.InboundID, client.InboundTag)] = struct{}{}
 	}
-	overview.ClientCount = len(overview.Clients)
+	overview.Clients = filteredClients
+	overview.ClientCount = len(filteredClients)
 	overview.OnlineClientCount = 0
-	for index := range overview.Nodes {
-		overview.Nodes[index].ClientCount = 0
-		overview.Nodes[index].OnlineCount = 0
-		overview.Nodes[index].Up = 0
-		overview.Nodes[index].Down = 0
-		overview.Nodes[index].Total = 0
-		overview.Nodes[index].AllTime = 0
+	filteredNodes := make([]model.XUINodeView, 0, len(overview.Nodes))
+	for _, node := range overview.Nodes {
+		canAssignAllClients := clientScope.allowsInbound(overview.AgentID, node.ID, node.Tag)
+		if _, visible := visibleInbounds[overviewInboundKey(node.ID, node.Tag)]; !canAssignAllClients && !visible {
+			continue
+		}
+		node.CanAssignAllClients = &canAssignAllClients
+		node.ClientCount = 0
+		node.OnlineCount = 0
+		node.Up = 0
+		node.Down = 0
+		node.Total = 0
+		node.AllTime = 0
+		filteredNodes = append(filteredNodes, node)
 	}
-	overview.NodeCount = len(overview.Nodes)
+	overview.Nodes = filteredNodes
+	overview.NodeCount = len(filteredNodes)
 	outboundScope := a.areaManagerOutboundScope(user)
 	overview.Outbounds = filterOutboundsForAreaManager(overview.Outbounds, overview.AgentID, outboundScope)
+	applyScopedClientTrafficToOutbounds(overview.Outbounds, filteredClients)
 	overview.Balancers = nil
+	overview.RoutingRules = filterRoutingRulesForAreaManager(overview.RoutingRules, overview.AgentID, filteredClients, filteredNodes, clientScope, outboundScope)
 	for index := range overview.Outbounds {
-		overview.Outbounds[index].Address = redactEndpointIP(overview.Outbounds[index].Address)
-		overview.Outbounds[index].Target = redactEndpointIP(overview.Outbounds[index].Target)
 		overview.Outbounds[index].SendThrough = ""
 	}
 }
@@ -564,17 +581,30 @@ func outboundGrantKey(agentID, outboundTag string) string {
 }
 
 func (a *App) areaManagerClientScope(user model.AdminUser) areaManagerClientScope {
+	scope := a.areaManagerGrantedClientScope(user)
+	if !isAreaManager(user) || user.ID <= 0 || a == nil || a.store == nil {
+		return scope
+	}
+	customers, err := a.store.ListCustomersForOwner(model.AdminRoleAreaManager, user.ID)
+	if err != nil {
+		return scope
+	}
+	for _, customer := range customers {
+		for _, assignment := range customer.Assignments {
+			addAreaManagerScopeAssignment(&scope, assignment.AgentID, assignment.InboundID, assignment.InboundTag, assignment.ClientEmail, assignment.Enabled)
+		}
+	}
+	return scope
+}
+
+func (a *App) areaManagerGrantedClientScope(user model.AdminUser) areaManagerClientScope {
 	scope := areaManagerClientScope{
 		exactClients: make(map[string]struct{}),
 		inbounds:     make(map[string]struct{}),
 		realmPorts:   make(map[string]struct{}),
 		agents:       adminAgentSet(user),
 	}
-	if !isAreaManager(user) || user.ID <= 0 {
-		return scope
-	}
-	customers, err := a.store.ListCustomersForOwner(model.AdminRoleAreaManager, user.ID)
-	if err != nil {
+	if !isAreaManager(user) || user.ID <= 0 || a == nil || a.store == nil {
 		return scope
 	}
 	assignments, err := a.store.ListAreaManagerAssignments(user.ID)
@@ -583,12 +613,52 @@ func (a *App) areaManagerClientScope(user model.AdminUser) areaManagerClientScop
 			addAreaManagerScopeAssignment(&scope, assignment.AgentID, assignment.InboundID, assignment.InboundTag, assignment.ClientEmail, assignment.Enabled)
 		}
 	}
-	for _, customer := range customers {
-		for _, assignment := range customer.Assignments {
-			addAreaManagerScopeAssignment(&scope, assignment.AgentID, assignment.InboundID, assignment.InboundTag, assignment.ClientEmail, assignment.Enabled)
+	return scope
+}
+
+func (a *App) areaManagerAssignmentClientScope(user model.AdminUser, agentID string) areaManagerClientScope {
+	scope := a.areaManagerGrantedClientScope(user)
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" || !isAreaManager(user) || user.ID <= 0 || a == nil || a.store == nil {
+		return scope
+	}
+	actions, err := a.store.ListSucceededXUIActionsByActorKind(agentID, user.Role, user.ID, model.XUIActionAddClient)
+	if err != nil {
+		return scope
+	}
+	for _, action := range actions {
+		inboundID, inboundTag, email, ok := xuiAddClientTarget(action.Payload)
+		if !ok || !scope.allowsManageInbound(agentID, inboundID, inboundTag) {
+			continue
 		}
+		addAreaManagerExactClient(&scope, agentID, inboundID, inboundTag, email)
 	}
 	return scope
+}
+
+func xuiAddClientTarget(payload map[string]any) (int, string, string, bool) {
+	if payload == nil {
+		return 0, "", "", false
+	}
+	inboundID := intFromAny(payload["inbound_id"])
+	inboundTag := strings.TrimSpace(stringFromAny(payload["inbound_tag"]))
+	client, ok := payload["client"].(map[string]any)
+	if !ok || (inboundID <= 0 && inboundTag == "") {
+		return 0, "", "", false
+	}
+	email := strings.TrimSpace(stringFromAny(client["email"]))
+	return inboundID, inboundTag, email, email != ""
+}
+
+func addAreaManagerExactClient(scope *areaManagerClientScope, agentID string, inboundID int, inboundTag, email string) {
+	if scope == nil || strings.TrimSpace(agentID) == "" || strings.TrimSpace(email) == "" {
+		return
+	}
+	scope.agents[strings.TrimSpace(agentID)] = struct{}{}
+	scope.exactClients[areaClientExactKey(agentID, inboundID, inboundTag, email)] = struct{}{}
+	if strings.TrimSpace(inboundTag) != "" {
+		scope.exactClients[areaClientExactKey(agentID, inboundID, "", email)] = struct{}{}
+	}
 }
 
 func addAreaManagerScopeAssignment(scope *areaManagerClientScope, agentID string, inboundID int, inboundTag, clientEmail string, enabled bool) {
@@ -1048,6 +1118,32 @@ func (a *App) customerVisibleToAdmin(user model.AdminUser, customerID int64) (bo
 		return found, err
 	}
 	return a.store.CustomerOwnedBy(customerID, model.AdminRoleAreaManager, user.ID)
+}
+
+func (a *App) areaManagerCustomerAssignmentAllowed(user model.AdminUser, req model.CustomerAssignmentRequest) bool {
+	if !isAreaManager(user) || strings.TrimSpace(req.AgentID) == "" || req.InboundID <= 0 {
+		return false
+	}
+	clientScope := a.areaManagerAssignmentClientScope(user, req.AgentID)
+	if strings.TrimSpace(req.ClientEmail) == "" {
+		return clientScope.allowsInbound(req.AgentID, req.InboundID, req.InboundTag)
+	}
+	if clientScope.allowsClient(req.AgentID, req.InboundID, req.InboundTag, req.ClientEmail) {
+		return true
+	}
+	overview := a.xuiOverviewForOutboundAuthorization(req.AgentID)
+	if overview == nil {
+		return false
+	}
+	for _, client := range overview.Clients {
+		if client.InboundID != req.InboundID ||
+			!strings.EqualFold(strings.TrimSpace(client.InboundTag), strings.TrimSpace(req.InboundTag)) ||
+			!strings.EqualFold(strings.TrimSpace(client.Email), strings.TrimSpace(req.ClientEmail)) {
+			continue
+		}
+		return a.areaManagerCanViewRealmForwardedClient(user, req.AgentID, client, clientScope)
+	}
+	return false
 }
 
 func (a *App) areaManagerXUIActionAllowed(user model.AdminUser, agentID string, req model.XUIActionRequest) bool {

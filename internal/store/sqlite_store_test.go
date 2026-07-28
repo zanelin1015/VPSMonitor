@@ -1040,6 +1040,7 @@ func TestSQLiteStoreClientInstallSettings(t *testing.T) {
 		RealmAutoInstall:      true,
 		RealmVersion:          " v2.9.4 ",
 		RealmDownloadBaseURL:  " https://mirror.example.com/realm/v2.9.4/ ",
+		HAProxyAutoInstall:    true,
 		XUIAutoInstall:        true,
 		XUIUsername:           " admin ",
 		XUIPassword:           " secret ",
@@ -1058,6 +1059,9 @@ func TestSQLiteStoreClientInstallSettings(t *testing.T) {
 	}
 	if !saved.RealmAutoInstall || saved.RealmVersion != "v2.9.4" || saved.RealmDownloadBaseURL != "https://mirror.example.com/realm/v2.9.4" {
 		t.Fatalf("realm install settings were not normalized: %#v", saved)
+	}
+	if !saved.HAProxyAutoInstall {
+		t.Fatal("HAProxy auto install setting was not preserved")
 	}
 
 	loaded, found, err := store.GetClientInstallSettings()
@@ -1089,6 +1093,9 @@ func TestSQLiteStoreClientInstallSettingsKeepsLegacyRealmInstallDisabled(t *test
 	}
 	if loaded.RealmAutoInstall {
 		t.Fatal("expected legacy settings without realm_auto_install to keep realm installation disabled")
+	}
+	if loaded.HAProxyAutoInstall {
+		t.Fatal("expected legacy settings without haproxy_auto_install to keep HAProxy installation disabled")
 	}
 
 	loaded.RealmAutoInstall = false

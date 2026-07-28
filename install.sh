@@ -170,6 +170,51 @@ install_realm_if_enabled() {
   fi
 }
 
+haproxy_binary() {
+  local candidate
+  if candidate="$(command -v haproxy 2>/dev/null)" && [[ -x "$candidate" ]]; then
+    echo "$candidate"
+    return 0
+  fi
+  for candidate in /usr/sbin/haproxy /usr/local/sbin/haproxy /usr/bin/haproxy; do
+    if [[ -x "$candidate" ]]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+install_haproxy_if_enabled() {
+  is_truthy "${VPSMONITOR_HAPROXY_AUTO_INSTALL:-false}" || return 0
+  local existing=""
+  existing="$(haproxy_binary 2>/dev/null || true)"
+  if [[ -n "$existing" ]]; then
+    info "Keeping existing HAProxy binary: $existing"
+    return 0
+  fi
+  info "Installing HAProxy from the system package manager..."
+  if command -v apt-get >/dev/null 2>&1; then
+    DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y haproxy || true
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y haproxy || true
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y haproxy || true
+  elif command -v apk >/dev/null 2>&1; then
+    apk add --no-cache haproxy || true
+  fi
+  existing="$(haproxy_binary 2>/dev/null || true)"
+  if [[ -n "$existing" ]]; then
+    ok "HAProxy installed: $existing"
+    "$existing" -v 2>/dev/null | head -n 1 || true
+    return 0
+  fi
+  if is_truthy "${VPSMONITOR_HAPROXY_REQUIRED:-false}"; then
+    die "HAProxy installation failed. Install the haproxy package manually and retry."
+  fi
+  warn "HAProxy installation failed; bridge-client installation will continue."
+}
+
 available_kb() {
   df -Pk "$1" 2>/dev/null | awk 'NR == 2 { print $4 }'
 }
@@ -751,6 +796,7 @@ install_client() {
   [[ -f "$source_dir/README.md" ]] && install -m 0644 "$source_dir/README.md" "$install_dir/README.md"
 
   install_realm_if_enabled "$arch"
+  install_haproxy_if_enabled
 
   local service_name="${VPSMONITOR_CLIENT_SERVICE:-vpsmonitor-client}"
   prompt_default service_name "Service name" "$service_name"
@@ -798,6 +844,8 @@ Environment overrides:
   VPSMONITOR_REALM_BINARY_PATH=/usr/local/bin/realm
   VPSMONITOR_REALM_FORCE_INSTALL=false
   VPSMONITOR_REALM_REQUIRED=false
+  VPSMONITOR_HAPROXY_AUTO_INSTALL=false
+  VPSMONITOR_HAPROXY_REQUIRED=false
   VPSMONITOR_ASSUME_YES=true
   VPSMONITOR_FORCE_CONFIG=true
 EOF

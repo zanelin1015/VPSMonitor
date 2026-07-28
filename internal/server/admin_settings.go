@@ -247,6 +247,7 @@ func (a *App) clientInstallInfo(r *http.Request, settings model.ClientInstallSet
 		RealmAutoInstall:      settings.RealmAutoInstall,
 		RealmVersion:          firstNonEmptyString(settings.RealmVersion, defaultRealmVersion),
 		RealmDownloadBaseURL:  settings.RealmDownloadBaseURL,
+		HAProxyAutoInstall:    settings.HAProxyAutoInstall,
 		XUIAutoInstall:        false,
 	}
 }

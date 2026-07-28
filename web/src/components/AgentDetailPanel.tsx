@@ -301,6 +301,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const featureEnabled = {
     xui: Boolean(managedConfig?.features?.xui),
     realm: Boolean(managedConfig?.features?.realm),
+    haproxy: Boolean(managedConfig?.features?.haproxy),
     nat: Boolean(managedConfig?.features?.nat),
     port_policy: Boolean(managedConfig?.features?.port_policy || selectedAgent.network_policy?.rules?.length),
   }
@@ -826,6 +827,9 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       render: (_, record) => <RouteBadge route={record.route} onJumpOutbound={onJumpOutbound} onJumpRule={onJumpRule} />,
     },
   ]
+  const visibleRealmNodeColumns = restrictedView
+    ? realmNodeColumns.filter((column) => column.key !== 'route')
+    : realmNodeColumns
   const realmClientColumns: ColumnsType<RealmForwardClientView> = [
     {
       title: '客户端',
@@ -894,7 +898,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     },
   ]
   const visibleRealmClientColumns = restrictedView
-    ? realmClientColumns.filter((column) => !['target_agent', 'inbound'].includes(String(column.key || '')))
+    ? realmClientColumns.filter((column) => !['target_agent', 'inbound', 'route'].includes(String(column.key || '')))
     : realmClientColumns
 
   const routingColumns: ColumnsType<XUIRoutingRuleView> = [
@@ -1105,7 +1109,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     <Empty description="暂无本机证书数据" />
   )
 
-  function renderManagedConfigSection(section: 'basic' | 'xui' | 'nat' | 'network' | 'realm' | 'audit') {
+  function renderManagedConfigSection(section: 'basic' | 'xui' | 'nat' | 'network' | 'realm' | 'haproxy' | 'audit') {
     return (
       <ManagedConfigPanel
         selectedAgent={selectedAgent}
@@ -1152,6 +1156,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       <Space wrap>
         <FeatureSwitch label="x-ui" checked={featureEnabled.xui} onChange={(checked) => onFeatureChange('xui', checked)} />
         <FeatureSwitch label="Realm" checked={featureEnabled.realm} onChange={(checked) => onFeatureChange('realm', checked)} />
+        <FeatureSwitch label="HAProxy" checked={featureEnabled.haproxy} onChange={(checked) => onFeatureChange('haproxy', checked)} />
         <FeatureSwitch label="NAT" checked={featureEnabled.nat} onChange={(checked) => onFeatureChange('nat', checked)} />
         <FeatureSwitch label="端口限速" checked={featureEnabled.port_policy} onChange={(checked) => onFeatureChange('port_policy', checked)} />
         <Button size="small" type="primary" loading={configSavingSection === 'client'} onClick={() => onSaveManagedConfigSection('client')}>保存功能选择</Button>
@@ -1338,7 +1343,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         renderNodeClientHierarchySections(
           realmForwardNodes,
           realmFilteredClients,
-          realmNodeColumns as ColumnsType<XUINodeView>,
+          visibleRealmNodeColumns as ColumnsType<XUINodeView>,
           selectedAgent.customer_display_name || selectedAgent.agent_name || selectedAgent.agent_id,
           selectedAgentId,
           selectedNodeAnchor,
@@ -1375,6 +1380,12 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     key: 'entry-nat',
     label: `NAT 映射 (${natMappingCount})`,
     children: renderManagedConfigSection('nat'),
+  }] : []
+
+  const haProxyTabs: TabsProps['items'] = featureEnabled.haproxy && canManageConfig ? [{
+    key: 'haproxy-forwarding',
+    label: `HAProxy 主备 (${managedConfig?.entry?.haproxy?.rules?.length || 0})`,
+    children: renderManagedConfigSection('haproxy'),
   }] : []
 
   const portPolicyTabs: TabsProps['items'] = featureEnabled.port_policy && canManageConfig ? [{
@@ -1435,6 +1446,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     overviewTab,
     ...xuiTabs,
     ...realmTabs,
+    ...haProxyTabs,
     ...natTabs,
     ...portPolicyTabs,
     ...supportTabs,

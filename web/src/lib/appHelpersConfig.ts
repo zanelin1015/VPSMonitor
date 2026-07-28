@@ -1,4 +1,4 @@
-import type { AgentEntryConfig, AgentEntryMapping, ManagedAgentConfig, RealmForwardConfig, VPSRenewalConfig, XUIOverview } from '../types'
+import type { AgentEntryConfig, AgentEntryMapping, HAProxyConfig, ManagedAgentConfig, RealmForwardConfig, VPSRenewalConfig, XUIOverview } from '../types'
 import type { ConfigSectionKey } from './appHelperTypes'
 import { DEFAULT_COST_CURRENCY } from './currency'
 import { normalizeRenewalConfig } from './appHelpersBilling'
@@ -17,6 +17,7 @@ export function normalizeEntryConfig(config?: AgentEntryConfig): AgentEntryConfi
     })),
     network_policy: normalizeNetworkPolicyConfig(config?.network_policy),
     port_forwarding: normalizeRealmForwardConfig(config?.port_forwarding),
+    haproxy: normalizeHAProxyConfig(config?.haproxy),
   }
 }
 
@@ -65,6 +66,7 @@ export function buildSectionSavePayload(base: ManagedAgentConfig, draft: Managed
       mappings: (base.entry?.mappings || []).map((mapping) => ({ ...mapping })),
       network_policy: normalizeNetworkPolicyConfig(base.entry?.network_policy),
       port_forwarding: normalizeRealmForwardConfig(base.entry?.port_forwarding),
+      haproxy: normalizeHAProxyConfig(base.entry?.haproxy),
     },
     xui: { ...base.xui },
   }
@@ -89,6 +91,7 @@ export function buildSectionSavePayload(base: ManagedAgentConfig, draft: Managed
         mappings: (draft.entry?.mappings || []).map((mapping) => ({ ...mapping })),
         network_policy: normalizeNetworkPolicyConfig(draft.entry?.network_policy),
         port_forwarding: normalizeRealmForwardConfig(draft.entry?.port_forwarding),
+        haproxy: normalizeHAProxyConfig(draft.entry?.haproxy),
       }
       break
   }
@@ -121,6 +124,7 @@ export function mergeSavedSectionIntoDraft(draft: ManagedAgentConfig, saved: Man
         mappings: (saved.entry?.mappings || []).map((mapping) => ({ ...mapping })),
         network_policy: normalizeNetworkPolicyConfig(saved.entry?.network_policy),
         port_forwarding: normalizeRealmForwardConfig(saved.entry?.port_forwarding),
+        haproxy: normalizeHAProxyConfig(saved.entry?.haproxy),
       }
       break
   }
@@ -154,6 +158,7 @@ export function createEmptyManagedConfig(agentID: string, agentName?: string): M
     features: {
       xui: false,
       realm: false,
+      haproxy: false,
       nat: false,
       port_policy: false,
     },
@@ -193,6 +198,13 @@ export function createEmptyManagedConfig(agentID: string, agentName?: string): M
         config_path: '',
         service_name: '',
         log_level: 'info',
+        rules: [],
+      },
+      haproxy: {
+        enabled: false,
+        binary_path: '',
+        config_path: '',
+        service_name: '',
         rules: [],
       },
     },
@@ -268,6 +280,37 @@ function normalizeRealmForwardConfig(config?: RealmForwardConfig): RealmForwardC
   }
 }
 
+function normalizeHAProxyConfig(config?: HAProxyConfig): HAProxyConfig {
+  return {
+    enabled: Boolean(config?.enabled),
+    binary_path: (config?.binary_path || '').trim(),
+    config_path: (config?.config_path || '').trim(),
+    service_name: (config?.service_name || '').trim(),
+    rules: (config?.rules || []).map((rule, index) => ({
+      id: rule.id || `haproxy-${rule.listen_port || 0}-${index}`,
+      name: rule.name || '',
+      enabled: rule.enabled !== false,
+      listen_address: (rule.listen_address || '').trim() || '0.0.0.0',
+      listen_port: Math.max(0, Number(rule.listen_port || 0)),
+      primary: normalizeHAProxyTarget(rule.primary),
+      backups: (rule.backups || []).map(normalizeHAProxyTarget),
+      check_interval_seconds: Math.min(300, Math.max(1, Number(rule.check_interval_seconds || 3))),
+      connect_timeout_seconds: Math.min(60, Math.max(1, Number(rule.connect_timeout_seconds || 5))),
+      fall: Math.min(20, Math.max(1, Number(rule.fall || 3))),
+      rise: Math.min(20, Math.max(1, Number(rule.rise || 2))),
+    })),
+  }
+}
+
+function normalizeHAProxyTarget(target: NonNullable<HAProxyConfig['rules']>[number]['primary']) {
+  return {
+    agent_id: target?.agent_id || '',
+    realm_rule_id: target?.realm_rule_id || '',
+    address: target?.address || '',
+    port: Math.max(0, Number(target?.port || 0)),
+  }
+}
+
 function normalizeNetworkPolicyConfig(config?: AgentEntryConfig['network_policy']): NonNullable<AgentEntryConfig['network_policy']> {
   return {
     enabled: Boolean(config?.enabled),
@@ -292,6 +335,7 @@ function normalizeAgentFeatures(features: ManagedAgentConfig['features'], config
   return {
     xui: features?.xui ?? Boolean(xui?.enabled || xui?.base_url || xui?.db_path || xui?.api_token),
     realm: features?.realm ?? Boolean(entry?.port_forwarding?.enabled || (entry?.port_forwarding?.rules || []).length),
+    haproxy: features?.haproxy ?? Boolean(entry?.haproxy?.enabled || (entry?.haproxy?.rules || []).length),
     nat: features?.nat ?? Boolean((entry?.mappings || []).length || (entry?.addresses || []).length || entry?.import_domain),
     port_policy: features?.port_policy ?? Boolean(entry?.network_policy?.enabled || (entry?.network_policy?.rules || []).length),
   }

@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -125,6 +126,7 @@ func (s *SQLiteStore) parseManagedConfig(agentID, agentName, customerDisplayName
 				cfg.Tags = normalizeTags(tagPayload.Tags)
 				cfg.Features = tagPayload.Features
 				cfg.Features.RealmExplicitlyConfigured = containsStringFold(tagPayload.ExplicitFeatures, "realm")
+				cfg.Features.HAProxyExplicitlyConfigured = containsStringFold(tagPayload.ExplicitFeatures, "haproxy")
 			}
 		}
 	}
@@ -164,7 +166,7 @@ func mustJSON(v any) string {
 }
 
 func managedTagsJSON(cfg model.ManagedAgentConfig) string {
-	if cfg.Features.Configured || hasAgentFeatures(cfg.Features) || cfg.Features.RealmExplicitlyConfigured {
+	if cfg.Features.Configured || hasAgentFeatures(cfg.Features) || cfg.Features.RealmExplicitlyConfigured || cfg.Features.HAProxyExplicitlyConfigured {
 		return mustJSON(struct {
 			Tags             []string                 `json:"tags"`
 			Features         model.AgentFeatureConfig `json:"features"`
@@ -179,10 +181,14 @@ func managedTagsJSON(cfg model.ManagedAgentConfig) string {
 }
 
 func explicitAgentFeatures(features model.AgentFeatureConfig) []string {
+	values := make([]string, 0, 2)
 	if features.RealmExplicitlyConfigured {
-		return []string{"realm"}
+		values = append(values, "realm")
 	}
-	return nil
+	if features.HAProxyExplicitlyConfigured {
+		values = append(values, "haproxy")
+	}
+	return values
 }
 
 func containsStringFold(values []string, target string) bool {
@@ -303,23 +309,29 @@ func hasManagedConfig(cfg model.ManagedAgentConfig) bool {
 }
 
 func hasAgentFeatures(features model.AgentFeatureConfig) bool {
-	return features.XUI || features.Realm || features.NAT || features.PortPolicy
+	return features.XUI || features.Realm || features.HAProxy || features.NAT || features.PortPolicy
 }
 
 func mergeAgentFeatures(base model.AgentFeatureConfig, incoming model.AgentFeatureConfig) model.AgentFeatureConfig {
 	return model.AgentFeatureConfig{
-		XUI:                       base.XUI || incoming.XUI,
-		Realm:                     base.Realm || incoming.Realm,
-		NAT:                       base.NAT || incoming.NAT,
-		PortPolicy:                base.PortPolicy || incoming.PortPolicy,
-		Configured:                base.Configured || incoming.Configured,
-		RealmExplicitlyConfigured: base.RealmExplicitlyConfigured,
+		XUI:                         base.XUI || incoming.XUI,
+		Realm:                       base.Realm || incoming.Realm,
+		HAProxy:                     base.HAProxy || incoming.HAProxy,
+		NAT:                         base.NAT || incoming.NAT,
+		PortPolicy:                  base.PortPolicy || incoming.PortPolicy,
+		Configured:                  base.Configured || incoming.Configured,
+		RealmExplicitlyConfigured:   base.RealmExplicitlyConfigured,
+		HAProxyExplicitlyConfigured: base.HAProxyExplicitlyConfigured,
 	}
 }
 
 func applyAgentCapabilities(features model.AgentFeatureConfig, capabilities model.AgentCapabilities) model.AgentFeatureConfig {
 	if capabilities.Realm && !features.RealmExplicitlyConfigured {
 		features.Realm = true
+		features.Configured = true
+	}
+	if capabilities.HAProxy && !features.HAProxyExplicitlyConfigured {
+		features.HAProxy = true
 		features.Configured = true
 	}
 	return features
@@ -479,6 +491,7 @@ func normalizeEntryConfig(cfg model.AgentEntryConfig) model.AgentEntryConfig {
 	cfg.ImportDomain = normalizeEntryImportDomain(cfg.ImportDomain)
 	cfg.NetworkPolicy = normalizeNetworkPolicyConfig(cfg.NetworkPolicy)
 	cfg.PortForwarding = normalizeRealmForwardConfig(cfg.PortForwarding)
+	cfg.HAProxy = normalizeHAProxyConfig(cfg.HAProxy)
 	mappings := make([]model.AgentEntryMapping, 0, len(cfg.Mappings))
 	seen := make(map[string]struct{}, len(cfg.Mappings))
 	for _, mapping := range cfg.Mappings {
@@ -582,7 +595,98 @@ func normalizeEntryProtocol(protocol string) string {
 
 func hasEntryConfig(cfg model.AgentEntryConfig) bool {
 	cfg = normalizeEntryConfig(cfg)
-	return len(cfg.Addresses) > 0 || cfg.ImportDomain != "" || len(cfg.Mappings) > 0 || hasNetworkPolicyConfig(cfg.NetworkPolicy) || hasRealmForwardConfig(cfg.PortForwarding)
+	return len(cfg.Addresses) > 0 || cfg.ImportDomain != "" || len(cfg.Mappings) > 0 || hasNetworkPolicyConfig(cfg.NetworkPolicy) || hasRealmForwardConfig(cfg.PortForwarding) || hasHAProxyConfig(cfg.HAProxy)
+}
+
+func normalizeHAProxyConfig(cfg model.HAProxyConfig) model.HAProxyConfig {
+	cfg.BinaryPath = strings.TrimSpace(cfg.BinaryPath)
+	cfg.ConfigPath = strings.TrimSpace(cfg.ConfigPath)
+	cfg.ServiceName = strings.TrimSpace(cfg.ServiceName)
+	rules := make([]model.HAProxyRule, 0, len(cfg.Rules))
+	seenPorts := make(map[int]struct{}, len(cfg.Rules))
+	for _, rule := range cfg.Rules {
+		rule.ID = strings.TrimSpace(rule.ID)
+		rule.Name = strings.TrimSpace(rule.Name)
+		rule.ListenAddress = strings.TrimSpace(rule.ListenAddress)
+		if rule.ListenAddress == "" {
+			rule.ListenAddress = "0.0.0.0"
+		}
+		if rule.ListenPort <= 0 || rule.ListenPort > 65535 {
+			continue
+		}
+		if _, exists := seenPorts[rule.ListenPort]; exists {
+			continue
+		}
+		seenPorts[rule.ListenPort] = struct{}{}
+		if rule.ID == "" {
+			rule.ID = fmt.Sprintf("haproxy-%d", rule.ListenPort)
+		}
+		rule.Primary = normalizeHAProxyRealmTarget(rule.Primary)
+		backups := make([]model.HAProxyRealmTarget, 0, len(rule.Backups))
+		seenTargets := map[string]struct{}{haProxyTargetKey(rule.Primary): {}}
+		for _, target := range rule.Backups {
+			target = normalizeHAProxyRealmTarget(target)
+			key := haProxyTargetKey(target)
+			if key == "" {
+				continue
+			}
+			if _, exists := seenTargets[key]; exists {
+				continue
+			}
+			seenTargets[key] = struct{}{}
+			backups = append(backups, target)
+		}
+		rule.Backups = backups
+		if rule.CheckIntervalSeconds <= 0 {
+			rule.CheckIntervalSeconds = 3
+		}
+		if rule.ConnectTimeoutSeconds <= 0 {
+			rule.ConnectTimeoutSeconds = 5
+		}
+		if rule.Fall <= 0 {
+			rule.Fall = 3
+		}
+		if rule.Rise <= 0 {
+			rule.Rise = 2
+		}
+		rules = append(rules, rule)
+	}
+	sort.SliceStable(rules, func(i, j int) bool { return rules[i].ListenPort < rules[j].ListenPort })
+	cfg.Rules = rules
+	if !cfg.Enabled && len(rules) == 0 {
+		cfg.BinaryPath = ""
+		cfg.ConfigPath = ""
+		cfg.ServiceName = ""
+	}
+	return cfg
+}
+
+func normalizeHAProxyRealmTarget(target model.HAProxyRealmTarget) model.HAProxyRealmTarget {
+	target.AgentID = strings.TrimSpace(target.AgentID)
+	target.RealmRuleID = strings.TrimSpace(target.RealmRuleID)
+	target.Address = strings.TrimSpace(target.Address)
+	if target.Port < 0 || target.Port > 65535 {
+		target.Port = 0
+	}
+	return target
+}
+
+func haProxyTargetKey(target model.HAProxyRealmTarget) string {
+	if target.AgentID != "" && target.RealmRuleID != "" {
+		return strings.ToLower(target.AgentID) + "\x00" + strings.ToLower(target.RealmRuleID)
+	}
+	if target.AgentID != "" && target.Port > 0 {
+		return strings.ToLower(target.AgentID) + "\x00port:" + strconv.Itoa(target.Port)
+	}
+	if target.Address != "" && target.Port > 0 {
+		return strings.ToLower(target.Address) + "\x00" + strconv.Itoa(target.Port)
+	}
+	return ""
+}
+
+func hasHAProxyConfig(cfg model.HAProxyConfig) bool {
+	cfg = normalizeHAProxyConfig(cfg)
+	return cfg.Enabled || len(cfg.Rules) > 0 || cfg.BinaryPath != "" || cfg.ConfigPath != "" || cfg.ServiceName != ""
 }
 
 func normalizeRealmForwardConfig(cfg model.RealmForwardConfig) model.RealmForwardConfig {

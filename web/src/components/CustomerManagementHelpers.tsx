@@ -162,6 +162,7 @@ export function buildClientAssignmentTreeData(agentID: string, overview: XUIOver
     children: overviewNodeGroups(overview, false).map(({ node, clients }) => ({
       title: nodeLabel(node),
       value: nodeKey(node),
+      selectable: node.can_assign_all_clients !== false,
       children: clients.map((client) => ({
         title: clientTreeTitle(client),
         value: clientKey(client),

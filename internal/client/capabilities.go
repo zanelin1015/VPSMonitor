@@ -14,7 +14,8 @@ func detectAgentCapabilities(runner commandRunner) model.AgentCapabilities {
 
 func detectAgentCapabilitiesForOS(osName string, runner commandRunner) model.AgentCapabilities {
 	return model.AgentCapabilities{
-		Realm: realmCapabilityAvailable(osName, runner),
+		Realm:   realmCapabilityAvailable(osName, runner),
+		HAProxy: haProxyCapabilityAvailable(osName, runner),
 	}
 }
 
@@ -32,5 +33,19 @@ func realmCapabilityAvailable(osName string, runner commandRunner) bool {
 		return true
 	}
 	_, err = runner.Run(ctx, path, "--version")
+	return err == nil
+}
+
+func haProxyCapabilityAvailable(osName string, runner commandRunner) bool {
+	if osName != "linux" {
+		return false
+	}
+	path, err := resolveHAProxyBinary("", runner)
+	if err != nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, err = runner.Run(ctx, path, "-v")
 	return err == nil
 }

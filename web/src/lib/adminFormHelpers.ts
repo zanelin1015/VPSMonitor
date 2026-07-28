@@ -19,6 +19,7 @@ export interface ClientInstallCommandForm {
   realm_auto_install: boolean
   realm_version: string
   realm_download_base_url: string
+  haproxy_auto_install: boolean
   xui_auto_install: boolean
   xui_username: string
   xui_password: string
@@ -51,6 +52,7 @@ export function defaultClientInstallCommandForm(): ClientInstallCommandForm {
     realm_auto_install: false,
     realm_version: 'v2.9.4',
     realm_download_base_url: '',
+    haproxy_auto_install: false,
     xui_auto_install: false,
     xui_username: 'admin',
     xui_password: '',
@@ -71,6 +73,7 @@ export function normalizeClientInstallCommandForm(info: ClientInstallInfo): Clie
     realm_auto_install: Boolean(info.realm_auto_install),
     realm_version: info.realm_version || 'v2.9.4',
     realm_download_base_url: info.realm_download_base_url || '',
+    haproxy_auto_install: Boolean(info.haproxy_auto_install),
     xui_auto_install: Boolean(info.xui_auto_install),
     xui_username: info.xui_username || 'admin',
     xui_password: info.xui_password || '',
@@ -116,6 +119,7 @@ export function buildClientInstallCommand(form: ClientInstallCommandForm): strin
     ['VPSMONITOR_REALM_AUTO_INSTALL', String(Boolean(form.realm_auto_install))],
     ['VPSMONITOR_REALM_VERSION', form.realm_version.trim() || 'v2.9.4'],
     ['VPSMONITOR_REALM_DOWNLOAD_BASE_URL', form.realm_download_base_url.trim()],
+    ['VPSMONITOR_HAPROXY_AUTO_INSTALL', String(Boolean(form.haproxy_auto_install))],
     ['VPSMONITOR_ASSUME_YES', 'true'],
   ]
   const envText = envValues.map(([key, value]) => `${key}=${shellQuote(value)}`).join(' ')
@@ -134,6 +138,7 @@ export function buildOpenWrtInstallCommand(form: ClientInstallCommandForm): stri
     ['VPSMONITOR_REALM_AUTO_INSTALL', String(Boolean(form.realm_auto_install))],
     ['VPSMONITOR_REALM_VERSION', form.realm_version.trim() || 'v2.9.4'],
     ['VPSMONITOR_REALM_DOWNLOAD_BASE_URL', form.realm_download_base_url.trim()],
+    ['VPSMONITOR_HAPROXY_AUTO_INSTALL', String(Boolean(form.haproxy_auto_install))],
     ['VPSMONITOR_ASSUME_YES', 'true'],
   ]
   const envText = envValues.map(([key, value]) => `${key}=${shellQuote(value)}`).join(' ')

@@ -88,6 +88,7 @@ func (s *SQLiteStore) RegisterAgent(req model.AgentRegisterRequest) (model.Agent
 		}
 		features := req.SeedConfig.Features
 		features.RealmExplicitlyConfigured = false
+		features.HAProxyExplicitlyConfigured = false
 		features = applyAgentCapabilities(features, req.Capabilities)
 		record = model.AgentRecord{
 			AgentID:      req.AgentID,

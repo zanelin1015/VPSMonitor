@@ -152,6 +152,44 @@ func TestBuildXUIOverviewNormalizesOutboundTrafficShapes(t *testing.T) {
 	}
 }
 
+func TestBuildXUIOverviewFallsBackToClientTrafficForMissingOutboundStats(t *testing.T) {
+	reportedAt := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
+	overview := BuildXUIOverview(model.AgentSnapshot{
+		AgentID:    "agent-outbound-fallback",
+		ReportedAt: reportedAt,
+		XUI: &model.XUISnapshot{
+			CollectedAt: reportedAt,
+			Inbounds: []map[string]any{{
+				"id": 1, "tag": "entry", "protocol": "vless", "enable": true,
+				"settings": `{"clients":[{"id":"uuid-a","email":"alice@example.com","enable":true},{"id":"uuid-b","email":"bob@example.com","enable":true}]}`,
+				"clientStats": []map[string]any{
+					{"email": "alice@example.com", "enable": true, "up": int64(100), "down": int64(200), "allTime": int64(300)},
+					{"email": "bob@example.com", "enable": true, "up": int64(10), "down": int64(20), "allTime": int64(30)},
+				},
+			}},
+			Outbounds: []map[string]any{
+				{"tag": "direct", "protocol": "freedom"},
+				{"tag": "VN-002", "protocol": "vless", "settings": map[string]any{"address": "180.93.255.46", "port": 21792}},
+			},
+			OutboundTraffic: []map[string]any{{"tag": "VN-002", "up": int64(0), "down": int64(0), "total": int64(0)}},
+			RoutingRules:    []map[string]any{{"type": "field", "user": []string{"alice@example.com"}, "outboundTag": "VN-002"}},
+		},
+	})
+	if overview == nil {
+		t.Fatal("expected overview")
+	}
+	byTag := make(map[string]model.XUIOutboundView, len(overview.Outbounds))
+	for _, outbound := range overview.Outbounds {
+		byTag[outbound.Tag] = outbound
+	}
+	if got := byTag["VN-002"]; got.Up != 100 || got.Down != 200 || got.Total != 300 {
+		t.Fatalf("expected VN-002 traffic from routed client, got %#v", got)
+	}
+	if got := byTag["direct"]; got.Up != 10 || got.Down != 20 || got.Total != 30 {
+		t.Fatalf("expected direct traffic from unmatched client, got %#v", got)
+	}
+}
+
 func TestBuildXUIOverviewUsesDefaultOutbound(t *testing.T) {
 	snapshot := model.AgentSnapshot{
 		AgentID:    "agent-2",

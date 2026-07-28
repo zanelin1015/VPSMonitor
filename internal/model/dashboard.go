@@ -31,33 +31,34 @@ type XUIRouteTrace struct {
 }
 
 type XUINodeView struct {
-	ID                 int           `json:"id"`
-	Tag                string        `json:"tag,omitempty"`
-	Remark             string        `json:"remark,omitempty"`
-	Protocol           string        `json:"protocol,omitempty"`
-	Listen             string        `json:"listen,omitempty"`
-	Port               int           `json:"port,omitempty"`
-	Network            string        `json:"network,omitempty"`
-	Security           string        `json:"security,omitempty"`
-	TLSServerName      string        `json:"tls_server_name,omitempty"`
-	ALPN               string        `json:"alpn,omitempty"`
-	WSPath             string        `json:"ws_path,omitempty"`
-	WSHost             string        `json:"ws_host,omitempty"`
-	GRPCService        string        `json:"grpc_service,omitempty"`
-	RealityPubKey      string        `json:"reality_public_key,omitempty"`
-	RealityShortID     string        `json:"reality_short_id,omitempty"`
-	RealityFingerprint string        `json:"reality_fingerprint,omitempty"`
-	RealitySpiderX     string        `json:"reality_spider_x,omitempty"`
-	Enabled            bool          `json:"enabled"`
-	ExpiryTime         int64         `json:"expiry_time,omitempty"`
-	Up                 int64         `json:"up,omitempty"`
-	Down               int64         `json:"down,omitempty"`
-	Total              int64         `json:"total,omitempty"`
-	AllTime            int64         `json:"all_time,omitempty"`
-	ClientCount        int           `json:"client_count,omitempty"`
-	OnlineCount        int           `json:"online_count,omitempty"`
-	Route              XUIRouteTrace `json:"route"`
-	AuthKeys           []string      `json:"-"`
+	ID                  int           `json:"id"`
+	Tag                 string        `json:"tag,omitempty"`
+	Remark              string        `json:"remark,omitempty"`
+	Protocol            string        `json:"protocol,omitempty"`
+	Listen              string        `json:"listen,omitempty"`
+	Port                int           `json:"port,omitempty"`
+	Network             string        `json:"network,omitempty"`
+	Security            string        `json:"security,omitempty"`
+	TLSServerName       string        `json:"tls_server_name,omitempty"`
+	ALPN                string        `json:"alpn,omitempty"`
+	WSPath              string        `json:"ws_path,omitempty"`
+	WSHost              string        `json:"ws_host,omitempty"`
+	GRPCService         string        `json:"grpc_service,omitempty"`
+	RealityPubKey       string        `json:"reality_public_key,omitempty"`
+	RealityShortID      string        `json:"reality_short_id,omitempty"`
+	RealityFingerprint  string        `json:"reality_fingerprint,omitempty"`
+	RealitySpiderX      string        `json:"reality_spider_x,omitempty"`
+	Enabled             bool          `json:"enabled"`
+	ExpiryTime          int64         `json:"expiry_time,omitempty"`
+	Up                  int64         `json:"up,omitempty"`
+	Down                int64         `json:"down,omitempty"`
+	Total               int64         `json:"total,omitempty"`
+	AllTime             int64         `json:"all_time,omitempty"`
+	ClientCount         int           `json:"client_count,omitempty"`
+	OnlineCount         int           `json:"online_count,omitempty"`
+	Route               XUIRouteTrace `json:"route"`
+	AuthKeys            []string      `json:"-"`
+	CanAssignAllClients *bool         `json:"can_assign_all_clients,omitempty"`
 
 	RealmTargetAgentID    string `json:"realm_target_agent_id,omitempty"`
 	RealmTargetAgentName  string `json:"realm_target_agent_name,omitempty"`

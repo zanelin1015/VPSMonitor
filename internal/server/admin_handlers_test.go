@@ -164,6 +164,91 @@ func TestAreaManagerXUIActionAllowedIncludesAddClient(t *testing.T) {
 	}
 }
 
+func TestAreaManagerCustomerAssignmentRequiresGrantedOrCreatedClient(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "agent-1", AgentName: "Agent 1"}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	enabled := true
+	manager, err := sqliteStore.CreateAreaManager(model.AreaManagerAccountRequest{
+		Username: "area-customer-assignment",
+		Password: "password123",
+		Enabled:  &enabled,
+		AgentIDs: []string{"agent-1"},
+	})
+	if err != nil {
+		t.Fatalf("CreateAreaManager: %v", err)
+	}
+	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+		AgentID:     "agent-1",
+		InboundID:   7,
+		InboundTag:  "node-7",
+		ClientEmail: "granted@example.com",
+		Enabled:     &enabled,
+	}); err != nil {
+		t.Fatalf("CreateAreaManagerAssignment exact client: %v", err)
+	}
+	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+		AgentID:    "agent-1",
+		InboundID:  8,
+		InboundTag: "node-8",
+		Enabled:    &enabled,
+	}); err != nil {
+		t.Fatalf("CreateAreaManagerAssignment whole node: %v", err)
+	}
+
+	app := &App{store: sqliteStore}
+	user := model.AdminUser{ID: manager.ID, Role: model.AdminRoleAreaManager, AgentIDs: []string{"agent-1"}}
+	if !app.areaManagerCustomerAssignmentAllowed(user, model.CustomerAssignmentRequest{
+		AgentID: "agent-1", InboundID: 7, InboundTag: "node-7", ClientEmail: "granted@example.com",
+	}) {
+		t.Fatal("expected exact Admin grant to be assignable")
+	}
+	if app.areaManagerCustomerAssignmentAllowed(user, model.CustomerAssignmentRequest{
+		AgentID: "agent-1", InboundID: 7, InboundTag: "node-7", ClientEmail: "unauthorized@example.com",
+	}) {
+		t.Fatal("expected another client on an exact-grant node to be rejected")
+	}
+	if app.areaManagerCustomerAssignmentAllowed(user, model.CustomerAssignmentRequest{
+		AgentID: "agent-1", InboundID: 7, InboundTag: "node-7",
+	}) {
+		t.Fatal("expected exact client authorization not to grant the whole node")
+	}
+	if !app.areaManagerCustomerAssignmentAllowed(user, model.CustomerAssignmentRequest{
+		AgentID: "agent-1", InboundID: 8, InboundTag: "node-8", ClientEmail: "any@example.com",
+	}) || !app.areaManagerCustomerAssignmentAllowed(user, model.CustomerAssignmentRequest{
+		AgentID: "agent-1", InboundID: 8, InboundTag: "node-8",
+	}) {
+		t.Fatal("expected whole-node authorization to allow client and node assignments")
+	}
+
+	action, err := sqliteStore.CreateXUIActionWithActor("agent-1", model.XUIActionRequest{
+		Kind: model.XUIActionAddClient,
+		Payload: map[string]any{
+			"inbound_id":  7,
+			"inbound_tag": "node-7",
+			"client": map[string]any{
+				"email": "created@example.com",
+			},
+		},
+	}, model.XUIActionActor{Role: user.Role, AccountID: user.ID, Username: manager.Username})
+	if err != nil {
+		t.Fatalf("CreateXUIActionWithActor: %v", err)
+	}
+	if _, err := sqliteStore.CompleteXUIAction("agent-1", action.ID, model.XUIActionResultRequest{Status: model.XUIActionStatusSucceeded}); err != nil {
+		t.Fatalf("CompleteXUIAction: %v", err)
+	}
+	if !app.areaManagerCustomerAssignmentAllowed(user, model.CustomerAssignmentRequest{
+		AgentID: "agent-1", InboundID: 7, InboundTag: "node-7", ClientEmail: "created@example.com",
+	}) {
+		t.Fatal("expected a successfully created client to be assignable under the authorized node")
+	}
+}
+
 func cloneTestAnyMap(input map[string]any) map[string]any {
 	result := make(map[string]any, len(input))
 	for key, value := range input {

@@ -8,16 +8,21 @@ import (
 )
 
 type capabilityCommandRunner struct {
-	path     string
-	runError error
-	commands []string
+	realmPath   string
+	haProxyPath string
+	runError    error
+	commands    []string
 }
 
-func (r *capabilityCommandRunner) LookPath(string) (string, error) {
-	if r.path == "" {
+func (r *capabilityCommandRunner) LookPath(name string) (string, error) {
+	path := r.realmPath
+	if name == "haproxy" {
+		path = r.haProxyPath
+	}
+	if path == "" {
 		return "", errors.New("not found")
 	}
-	return r.path, nil
+	return path, nil
 }
 
 func (r *capabilityCommandRunner) Run(_ context.Context, name string, args ...string) ([]byte, error) {
@@ -29,7 +34,7 @@ func (r *capabilityCommandRunner) Run(_ context.Context, name string, args ...st
 }
 
 func TestDetectAgentCapabilitiesFindsWorkingRealm(t *testing.T) {
-	runner := &capabilityCommandRunner{path: "/usr/local/bin/realm"}
+	runner := &capabilityCommandRunner{realmPath: "/usr/local/bin/realm"}
 	capabilities := detectAgentCapabilitiesForOS("linux", runner)
 	if !capabilities.Realm {
 		t.Fatal("expected a working Realm binary to be reported")
@@ -40,7 +45,7 @@ func TestDetectAgentCapabilitiesFindsWorkingRealm(t *testing.T) {
 }
 
 func TestDetectAgentCapabilitiesRejectsUnsupportedOSAndBrokenRealm(t *testing.T) {
-	windowsRunner := &capabilityCommandRunner{path: "C:/realm.exe"}
+	windowsRunner := &capabilityCommandRunner{realmPath: "C:/realm.exe", haProxyPath: "C:/haproxy.exe"}
 	if detectAgentCapabilitiesForOS("windows", windowsRunner).Realm {
 		t.Fatal("expected Realm discovery to stay disabled on Windows")
 	}
@@ -48,11 +53,22 @@ func TestDetectAgentCapabilitiesRejectsUnsupportedOSAndBrokenRealm(t *testing.T)
 		t.Fatalf("expected no Realm command on Windows, got %#v", windowsRunner.commands)
 	}
 
-	brokenRunner := &capabilityCommandRunner{path: "/usr/local/bin/realm", runError: errors.New("cannot execute")}
+	brokenRunner := &capabilityCommandRunner{realmPath: "/usr/local/bin/realm", runError: errors.New("cannot execute")}
 	if detectAgentCapabilitiesForOS("linux", brokenRunner).Realm {
 		t.Fatal("expected an invalid Realm binary to be rejected")
 	}
 	if len(brokenRunner.commands) != 2 {
 		t.Fatalf("expected both version flags to be attempted, got %#v", brokenRunner.commands)
+	}
+}
+
+func TestDetectAgentCapabilitiesFindsWorkingHAProxy(t *testing.T) {
+	runner := &capabilityCommandRunner{haProxyPath: "/usr/sbin/haproxy"}
+	capabilities := detectAgentCapabilitiesForOS("linux", runner)
+	if !capabilities.HAProxy {
+		t.Fatal("expected a working HAProxy binary to be reported")
+	}
+	if len(runner.commands) != 1 || runner.commands[0] != "/usr/sbin/haproxy -v" {
+		t.Fatalf("unexpected HAProxy validation commands: %#v", runner.commands)
 	}
 }

@@ -77,7 +77,6 @@ const SPEED_HISTORY_POINTS = 24
 export function AdminWorkbenchDashboard(props: {
   agents: DashboardAgentView[]
   dashboardView: GlobalDashboardView | null
-  selectedTag: string
   scopedNetwork: AgentNetworkSummary
   monthlyFinance: MonthlyFinanceSummary
   costCurrency: CurrencyCode
@@ -85,7 +84,7 @@ export function AdminWorkbenchDashboard(props: {
   onSelectAgent: (agentID: string) => void
   onOpenTopology: () => void
 }) {
-  const { agents, dashboardView, selectedTag, scopedNetwork, monthlyFinance, costCurrency, restrictedView = false, onSelectAgent, onOpenTopology } = props
+  const { agents, dashboardView, scopedNetwork, monthlyFinance, costCurrency, restrictedView = false, onSelectAgent, onOpenTopology } = props
   const statusRows = useMemo<WorkbenchMetricRow[]>(() => agents.map((agent) => {
     const renewal = calculateRenewalStatus(agent.renewal)
     return {
@@ -98,10 +97,9 @@ export function AdminWorkbenchDashboard(props: {
     }
   }), [agents])
 
-  const selectedTagView = selectedTag ? dashboardView?.tags.find((tag) => tag.tag === selectedTag) : undefined
-  const scopedClientCount = selectedTagView?.client_count ?? dashboardView?.totals.client_count ?? 0
-  const scopedOnlineClientCount = selectedTagView?.online_client_count ?? dashboardView?.totals.online_client_count ?? 0
-  const scopedNodeCount = selectedTagView?.node_count ?? dashboardView?.totals.node_count ?? 0
+  const scopedClientCount = dashboardView?.totals.client_count ?? 0
+  const scopedOnlineClientCount = dashboardView?.totals.online_client_count ?? 0
+  const scopedNodeCount = dashboardView?.totals.node_count ?? 0
   const totalAgents = agents.length
   const onlineRows = statusRows.filter((row) => row.status.level !== 'bad')
   const offlineRows = statusRows.filter((row) => row.status.level === 'bad')
@@ -117,11 +115,14 @@ export function AdminWorkbenchDashboard(props: {
   const onlinePercent = totalAgents ? (onlineRows.length / totalAgents) * 100 : 0
   const clientOnlinePercent = scopedClientCount ? (scopedOnlineClientCount / scopedClientCount) * 100 : 0
 
-  const maxTraffic = Math.max(1, ...statusRows.map((row) => row.traffic.total.used))
-  const trafficRows = [...statusRows]
+  const trafficCandidates = restrictedView
+    ? statusRows.filter((row) => row.traffic.total.used > 0)
+    : statusRows
+  const maxTraffic = Math.max(1, ...trafficCandidates.map((row) => row.traffic.total.used))
+  const trafficRows = [...trafficCandidates]
     .sort((left, right) => trafficRiskScore(right, maxTraffic) - trafficRiskScore(left, maxTraffic))
     .slice(0, 5)
-  const trafficRiskRows = statusRows.filter((row) => row.traffic.total.total > 0 && row.traffic.total.level !== 'ok')
+  const trafficRiskRows = trafficCandidates.filter((row) => row.traffic.total.total > 0 && row.traffic.total.level !== 'ok')
 
   const renewalRows = statusRows
     .filter((row) => row.renewal)
@@ -148,14 +149,12 @@ export function AdminWorkbenchDashboard(props: {
     { label: '月利润', value: monthlyFinance.profitTotal, tone: monthlyFinance.profitTotal >= 0 ? 'profit' : 'loss' },
   ]
   const maxFinance = Math.max(1, ...financeBars.map((bar) => Math.abs(bar.value)))
-  const currentScope = selectedTag || '全部服务器'
-
   return (
     <section className="admin-workbench">
       <div className="admin-workbench-strip">
         <div className="admin-workbench-heading">
           <Text type="secondary">运营驾驶舱</Text>
-          <Typography.Title level={3}>{currentScope}</Typography.Title>
+          <Typography.Title level={3}>全部服务器</Typography.Title>
           <small>{dashboardView ? `数据时间 ${formatDateTime(dashboardView.generated_at)}` : '等待全局概览数据'}</small>
         </div>
         <WorkbenchKpi label="服务器在线率" value={`${onlinePercent.toFixed(0)}%`} note={`${onlineRows.length}/${totalAgents} 在线`} tone={offlineRows.length ? 'warn' : 'ok'} />

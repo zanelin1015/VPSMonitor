@@ -131,6 +131,7 @@ type ClientInstallInfo struct {
 	RealmAutoInstall      bool   `json:"realm_auto_install"`
 	RealmVersion          string `json:"realm_version,omitempty"`
 	RealmDownloadBaseURL  string `json:"realm_download_base_url,omitempty"`
+	HAProxyAutoInstall    bool   `json:"haproxy_auto_install"`
 	XUIAutoInstall        bool   `json:"xui_auto_install"`
 	XUIUsername           string `json:"xui_username,omitempty"`
 	XUIPassword           string `json:"xui_password,omitempty"`
@@ -148,6 +149,7 @@ type ClientInstallSettingsRequest struct {
 	RealmAutoInstall      bool   `json:"realm_auto_install"`
 	RealmVersion          string `json:"realm_version,omitempty"`
 	RealmDownloadBaseURL  string `json:"realm_download_base_url,omitempty"`
+	HAProxyAutoInstall    bool   `json:"haproxy_auto_install"`
 	XUIAutoInstall        bool   `json:"xui_auto_install"`
 	XUIUsername           string `json:"xui_username,omitempty"`
 	XUIPassword           string `json:"xui_password,omitempty"`

@@ -15,12 +15,16 @@ func TestValidateClientInstallSettingsRealm(t *testing.T) {
 		RealmAutoInstall:      true,
 		RealmVersion:          " v2.9.4 ",
 		RealmDownloadBaseURL:  " https://mirror.example.com/realm/v2.9.4/ ",
+		HAProxyAutoInstall:    true,
 	})
 	if err != nil {
 		t.Fatalf("validateClientInstallSettings: %v", err)
 	}
 	if !settings.RealmAutoInstall || settings.RealmVersion != "v2.9.4" {
 		t.Fatalf("unexpected realm settings: %#v", settings)
+	}
+	if !settings.HAProxyAutoInstall {
+		t.Fatal("expected HAProxy auto install to remain enabled")
 	}
 	if settings.RealmDownloadBaseURL != "https://mirror.example.com/realm/v2.9.4" {
 		t.Fatalf("unexpected realm download base url: %q", settings.RealmDownloadBaseURL)

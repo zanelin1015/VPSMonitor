@@ -171,6 +171,32 @@ func applyScopedClientTrafficToNodes(agentID string, nodes []model.XUINodeView, 
 	}
 }
 
+func applyScopedClientTrafficToOutbounds(outbounds []model.XUIOutboundView, clients []model.XUIClientView) {
+	byTag := make(map[string]scopedClientTraffic)
+	for _, client := range clients {
+		tag := strings.TrimSpace(client.Route.OutboundTag)
+		if tag == "" || strings.TrimSpace(client.Route.BalancerTag) != "" {
+			continue
+		}
+		totals := byTag[tag]
+		totals.Sent += positiveTraffic(client.Up)
+		totals.Recv += positiveTraffic(client.Down)
+		totals.Total += positiveTraffic(client.TrafficTotal)
+		totals.Count++
+		byTag[tag] = totals
+	}
+	for index := range outbounds {
+		totals := byTag[outbounds[index].Tag]
+		outbounds[index].Up = int64(totals.Sent)
+		outbounds[index].Down = int64(totals.Recv)
+		if totals.Total > 0 {
+			outbounds[index].Total = int64(totals.Total)
+		} else {
+			outbounds[index].Total = int64(totals.Sent + totals.Recv)
+		}
+	}
+}
+
 func (a *App) applyAreaManagerDashboardTraffic(user model.AdminUser, view *model.GlobalDashboardView, clientScope areaManagerClientScope) {
 	if a == nil || a.store == nil || view == nil || !isAreaManager(user) {
 		return

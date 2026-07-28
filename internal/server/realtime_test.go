@@ -541,13 +541,13 @@ func TestAreaManagerXUIOverviewFiltersUnassignedClients(t *testing.T) {
 			{ID: 1002, Tag: "HK:20002", ClientCount: 1},
 		},
 		Clients: []model.XUIClientView{
-			{InboundID: 1001, InboundTag: "HK:20001", Email: "assigned@example.com", TotalGB: 100, ExpiryTime: 200, LastOnline: 300, Up: 100, Down: 200, AllTime: 300, TrafficTotal: 300},
-			{InboundID: 1001, InboundTag: "HK:20001", Email: "hidden@example.com", Up: 1_000, Down: 2_000},
+			{InboundID: 1001, InboundTag: "HK:20001", Email: "assigned@example.com", TotalGB: 100, ExpiryTime: 200, LastOnline: 300, Up: 100, Down: 200, AllTime: 300, TrafficTotal: 300, Route: model.XUIRouteTrace{OutboundTag: "assigned-out"}},
+			{InboundID: 1001, InboundTag: "HK:20001", Email: "hidden@example.com", Up: 1_000, Down: 2_000, Route: model.XUIRouteTrace{OutboundTag: "mixed-out"}},
 			{InboundID: 1002, InboundTag: "HK:20002", Email: "other@example.com", Up: 4_000, Down: 5_000},
 		},
 		Outbounds: []model.XUIOutboundView{
-			{Tag: "assigned-out", Address: "203.0.113.10"},
-			{Tag: "mixed-out", Address: "203.0.113.11"},
+			{Tag: "assigned-out", Address: "203.0.113.10", Target: "203.0.113.10:443", Up: 9_000, Down: 9_000, Total: 18_000},
+			{Tag: "mixed-out", Address: "203.0.113.11", Target: "203.0.113.11:443", Up: 8_000, Down: 8_000, Total: 16_000},
 			{Tag: "hidden-out", Address: "203.0.113.12"},
 		},
 		RoutingRules: []model.XUIRoutingRuleView{
@@ -596,6 +596,15 @@ func TestAreaManagerXUIOverviewFiltersUnassignedClients(t *testing.T) {
 	}
 	if len(overview.Outbounds) != 2 || overview.Outbounds[0].Tag != "assigned-out" || overview.Outbounds[1].Tag != "mixed-out" {
 		t.Fatalf("expected only granted outbounds, got %#v", overview.Outbounds)
+	}
+	if overview.Outbounds[0].Target != "203.0.113.10:443" || overview.Outbounds[0].Address != "203.0.113.10" {
+		t.Fatalf("expected authorized outbound endpoint to remain visible, got %#v", overview.Outbounds[0])
+	}
+	if overview.Outbounds[0].Up != 100 || overview.Outbounds[0].Down != 200 || overview.Outbounds[0].Total != 300 {
+		t.Fatalf("expected assigned outbound to use visible client traffic, got %#v", overview.Outbounds[0])
+	}
+	if overview.Outbounds[1].Up != 0 || overview.Outbounds[1].Down != 0 || overview.Outbounds[1].Total != 0 {
+		t.Fatalf("expected outbound without a visible routed client to hide traffic, got %#v", overview.Outbounds[1])
 	}
 
 	nextOverview := &model.XUIOverview{
@@ -902,8 +911,35 @@ func TestAreaManagerXUIOverviewRejectsRealmForwardedClientsWithoutPortGrant(t *t
 	}
 }
 
-func TestAreaManagerAssignmentPickerKeepsAllowedAgentClients(t *testing.T) {
-	app := &App{}
+func TestAreaManagerAssignmentPickerFiltersUnauthorizedClients(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK"}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	enabled := true
+	manager, err := sqliteStore.CreateAreaManager(model.AreaManagerAccountRequest{
+		Username: "area-picker",
+		Password: "password123",
+		Enabled:  &enabled,
+		AgentIDs: []string{"hk"},
+	})
+	if err != nil {
+		t.Fatalf("CreateAreaManager: %v", err)
+	}
+	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+		AgentID:     "hk",
+		InboundID:   1001,
+		InboundTag:  "HK:20001",
+		ClientEmail: "assigned@example.com",
+		Enabled:     &enabled,
+	}); err != nil {
+		t.Fatalf("CreateAreaManagerAssignment: %v", err)
+	}
+	app := &App{store: sqliteStore}
 	overview := &model.XUIOverview{
 		AgentID:           "hk",
 		AgentName:         "HK Internal",
@@ -921,21 +957,73 @@ func TestAreaManagerAssignmentPickerKeepsAllowedAgentClients(t *testing.T) {
 	}
 
 	app.sanitizeXUIOverviewForAreaAssignment(model.AdminUser{
-		ID:       10,
+		ID:       manager.ID,
 		Role:     model.AdminRoleAreaManager,
 		AgentIDs: []string{"hk"},
 	}, overview)
 
-	if len(overview.Clients) != 2 {
-		t.Fatalf("expected assignment picker to keep all clients on an allowed agent, got %#v", overview.Clients)
+	if len(overview.Clients) != 1 || overview.Clients[0].Email != "assigned@example.com" {
+		t.Fatalf("expected assignment picker to keep only the exact authorized client, got %#v", overview.Clients)
 	}
-	if overview.Clients[0].TotalGB != 0 || overview.Clients[1].LastOnline != 0 {
+	if overview.Clients[0].TotalGB != 0 || overview.Clients[0].LastOnline != 0 {
 		t.Fatalf("expected sensitive client limits/timestamps stripped, got %#v", overview.Clients)
 	}
 	if len(overview.Nodes) != 1 || overview.Nodes[0].ClientCount != 0 || overview.Nodes[0].Total != 0 {
 		t.Fatalf("expected node picker metadata without metrics, got %#v", overview.Nodes)
 	}
+	if overview.Nodes[0].CanAssignAllClients == nil || *overview.Nodes[0].CanAssignAllClients {
+		t.Fatalf("expected exact-client node to remain a non-selectable group, got %#v", overview.Nodes[0])
+	}
 	if overview.BaseURL != "" || overview.OnlineClientCount != 0 {
 		t.Fatalf("expected x-ui URL and online count hidden, got base=%q online=%d", overview.BaseURL, overview.OnlineClientCount)
+	}
+}
+
+func TestAreaManagerAssignmentPickerKeepsWholeNodeClients(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK"}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	enabled := true
+	manager, err := sqliteStore.CreateAreaManager(model.AreaManagerAccountRequest{
+		Username: "area-node-picker",
+		Password: "password123",
+		Enabled:  &enabled,
+		AgentIDs: []string{"hk"},
+	})
+	if err != nil {
+		t.Fatalf("CreateAreaManager: %v", err)
+	}
+	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+		AgentID:    "hk",
+		InboundID:  1001,
+		InboundTag: "HK:20001",
+		Enabled:    &enabled,
+	}); err != nil {
+		t.Fatalf("CreateAreaManagerAssignment: %v", err)
+	}
+	app := &App{store: sqliteStore}
+	overview := &model.XUIOverview{
+		AgentID: "hk",
+		Nodes:   []model.XUINodeView{{ID: 1001, Tag: "HK:20001", ClientCount: 2}},
+		Clients: []model.XUIClientView{
+			{InboundID: 1001, InboundTag: "HK:20001", Email: "one@example.com"},
+			{InboundID: 1001, InboundTag: "HK:20001", Email: "two@example.com"},
+		},
+	}
+	app.sanitizeXUIOverviewForAreaAssignment(model.AdminUser{
+		ID:       manager.ID,
+		Role:     model.AdminRoleAreaManager,
+		AgentIDs: []string{"hk"},
+	}, overview)
+	if len(overview.Clients) != 2 {
+		t.Fatalf("expected whole-node authorization to keep all clients, got %#v", overview.Clients)
+	}
+	if len(overview.Nodes) != 1 || overview.Nodes[0].CanAssignAllClients == nil || !*overview.Nodes[0].CanAssignAllClients {
+		t.Fatalf("expected whole-node authorization to keep the node selectable, got %#v", overview.Nodes)
 	}
 }

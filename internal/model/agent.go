@@ -20,18 +20,21 @@ type ManagedAgentConfig struct {
 }
 
 type AgentFeatureConfig struct {
-	XUI                       bool `json:"xui"`
-	Realm                     bool `json:"realm"`
-	NAT                       bool `json:"nat"`
-	PortPolicy                bool `json:"port_policy"`
-	Configured                bool `json:"-"`
-	RealmExplicitlyConfigured bool `json:"-"`
+	XUI                         bool `json:"xui"`
+	Realm                       bool `json:"realm"`
+	HAProxy                     bool `json:"haproxy"`
+	NAT                         bool `json:"nat"`
+	PortPolicy                  bool `json:"port_policy"`
+	Configured                  bool `json:"-"`
+	RealmExplicitlyConfigured   bool `json:"-"`
+	HAProxyExplicitlyConfigured bool `json:"-"`
 }
 
 func (c *AgentFeatureConfig) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		XUI        bool `json:"xui"`
 		Realm      bool `json:"realm"`
+		HAProxy    bool `json:"haproxy"`
 		NAT        bool `json:"nat"`
 		PortPolicy bool `json:"port_policy"`
 	}
@@ -40,6 +43,7 @@ func (c *AgentFeatureConfig) UnmarshalJSON(data []byte) error {
 	}
 	c.XUI = raw.XUI
 	c.Realm = raw.Realm
+	c.HAProxy = raw.HAProxy
 	c.NAT = raw.NAT
 	c.PortPolicy = raw.PortPolicy
 	c.Configured = true
@@ -85,6 +89,7 @@ type AgentEntryConfig struct {
 	Mappings       []AgentEntryMapping `json:"mappings,omitempty"`
 	NetworkPolicy  NetworkPolicyConfig `json:"network_policy,omitempty"`
 	PortForwarding RealmForwardConfig  `json:"port_forwarding,omitempty"`
+	HAProxy        HAProxyConfig       `json:"haproxy,omitempty"`
 }
 
 type AgentEntryMapping struct {
@@ -136,6 +141,35 @@ type RealmForwardRule struct {
 	Note          string `json:"note,omitempty"`
 }
 
+type HAProxyConfig struct {
+	Enabled     bool          `json:"enabled,omitempty"`
+	BinaryPath  string        `json:"binary_path,omitempty"`
+	ConfigPath  string        `json:"config_path,omitempty"`
+	ServiceName string        `json:"service_name,omitempty"`
+	Rules       []HAProxyRule `json:"rules,omitempty"`
+}
+
+type HAProxyRule struct {
+	ID                    string               `json:"id,omitempty"`
+	Name                  string               `json:"name,omitempty"`
+	Enabled               bool                 `json:"enabled,omitempty"`
+	ListenAddress         string               `json:"listen_address,omitempty"`
+	ListenPort            int                  `json:"listen_port,omitempty"`
+	Primary               HAProxyRealmTarget   `json:"primary,omitempty"`
+	Backups               []HAProxyRealmTarget `json:"backups,omitempty"`
+	CheckIntervalSeconds  int                  `json:"check_interval_seconds,omitempty"`
+	ConnectTimeoutSeconds int                  `json:"connect_timeout_seconds,omitempty"`
+	Fall                  int                  `json:"fall,omitempty"`
+	Rise                  int                  `json:"rise,omitempty"`
+}
+
+type HAProxyRealmTarget struct {
+	AgentID     string `json:"agent_id,omitempty"`
+	RealmRuleID string `json:"realm_rule_id,omitempty"`
+	Address     string `json:"address,omitempty"`
+	Port        int    `json:"port,omitempty"`
+}
+
 type AgentRegisterRequest struct {
 	AgentID       string             `json:"agent_id"`
 	AgentName     string             `json:"agent_name,omitempty"`
@@ -151,7 +185,8 @@ type AgentRegisterRequest struct {
 }
 
 type AgentCapabilities struct {
-	Realm bool `json:"realm,omitempty"`
+	Realm   bool `json:"realm,omitempty"`
+	HAProxy bool `json:"haproxy,omitempty"`
 }
 
 type AgentRegisterResponse struct {
