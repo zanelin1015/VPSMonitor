@@ -75,6 +75,7 @@ func (a *App) RunOnce(ctx context.Context) error {
 
 func (a *App) runOnceWithConfig(ctx context.Context, effectiveConfig model.ManagedAgentConfig) error {
 	effectiveConfig = normalizeManagedConfig(effectiveConfig, a.config.AgentID, a.config.AgentName)
+	effectiveConfig = enforceExclusiveForwardingMode(effectiveConfig)
 	effectiveConfig.Entry = mergeLocalRealmConfigIntoEntry(effectiveConfig.Entry)
 	a.applyNetworkPolicyIfNeeded(ctx, effectiveConfig.Entry.NetworkPolicy)
 	a.applyRealmForwardingIfNeeded(ctx, effectiveConfig.Entry.PortForwarding)
@@ -87,6 +88,22 @@ func (a *App) runOnceWithConfig(ctx context.Context, effectiveConfig model.Manag
 	}
 	a.collectAndPushAccessLogs(ctx, effectiveConfig.XUI)
 	return nil
+}
+
+func enforceExclusiveForwardingMode(cfg model.ManagedAgentConfig) model.ManagedAgentConfig {
+	switch {
+	case cfg.Features.HAProxy:
+		cfg.Entry.PortForwarding.Enabled = false
+		cfg.Entry.PortForwarding.Backend = "none"
+	case cfg.Features.Realm:
+		cfg.Entry.HAProxy.Enabled = false
+	case cfg.Entry.HAProxy.Enabled:
+		cfg.Entry.PortForwarding.Enabled = false
+		cfg.Entry.PortForwarding.Backend = "none"
+	case cfg.Entry.PortForwarding.Enabled && !strings.EqualFold(strings.TrimSpace(cfg.Entry.PortForwarding.Backend), "none"):
+		cfg.Entry.HAProxy.Enabled = false
+	}
+	return cfg
 }
 
 func mergeLocalRealmConfigIntoEntry(entry model.AgentEntryConfig) model.AgentEntryConfig {
@@ -230,6 +247,9 @@ func (a *App) startSelfUpdate(payload map[string]any) (map[string]any, error) {
 	realmVersion := payloadString(payload, "realm_version", "v2.9.4")
 	realmDownloadBaseURL := payloadString(payload, "realm_download_base_url", "")
 	haProxyAutoInstall := payloadBool(payload, "haproxy_auto_install", false)
+	if haProxyAutoInstall {
+		realmAutoInstall = false
+	}
 	if isOpenWrtLike() {
 		openWrtScriptURL := payloadString(payload, "openwrt_script_url", openWrtInstallerURL(scriptURL))
 		command := fmt.Sprintf(`(sleep 2; { tmp="$(mktemp /tmp/vpsmonitor-install.XXXXXX.sh)"; if command -v uclient-fetch >/dev/null 2>&1; then uclient-fetch -O "$tmp" %[1]q; elif command -v wget >/dev/null 2>&1; then wget -O "$tmp" %[1]q; else curl -fL %[1]q -o "$tmp"; fi && chmod +x "$tmp" && env VPSMONITOR_ASSUME_YES=true VPSMONITOR_VERSION=%[2]q VPSMONITOR_REPO=%[3]q VPSMONITOR_PACKAGE_PREFIX=%[4]q VPSMONITOR_CLIENT_DIR=%[5]q VPSMONITOR_CLIENT_SERVICE=%[6]q VPSMONITOR_REALM_AUTO_INSTALL=%[7]q VPSMONITOR_REALM_VERSION=%[8]q VPSMONITOR_REALM_DOWNLOAD_BASE_URL=%[9]q VPSMONITOR_HAPROXY_AUTO_INSTALL=%[10]q sh "$tmp" client; } >>/tmp/vpsmonitor-client-update.log 2>&1) >/dev/null 2>&1 &`, openWrtScriptURL, version, repo, packagePrefix, installDir, serviceName, strconv.FormatBool(realmAutoInstall), realmVersion, realmDownloadBaseURL, strconv.FormatBool(haProxyAutoInstall))

@@ -63,6 +63,7 @@ export function defaultClientInstallCommandForm(): ClientInstallCommandForm {
 }
 
 export function normalizeClientInstallCommandForm(info: ClientInstallInfo): ClientInstallCommandForm {
+  const haproxyAutoInstall = Boolean(info.haproxy_auto_install)
   return {
     server_url: info.server_url || defaultClientInstallCommandForm().server_url,
     registration_token: info.registration_token || '',
@@ -70,10 +71,10 @@ export function normalizeClientInstallCommandForm(info: ClientInstallInfo): Clie
     poll_interval: info.poll_interval || '30s',
     request_timeout_seconds: Number(info.request_timeout_seconds || 15),
     server_skip_tls_verify: Boolean(info.server_skip_tls_verify),
-    realm_auto_install: Boolean(info.realm_auto_install),
+    realm_auto_install: Boolean(info.realm_auto_install) && !haproxyAutoInstall,
     realm_version: info.realm_version || 'v2.9.4',
     realm_download_base_url: info.realm_download_base_url || '',
-    haproxy_auto_install: Boolean(info.haproxy_auto_install),
+    haproxy_auto_install: haproxyAutoInstall,
     xui_auto_install: Boolean(info.xui_auto_install),
     xui_username: info.xui_username || 'admin',
     xui_password: info.xui_password || '',
@@ -110,16 +111,17 @@ export function clientInstallCommandByKind(
 
 export function buildClientInstallCommand(form: ClientInstallCommandForm): string {
   const scriptURL = form.install_script_url.trim() || defaultClientInstallCommandForm().install_script_url
+  const haproxyAutoInstall = Boolean(form.haproxy_auto_install)
   const envValues: Array<[string, string]> = [
     ['VPSMONITOR_SERVER_URL', form.server_url.trim()],
     ['VPSMONITOR_REGISTRATION_TOKEN', form.registration_token.trim()],
     ['VPSMONITOR_SERVER_SKIP_TLS_VERIFY', String(Boolean(form.server_skip_tls_verify))],
     ['VPSMONITOR_POLL_INTERVAL', form.poll_interval.trim() || '30s'],
     ['VPSMONITOR_REQUEST_TIMEOUT_SECONDS', String(Math.max(1, Number(form.request_timeout_seconds || 15)))],
-    ['VPSMONITOR_REALM_AUTO_INSTALL', String(Boolean(form.realm_auto_install))],
+    ['VPSMONITOR_REALM_AUTO_INSTALL', String(Boolean(form.realm_auto_install) && !haproxyAutoInstall)],
     ['VPSMONITOR_REALM_VERSION', form.realm_version.trim() || 'v2.9.4'],
     ['VPSMONITOR_REALM_DOWNLOAD_BASE_URL', form.realm_download_base_url.trim()],
-    ['VPSMONITOR_HAPROXY_AUTO_INSTALL', String(Boolean(form.haproxy_auto_install))],
+    ['VPSMONITOR_HAPROXY_AUTO_INSTALL', String(haproxyAutoInstall)],
     ['VPSMONITOR_ASSUME_YES', 'true'],
   ]
   const envText = envValues.map(([key, value]) => `${key}=${shellQuote(value)}`).join(' ')
@@ -129,16 +131,17 @@ export function buildClientInstallCommand(form: ClientInstallCommandForm): strin
 
 export function buildOpenWrtInstallCommand(form: ClientInstallCommandForm): string {
   const scriptURL = openWrtInstallScriptURL(form.install_script_url)
+  const haproxyAutoInstall = Boolean(form.haproxy_auto_install)
   const envValues: Array<[string, string]> = [
     ['VPSMONITOR_SERVER_URL', form.server_url.trim()],
     ['VPSMONITOR_REGISTRATION_TOKEN', form.registration_token.trim()],
     ['VPSMONITOR_SERVER_SKIP_TLS_VERIFY', String(Boolean(form.server_skip_tls_verify))],
     ['VPSMONITOR_POLL_INTERVAL', form.poll_interval.trim() || '30s'],
     ['VPSMONITOR_REQUEST_TIMEOUT_SECONDS', String(Math.max(1, Number(form.request_timeout_seconds || 15)))],
-    ['VPSMONITOR_REALM_AUTO_INSTALL', String(Boolean(form.realm_auto_install))],
+    ['VPSMONITOR_REALM_AUTO_INSTALL', String(Boolean(form.realm_auto_install) && !haproxyAutoInstall)],
     ['VPSMONITOR_REALM_VERSION', form.realm_version.trim() || 'v2.9.4'],
     ['VPSMONITOR_REALM_DOWNLOAD_BASE_URL', form.realm_download_base_url.trim()],
-    ['VPSMONITOR_HAPROXY_AUTO_INSTALL', String(Boolean(form.haproxy_auto_install))],
+    ['VPSMONITOR_HAPROXY_AUTO_INSTALL', String(haproxyAutoInstall)],
     ['VPSMONITOR_ASSUME_YES', 'true'],
   ]
   const envText = envValues.map(([key, value]) => `${key}=${shellQuote(value)}`).join(' ')

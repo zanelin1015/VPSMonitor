@@ -91,6 +91,7 @@ type XUIClientView struct {
 	LastOnline    int64         `json:"last_online,omitempty"`
 	Route         XUIRouteTrace `json:"route"`
 
+	ForwardType           string `json:"forward_type,omitempty"`
 	IsRealmForwarded      bool   `json:"is_realm_forwarded,omitempty"`
 	RealmListenPort       int    `json:"realm_listen_port,omitempty"`
 	RealmListenTag        string `json:"realm_listen_tag,omitempty"`

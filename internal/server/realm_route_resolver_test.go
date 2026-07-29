@@ -64,7 +64,7 @@ func TestCustomerRealmPublicEntryUsesOutermostHop(t *testing.T) {
 		"dmit": {AgentID: "dmit", Entry: model.AgentEntryConfig{ImportDomain: "dmit.example.com"}},
 	}
 
-	entry, ok := customerRealmPublicEntry(assignment, chain, agents)
+	entry, ok := customerForwardingPublicEntry(assignment, chain, agents)
 	if !ok || entry.Host != "gz.example.com" || entry.Port != 20001 {
 		t.Fatalf("expected outermost Guangzhou Realm entry, got %#v, ok=%v", entry, ok)
 	}
@@ -89,18 +89,62 @@ func TestAreaManagerRealmPathIncludesIntermediateAgentOnlyForAuthorizedFinalNode
 		realmPorts:   map[string]struct{}{areaRealmPortKey("gz", 20001): {}},
 		agents:       map[string]struct{}{"gz": {}, "dmit": {}},
 	}
-	visible := areaManagerRealmPathLinkKeys(links, scope)
+	visible := areaManagerForwardingPathLinkKeys(links, scope)
 	if len(visible) != 2 {
 		t.Fatalf("expected both Realm hops to be visible, got %#v", visible)
 	}
 	allowed := cloneAgentSet(scope.agents)
-	expandAreaManagerRealmPathAgents(allowed, links, scope)
+	expandAreaManagerForwardingPathAgents(allowed, links, scope)
 	if _, ok := allowed["hk"]; !ok {
 		t.Fatalf("expected intermediate HK agent to be included in topology visibility, got %#v", allowed)
 	}
 
 	delete(scope.inbounds, areaClientInboundKey("dmit", 7, "dmit-in"))
-	if got := areaManagerRealmPathLinkKeys(links, scope); len(got) != 0 {
+	if got := areaManagerForwardingPathLinkKeys(links, scope); len(got) != 0 {
 		t.Fatalf("Realm authorization must not reveal an unauthorized final node, got %#v", got)
+	}
+}
+
+func TestAreaManagerHAProxyPathRequiresEntryAndFinalClientAuthorization(t *testing.T) {
+	final := model.TopologyInboundRef{AgentID: "dmit", InboundID: 7, InboundTag: "dmit-in", Protocol: "vless", Port: 443}
+	hkRealm := model.TopologyInboundRef{AgentID: "hk-b", InboundID: 20001, InboundTag: "realm:b-20001", Protocol: "realm", Port: 20001}
+	links := []model.TopologyLinkView{
+		{Key: "gz::haproxy:10001", Source: model.TopologyOutboundRef{AgentID: "gz", OutboundTag: "haproxy:10001", Protocol: "haproxy", ListenPort: 10001}, Target: hkRealm, FinalTarget: &final, RealmHops: []model.TopologyInboundRef{hkRealm}},
+		{Key: "hk-b::realm:b-20001", Source: model.TopologyOutboundRef{AgentID: "hk-b", OutboundTag: "realm:b-20001", Protocol: "realm", ListenPort: 20001}, Target: final, FinalTarget: &final},
+	}
+	scope := areaManagerClientScope{
+		exactClients: map[string]struct{}{areaClientExactKey("dmit", 7, "dmit-in", "alice@example.com"): {}},
+		inbounds:     map[string]struct{}{},
+		realmPorts:   map[string]struct{}{},
+		haProxyPorts: map[string]struct{}{areaForwardingPortKey("gz", 10001): {}},
+		agents:       map[string]struct{}{"gz": {}, "dmit": {}},
+	}
+	visible := areaManagerForwardingPathLinkKeys(links, scope)
+	if len(visible) != 2 {
+		t.Fatalf("expected HAProxy and primary Realm path to be visible, got %#v", visible)
+	}
+	allowed := cloneAgentSet(scope.agents)
+	expandAreaManagerForwardingPathAgents(allowed, links, scope)
+	if _, ok := allowed["hk-b"]; !ok {
+		t.Fatalf("expected primary relay to be included without exposing unrelated data, got %#v", allowed)
+	}
+
+	app := &App{}
+	user := model.AdminUser{ID: 10, Role: model.AdminRoleAreaManager, AgentIDs: []string{"gz", "dmit"}}
+	client := model.XUIClientView{
+		InboundID: 10001, Email: "alice@example.com", ForwardType: "haproxy", RealmListenPort: 10001,
+		RealmSourceAgentID: "gz", RealmTargetAgentID: "dmit", RealmTargetInboundID: 7, RealmTargetInboundTag: "dmit-in",
+	}
+	if !app.areaManagerCanViewForwardedClient(user, "gz", client, scope) {
+		t.Fatal("expected authorized final client to be visible through the HAProxy entry")
+	}
+	client.Email = "hidden@example.com"
+	if app.areaManagerCanViewForwardedClient(user, "gz", client, scope) {
+		t.Fatal("HAProxy entry grant must not expose an unauthorized client on the same final node")
+	}
+
+	delete(scope.haProxyPorts, areaForwardingPortKey("gz", 10001))
+	if got := areaManagerForwardingPathLinkKeys(links, scope); len(got) != 0 {
+		t.Fatalf("final client grant without the HAProxy entry grant must not reveal the path, got %#v", got)
 	}
 }

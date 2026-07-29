@@ -36,6 +36,12 @@ is_truthy() {
   esac
 }
 
+validate_forwarding_install_selection() {
+  if is_truthy "${VPSMONITOR_REALM_AUTO_INSTALL:-false}" && is_truthy "${VPSMONITOR_HAPROXY_AUTO_INSTALL:-false}"; then
+    die "HAProxy and Realm auto-install are mutually exclusive. Enable only one."
+  fi
+}
+
 assume_yes() {
   is_truthy "${VPSMONITOR_ASSUME_YES:-${VPSMONITOR_NON_INTERACTIVE:-}}"
 }
@@ -865,6 +871,10 @@ main() {
       exit 1
       ;;
   esac
+
+  if [[ "$action" == "client" || "$action" == "both" ]]; then
+    validate_forwarding_install_selection
+  fi
 
   require_root
   require_service_manager

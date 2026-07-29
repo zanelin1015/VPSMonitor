@@ -246,16 +246,16 @@ func buildCustomerChainMap(chains []model.ClientChainView, links []model.Topolog
 		result[chain.Key] = chain
 	}
 	for _, link := range links {
-		if !strings.EqualFold(strings.TrimSpace(link.Source.Protocol), "realm") || link.Source.ListenPort <= 0 || link.FinalTarget == nil {
+		if !isForwardingProtocol(link.Source.Protocol) || link.Source.ListenPort <= 0 || link.FinalTarget == nil {
 			continue
 		}
 		for _, chain := range chains {
 			if !customerChainMatchesInbound(chain, *link.FinalTarget) || chain.RootClientEmail == "" {
 				continue
 			}
-			addCustomerRealmChainAlias(result, link.Source.AgentID, link.Source.ListenPort, chain)
+			addCustomerForwardingChainAlias(result, link.Source.AgentID, link.Source.ListenPort, chain)
 			for _, hop := range link.RealmHops {
-				addCustomerRealmChainAlias(result, hop.AgentID, hop.Port, chain)
+				addCustomerForwardingChainAlias(result, hop.AgentID, hop.Port, chain)
 			}
 		}
 	}
@@ -272,7 +272,7 @@ func customerChainMatchesInbound(chain model.ClientChainView, inbound model.Topo
 	return chain.RootInboundTag != "" && inbound.InboundTag != "" && strings.EqualFold(chain.RootInboundTag, inbound.InboundTag)
 }
 
-func addCustomerRealmChainAlias(result map[string]model.ClientChainView, agentID string, listenPort int, chain model.ClientChainView) {
+func addCustomerForwardingChainAlias(result map[string]model.ClientChainView, agentID string, listenPort int, chain model.ClientChainView) {
 	if agentID == "" || listenPort <= 0 || chain.RootClientEmail == "" {
 		return
 	}
@@ -439,7 +439,7 @@ func buildCustomerLinkView(
 		return link
 	}
 	link.Resolved = true
-	if publicEntry, ok := customerRealmPublicEntry(assignment, chain, agentMap); ok {
+	if publicEntry, ok := customerForwardingPublicEntry(assignment, chain, agentMap); ok {
 		sourceURL := firstNonEmptyString(link.ImportURL, clientRef.TemplateImportURL)
 		if rewritten := rewriteCustomerImportURL(sourceURL, publicEntry.Host, publicEntry.Port); rewritten != "" {
 			link.ImportURL = rewritten
@@ -536,7 +536,7 @@ type customerPublicEntry struct {
 	Port int
 }
 
-func customerRealmPublicEntry(assignment model.CustomerAssignment, chain model.ClientChainView, agentMap map[string]model.DashboardAgentView) (customerPublicEntry, bool) {
+func customerForwardingPublicEntry(assignment model.CustomerAssignment, chain model.ClientChainView, agentMap map[string]model.DashboardAgentView) (customerPublicEntry, bool) {
 	if assignment.AgentID == "" || agentMap == nil {
 		return customerPublicEntry{}, false
 	}
@@ -545,6 +545,11 @@ func customerRealmPublicEntry(assignment model.CustomerAssignment, chain model.C
 		return customerPublicEntry{}, false
 	}
 	if !strings.EqualFold(chain.RootAgentID, assignment.AgentID) {
+		if rule, found := haProxyRuleListeningOnPort(assignmentAgent.Entry.HAProxy.Rules, assignment.InboundID); assignmentAgent.Entry.HAProxy.Enabled && found {
+			if host := customerHAProxySourceHost(assignmentAgent, rule); host != "" {
+				return customerPublicEntry{Host: host, Port: rule.ListenPort}, true
+			}
+		}
 		if rule, found := realmRuleListeningOnPort(assignmentAgent.Entry.PortForwarding.Rules, assignment.InboundID); found {
 			if host := customerRealmSourceHost(assignmentAgent, rule); host != "" {
 				return customerPublicEntry{Host: host, Port: rule.ListenPort}, true
@@ -555,11 +560,11 @@ func customerRealmPublicEntry(assignment model.CustomerAssignment, chain model.C
 	if inboundPort <= 0 {
 		return customerPublicEntry{}, false
 	}
-	entry, _, ok := customerOutermostRealmEntry(assignment.AgentID, inboundPort, agentMap, make(map[string]struct{}))
+	entry, _, ok := customerOutermostForwardingEntry(assignment.AgentID, inboundPort, agentMap, make(map[string]struct{}))
 	return entry, ok
 }
 
-func customerOutermostRealmEntry(
+func customerOutermostForwardingEntry(
 	targetAgentID string,
 	targetPort int,
 	agentMap map[string]model.DashboardAgentView,
@@ -600,7 +605,27 @@ func customerOutermostRealmEntry(
 			}
 			candidate := customerPublicEntry{Host: host, Port: rule.ListenPort}
 			depth := 1
-			if upstream, upstreamDepth, found := customerOutermostRealmEntry(sourceAgentID, rule.ListenPort, agentMap, visited); found {
+			if upstream, upstreamDepth, found := customerOutermostForwardingEntry(sourceAgentID, rule.ListenPort, agentMap, visited); found {
+				candidate = upstream
+				depth += upstreamDepth
+			}
+			if depth > bestDepth {
+				best = candidate
+				bestDepth = depth
+			}
+		}
+		for _, rule := range sourceAgent.Entry.HAProxy.Rules {
+			if !sourceAgent.Entry.HAProxy.Enabled || !rule.Enabled || rule.ListenPort <= 0 ||
+				!customerHAProxyRuleTargetsEndpoint(rule, targetAgentID, targetPort) {
+				continue
+			}
+			host := customerHAProxySourceHost(sourceAgent, rule)
+			if host == "" {
+				continue
+			}
+			candidate := customerPublicEntry{Host: host, Port: rule.ListenPort}
+			depth := 1
+			if upstream, upstreamDepth, found := customerOutermostForwardingEntry(sourceAgentID, rule.ListenPort, agentMap, visited); found {
 				candidate = upstream
 				depth += upstreamDepth
 			}
@@ -611,6 +636,26 @@ func customerOutermostRealmEntry(
 		}
 	}
 	return best, bestDepth, bestDepth > 0
+}
+
+func haProxyRuleListeningOnPort(rules []model.HAProxyRule, port int) (model.HAProxyRule, bool) {
+	for _, rule := range rules {
+		if rule.Enabled && rule.ListenPort == port && rule.Primary.Port > 0 &&
+			(strings.TrimSpace(rule.Primary.AgentID) != "" || strings.TrimSpace(rule.Primary.Address) != "") {
+			return rule, true
+		}
+	}
+	return model.HAProxyRule{}, false
+}
+
+func customerHAProxyRuleTargetsEndpoint(rule model.HAProxyRule, targetAgentID string, targetPort int) bool {
+	targets := append([]model.HAProxyRealmTarget{rule.Primary}, rule.Backups...)
+	for _, target := range targets {
+		if target.Port == targetPort && strings.EqualFold(strings.TrimSpace(target.AgentID), strings.TrimSpace(targetAgentID)) {
+			return true
+		}
+	}
+	return false
 }
 
 func customerChainRootInboundPort(assignment model.CustomerAssignment, chain model.ClientChainView) int {
@@ -653,6 +698,14 @@ func customerAgentAddressSet(agent model.DashboardAgentView) map[string]struct{}
 }
 
 func customerRealmSourceHost(agent model.DashboardAgentView, rule model.RealmForwardRule) string {
+	return customerForwardSourceHost(agent, rule.ListenAddress)
+}
+
+func customerHAProxySourceHost(agent model.DashboardAgentView, rule model.HAProxyRule) string {
+	return customerForwardSourceHost(agent, rule.ListenAddress)
+}
+
+func customerForwardSourceHost(agent model.DashboardAgentView, listenAddress string) string {
 	for _, candidate := range []string{agent.Entry.ImportDomain} {
 		if host := normalizeCustomerShareHost(candidate); host != "" && !isWildcardListenAddress(host) {
 			return host
@@ -663,7 +716,7 @@ func customerRealmSourceHost(agent model.DashboardAgentView, rule model.RealmFor
 			return host
 		}
 	}
-	for _, candidate := range []string{rule.ListenAddress, agent.Summary.ObservedIP, agent.Summary.PublicIPv4, agent.Summary.PublicIPv6} {
+	for _, candidate := range []string{listenAddress, agent.Summary.ObservedIP, agent.Summary.PublicIPv4, agent.Summary.PublicIPv6} {
 		if host := normalizeCustomerShareHost(candidate); host != "" && !isWildcardListenAddress(host) {
 			return host
 		}

@@ -97,6 +97,9 @@ func normalizeClientInstallSettings(settings model.ClientInstallSettingsRequest)
 	settings.XUIPassword = strings.TrimSpace(settings.XUIPassword)
 	settings.XUIWebPath = normalizeXUIBootstrapWebPath(settings.XUIWebPath)
 	settings.XUIInstallScriptURL = strings.TrimSpace(settings.XUIInstallScriptURL)
+	if settings.HAProxyAutoInstall {
+		settings.RealmAutoInstall = false
+	}
 	if settings.RequestTimeoutSeconds < 0 {
 		settings.RequestTimeoutSeconds = 0
 	}

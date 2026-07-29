@@ -229,7 +229,13 @@ export function ClientInstallModal(props: {
             <Col xs={24} md={7}>
               <Text type="secondary">同时安装 Realm</Text>
               <div className="client-install-switch">
-                <Switch checked={form.realm_auto_install} onChange={(checked) => update({ realm_auto_install: checked })} />
+                <Switch
+                  checked={form.realm_auto_install}
+                  onChange={(checked) => update({
+                    realm_auto_install: checked,
+                    ...(checked ? { haproxy_auto_install: false } : {}),
+                  })}
+                />
                 <Text type="secondary">Linux / OpenWrt</Text>
               </div>
             </Col>
@@ -246,7 +252,13 @@ export function ClientInstallModal(props: {
             <Col xs={24} md={7}>
               <Text type="secondary">同时安装 HAProxy</Text>
               <div className="client-install-switch">
-                <Switch checked={form.haproxy_auto_install} onChange={(checked) => update({ haproxy_auto_install: checked })} />
+                <Switch
+                  checked={form.haproxy_auto_install}
+                  onChange={(checked) => update({
+                    haproxy_auto_install: checked,
+                    ...(checked ? { realm_auto_install: false } : {}),
+                  })}
+                />
                 <Text type="secondary">Linux / OpenWrt</Text>
               </div>
             </Col>

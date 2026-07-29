@@ -73,7 +73,9 @@ func (a *App) handleRealmConfigCopy(w http.ResponseWriter, r *http.Request, sour
 		return
 	}
 	targetCfg.Entry.PortForwarding = sourceForwarding
+	targetCfg.Entry.HAProxy.Enabled = false
 	targetCfg.Features.Realm = true
+	targetCfg.Features.HAProxy = false
 	targetCfg.Features.Configured = true
 	targetCfg = inferLegacyAgentFeatures(targetCfg, nil)
 	targetCfg = a.hydrateRealmForwardTargets(targetCfg)

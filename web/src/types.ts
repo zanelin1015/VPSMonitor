@@ -624,6 +624,7 @@ export interface XUIClientView {
   traffic_total?: number
   last_online?: number
   route: XUIRouteTrace
+  forward_type?: 'realm' | 'haproxy' | string
   is_realm_forwarded?: boolean
   realm_listen_port?: number
   realm_listen_tag?: string

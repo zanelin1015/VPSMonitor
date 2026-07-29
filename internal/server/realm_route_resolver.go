@@ -123,3 +123,14 @@ func realmForwardResolutionNote(host string, listenPort int, resolution realmFor
 	parts = append(parts, fmt.Sprintf("%s:%d", firstNonEmptyString(finalAgent.AgentName, resolution.FinalAgentID), resolution.FinalPort))
 	return "Realm 入口 " + strings.Join(parts, " -> ")
 }
+
+func haProxyForwardResolutionNote(host string, listenPort int, resolution realmForwardResolution, agentMap map[string]model.DashboardAgentView) string {
+	parts := []string{fmt.Sprintf("%s:%d", host, listenPort)}
+	for _, hop := range resolution.Hops {
+		agent := agentMap[hop.SourceAgentID]
+		parts = append(parts, fmt.Sprintf("%s:%d", firstNonEmptyString(agent.AgentName, hop.SourceAgentID), hop.Rule.ListenPort))
+	}
+	finalAgent := agentMap[resolution.FinalAgentID]
+	parts = append(parts, fmt.Sprintf("%s:%d", firstNonEmptyString(finalAgent.AgentName, resolution.FinalAgentID), resolution.FinalPort))
+	return "HAProxy 入口 " + strings.Join(parts, " -> ")
+}

@@ -65,6 +65,62 @@ func TestBuildGlobalDashboardResolvesMultiHopRealmToXUIInbound(t *testing.T) {
 	}
 }
 
+func TestBuildGlobalDashboardResolvesHAProxyPrimaryRealmPathToFinalInbound(t *testing.T) {
+	now := time.Now().UTC()
+	agents := []model.AgentRecord{
+		{
+			AgentID: "gz", AgentName: "Guangzhou HAProxy", RegisteredAt: now, UpdatedAt: now,
+			Summary: model.VPSSummary{PublicIPv4: "192.0.2.10"},
+			Config: model.ManagedAgentConfig{Entry: model.AgentEntryConfig{HAProxy: model.HAProxyConfig{
+				Enabled: true,
+				Rules: []model.HAProxyRule{{
+					ID: "gz-ha-20001", Enabled: true, ListenPort: 10001,
+					Primary: model.HAProxyRealmTarget{AgentID: "hk-b", Address: "b.example.com", Port: 20001},
+					Backups: []model.HAProxyRealmTarget{{AgentID: "hk-c", Address: "c.example.com", Port: 20001}},
+				}},
+			}}},
+		},
+		{
+			AgentID: "hk-b", AgentName: "HK B", RegisteredAt: now, UpdatedAt: now,
+			Summary: model.VPSSummary{PublicIPv4: "192.0.2.20"},
+			Config: model.ManagedAgentConfig{Entry: model.AgentEntryConfig{ImportDomain: "b.example.com", PortForwarding: model.RealmForwardConfig{Rules: []model.RealmForwardRule{{
+				ID: "b-20001", Enabled: true, ListenPort: 20001, TargetAgentID: "dmit", TargetAddress: "d.example.com", TargetPort: 443, Network: "tcp",
+			}}}}},
+		},
+		{
+			AgentID: "hk-c", AgentName: "HK C", RegisteredAt: now, UpdatedAt: now,
+			Summary: model.VPSSummary{PublicIPv4: "192.0.2.21"},
+			Config: model.ManagedAgentConfig{Entry: model.AgentEntryConfig{ImportDomain: "c.example.com", PortForwarding: model.RealmForwardConfig{Rules: []model.RealmForwardRule{{
+				ID: "c-20001", Enabled: true, ListenPort: 20001, TargetAgentID: "dmit", TargetAddress: "d.example.com", TargetPort: 443, Network: "tcp",
+			}}}}},
+		},
+		{
+			AgentID: "dmit", AgentName: "DMIT", RegisteredAt: now, UpdatedAt: now,
+			Summary: model.VPSSummary{PublicIPv4: "192.0.2.30"},
+			Config:  model.ManagedAgentConfig{Entry: model.AgentEntryConfig{ImportDomain: "d.example.com"}},
+		},
+	}
+	snapshots := []model.AgentSnapshot{{
+		AgentID: "dmit", AgentName: "DMIT", ReportedAt: now, Summary: model.VPSSummary{PublicIPv4: "192.0.2.30"},
+		XUI: &model.XUISnapshot{CollectedAt: now, Inbounds: []map[string]any{{
+			"id": 7, "tag": "dmit-in", "remark": "DMIT inbound", "protocol": "vless", "port": 443, "enable": true,
+			"settings": `{"clients":[{"email":"alice@example.com","enable":true}]}`,
+		}}},
+	}}
+
+	view := BuildGlobalDashboardWithOptions(agents, snapshots, GlobalDashboardOptions{IncludeTopology: true})
+	gzLink := topologyLinkFromAgent(t, view.Links, "gz")
+	if gzLink.Source.Protocol != "haproxy" || gzLink.Target.AgentID != "hk-b" || gzLink.Target.Protocol != "realm" {
+		t.Fatalf("expected HAProxy to follow its primary HK B Realm listener, got %#v", gzLink)
+	}
+	if gzLink.FinalTarget == nil || gzLink.FinalTarget.AgentID != "dmit" || gzLink.FinalTarget.InboundID != 7 {
+		t.Fatalf("expected HAProxy path to resolve to the final DMIT inbound, got %#v", gzLink.FinalTarget)
+	}
+	if len(gzLink.RealmHops) != 1 || gzLink.RealmHops[0].AgentID != "hk-b" {
+		t.Fatalf("expected HK B as the primary runtime path, got %#v", gzLink.RealmHops)
+	}
+}
+
 func TestBuildGlobalDashboardMarksRealmLoopAndBrokenMiddleHop(t *testing.T) {
 	now := time.Now().UTC()
 	baseAgent := func(id, ip string, rule model.RealmForwardRule) model.AgentRecord {

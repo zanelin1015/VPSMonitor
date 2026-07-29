@@ -1950,7 +1950,19 @@ export default function App() {
                 onSaveAreaTags={(values) => void saveAreaAgentTags(values)}
                 onUpdateClientBillingDraft={updateClientBillingDraft}
                 onXUIChange={(patch) => updateManagedConfig((current) => ({ ...current, xui: { ...current.xui, ...patch } }))}
-                onFeatureChange={(feature, enabled) => updateManagedConfig((current) => ({ ...current, features: { ...current.features, [feature]: enabled } }))}
+                onFeatureChange={(feature, enabled) => updateManagedConfig((current) => {
+                  const features = { ...current.features, [feature]: enabled }
+                  const entry = { ...current.entry }
+                  if (enabled && feature === 'realm') {
+                    features.haproxy = false
+                    entry.haproxy = { ...entry.haproxy, enabled: false }
+                  }
+                  if (enabled && feature === 'haproxy') {
+                    features.realm = false
+                    entry.port_forwarding = { ...entry.port_forwarding, enabled: false, backend: 'none' }
+                  }
+                  return { ...current, features, entry }
+                })}
                 />
               </Suspense>
             ) : null}

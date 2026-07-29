@@ -1078,7 +1078,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         type="info"
         showIcon
         message="VPS 主域名"
-        description="导出的单节点链接会优先使用这里保存的主域名替代 IP；如果该 VPS 是 Realm 入口机，转发后导出的节点也会使用入口机的主域名和监听端口。SNI、Reality 等目标节点参数保持不变。"
+        description="导出的单节点链接会优先使用这里保存的主域名替代 IP；如果该 VPS 是 Realm 或 HAProxy 入口机，转发后的节点也会使用入口机的主域名和监听端口。SNI、Reality 等目标节点参数保持不变。"
       />
       <Space.Compact style={{ width: '100%' }}>
         <AutoComplete

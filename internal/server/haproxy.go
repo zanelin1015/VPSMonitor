@@ -129,13 +129,8 @@ func validateHAProxyConfig(cfg model.HAProxyConfig, realm model.RealmForwardConf
 	if !cfg.Enabled {
 		return nil
 	}
-	realmPorts := make(map[int]struct{}, len(realm.Rules))
 	if realm.Enabled && !strings.EqualFold(strings.TrimSpace(realm.Backend), "none") {
-		for _, rule := range realm.Rules {
-			if rule.Enabled {
-				realmPorts[rule.ListenPort] = struct{}{}
-			}
-		}
+		return fmt.Errorf("同一个 Client 的 HAProxy 与 Realm 只能启用一个，请先关闭 Realm")
 	}
 	listenPorts := make(map[int]struct{}, len(cfg.Rules))
 	for _, rule := range cfg.Rules {
@@ -150,9 +145,6 @@ func validateHAProxyConfig(cfg model.HAProxyConfig, realm model.RealmForwardConf
 			return fmt.Errorf("HAProxy 监听端口 %d 重复，一个端口只能配置一条主备规则", rule.ListenPort)
 		}
 		listenPorts[rule.ListenPort] = struct{}{}
-		if _, exists := realmPorts[rule.ListenPort]; exists {
-			return fmt.Errorf("HAProxy %s 的监听端口 %d 已被当前 Client 的 Realm 使用", label, rule.ListenPort)
-		}
 		listenAddress := strings.TrimSpace(rule.ListenAddress)
 		if listenAddress != "" && listenAddress != "*" && net.ParseIP(strings.Trim(listenAddress, "[]")) == nil {
 			return fmt.Errorf("HAProxy %s 的监听地址必须是本机 IP、0.0.0.0 或 ::", label)
@@ -182,6 +174,120 @@ func validateHAProxyConfig(cfg model.HAProxyConfig, realm model.RealmForwardConf
 		}
 		if rule.Fall < 1 || rule.Fall > 20 || rule.Rise < 1 || rule.Rise > 20 {
 			return fmt.Errorf("HAProxy %s 的失败/恢复次数必须在 1 到 20 之间", label)
+		}
+	}
+	return nil
+}
+
+func validateForwardingFeatureSelection(features model.AgentFeatureConfig) error {
+	if features.Realm && features.HAProxy {
+		return fmt.Errorf("同一个 Client 的 HAProxy 与 Realm 功能只能选择一个")
+	}
+	return nil
+}
+
+type haProxyResolvedPath struct {
+	TargetLabel string
+	Target      model.HAProxyRealmTarget
+	Resolution  realmForwardResolution
+}
+
+func resolveHAProxyRulePaths(rule model.HAProxyRule, context forwardedOverviewContext) ([]haProxyResolvedPath, error) {
+	targets := make([]struct {
+		label  string
+		target model.HAProxyRealmTarget
+	}, 0, 1+len(rule.Backups))
+	targets = append(targets, struct {
+		label  string
+		target model.HAProxyRealmTarget
+	}{label: "主节点", target: rule.Primary})
+	for index, target := range rule.Backups {
+		targets = append(targets, struct {
+			label  string
+			target model.HAProxyRealmTarget
+		}{label: fmt.Sprintf("备用节点 %d", index+1), target: target})
+	}
+
+	paths := make([]haProxyResolvedPath, 0, len(targets))
+	for _, item := range targets {
+		targetAgent, ok := context.agentMap[item.target.AgentID]
+		if !ok {
+			return nil, fmt.Errorf("%s引用的 Client %q 不存在", item.label, item.target.AgentID)
+		}
+		realmRule, ok := findHAProxyRealmRule(targetAgent.Entry.PortForwarding.Rules, item.target.RealmRuleID, item.target.Port)
+		if !ok || !realmRule.Enabled {
+			return nil, fmt.Errorf("%s引用的 Realm 规则不存在或未启用", item.label)
+		}
+		resolution := resolveRealmForwardTarget(item.target.AgentID, realmRule, context.agentMap, context.targetOverviewByAgent)
+		if !resolution.Resolved {
+			return nil, fmt.Errorf("%s无法解析到最终 x-ui 节点: %s", item.label, firstNonEmptyString(resolution.UnresolvedReason, "目标链路不可用"))
+		}
+		paths = append(paths, haProxyResolvedPath{TargetLabel: item.label, Target: item.target, Resolution: resolution})
+	}
+	return paths, nil
+}
+
+func validateHAProxyResolvedPaths(rule model.HAProxyRule, paths []haProxyResolvedPath) error {
+	if len(paths) == 0 {
+		return fmt.Errorf("HAProxy %s 没有可用的主备路径", haProxyRuleLabel(rule))
+	}
+	primary := paths[0]
+	primaryKey := haProxyFinalNodeKey(primary.Resolution)
+	for _, path := range paths[1:] {
+		if haProxyFinalNodeKey(path.Resolution) == primaryKey {
+			continue
+		}
+		return fmt.Errorf(
+			"HAProxy %s 的%s与主节点最终落点不一致: 主节点为 %s，%s为 %s",
+			haProxyRuleLabel(rule),
+			path.TargetLabel,
+			haProxyFinalNodeLabel(primary.Resolution),
+			path.TargetLabel,
+			haProxyFinalNodeLabel(path.Resolution),
+		)
+	}
+	return nil
+}
+
+func haProxyFinalNodeKey(resolution realmForwardResolution) string {
+	nodeIdentity := ""
+	if resolution.FinalNode.ID > 0 {
+		nodeIdentity = fmt.Sprintf("id:%d", resolution.FinalNode.ID)
+	} else {
+		nodeIdentity = "tag:" + strings.ToLower(strings.TrimSpace(resolution.FinalNode.Tag))
+	}
+	return strings.Join([]string{
+		strings.TrimSpace(resolution.FinalAgentID),
+		nodeIdentity,
+		strings.ToLower(strings.TrimSpace(resolution.FinalNode.Protocol)),
+		fmt.Sprint(resolution.FinalNode.Port),
+	}, "\x00")
+}
+
+func haProxyFinalNodeLabel(resolution realmForwardResolution) string {
+	node := firstNonEmptyString(resolution.FinalNode.Remark, resolution.FinalNode.Tag, fmt.Sprintf("Inbound #%d", resolution.FinalNode.ID))
+	return fmt.Sprintf("%s / %s / %s:%d", resolution.FinalAgentID, node, resolution.FinalNode.Protocol, resolution.FinalNode.Port)
+}
+
+func (a *App) validateHAProxyTargetCompatibility(cfg model.HAProxyConfig) error {
+	if a == nil || a.store == nil || !cfg.Enabled {
+		return nil
+	}
+	agents, err := a.store.ListAgents()
+	if err != nil {
+		return fmt.Errorf("加载 HAProxy 兼容性校验数据失败: %w", err)
+	}
+	context := buildForwardedOverviewContext(agents, a.store.ListLatest())
+	for _, rule := range cfg.Rules {
+		if !rule.Enabled {
+			continue
+		}
+		paths, err := resolveHAProxyRulePaths(rule, context)
+		if err != nil {
+			return fmt.Errorf("HAProxy %s 校验失败: %w", haProxyRuleLabel(rule), err)
+		}
+		if err := validateHAProxyResolvedPaths(rule, paths); err != nil {
+			return err
 		}
 	}
 	return nil

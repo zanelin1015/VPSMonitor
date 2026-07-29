@@ -151,6 +151,33 @@ func buildInboundCandidates(agentViews map[string]model.DashboardAgentView, over
 				},
 			}
 		}
+		for _, rule := range activeHAProxyRulesForTopology(agentView.Entry.HAProxy.Rules) {
+			tag := haProxyTopologyTag(rule)
+			ref := model.TopologyInboundRef{
+				AgentID:        agentID,
+				AgentName:      agentView.AgentName,
+				AgentTags:      cloneStrings(agentView.Tags),
+				InboundID:      rule.ListenPort,
+				InboundTag:     tag,
+				InboundName:    firstNonEmpty(rule.Name, fmt.Sprintf("HAProxy :%d", rule.ListenPort)),
+				Protocol:       "haproxy",
+				Port:           rule.ListenPort,
+				Network:        "tcp",
+				Domains:        domains,
+				IPs:            ips,
+				ResolvedIPs:    resolvedIPs,
+				EntryAddresses: mergeStringSets(agentView.Entry.Addresses, []string{agentView.Entry.ImportDomain}),
+				EntryIPs:       collectEntryIPs(agentView.Entry),
+			}
+			result[inboundTopologyKey(agentID, ref.InboundID, ref.InboundTag)] = topologyInboundCandidate{
+				ref: ref,
+				route: model.XUIRouteTrace{
+					MatchScope:  "haproxy",
+					OutboundTag: tag,
+					Note:        fmt.Sprintf("HAProxy :%d -> 主用 %s:%d", rule.ListenPort, rule.Primary.Address, rule.Primary.Port),
+				},
+			}
+		}
 	}
 	return result
 }
@@ -217,6 +244,27 @@ func buildOutboundCandidates(agentViews map[string]model.DashboardAgentView, ove
 			}
 			result[outboundTopologyKey(agentID, tag)] = topologyOutboundCandidate{ref: ref}
 		}
+		for _, rule := range activeHAProxyRulesForTopology(agentView.Entry.HAProxy.Rules) {
+			targetAddress := strings.TrimSpace(rule.Primary.Address)
+			if targetAddress == "" {
+				targetAddress = realmTargetAgentAddress(rule.Primary.AgentID, agentViews)
+			}
+			tag := haProxyTopologyTag(rule)
+			ref := model.TopologyOutboundRef{
+				AgentID:     agentID,
+				AgentName:   agentView.AgentName,
+				AgentTags:   cloneStrings(agentView.Tags),
+				OutboundTag: tag,
+				Protocol:    "haproxy",
+				Target:      fmt.Sprintf("%s:%d", targetAddress, rule.Primary.Port),
+				Address:     targetAddress,
+				Port:        rule.Primary.Port,
+				ListenPort:  rule.ListenPort,
+				Network:     "tcp",
+				ResolvedIPs: resolver.lookupHost(targetAddress),
+			}
+			result[outboundTopologyKey(agentID, tag)] = topologyOutboundCandidate{ref: ref}
+		}
 	}
 	return result
 }
@@ -229,6 +277,16 @@ func realmTopologyTag(rule model.RealmForwardRule) string {
 		return "realm:" + id
 	}
 	return fmt.Sprintf("realm:%d", rule.ListenPort)
+}
+
+func haProxyTopologyTag(rule model.HAProxyRule) string {
+	if name := strings.TrimSpace(rule.Name); name != "" {
+		return fmt.Sprintf("%s (%d)", name, rule.ListenPort)
+	}
+	if id := strings.TrimSpace(rule.ID); id != "" {
+		return "haproxy:" + id
+	}
+	return fmt.Sprintf("haproxy:%d", rule.ListenPort)
 }
 
 func realmTargetAgentAddress(agentID string, agentViews map[string]model.DashboardAgentView) string {
@@ -253,6 +311,19 @@ func activeRealmForwardRulesForTopology(items []model.RealmForwardRule) []model.
 		rule.TargetAddress = strings.TrimSpace(rule.TargetAddress)
 		rule.TargetAgentID = strings.TrimSpace(rule.TargetAgentID)
 		if !rule.Enabled || (rule.TargetAddress == "" && rule.TargetAgentID == "") || rule.ListenPort <= 0 || rule.TargetPort <= 0 {
+			continue
+		}
+		rules = append(rules, rule)
+	}
+	return rules
+}
+
+func activeHAProxyRulesForTopology(items []model.HAProxyRule) []model.HAProxyRule {
+	rules := make([]model.HAProxyRule, 0, len(items))
+	for _, rule := range items {
+		rule.Primary.AgentID = strings.TrimSpace(rule.Primary.AgentID)
+		rule.Primary.Address = strings.TrimSpace(rule.Primary.Address)
+		if !rule.Enabled || rule.ListenPort <= 0 || rule.Primary.Port <= 0 || (rule.Primary.AgentID == "" && rule.Primary.Address == "") {
 			continue
 		}
 		rules = append(rules, rule)

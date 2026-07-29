@@ -58,7 +58,7 @@ func (a *App) areaManagerOutboundSourceAllowed(user model.AdminUser, payload map
 		return false
 	}
 	if !clientScope.allowsClient(source.AgentID, source.InboundID, source.InboundTag, source.ClientEmail) &&
-		!a.areaManagerCanViewRealmForwardedClient(user, source.AgentID, *sourceClient, clientScope) {
+		!a.areaManagerCanViewForwardedClient(user, source.AgentID, *sourceClient, clientScope) {
 		return false
 	}
 	var sourceNode *model.XUINodeView
@@ -118,7 +118,7 @@ func (a *App) xuiOverviewForOutboundAuthorization(agentID string) *model.XUIOver
 	}
 	overview := dashboard.BuildXUIOverviewWithOptions(snapshot, dashboard.XUIOverviewOptions{Entry: cfg.Entry})
 	if overview != nil {
-		a.appendRealmForwardedImportURLs(agentID, overview)
+		a.appendForwardedImportURLs(agentID, overview)
 	}
 	return overview
 }

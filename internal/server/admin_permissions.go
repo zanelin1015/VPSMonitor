@@ -148,7 +148,7 @@ func (a *App) sanitizeDashboardForAdmin(user model.AdminUser, view *model.Global
 	tagMap, _ := a.store.ListAreaManagerAgentTags(user.ID)
 	clientScope := a.areaManagerClientScope(user)
 	allowed := cloneAgentSet(clientScope.agents)
-	expandAreaManagerRealmPathAgents(allowed, view.Links, clientScope)
+	expandAreaManagerForwardingPathAgents(allowed, view.Links, clientScope)
 	agentNames := make(map[string]string, len(view.Agents))
 	for index := range view.Agents {
 		view.Agents[index] = sanitizeDashboardAgentForAreaManager(view.Agents[index], tagMap)
@@ -174,7 +174,7 @@ func (a *App) sanitizeXUIOverviewForAdmin(user model.AdminUser, overview *model.
 	filteredClients := make([]model.XUIClientView, 0, len(overview.Clients))
 	for _, client := range overview.Clients {
 		if !clientScope.allowsClient(overview.AgentID, client.InboundID, client.InboundTag, client.Email) &&
-			!a.areaManagerCanViewRealmForwardedClient(user, overview.AgentID, client, clientScope) {
+			!a.areaManagerCanViewForwardedClient(user, overview.AgentID, client, clientScope) {
 			continue
 		}
 		client.TotalGB = 0
@@ -287,7 +287,7 @@ func filterStringsBySet(values []string, allowed map[string]struct{}) []string {
 	return filtered
 }
 
-func (a *App) areaManagerCanViewRealmForwardedClient(user model.AdminUser, sourceAgentID string, client model.XUIClientView, clientScope areaManagerClientScope) bool {
+func (a *App) areaManagerCanViewForwardedClient(user model.AdminUser, sourceAgentID string, client model.XUIClientView, clientScope areaManagerClientScope) bool {
 	if client.RealmSourceAgentID == "" || !strings.EqualFold(client.RealmSourceAgentID, sourceAgentID) {
 		return false
 	}
@@ -301,7 +301,11 @@ func (a *App) areaManagerCanViewRealmForwardedClient(user model.AdminUser, sourc
 	if listenPort <= 0 || client.RealmTargetAgentID == "" || client.RealmTargetInboundID <= 0 {
 		return false
 	}
-	if !clientScope.allowsRealmPort(sourceAgentID, listenPort) {
+	forwardType := strings.ToLower(strings.TrimSpace(client.ForwardType))
+	if forwardType == "" && (client.IsRealmForwarded || client.RealmSourceAgentID != "") {
+		forwardType = "realm"
+	}
+	if !clientScope.allowsForwardingPort(sourceAgentID, listenPort, forwardType) {
 		return false
 	}
 	return clientScope.allowsClient(client.RealmTargetAgentID, client.RealmTargetInboundID, client.RealmTargetInboundTag, client.Email)
@@ -320,7 +324,7 @@ func (a *App) sanitizeXUIOverviewForAreaAssignment(user model.AdminUser, overvie
 	visibleInbounds := make(map[string]struct{})
 	for _, client := range overview.Clients {
 		if !clientScope.allowsClient(overview.AgentID, client.InboundID, client.InboundTag, client.Email) &&
-			!a.areaManagerCanViewRealmForwardedClient(user, overview.AgentID, client, clientScope) {
+			!a.areaManagerCanViewForwardedClient(user, overview.AgentID, client, clientScope) {
 			continue
 		}
 		client.TotalGB = 0
@@ -546,6 +550,7 @@ type areaManagerClientScope struct {
 	exactClients map[string]struct{}
 	inbounds     map[string]struct{}
 	realmPorts   map[string]struct{}
+	haProxyPorts map[string]struct{}
 	agents       map[string]struct{}
 }
 
@@ -602,6 +607,7 @@ func (a *App) areaManagerGrantedClientScope(user model.AdminUser) areaManagerCli
 		exactClients: make(map[string]struct{}),
 		inbounds:     make(map[string]struct{}),
 		realmPorts:   make(map[string]struct{}),
+		haProxyPorts: make(map[string]struct{}),
 		agents:       adminAgentSet(user),
 	}
 	if !isAreaManager(user) || user.ID <= 0 || a == nil || a.store == nil {
@@ -678,6 +684,10 @@ func addAreaManagerScopeAssignment(scope *areaManagerClientScope, agentID string
 		scope.realmPorts[areaRealmPortKey(agentID, inboundID)] = struct{}{}
 		return
 	}
+	if isHAProxyAssignmentTag(inboundTag) {
+		scope.haProxyPorts[areaForwardingPortKey(agentID, inboundID)] = struct{}{}
+		return
+	}
 	if scope.hasExactClientOnInbound(agentID, inboundID, inboundTag) {
 		return
 	}
@@ -746,13 +756,24 @@ func (s areaManagerClientScope) allowsInbound(agentID string, inboundID int, inb
 }
 
 func (s areaManagerClientScope) allowsRealmPort(agentID string, listenPort int) bool {
+	return s.allowsForwardingPort(agentID, listenPort, "realm")
+}
+
+func (s areaManagerClientScope) allowsForwardingPort(agentID string, listenPort int, forwardType string) bool {
 	if agentID == "" || listenPort <= 0 {
 		return false
 	}
 	if _, ok := s.agents[agentID]; !ok {
 		return false
 	}
-	if _, ok := s.realmPorts[areaRealmPortKey(agentID, listenPort)]; ok {
+	portKey := areaForwardingPortKey(agentID, listenPort)
+	ports := s.realmPorts
+	assignmentTagMatch := isRealmAssignmentTag
+	if strings.EqualFold(strings.TrimSpace(forwardType), "haproxy") {
+		ports = s.haProxyPorts
+		assignmentTagMatch = isHAProxyAssignmentTag
+	}
+	if _, ok := ports[portKey]; ok {
 		return true
 	}
 	for key := range s.inbounds {
@@ -760,7 +781,7 @@ func (s areaManagerClientScope) allowsRealmPort(agentID string, listenPort int) 
 		if len(parts) != 3 || !strings.EqualFold(parts[0], strings.TrimSpace(agentID)) || parts[1] != strconv.Itoa(listenPort) {
 			continue
 		}
-		if isRealmAssignmentTag(parts[2]) {
+		if assignmentTagMatch(parts[2]) {
 			return true
 		}
 	}
@@ -785,11 +806,19 @@ func areaClientInboundKey(agentID string, inboundID int, inboundTag string) stri
 }
 
 func areaRealmPortKey(agentID string, listenPort int) string {
+	return areaForwardingPortKey(agentID, listenPort)
+}
+
+func areaForwardingPortKey(agentID string, listenPort int) string {
 	return strings.Join([]string{strings.TrimSpace(agentID), strconv.Itoa(listenPort)}, "\x00")
 }
 
 func isRealmAssignmentTag(tag string) bool {
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(tag)), "realm:")
+}
+
+func isHAProxyAssignmentTag(tag string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(tag)), "haproxy:")
 }
 
 func filterTopologyLinksUsedByChains(links []model.TopologyLinkView, chains []model.ClientChainView) []model.TopologyLinkView {
@@ -798,7 +827,7 @@ func filterTopologyLinksUsedByChains(links []model.TopologyLinkView, chains []mo
 
 func filterTopologyLinksVisibleToAreaManager(links []model.TopologyLinkView, chains []model.ClientChainView, clientScope areaManagerClientScope) []model.TopologyLinkView {
 	used := make(map[string]struct{})
-	visibleRealmPaths := areaManagerRealmPathLinkKeys(links, clientScope)
+	visibleForwardingPaths := areaManagerForwardingPathLinkKeys(links, clientScope)
 	for _, chain := range chains {
 		for _, step := range chain.Steps {
 			if step.StepType != "outbound" || step.AgentID == "" || step.OutboundTag == "" {
@@ -813,26 +842,27 @@ func filterTopologyLinksVisibleToAreaManager(links []model.TopologyLinkView, cha
 			filtered = append(filtered, link)
 			continue
 		}
-		if _, ok := visibleRealmPaths[outboundLinkKey(link.Source.AgentID, link.Source.OutboundTag)]; ok {
+		if _, ok := visibleForwardingPaths[outboundLinkKey(link.Source.AgentID, link.Source.OutboundTag)]; ok {
 			filtered = append(filtered, link)
 		}
 	}
 	return filtered
 }
 
-func areaManagerCanViewRealmLink(link model.TopologyLinkView, clientScope areaManagerClientScope) bool {
-	if !strings.EqualFold(strings.TrimSpace(link.Source.Protocol), "realm") {
+func areaManagerCanViewForwardingLink(link model.TopologyLinkView, clientScope areaManagerClientScope) bool {
+	protocol := strings.ToLower(strings.TrimSpace(link.Source.Protocol))
+	if protocol != "realm" && protocol != "haproxy" {
 		return false
 	}
 	listenPort := link.Source.ListenPort
 	if listenPort <= 0 {
-		listenPort = realmListenPortFromOutboundTag(link.Source.OutboundTag)
+		listenPort = forwardingListenPortFromOutboundTag(link.Source.OutboundTag)
 	}
 	finalTarget, ok := topologyLinkFinalTarget(link)
 	if listenPort <= 0 || !ok {
 		return false
 	}
-	return clientScope.allowsRealmPort(link.Source.AgentID, listenPort) &&
+	return clientScope.allowsForwardingPort(link.Source.AgentID, listenPort, protocol) &&
 		(clientScope.allowsInbound(finalTarget.AgentID, finalTarget.InboundID, finalTarget.InboundTag) ||
 			clientScope.hasExactClientOnInbound(finalTarget.AgentID, finalTarget.InboundID, finalTarget.InboundTag))
 }
@@ -841,20 +871,20 @@ func topologyLinkFinalTarget(link model.TopologyLinkView) (model.TopologyInbound
 	if link.FinalTarget != nil && link.FinalTarget.AgentID != "" {
 		return *link.FinalTarget, true
 	}
-	if link.Target.AgentID != "" && !strings.EqualFold(strings.TrimSpace(link.Target.Protocol), "realm") {
+	if link.Target.AgentID != "" && !isForwardingProtocol(link.Target.Protocol) {
 		return link.Target, true
 	}
 	return model.TopologyInboundRef{}, false
 }
 
-func areaManagerRealmPathLinkKeys(links []model.TopologyLinkView, clientScope areaManagerClientScope) map[string]struct{} {
+func areaManagerForwardingPathLinkKeys(links []model.TopologyLinkView, clientScope areaManagerClientScope) map[string]struct{} {
 	result := make(map[string]struct{})
 	byOutbound := make(map[string]model.TopologyLinkView, len(links))
 	for _, link := range links {
 		byOutbound[outboundLinkKey(link.Source.AgentID, link.Source.OutboundTag)] = link
 	}
 	for _, link := range links {
-		if !areaManagerCanViewRealmLink(link, clientScope) {
+		if !areaManagerCanViewForwardingLink(link, clientScope) {
 			continue
 		}
 		visited := make(map[string]struct{})
@@ -866,7 +896,7 @@ func areaManagerRealmPathLinkKeys(links []model.TopologyLinkView, clientScope ar
 			}
 			visited[key] = struct{}{}
 			result[key] = struct{}{}
-			if !strings.EqualFold(strings.TrimSpace(current.Target.Protocol), "realm") {
+			if !isForwardingProtocol(current.Target.Protocol) {
 				break
 			}
 			nextKey := outboundLinkKey(current.Target.AgentID, current.Target.InboundTag)
@@ -880,8 +910,8 @@ func areaManagerRealmPathLinkKeys(links []model.TopologyLinkView, clientScope ar
 	return result
 }
 
-func expandAreaManagerRealmPathAgents(allowed map[string]struct{}, links []model.TopologyLinkView, clientScope areaManagerClientScope) {
-	visible := areaManagerRealmPathLinkKeys(links, clientScope)
+func expandAreaManagerForwardingPathAgents(allowed map[string]struct{}, links []model.TopologyLinkView, clientScope areaManagerClientScope) {
+	visible := areaManagerForwardingPathLinkKeys(links, clientScope)
 	for _, link := range links {
 		if _, ok := visible[outboundLinkKey(link.Source.AgentID, link.Source.OutboundTag)]; !ok {
 			continue
@@ -905,13 +935,18 @@ func cloneAgentSet(values map[string]struct{}) map[string]struct{} {
 	return result
 }
 
-func realmListenPortFromOutboundTag(tag string) int {
+func forwardingListenPortFromOutboundTag(tag string) int {
 	for _, part := range strings.FieldsFunc(tag, func(r rune) bool { return r < '0' || r > '9' }) {
 		if value, err := strconv.Atoi(part); err == nil && value > 0 {
 			return value
 		}
 	}
 	return 0
+}
+
+func isForwardingProtocol(protocol string) bool {
+	protocol = strings.ToLower(strings.TrimSpace(protocol))
+	return protocol == "realm" || protocol == "haproxy"
 }
 
 func (s areaManagerClientScope) hasExactClientOnInbound(agentID string, inboundID int, inboundTag string) bool {
@@ -1141,7 +1176,7 @@ func (a *App) areaManagerCustomerAssignmentAllowed(user model.AdminUser, req mod
 			!strings.EqualFold(strings.TrimSpace(client.Email), strings.TrimSpace(req.ClientEmail)) {
 			continue
 		}
-		return a.areaManagerCanViewRealmForwardedClient(user, req.AgentID, client, clientScope)
+		return a.areaManagerCanViewForwardedClient(user, req.AgentID, client, clientScope)
 	}
 	return false
 }

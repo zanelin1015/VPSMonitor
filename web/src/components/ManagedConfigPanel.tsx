@@ -191,7 +191,11 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
     })
   }
   const updatePortForwarding = (patch: Partial<NonNullable<AgentEntryConfig['port_forwarding']>>) => {
-    onEntryChange({ port_forwarding: { ...portForwarding, ...patch } })
+    const nextPortForwarding = { ...portForwarding, ...patch, ...(patch.enabled ? { backend: 'realm' } : {}) }
+    onEntryChange({
+      port_forwarding: nextPortForwarding,
+      ...(nextPortForwarding.enabled ? { haproxy: { ...haProxy, enabled: false } } : {}),
+    })
   }
   const updatePortForwardRule = (index: number, patch: Partial<RealmForwardRule>) => {
     const rules = (portForwarding.rules || []).map((rule, currentIndex) => (currentIndex === index ? { ...rule, ...patch } : rule))
@@ -953,7 +957,10 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
         config={haProxy}
         saving={configSavingSection === 'entry'}
         saveDisabled={sectionSaving && configSavingSection !== 'entry'}
-        onChange={(next) => onEntryChange({ haproxy: next })}
+        onChange={(next) => onEntryChange({
+          haproxy: next,
+          ...(next.enabled ? { port_forwarding: { ...portForwarding, enabled: false, backend: 'none' } } : {}),
+        })}
         onSave={() => onSave('entry')}
       />
 

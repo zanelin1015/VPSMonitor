@@ -585,7 +585,7 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 		if overview == nil {
 			overview = emptyAgentXUIOverview(snapshot, cfg)
 		}
-		a.appendRealmForwardedImportURLs(agentID, overview)
+		a.appendForwardedImportURLs(agentID, overview)
 		if isAreaManager(user) {
 			overview.AgentName = areaManagerDisplayName(cfg.CustomerDisplayName, cfg.AgentName, agentID)
 		}
@@ -690,7 +690,7 @@ func emptyAgentXUIOverview(snapshot model.AgentSnapshot, cfg model.ManagedAgentC
 	}
 }
 
-func (a *App) appendRealmForwardedImportURLs(agentID string, overview *model.XUIOverview) {
+func (a *App) appendForwardedImportURLs(agentID string, overview *model.XUIOverview) {
 	if overview == nil {
 		return
 	}
@@ -699,6 +699,15 @@ func (a *App) appendRealmForwardedImportURLs(agentID string, overview *model.XUI
 		return
 	}
 	snapshots := a.store.ListLatest()
+	appendForwardedImportURLsWithContext(agentID, overview, buildForwardedOverviewContext(agents, snapshots))
+}
+
+type forwardedOverviewContext struct {
+	agentMap              map[string]model.DashboardAgentView
+	targetOverviewByAgent map[string]*model.XUIOverview
+}
+
+func buildForwardedOverviewContext(agents []model.AgentRecord, snapshots []model.AgentSnapshot) forwardedOverviewContext {
 	agentMap := buildRealmForwardAgentMap(agents, snapshots)
 	snapshotMap := make(map[string]model.AgentSnapshot, len(snapshots))
 	for _, snapshot := range snapshots {
@@ -712,61 +721,106 @@ func (a *App) appendRealmForwardedImportURLs(agentID string, overview *model.XUI
 	for targetAgentID, targetSnapshot := range snapshotMap {
 		targetOverviewByAgent[targetAgentID] = dashboard.BuildXUIOverviewWithOptions(targetSnapshot, dashboard.XUIOverviewOptions{Entry: entryByAgent[targetAgentID]})
 	}
-	sourceAgent, ok := agentMap[agentID]
+	return forwardedOverviewContext{
+		agentMap:              agentMap,
+		targetOverviewByAgent: targetOverviewByAgent,
+	}
+}
+
+func cloneForwardedBaseOverview(overview *model.XUIOverview) *model.XUIOverview {
+	if overview == nil {
+		return nil
+	}
+	cloned := *overview
+	cloned.Nodes = append([]model.XUINodeView(nil), overview.Nodes...)
+	cloned.Clients = append([]model.XUIClientView(nil), overview.Clients...)
+	return &cloned
+}
+
+type forwardedXUIEntry struct {
+	ForwardType string
+	SourceAgent model.DashboardAgentView
+	ListenPort  int
+	Listen      string
+	Network     string
+	Enabled     bool
+	Resolution  realmForwardResolution
+	InboundTag  func(model.XUIClientView) string
+	InboundName func(model.XUIClientView) string
+	RouteNote   string
+}
+
+func appendForwardedImportURLsWithContext(agentID string, overview *model.XUIOverview, context forwardedOverviewContext) {
+	if overview == nil {
+		return
+	}
+	sourceAgent, ok := context.agentMap[agentID]
 	if !ok {
 		return
 	}
 	added := 0
-	realmNodes := make(map[string]int)
+	forwardedNodes := make(map[string]int)
 	for index, node := range overview.Nodes {
-		realmNodes[overviewInboundKey(node.ID, node.Tag)] = index
+		forwardedNodes[overviewInboundKey(node.ID, node.Tag)] = index
 	}
 	for _, rule := range sourceAgent.Entry.PortForwarding.Rules {
 		if !rule.Enabled || rule.ListenPort <= 0 || rule.TargetPort <= 0 {
 			continue
 		}
-		resolution := resolveRealmForwardTarget(agentID, rule, agentMap, targetOverviewByAgent)
+		resolution := resolveRealmForwardTarget(agentID, rule, context.agentMap, context.targetOverviewByAgent)
 		if !resolution.Resolved || resolution.FinalAgentID == "" {
 			continue
 		}
-		targetAgentID := resolution.FinalAgentID
-		targetOverview := targetOverviewByAgent[targetAgentID]
 		host := customerRealmSourceHost(sourceAgent, rule)
 		if host == "" {
 			continue
 		}
-		for _, client := range targetOverview.Clients {
-			if !realmClientMatchesNode(client, resolution.FinalNode) {
-				continue
-			}
-			rewritten := rewriteCustomerImportURL(client.ImportURL, host, rule.ListenPort)
-			if rewritten == "" {
-				continue
-			}
-			sourceClient := client
-			sourceClient.ImportURL = rewritten
-			sourceClient.InboundID = rule.ListenPort
-			sourceClient.InboundTag = realmForwardedInboundTag(rule, client)
-			sourceClient.InboundRemark = realmForwardedInboundRemark(sourceAgent, agentMap[targetAgentID], rule, client)
-			sourceClient.IsRealmForwarded = true
-			sourceClient.RealmListenTag = sourceClient.InboundTag
-			sourceClient.RealmSourceAgentID = agentID
-			sourceClient.RealmTargetAgentID = targetAgentID
-			sourceClient.RealmTargetAgentName = agentMap[targetAgentID].AgentName
-			sourceClient.RealmTargetInboundID = client.InboundID
-			sourceClient.RealmTargetInboundTag = client.InboundTag
-			sourceClient.RealmListenPort = rule.ListenPort
-			sourceClient.Route.Note = realmForwardResolutionNote(host, rule.ListenPort, resolution, agentMap)
-			overview.Clients = append(overview.Clients, sourceClient)
-			nodeKey := overviewInboundKey(rule.ListenPort, sourceClient.InboundTag)
-			if nodeIndex, exists := realmNodes[nodeKey]; exists {
-				overview.Nodes[nodeIndex].ClientCount++
-			} else {
-				overview.Nodes = append(overview.Nodes, realmForwardedNodeView(sourceClient, rule, agentMap[targetAgentID]))
-				realmNodes[nodeKey] = len(overview.Nodes) - 1
-			}
-			added++
+		added += appendResolvedForwardedClients(overview, context, forwardedNodes, forwardedXUIEntry{
+			ForwardType: "realm",
+			SourceAgent: sourceAgent,
+			ListenPort:  rule.ListenPort,
+			Listen:      rule.ListenAddress,
+			Network:     rule.Network,
+			Enabled:     rule.Enabled,
+			Resolution:  resolution,
+			InboundTag: func(client model.XUIClientView) string {
+				return realmForwardedInboundTag(rule, client)
+			},
+			InboundName: func(client model.XUIClientView) string {
+				return realmForwardedInboundRemark(sourceAgent, context.agentMap[resolution.FinalAgentID], rule, client)
+			},
+			RouteNote: realmForwardResolutionNote(host, rule.ListenPort, resolution, context.agentMap),
+		})
+	}
+	for _, rule := range sourceAgent.Entry.HAProxy.Rules {
+		if !sourceAgent.Entry.HAProxy.Enabled || !rule.Enabled || rule.ListenPort <= 0 {
+			continue
 		}
+		paths, err := resolveHAProxyRulePaths(rule, context)
+		if err != nil || validateHAProxyResolvedPaths(rule, paths) != nil || len(paths) == 0 {
+			continue
+		}
+		host := customerHAProxySourceHost(sourceAgent, rule)
+		if host == "" {
+			continue
+		}
+		resolution := paths[0].Resolution
+		added += appendResolvedForwardedClients(overview, context, forwardedNodes, forwardedXUIEntry{
+			ForwardType: "haproxy",
+			SourceAgent: sourceAgent,
+			ListenPort:  rule.ListenPort,
+			Listen:      rule.ListenAddress,
+			Network:     "tcp",
+			Enabled:     rule.Enabled,
+			Resolution:  resolution,
+			InboundTag: func(client model.XUIClientView) string {
+				return haProxyForwardedInboundTag(rule, client)
+			},
+			InboundName: func(client model.XUIClientView) string {
+				return haProxyForwardedInboundRemark(sourceAgent, context.agentMap[resolution.FinalAgentID], rule, client)
+			},
+			RouteNote: haProxyForwardResolutionNote(host, rule.ListenPort, resolution, context.agentMap),
+		})
 	}
 	if added > 0 {
 		sortXUIClients(overview.Clients)
@@ -780,6 +834,54 @@ func (a *App) appendRealmForwardedImportURLs(agentID string, overview *model.XUI
 		overview.ClientCount = len(overview.Clients)
 		overview.OnlineClientCount = countOnlineXUIClients(overview.Clients)
 	}
+}
+
+func appendResolvedForwardedClients(overview *model.XUIOverview, context forwardedOverviewContext, nodeIndexes map[string]int, entry forwardedXUIEntry) int {
+	targetAgentID := entry.Resolution.FinalAgentID
+	targetOverview := context.targetOverviewByAgent[targetAgentID]
+	if targetOverview == nil || entry.ListenPort <= 0 {
+		return 0
+	}
+	host := customerForwardSourceHost(entry.SourceAgent, entry.Listen)
+	if host == "" {
+		return 0
+	}
+	added := 0
+	for _, client := range targetOverview.Clients {
+		if !realmClientMatchesNode(client, entry.Resolution.FinalNode) {
+			continue
+		}
+		rewritten := rewriteCustomerImportURL(client.ImportURL, host, entry.ListenPort)
+		if rewritten == "" {
+			continue
+		}
+		sourceClient := client
+		sourceClient.ImportURL = rewritten
+		sourceClient.InboundID = entry.ListenPort
+		sourceClient.InboundTag = entry.InboundTag(client)
+		sourceClient.InboundRemark = entry.InboundName(client)
+		sourceClient.ForwardType = entry.ForwardType
+		sourceClient.IsRealmForwarded = entry.ForwardType == "realm"
+		sourceClient.RealmListenTag = sourceClient.InboundTag
+		sourceClient.RealmSourceAgentID = entry.SourceAgent.AgentID
+		sourceClient.RealmTargetAgentID = targetAgentID
+		sourceClient.RealmTargetAgentName = context.agentMap[targetAgentID].AgentName
+		sourceClient.RealmTargetInboundID = client.InboundID
+		sourceClient.RealmTargetInboundTag = client.InboundTag
+		sourceClient.RealmListenPort = entry.ListenPort
+		sourceClient.Route.Note = entry.RouteNote
+		overview.Clients = append(overview.Clients, sourceClient)
+
+		nodeKey := overviewInboundKey(entry.ListenPort, sourceClient.InboundTag)
+		if nodeIndex, exists := nodeIndexes[nodeKey]; exists {
+			overview.Nodes[nodeIndex].ClientCount++
+		} else {
+			overview.Nodes = append(overview.Nodes, forwardedNodeView(sourceClient, entry))
+			nodeIndexes[nodeKey] = len(overview.Nodes) - 1
+		}
+		added++
+	}
+	return added
 }
 
 func buildRealmForwardAgentMap(agents []model.AgentRecord, snapshots []model.AgentSnapshot) map[string]model.DashboardAgentView {
@@ -846,19 +948,19 @@ func realmForwardedInboundTag(rule model.RealmForwardRule, client model.XUIClien
 	return fmt.Sprintf("Realm %d -> %s", rule.ListenPort, target)
 }
 
-func realmForwardedNodeView(client model.XUIClientView, rule model.RealmForwardRule, targetAgent model.DashboardAgentView) model.XUINodeView {
+func forwardedNodeView(client model.XUIClientView, entry forwardedXUIEntry) model.XUINodeView {
 	route := client.Route
-	route.MatchScope = firstNonEmptyString(route.MatchScope, "realm")
-	route.Note = firstNonEmptyString(route.Note, fmt.Sprintf("Realm %d -> %s:%d", rule.ListenPort, firstNonEmptyString(targetAgent.AgentName, targetAgent.AgentID), rule.TargetPort))
+	route.MatchScope = firstNonEmptyString(entry.ForwardType, route.MatchScope)
+	route.Note = firstNonEmptyString(entry.RouteNote, route.Note)
 	return model.XUINodeView{
-		ID:                    rule.ListenPort,
+		ID:                    entry.ListenPort,
 		Tag:                   client.InboundTag,
 		Remark:                firstNonEmptyString(client.InboundRemark, client.InboundTag),
 		Protocol:              client.Protocol,
-		Listen:                firstNonEmptyString(rule.ListenAddress, "0.0.0.0"),
-		Port:                  rule.ListenPort,
-		Network:               rule.Network,
-		Enabled:               rule.Enabled,
+		Listen:                firstNonEmptyString(entry.Listen, "0.0.0.0"),
+		Port:                  entry.ListenPort,
+		Network:               entry.Network,
+		Enabled:               entry.Enabled,
 		ClientCount:           1,
 		Route:                 route,
 		RealmTargetAgentID:    client.RealmTargetAgentID,
@@ -866,6 +968,30 @@ func realmForwardedNodeView(client model.XUIClientView, rule model.RealmForwardR
 		RealmTargetInboundID:  client.RealmTargetInboundID,
 		RealmTargetInboundTag: client.RealmTargetInboundTag,
 	}
+}
+
+func haProxyForwardedInboundTag(rule model.HAProxyRule, client model.XUIClientView) string {
+	if name := strings.TrimSpace(rule.Name); name != "" {
+		return name
+	}
+	target := firstNonEmptyString(client.InboundRemark, client.InboundTag, fmt.Sprintf(":%d", rule.ListenPort))
+	return fmt.Sprintf("HAProxy %d -> %s", rule.ListenPort, target)
+}
+
+func haProxyForwardedInboundRemark(sourceAgent, targetAgent model.DashboardAgentView, rule model.HAProxyRule, client model.XUIClientView) string {
+	name := strings.TrimSpace(rule.Name)
+	if name == "" {
+		name = fmt.Sprintf("%s:%d -> %s:%d",
+			firstNonEmptyString(sourceAgent.AgentName, sourceAgent.AgentID),
+			rule.ListenPort,
+			firstNonEmptyString(targetAgent.AgentName, targetAgent.AgentID),
+			client.InboundID,
+		)
+	}
+	if client.InboundRemark != "" || client.InboundTag != "" {
+		name = fmt.Sprintf("%s / %s", name, firstNonEmptyString(client.InboundRemark, client.InboundTag))
+	}
+	return name
 }
 
 func realmForwardedInboundRemark(sourceAgent model.DashboardAgentView, targetAgent model.DashboardAgentView, rule model.RealmForwardRule, client model.XUIClientView) string {
@@ -1141,11 +1267,19 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		if err := validateRealmForwardTargets(r.Context(), cfg.Entry.PortForwarding); err != nil {
+		if err := validateForwardingFeatureSelection(cfg.Features); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		if err := validateHAProxyConfig(cfg.Entry.HAProxy, cfg.Entry.PortForwarding); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := validateRealmForwardTargets(r.Context(), cfg.Entry.PortForwarding); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := a.validateHAProxyTargetCompatibility(cfg.Entry.HAProxy); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -1453,6 +1587,9 @@ func (a *App) syncRealmConfigFromSnapshot(agentID string, snapshot *model.RealmS
 		return
 	}
 	if !found {
+		return
+	}
+	if cfg.Features.HAProxy || cfg.Entry.HAProxy.Enabled {
 		return
 	}
 	merged := cfg

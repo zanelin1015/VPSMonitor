@@ -759,7 +759,7 @@ export function CustomerManagementModal(props: {
     }
     const xuiAgentID = areaBatchForm.xui_agent_id
     if (areaBatchForm.selected_realm_keys.length && !areaBatchForm.agent_id) {
-      message.warning('请选择 Realm 入口 Client')
+      message.warning('请选择转发入口 Client')
       return
     }
     if (areaBatchForm.selected_xui_keys.length && !xuiAgentID) {
@@ -767,7 +767,7 @@ export function CustomerManagementModal(props: {
       return
     }
     if (!areaBatchForm.selected_realm_keys.length && !areaBatchForm.selected_xui_keys.length) {
-      message.warning('请选择要批量授权的 Realm 端口或 x-ui 客户端 / 节点')
+      message.warning('请选择要批量授权的转发入口或 x-ui 客户端 / 节点')
       return
     }
     const xuiOptionMap = new Map(buildAssignmentTargetOptions(areaBatchOverview).map((option) => {
@@ -1304,7 +1304,7 @@ export function CustomerManagementModal(props: {
         <div className="customer-admin-card-head">
           <div>
             <Title level={5}>批量授权入口 / 出口</Title>
-            <Text type="secondary">Realm 入口端口与 x-ui 出口节点可分别选择；广州入口转发 HK 时，先授权 GZ Realm 端口，再授权 HK x-ui 节点或客户端。</Text>
+            <Text type="secondary">Realm / HAProxy 入口与 x-ui 出口节点可分别选择；HAProxy 主备会自动映射到校验一致的最终节点。</Text>
           </div>
           <Button
             type="primary"
@@ -1329,7 +1329,7 @@ export function CustomerManagementModal(props: {
             />
           </Col>
           <Col xs={24} md={5}>
-            <Text type="secondary">Realm 入口 Client</Text>
+            <Text type="secondary">转发入口 Client</Text>
             <Select
               style={{ width: '100%' }}
               showSearch
@@ -1354,14 +1354,14 @@ export function CustomerManagementModal(props: {
           </Col>
           <Col xs={24} md={4}>
             <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-              <Text type="secondary">Realm 端口</Text>
+              <Text type="secondary">转发入口</Text>
               <Button size="small" disabled={!areaBatchForm.agent_id || !areaBatchRealmOptions.length} onClick={() => setAreaBatchForm((current) => ({ ...current, selected_realm_keys: areaBatchRealmOptions.map((option) => option.value) }))}>全选</Button>
             </Space>
             <Select
               mode="multiple"
               style={{ width: '100%' }}
               showSearch
-              placeholder="选择 Realm 中转端口"
+              placeholder="选择 Realm / HAProxy 入口"
               value={areaBatchForm.selected_realm_keys}
               disabled={!areaBatchForm.agent_id}
               options={areaBatchRealmOptions.map(({ value, label }) => ({ value, label }))}

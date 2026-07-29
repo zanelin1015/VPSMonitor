@@ -216,7 +216,7 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
               </Card>
             </Col>
             <Col xs={24} md={12}>
-              <Text type="secondary">Realm 入口 Client</Text>
+              <Text type="secondary">转发入口 Client</Text>
               <Select
                 style={{ width: '100%' }}
                 showSearch
@@ -241,14 +241,14 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
             </Col>
             <Col xs={24} md={12}>
               <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                <Text type="secondary">Realm 端口授权</Text>
+                <Text type="secondary">转发入口授权</Text>
                 <Button size="small" disabled={!areaManagerForm.grant_agent_id || !areaManagerRealmGrantOptions.length} onClick={() => onUpdateAreaManagerRealmGrantTargets(areaManagerRealmGrantOptions.map((option) => option.value))}>全选</Button>
               </Space>
               <Select
                 mode="multiple"
                 style={{ width: '100%' }}
                 showSearch
-                placeholder="选择 Realm 中转端口"
+                placeholder="选择 Realm / HAProxy 入口"
                 value={selectedAreaManagerRealmKeys}
                 disabled={!areaManagerForm.grant_agent_id}
                 options={areaManagerRealmGrantOptions.map((option) => ({ value: option.value, label: option.label }))}

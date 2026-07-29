@@ -1037,7 +1037,7 @@ func TestSQLiteStoreClientInstallSettings(t *testing.T) {
 		PollInterval:          "45s",
 		RequestTimeoutSeconds: 20,
 		ServerSkipTLSVerify:   true,
-		RealmAutoInstall:      true,
+		RealmAutoInstall:      false,
 		RealmVersion:          " v2.9.4 ",
 		RealmDownloadBaseURL:  " https://mirror.example.com/realm/v2.9.4/ ",
 		HAProxyAutoInstall:    true,
@@ -1057,7 +1057,7 @@ func TestSQLiteStoreClientInstallSettings(t *testing.T) {
 	if saved.XUIUsername != "admin" || saved.XUIPassword != "secret" || saved.XUIWebPath != "/xui/" {
 		t.Fatalf("x-ui bootstrap settings were not normalized: %#v", saved)
 	}
-	if !saved.RealmAutoInstall || saved.RealmVersion != "v2.9.4" || saved.RealmDownloadBaseURL != "https://mirror.example.com/realm/v2.9.4" {
+	if saved.RealmAutoInstall || saved.RealmVersion != "v2.9.4" || saved.RealmDownloadBaseURL != "https://mirror.example.com/realm/v2.9.4" {
 		t.Fatalf("realm install settings were not normalized: %#v", saved)
 	}
 	if !saved.HAProxyAutoInstall {
@@ -1073,6 +1073,26 @@ func TestSQLiteStoreClientInstallSettings(t *testing.T) {
 	}
 	if loaded != saved {
 		t.Fatalf("unexpected loaded settings: got %#v want %#v", loaded, saved)
+	}
+}
+
+func TestSQLiteStoreClientInstallSettingsNormalizesLegacyForwardingInstallConflict(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+
+	legacy := `{"realm_auto_install":true,"haproxy_auto_install":true}`
+	if _, err := store.db.Exec(`INSERT INTO app_settings (key, value_json, updated_at) VALUES (?, ?, ?)`, clientInstallSettingsKey, legacy, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		t.Fatalf("insert legacy client install settings: %v", err)
+	}
+	loaded, found, err := store.GetClientInstallSettings()
+	if err != nil || !found {
+		t.Fatalf("GetClientInstallSettings: found=%v err=%v", found, err)
+	}
+	if loaded.RealmAutoInstall || !loaded.HAProxyAutoInstall {
+		t.Fatalf("expected legacy conflict to prefer HAProxy: %#v", loaded)
 	}
 }
 

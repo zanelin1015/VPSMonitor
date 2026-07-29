@@ -742,7 +742,9 @@ func normalizeRealmForwardConfig(cfg model.RealmForwardConfig) model.RealmForwar
 	})
 	cfg.Rules = rules
 	if !cfg.Enabled && len(rules) == 0 {
-		cfg.Backend = ""
+		if cfg.Backend != "none" {
+			cfg.Backend = ""
+		}
 		cfg.BinaryPath = ""
 		cfg.ConfigPath = ""
 		cfg.ServiceName = ""

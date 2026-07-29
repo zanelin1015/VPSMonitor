@@ -931,7 +931,7 @@ func addressPortFromObject(item map[string]any, addressKey, portKey string) stri
 
 func isSupportedNodeProtocol(protocol string) bool {
 	switch normalizedTopologyProtocol(protocol) {
-	case "vless", "vmess", "http", "socks", "shadowsocks", "realm":
+	case "vless", "vmess", "http", "socks", "shadowsocks", "realm", "haproxy":
 		return true
 	default:
 		return false

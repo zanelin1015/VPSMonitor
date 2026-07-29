@@ -209,7 +209,7 @@ export function renderCNFlowPanel(props: {
           <div className="cn-source-relays">
             {relays.map((relay) => (
               <button key={relay.key} type="button" className="cn-source-relay" onClick={() => onSelectAgent(relay.agentID)}>
-                <span>Realm 入口</span>
+                <span>转发入口</span>
                 <strong>{relay.agentName || relay.agentID}</strong>
                 <small>{relay.label || relay.detail || '端口转发'}</small>
               </button>

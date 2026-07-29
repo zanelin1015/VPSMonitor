@@ -77,6 +77,13 @@ export function buildSectionSavePayload(base: ManagedAgentConfig, draft: Managed
       payload.sort_order = Number(draft.sort_order || base.sort_order || 0)
       payload.tags = [...(draft.tags || [])]
       payload.features = { ...(draft.features || {}) }
+      const entry = payload.entry!
+      if (payload.features.realm) {
+        entry.haproxy = { ...entry.haproxy, enabled: false }
+      }
+      if (payload.features.haproxy) {
+        entry.port_forwarding = { ...entry.port_forwarding, enabled: false, backend: 'none' }
+      }
       break
     case 'renewal':
       payload.renewal = { ...(draft.renewal || {}) }

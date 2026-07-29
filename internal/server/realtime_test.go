@@ -704,14 +704,188 @@ func TestAreaManagerDashboardTrafficUsesAssignedClients(t *testing.T) {
 	}
 }
 
+func TestAreaManagerDashboardTrafficIncludesAuthorizedRealmForwardedClients(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+	for _, agent := range []model.AgentRegisterRequest{
+		{AgentID: "gz", AgentName: "GZ Entry", PublicIPv4: "192.0.2.10"},
+		{AgentID: "hk", AgentName: "HK Exit", PublicIPv4: "192.0.2.20"},
+	} {
+		if _, err := sqliteStore.RegisterAgent(agent); err != nil {
+			t.Fatalf("RegisterAgent %s: %v", agent.AgentID, err)
+		}
+	}
+	gzConfig, found, err := sqliteStore.GetAgentConfig("gz")
+	if err != nil || !found {
+		t.Fatalf("GetAgentConfig gz: found=%v err=%v", found, err)
+	}
+	gzConfig.Entry.ImportDomain = "gz.example.com"
+	gzConfig.Entry.PortForwarding = model.RealmForwardConfig{Rules: []model.RealmForwardRule{{
+		Enabled:       true,
+		ListenAddress: "0.0.0.0",
+		ListenPort:    20001,
+		TargetAgentID: "hk",
+		TargetAddress: "192.0.2.20",
+		TargetPort:    20001,
+		Network:       "tcp",
+	}}}
+	if _, err := sqliteStore.UpdateAgentConfig("gz", gzConfig); err != nil {
+		t.Fatalf("UpdateAgentConfig gz: %v", err)
+	}
+
+	enabled := true
+	manager, err := sqliteStore.CreateAreaManager(model.AreaManagerAccountRequest{
+		Username: "area-realm-traffic", Password: "password123", Enabled: &enabled, AgentIDs: []string{"gz", "hk"},
+	})
+	if err != nil {
+		t.Fatalf("CreateAreaManager: %v", err)
+	}
+	for _, assignment := range []model.AreaManagerAssignmentRequest{
+		{AgentID: "gz", InboundID: 20001, InboundTag: "realm:gz-20001", Enabled: &enabled},
+		{AgentID: "hk", InboundID: 1001, InboundTag: "node-1", ClientEmail: "assigned@example.com", Enabled: &enabled},
+	} {
+		if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, assignment); err != nil {
+			t.Fatalf("CreateAreaManagerAssignment: %v", err)
+		}
+	}
+
+	now := time.Now().UTC()
+	if err := sqliteStore.SaveSnapshot(model.AgentSnapshot{
+		AgentID: "gz", AgentName: "GZ Entry", ReportedAt: now,
+		Summary: model.VPSSummary{PublicIPv4: "192.0.2.10"},
+	}); err != nil {
+		t.Fatalf("SaveSnapshot gz: %v", err)
+	}
+	if err := sqliteStore.SaveSnapshot(model.AgentSnapshot{
+		AgentID: "hk", AgentName: "HK Exit", ReportedAt: now,
+		Summary: model.VPSSummary{PublicIPv4: "192.0.2.20"},
+		XUI: &model.XUISnapshot{
+			CollectedAt: now,
+			Inbounds: []map[string]any{{
+				"id": 1001, "tag": "node-1", "remark": "HK VLESS", "protocol": "vless", "port": 20001, "enable": true,
+				"settings": `{"clients":[{"id":"11111111-1111-1111-1111-111111111111","email":"assigned@example.com","enable":true},{"id":"22222222-2222-2222-2222-222222222222","email":"hidden@example.com","enable":true}]}`,
+				"streamSettings": map[string]any{
+					"network": "tcp", "security": "tls",
+					"tlsSettings": map[string]any{"serverName": "hk.example.com"},
+				},
+				"clientStats": []map[string]any{
+					{"email": "assigned@example.com", "enable": true, "up": 100, "down": 200},
+					{"email": "hidden@example.com", "enable": true, "up": 10_000, "down": 20_000},
+				},
+			}},
+		},
+	}); err != nil {
+		t.Fatalf("SaveSnapshot hk: %v", err)
+	}
+
+	app := &App{store: sqliteStore}
+	user := model.AdminUser{ID: manager.ID, Role: model.AdminRoleAreaManager, AgentIDs: []string{"gz", "hk"}}
+	view := model.GlobalDashboardView{Agents: []model.DashboardAgentView{{AgentID: "gz"}, {AgentID: "hk"}}}
+	app.applyAreaManagerDashboardTraffic(user, &view, app.areaManagerClientScope(user))
+
+	if got := view.Agents[0].Summary; got.NetTrafficSent != 100 || got.NetTrafficRecv != 200 || got.NetTrafficTotal != 300 {
+		t.Fatalf("Realm entry dashboard traffic must match its authorized forwarded client, got %#v", got)
+	}
+	if got := view.Agents[1].Summary; got.NetTrafficSent != 100 || got.NetTrafficRecv != 200 || got.NetTrafficTotal != 300 {
+		t.Fatalf("target dashboard traffic must exclude unauthorized clients, got %#v", got)
+	}
+}
+
+func TestAreaManagerDashboardTrafficIncludesAuthorizedHAProxyForwardedClients(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+	for _, agentID := range []string{"gz", "hk-b", "hk-c", "dmit"} {
+		if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: agentID, AgentName: agentID}); err != nil {
+			t.Fatalf("RegisterAgent %s: %v", agentID, err)
+		}
+	}
+	updateConfig := func(agentID string, mutate func(*model.ManagedAgentConfig)) {
+		t.Helper()
+		cfg, found, err := sqliteStore.GetAgentConfig(agentID)
+		if err != nil || !found {
+			t.Fatalf("GetAgentConfig %s: found=%v err=%v", agentID, found, err)
+		}
+		mutate(&cfg)
+		if _, err := sqliteStore.UpdateAgentConfig(agentID, cfg); err != nil {
+			t.Fatalf("UpdateAgentConfig %s: %v", agentID, err)
+		}
+	}
+	updateConfig("gz", func(cfg *model.ManagedAgentConfig) {
+		cfg.Entry.ImportDomain = "gz.example.com"
+		cfg.Entry.HAProxy = model.HAProxyConfig{Enabled: true, Rules: []model.HAProxyRule{{
+			ID: "gz-ha", Enabled: true, ListenPort: 10001,
+			Primary: model.HAProxyRealmTarget{AgentID: "hk-b", RealmRuleID: "b-20001", Port: 20001},
+			Backups: []model.HAProxyRealmTarget{{AgentID: "hk-c", RealmRuleID: "c-20001", Port: 20001}},
+		}}}
+	})
+	for _, relay := range []struct{ agentID, ruleID string }{{"hk-b", "b-20001"}, {"hk-c", "c-20001"}} {
+		updateConfig(relay.agentID, func(cfg *model.ManagedAgentConfig) {
+			cfg.Entry.PortForwarding = model.RealmForwardConfig{Enabled: true, Backend: "realm", Rules: []model.RealmForwardRule{{
+				ID: relay.ruleID, Enabled: true, ListenPort: 20001, TargetAgentID: "dmit", TargetPort: 443, Network: "tcp",
+			}}}
+		})
+	}
+	updateConfig("dmit", func(cfg *model.ManagedAgentConfig) {
+		cfg.Entry.ImportDomain = "dmit.example.com"
+	})
+
+	enabled := true
+	manager, err := sqliteStore.CreateAreaManager(model.AreaManagerAccountRequest{Username: "area-ha-traffic", Password: "password123", Enabled: &enabled})
+	if err != nil {
+		t.Fatalf("CreateAreaManager: %v", err)
+	}
+	for _, assignment := range []model.AreaManagerAssignmentRequest{
+		{AgentID: "gz", InboundID: 10001, InboundTag: "haproxy:10001", Enabled: &enabled},
+		{AgentID: "dmit", InboundID: 7, InboundTag: "dmit-in", ClientEmail: "assigned@example.com", Enabled: &enabled},
+	} {
+		if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, assignment); err != nil {
+			t.Fatalf("CreateAreaManagerAssignment: %v", err)
+		}
+	}
+
+	now := time.Now().UTC()
+	if err := sqliteStore.SaveSnapshot(model.AgentSnapshot{AgentID: "gz", AgentName: "gz", ReportedAt: now}); err != nil {
+		t.Fatalf("SaveSnapshot gz: %v", err)
+	}
+	if err := sqliteStore.SaveSnapshot(model.AgentSnapshot{
+		AgentID: "dmit", AgentName: "dmit", ReportedAt: now,
+		XUI: &model.XUISnapshot{CollectedAt: now, Inbounds: []map[string]any{{
+			"id": 7, "tag": "dmit-in", "remark": "DMIT VLESS", "protocol": "vless", "port": 443, "enable": true,
+			"settings": `{"clients":[{"id":"11111111-1111-1111-1111-111111111111","email":"assigned@example.com","enable":true},{"id":"22222222-2222-2222-2222-222222222222","email":"hidden@example.com","enable":true}]}`,
+			"clientStats": []map[string]any{
+				{"email": "assigned@example.com", "enable": true, "up": 100, "down": 200},
+				{"email": "hidden@example.com", "enable": true, "up": 10_000, "down": 20_000},
+			},
+		}}},
+	}); err != nil {
+		t.Fatalf("SaveSnapshot dmit: %v", err)
+	}
+
+	app := &App{store: sqliteStore}
+	user := model.AdminUser{ID: manager.ID, Role: model.AdminRoleAreaManager}
+	view := model.GlobalDashboardView{Agents: []model.DashboardAgentView{{AgentID: "gz"}, {AgentID: "dmit"}}}
+	app.applyAreaManagerDashboardTraffic(user, &view, app.areaManagerClientScope(user))
+	for _, agent := range view.Agents {
+		if got := agent.Summary; got.NetTrafficSent != 100 || got.NetTrafficRecv != 200 || got.NetTrafficTotal != 300 {
+			t.Fatalf("%s traffic must include only the authorized final client, got %#v", agent.AgentID, got)
+		}
+	}
+}
+
 func TestScopedClientTrafficTotalsDeduplicatesRealmAliases(t *testing.T) {
 	clients := []model.XUIClientView{
 		{InboundID: 20001, Email: "same@example.com", Up: 100, Down: 200, IsRealmForwarded: true, RealmTargetAgentID: "target", RealmTargetInboundID: 7, RealmTargetInboundTag: "node-7"},
-		{InboundID: 20002, Email: "same@example.com", Up: 100, Down: 200, IsRealmForwarded: true, RealmTargetAgentID: "target", RealmTargetInboundID: 7, RealmTargetInboundTag: "node-7"},
+		{InboundID: 20002, Email: "same@example.com", Up: 100, Down: 200, ForwardType: "haproxy", RealmTargetAgentID: "target", RealmTargetInboundID: 7, RealmTargetInboundTag: "node-7"},
 	}
 	totals, _ := scopedClientTrafficTotals("source", clients)
 	if totals.Sent != 100 || totals.Recv != 200 || totals.Count != 1 {
-		t.Fatalf("realm aliases for the same target client must only be counted once: %#v", totals)
+		t.Fatalf("Realm and HAProxy aliases for the same target client must only be counted once: %#v", totals)
 	}
 }
 

@@ -268,6 +268,9 @@ func validateClientInstallSettings(req model.ClientInstallSettingsRequest) (mode
 	req.XUIPanelPort = 0
 	req.XUIWebPath = ""
 	req.XUIInstallScriptURL = ""
+	if req.RealmAutoInstall && req.HAProxyAutoInstall {
+		return req, fmt.Errorf("HAProxy 与 Realm 只能选择一个自动安装")
+	}
 	if req.ServerURL == "" {
 		return req, fmt.Errorf("server url is required")
 	}

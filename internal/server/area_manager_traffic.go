@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"bridge-core/internal/dashboard"
 	"bridge-core/internal/model"
 )
 
@@ -123,7 +122,7 @@ func scopedOverviewTrafficTotals(overview *model.XUIOverview) (scopedClientTraff
 }
 
 func scopedClientTrafficKey(agentID string, client model.XUIClientView) string {
-	if client.IsRealmForwarded && client.RealmTargetAgentID != "" {
+	if (client.IsRealmForwarded || strings.TrimSpace(client.ForwardType) != "") && client.RealmTargetAgentID != "" {
 		return strings.Join([]string{
 			client.RealmTargetAgentID,
 			strconv.Itoa(client.RealmTargetInboundID),
@@ -205,14 +204,12 @@ func (a *App) applyAreaManagerDashboardTraffic(user model.AdminUser, view *model
 	if err != nil {
 		return
 	}
-	entryByAgent := make(map[string]model.AgentEntryConfig, len(agents))
-	for _, agent := range agents {
-		entryByAgent[agent.AgentID] = agent.Config.Entry
-	}
+	snapshots := a.store.ListLatest()
 	snapshotByAgent := make(map[string]model.AgentSnapshot)
-	for _, snapshot := range a.store.ListLatest() {
+	for _, snapshot := range snapshots {
 		snapshotByAgent[snapshot.AgentID] = snapshot
 	}
+	forwardingContext := buildForwardedOverviewContext(agents, snapshots)
 	for index := range view.Agents {
 		agent := &view.Agents[index]
 		snapshot, found := snapshotByAgent[agent.AgentID]
@@ -220,14 +217,18 @@ func (a *App) applyAreaManagerDashboardTraffic(user model.AdminUser, view *model
 			agent.Summary = sanitizeAreaManagerSummary(agent.Summary)
 			continue
 		}
-		overview := dashboard.BuildXUIOverviewWithOptions(snapshot, dashboard.XUIOverviewOptions{Entry: entryByAgent[agent.AgentID]})
+		overview := cloneForwardedBaseOverview(forwardingContext.targetOverviewByAgent[agent.AgentID])
 		if overview == nil {
-			agent.Summary = sanitizeAreaManagerSummary(agent.Summary)
-			continue
+			overview = emptyAgentXUIOverview(snapshot, model.ManagedAgentConfig{
+				AgentID:   agent.AgentID,
+				AgentName: agent.AgentName,
+			})
 		}
+		appendForwardedImportURLsWithContext(agent.AgentID, overview, forwardingContext)
 		visibleClients := make([]model.XUIClientView, 0, len(overview.Clients))
 		for _, client := range overview.Clients {
-			if clientScope.allowsClient(agent.AgentID, client.InboundID, client.InboundTag, client.Email) {
+			if clientScope.allowsClient(agent.AgentID, client.InboundID, client.InboundTag, client.Email) ||
+				a.areaManagerCanViewForwardedClient(user, agent.AgentID, client, clientScope) {
 				visibleClients = append(visibleClients, client)
 			}
 		}

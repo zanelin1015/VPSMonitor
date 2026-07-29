@@ -384,6 +384,56 @@ func TestBuildCustomerLinkViewResolvesFirstRealmHopToFinalClient(t *testing.T) {
 	}
 }
 
+func TestBuildCustomerLinkViewExportsHAProxyEntryForFinalClient(t *testing.T) {
+	finalInbound := model.TopologyInboundRef{AgentID: "dmit", InboundID: 7, InboundTag: "dmit-in", Protocol: "vless", Port: 443}
+	hkRealm := model.TopologyInboundRef{AgentID: "hk-b", InboundID: 20001, InboundTag: "realm:b-20001", Protocol: "realm", Port: 20001}
+	chains := []model.ClientChainView{{
+		Key: customerAssignmentKey("dmit", 7, "alice@example.com"), RootAgentID: "dmit", RootInboundID: 7,
+		RootInboundTag: "dmit-in", RootClientEmail: "alice@example.com", RootClientEnabled: true,
+		Steps: []model.ClientChainStep{{StepType: "client", AgentID: "dmit"}, {StepType: "inbound", AgentID: "dmit", Protocol: "vless", Port: 443}},
+	}}
+	links := []model.TopologyLinkView{{
+		Key:    "gz::haproxy:10001",
+		Source: model.TopologyOutboundRef{AgentID: "gz", OutboundTag: "haproxy:10001", Protocol: "haproxy", ListenPort: 10001},
+		Target: hkRealm, FinalTarget: &finalInbound, RealmHops: []model.TopologyInboundRef{hkRealm},
+	}}
+	chainMap := buildCustomerChainMap(chains, links)
+	clientMap := map[string]customerClientRef{
+		customerAssignmentKey("dmit", 7, "alice@example.com"): {
+			Client: model.XUIClientView{
+				InboundID: 7, InboundTag: "dmit-in", Email: "alice@example.com", AuthUUID: "11111111-1111-1111-1111-111111111111",
+				ImportURL: "vless://11111111-1111-1111-1111-111111111111@dmit.example.com:443?security=reality&pbk=public-key&sni=shop.example.com#DMIT",
+			},
+		},
+	}
+	agentMap := map[string]model.DashboardAgentView{
+		"gz": {
+			AgentID: "gz", CustomerDisplayName: "Guangzhou Entry",
+			Entry: model.AgentEntryConfig{ImportDomain: "gz.example.com", HAProxy: model.HAProxyConfig{Enabled: true, Rules: []model.HAProxyRule{{
+				Enabled: true, ListenPort: 10001,
+				Primary: model.HAProxyRealmTarget{AgentID: "hk-b", Port: 20001},
+				Backups: []model.HAProxyRealmTarget{{AgentID: "hk-c", Port: 20001}},
+			}}}},
+		},
+		"hk-b": {AgentID: "hk-b"},
+		"hk-c": {AgentID: "hk-c"},
+		"dmit": {AgentID: "dmit"},
+	}
+	assignment := model.CustomerAssignment{AgentID: "gz", InboundID: 10001, InboundTag: "haproxy:10001", ClientEmail: "alice@example.com"}
+
+	link := buildCustomerLinkView(assignment, chainMap, clientMap, agentMap)
+	if !link.Resolved || link.UnresolvedReason != "" {
+		t.Fatalf("expected HAProxy assignment to resolve, got %#v", link)
+	}
+	parsed, err := url.Parse(link.ImportURL)
+	if err != nil || parsed.Host != "gz.example.com:10001" {
+		t.Fatalf("expected Guangzhou HAProxy entry URL, got %q (%v)", link.ImportURL, err)
+	}
+	if parsed.User.Username() != "11111111-1111-1111-1111-111111111111" || parsed.Query().Get("pbk") != "public-key" || parsed.Query().Get("sni") != "shop.example.com" {
+		t.Fatalf("expected final UUID and Reality settings to remain unchanged, got %q", link.ImportURL)
+	}
+}
+
 func TestRewriteCustomerHTTPImportURLPreservesAccount(t *testing.T) {
 	raw := "http://proxy-user:p%40ss%3Aword@hk.example.com:18080#HTTP"
 	rewritten := rewriteCustomerImportURL(raw, "gz.example.com", 20080)

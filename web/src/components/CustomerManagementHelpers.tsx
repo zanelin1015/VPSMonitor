@@ -222,9 +222,10 @@ export function assignmentNodeKeys(agentID: string, overview: XUIOverview | null
 
 export function buildRealmGrantOptions(agentID: string, agents: DashboardAgentView[]) {
   const agent = agents.find((item) => item.agent_id === agentID)
-  const rules = agent?.entry?.port_forwarding?.rules || []
+  const realmRules = agent?.entry?.port_forwarding?.rules || []
+  const haProxyRules = agent?.entry?.haproxy?.enabled === false ? [] : agent?.entry?.haproxy?.rules || []
   const seenPorts = new Set<number>()
-  return rules
+  const realmOptions = realmRules
     .filter((rule) => rule.enabled !== false && Number(rule.listen_port || 0) > 0)
     .filter((rule) => {
       const port = Number(rule.listen_port || 0)
@@ -243,6 +244,41 @@ export function buildRealmGrantOptions(agentID: string, agents: DashboardAgentVi
         rule,
       }
     })
+  const haProxyOptions = haProxyRules
+    .filter((rule) => rule.enabled !== false && Number(rule.listen_port || 0) > 0 && Number(rule.primary?.port || 0) > 0)
+    .filter((rule) => {
+      const port = Number(rule.listen_port || 0)
+      if (seenPorts.has(port)) {
+        return false
+      }
+      seenPorts.add(port)
+      return true
+    })
+    .map((rule) => {
+      const listenPort = Number(rule.listen_port || 0)
+      const label = haProxyGrantLabel(rule)
+      const assignment: AreaManagerAssignmentDraft = {
+        agent_id: agentID,
+        inbound_id: listenPort,
+        inbound_tag: `haproxy:${listenPort}`,
+        client_email: '',
+        public_client_name: `${agentName(agentID, agents)} / ${label}`,
+        enabled: true,
+      }
+      const targetProbe: RealmForwardRule = {
+        enabled: true,
+        target_agent_id: rule.primary?.agent_id || '',
+        target_address: rule.primary?.address || '',
+        target_port: Number(rule.primary?.port || 0),
+      }
+      return {
+        value: areaAssignmentKey(assignment),
+        label,
+        assignment,
+        rule: targetProbe,
+      }
+    })
+  return [...realmOptions, ...haProxyOptions]
 }
 
 export function realmRuleTargetAgentID(rule: RealmForwardRule, agents: DashboardAgentView[]): string {
@@ -337,13 +373,20 @@ function realmGrantLabel(rule: RealmForwardRule) {
   return name ? `${name} (${listen})` : `Realm 端口 ${listen}`
 }
 
-function realmAssignmentDisplayName(item: { agent_id: string; inbound_id: number; public_client_name?: string }, agents: DashboardAgentView[]): string {
+function haProxyGrantLabel(rule: { name?: string; listen_port?: number }) {
+  const listen = rule.listen_port || '-'
+  const name = (rule.name || '').trim()
+  return name ? `${name} (${listen})` : `HAProxy 端口 ${listen}`
+}
+
+function realmAssignmentDisplayName(item: { agent_id: string; inbound_id: number; inbound_tag?: string; public_client_name?: string }, agents: DashboardAgentView[]): string {
   const agentPrefix = `${agentName(item.agent_id, agents)} / `
   const publicName = (item.public_client_name || '').trim()
   if (publicName) {
     return publicName.startsWith(agentPrefix) ? publicName : `${agentPrefix}${publicName}`
   }
-  return `${agentPrefix}Realm 端口 ${item.inbound_id}`
+  const typeLabel = (item.inbound_tag || '').trim().toLowerCase().startsWith('haproxy:') ? 'HAProxy' : 'Realm'
+  return `${agentPrefix}${typeLabel} 端口 ${item.inbound_id}`
 }
 
 export function areaAssignmentDraftFromTargetOption(
@@ -392,8 +435,9 @@ export function normalizeAreaManagerAssignmentDrafts(items: Array<AreaManagerAss
       continue
     }
     if (!draft.client_email && isRealmAssignmentTagValue(draft.inbound_tag)) {
-      draft.inbound_tag = `realm:${draft.inbound_id}`
-      draft.public_client_name = draft.public_client_name || `Realm ${draft.inbound_id}`
+      const prefix = draft.inbound_tag.trim().toLowerCase().startsWith('haproxy:') ? 'haproxy' : 'realm'
+      draft.inbound_tag = `${prefix}:${draft.inbound_id}`
+      draft.public_client_name = draft.public_client_name || `${prefix === 'haproxy' ? 'HAProxy' : 'Realm'} ${draft.inbound_id}`
     }
     const key = areaAssignmentKey(draft)
     if (seen.has(key)) {
@@ -467,6 +511,8 @@ export function firstXUIAssignmentAgentID(items: AreaManagerAssignment[], agents
 
 function isRealmForwardedClientOption(client: XUIClientView): boolean {
   return Boolean(
+    client.forward_type === 'realm' ||
+    client.forward_type === 'haproxy' ||
     client.is_realm_forwarded ||
     client.realm_source_agent_id ||
     client.realm_target_agent_id ||
@@ -483,7 +529,7 @@ function isLegacyRealmForwardedClientAssignment(item: { inbound_tag?: string; cl
 }
 
 function looksLikeRealmForwardedInboundTag(value: string): boolean {
-  return /^realm\s+\d+\s*->/i.test(value.trim())
+  return /^(realm|haproxy)\s+\d+\s*->/i.test(value.trim())
 }
 
 export function isRealmAssignmentDraft(item: { agent_id: string; inbound_id: number; inbound_tag?: string; client_email?: string }, agents: DashboardAgentView[]) {
@@ -494,7 +540,9 @@ export function isRealmAssignmentDraft(item: { agent_id: string; inbound_id: num
     return true
   }
   const rules = agents.find((agent) => agent.agent_id === item.agent_id)?.entry?.port_forwarding?.rules || []
-  return rules.some((rule) => Number(rule.listen_port || 0) === Number(item.inbound_id || 0))
+  const haProxyRules = agents.find((agent) => agent.agent_id === item.agent_id)?.entry?.haproxy?.rules || []
+  return rules.some((rule) => Number(rule.listen_port || 0) === Number(item.inbound_id || 0)) ||
+    haProxyRules.some((rule) => Number(rule.listen_port || 0) === Number(item.inbound_id || 0))
 }
 
 export function areaAssignmentKey(item: { agent_id: string; inbound_id: number; inbound_tag?: string; client_email?: string }): string {
@@ -576,7 +624,8 @@ export function renderAssignmentHierarchy(
 }
 
 export function isRealmAssignmentTagValue(value: string): boolean {
-  return value.trim().toLowerCase().startsWith('realm:')
+  const normalized = value.trim().toLowerCase()
+  return normalized.startsWith('realm:') || normalized.startsWith('haproxy:')
 }
 
 export function uniqueStrings(values: string[]): string[] {

@@ -598,6 +598,13 @@ func TestHandleRealmConfigCopyCopiesAndAppliesToTarget(t *testing.T) {
 	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "backup", AgentName: "Backup"}); err != nil {
 		t.Fatalf("RegisterAgent target: %v", err)
 	}
+	if _, err := sqliteStore.UpdateAgentConfig("backup", model.ManagedAgentConfig{
+		AgentID:  "backup",
+		Features: model.AgentFeatureConfig{HAProxy: true, Configured: true},
+		Entry:    model.AgentEntryConfig{HAProxy: model.HAProxyConfig{Enabled: true}},
+	}); err != nil {
+		t.Fatalf("UpdateAgentConfig target HAProxy: %v", err)
+	}
 	if _, err := sqliteStore.UpdateAgentConfig("gz", model.ManagedAgentConfig{
 		AgentID:   "gz",
 		AgentName: "Guangzhou",
@@ -647,6 +654,9 @@ func TestHandleRealmConfigCopyCopiesAndAppliesToTarget(t *testing.T) {
 	if !targetCfg.Features.Realm {
 		t.Fatalf("expected copied config to enable realm feature, got %#v", targetCfg.Features)
 	}
+	if targetCfg.Features.HAProxy || targetCfg.Entry.HAProxy.Enabled {
+		t.Fatalf("copying Realm must disable HAProxy on the target, got features=%#v entry=%#v", targetCfg.Features, targetCfg.Entry.HAProxy)
+	}
 	select {
 	case message := <-controlSession.ch:
 		if message.Type != model.AgentControlApplyConfig || message.Config == nil {
@@ -694,6 +704,41 @@ func TestSyncRealmConfigFromSnapshotPersistsMachineRealmConfig(t *testing.T) {
 	rule := forwarding.Rules[0]
 	if rule.ListenPort != 20001 || rule.TargetAddress != "47.239.135.242" || rule.TargetPort != 20001 {
 		t.Fatalf("unexpected persisted realm rule: %#v", rule)
+	}
+}
+
+func TestSyncRealmConfigFromSnapshotIgnoresHAProxyClient(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "gz", AgentName: "Guangzhou"}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	cfg, found, err := sqliteStore.GetAgentConfig("gz")
+	if err != nil || !found {
+		t.Fatalf("GetAgentConfig found=%v err=%v", found, err)
+	}
+	cfg.Features.HAProxy = true
+	cfg.Features.Configured = true
+	cfg.Entry.HAProxy.Enabled = true
+	cfg.Entry.PortForwarding.Backend = "none"
+	if _, err := sqliteStore.UpdateAgentConfig("gz", cfg); err != nil {
+		t.Fatalf("UpdateAgentConfig: %v", err)
+	}
+
+	app := &App{store: sqliteStore}
+	app.syncRealmConfigFromSnapshot("gz", &model.RealmSnapshot{Rules: []model.RealmForwardRule{{
+		Enabled: true, ListenPort: 20001, TargetAddress: "192.0.2.20", TargetPort: 20001,
+	}}})
+
+	saved, found, err := sqliteStore.GetAgentConfig("gz")
+	if err != nil || !found {
+		t.Fatalf("GetAgentConfig after sync found=%v err=%v", found, err)
+	}
+	if saved.Entry.PortForwarding.Enabled || saved.Entry.PortForwarding.Backend != "none" || len(saved.Entry.PortForwarding.Rules) != 0 {
+		t.Fatalf("local Realm discovery must not re-enable Realm while HAProxy is selected: %#v", saved.Entry.PortForwarding)
 	}
 }
 
@@ -793,7 +838,7 @@ func TestAppendRealmForwardedImportURLsScopesAdminExportToEntryAgent(t *testing.
 		ReportedAt: now,
 		Summary:    model.VPSSummary{PublicIPv4: "1.1.1.1", ObservedIP: "1.1.1.1"},
 	}, model.ManagedAgentConfig{AgentID: "gz", AgentName: "Guangzhou"})
-	app.appendRealmForwardedImportURLs("gz", overview)
+	app.appendForwardedImportURLs("gz", overview)
 
 	parsed, err := url.Parse(overview.Clients[0].ImportURL)
 	if err != nil {
@@ -826,7 +871,7 @@ func TestAppendRealmForwardedImportURLsScopesAdminExportToEntryAgent(t *testing.
 	if hkOverview == nil || len(hkOverview.Clients) != 1 {
 		t.Fatalf("expected hk overview client")
 	}
-	app.appendRealmForwardedImportURLs("hk", hkOverview)
+	app.appendForwardedImportURLs("hk", hkOverview)
 	parsedHK, err := url.Parse(hkOverview.Clients[0].ImportURL)
 	if err != nil {
 		t.Fatalf("parse hk import url: %v", err)

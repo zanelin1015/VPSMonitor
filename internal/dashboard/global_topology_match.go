@@ -63,23 +63,24 @@ func matchTopologyLinks(inbounds map[string]topologyInboundCandidate, outbounds 
 func annotateRealmTopologyLinks(links []model.TopologyLinkView, linkByOutbound map[string]model.TopologyLinkView) {
 	for index := range links {
 		link := links[index]
-		if normalizedTopologyProtocol(link.Source.Protocol) != "realm" {
+		sourceProtocol := normalizedTopologyProtocol(link.Source.Protocol)
+		if sourceProtocol != "realm" && sourceProtocol != "haproxy" {
 			continue
 		}
 		visited := map[string]struct{}{link.Key: {}}
 		current := link
-		for normalizedTopologyProtocol(current.Target.Protocol) == "realm" {
+		for isTopologyForwardingProtocol(current.Target.Protocol) {
 			link.RealmHops = append(link.RealmHops, current.Target)
 			nextKey := outboundTopologyKey(current.Target.AgentID, current.Target.InboundTag)
 			if _, seen := visited[nextKey]; seen {
 				link.LoopDetected = true
-				link.UnresolvedReason = "detected a Realm forwarding loop"
+				link.UnresolvedReason = "detected a forwarding loop"
 				break
 			}
 			visited[nextKey] = struct{}{}
 			next, ok := linkByOutbound[nextKey]
 			if !ok {
-				link.UnresolvedReason = "Realm forwarding target did not resolve to another Realm listener or x-ui inbound"
+				link.UnresolvedReason = "forwarding target did not resolve to another forwarding listener or x-ui inbound"
 				break
 			}
 			current = next
@@ -91,6 +92,11 @@ func annotateRealmTopologyLinks(links []model.TopologyLinkView, linkByOutbound m
 		links[index] = link
 		linkByOutbound[link.Key] = link
 	}
+}
+
+func isTopologyForwardingProtocol(protocol string) bool {
+	protocol = normalizedTopologyProtocol(protocol)
+	return protocol == "realm" || protocol == "haproxy"
 }
 
 func scoreTopologyMatch(outbound model.TopologyOutboundRef, inbound model.TopologyInboundRef) topologyMatchResult {
