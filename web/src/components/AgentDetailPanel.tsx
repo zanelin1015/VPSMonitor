@@ -59,10 +59,14 @@ import { defaultTerminalShell, FeatureSwitch, RemoteTTYTerminal } from './AgentD
 import { ManagedConfigPanel } from './ManagedConfigPanel'
 import { RouteBadge } from './RouteBadge'
 import {
+  type HAProxyForwardClientView,
+  type HAProxyForwardNodeView,
   type RealmForwardClientView,
   type RealmForwardNodeView,
   type AgentFeatureKey,
   buildPrimaryDomainOptions,
+  buildHAProxyForwardClients,
+  buildHAProxyForwardNodes,
   buildRealmForwardClients,
   buildRealmForwardNodes,
   filterRealmForwardClients,
@@ -282,6 +286,9 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const realmForwardNodes = buildRealmForwardNodes(currentAgentRealmLinks, dashboardView, overview?.nodes || [])
   const realmForwardClients = buildRealmForwardClients(currentAgentRealmLinks, dashboardView, overview?.clients || [])
   const realmFilteredClients = filterRealmForwardClients(realmForwardClients, clientSearch)
+  const haProxyForwardNodes = buildHAProxyForwardNodes(dashboardView, overview?.nodes || [])
+  const haProxyForwardClients = buildHAProxyForwardClients(dashboardView, overview?.clients || [])
+  const haProxyFilteredClients = filterRealmForwardClients(haProxyForwardClients, clientSearch)
   const currentAgentTagSet = new Set(selectedAgent.tags || [])
   const currentAgentDashboardView = dashboardView
     ? {
@@ -900,6 +907,18 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const visibleRealmClientColumns = restrictedView
     ? realmClientColumns.filter((column) => !['target_agent', 'inbound', 'route'].includes(String(column.key || '')))
     : realmClientColumns
+  const haProxyNodeColumns: ColumnsType<HAProxyForwardNodeView> = realmNodeColumns.map((column) => (
+    column.key === 'route' ? { ...column, title: 'HAProxy 来源' } : column
+  ))
+  const visibleHAProxyNodeColumns = restrictedView
+    ? haProxyNodeColumns.filter((column) => column.key !== 'route')
+    : haProxyNodeColumns
+  const haProxyClientColumns: ColumnsType<HAProxyForwardClientView> = realmClientColumns.map((column) => (
+    column.key === 'route' ? { ...column, title: 'HAProxy 来源' } : column
+  ))
+  const visibleHAProxyClientColumns = restrictedView
+    ? haProxyClientColumns.filter((column) => !['target_agent', 'inbound', 'route'].includes(String(column.key || '')))
+    : haProxyClientColumns
 
   const routingColumns: ColumnsType<XUIRoutingRuleView> = [
     {
@@ -1382,11 +1401,51 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     children: renderManagedConfigSection('nat'),
   }] : []
 
-  const haProxyTabs: TabsProps['items'] = featureEnabled.haproxy && canManageConfig ? [{
-    key: 'haproxy-forwarding',
-    label: `HAProxy 主备 (${managedConfig?.entry?.haproxy?.rules?.length || 0})`,
-    children: renderManagedConfigSection('haproxy'),
-  }] : []
+  const haProxyTabs: TabsProps['items'] = featureEnabled.haproxy ? [
+    ...(canManageConfig ? [{
+      key: 'haproxy-forwarding',
+      label: `HAProxy 主备 (${managedConfig?.entry?.haproxy?.rules?.length || 0})`,
+      children: renderManagedConfigSection('haproxy'),
+    }] : []),
+    {
+      key: 'haproxy-nodes',
+      label: `节点 (${haProxyForwardNodes.length})`,
+      children: haProxyForwardNodes.length ? (
+        renderNodeClientHierarchySections(
+          haProxyForwardNodes,
+          haProxyFilteredClients,
+          visibleHAProxyNodeColumns as ColumnsType<XUINodeView>,
+          selectedAgent.customer_display_name || selectedAgent.agent_name || selectedAgent.agent_id,
+          selectedAgentId,
+          selectedNodeAnchor,
+          restrictedView ? 760 : 1120,
+          'haproxy-clients',
+          onActiveTabChange,
+          onClientSearchChange,
+        )
+      ) : (
+        <Empty description="暂无通过 HAProxy 转发命中的节点" />
+      ),
+    },
+    {
+      key: 'haproxy-clients',
+      label: `客户端 (${haProxyForwardClients.length})`,
+      children: haProxyForwardClients.length ? (
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <Input.Search allowClear style={{ minWidth: 280 }} placeholder="按邮箱、备注、节点标签筛选 HAProxy 命中客户端" value={clientSearch} onChange={(event) => onClientSearchChange(event.target.value)} />
+          <Table
+            rowKey={(record) => `${record.realm_target_agent_id || ''}-${record.inbound_id}-${record.inbound_tag || ''}-${record.email || record.comment || record.sub_id || ''}`}
+            columns={visibleHAProxyClientColumns}
+            dataSource={haProxyFilteredClients}
+            pagination={false}
+            scroll={{ x: restrictedView ? 760 : 1120 }}
+          />
+        </Space>
+      ) : (
+        <Empty description="暂无通过 HAProxy 转发命中的客户端" />
+      ),
+    },
+  ] : []
 
   const portPolicyTabs: TabsProps['items'] = featureEnabled.port_policy && canManageConfig ? [{
     key: 'network-policy',

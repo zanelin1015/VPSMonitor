@@ -14,7 +14,7 @@ func TestResolveRealmForwardTargetAcrossMultipleHops(t *testing.T) {
 			hkRule := model.RealmForwardRule{Enabled: true, ListenPort: 20001, TargetAgentID: "dmit", TargetAddress: "dmit.example.com", TargetPort: 443}
 			agents := map[string]model.DashboardAgentView{
 				"gz":   {AgentID: "gz", AgentName: "Guangzhou"},
-				"hk":   {AgentID: "hk", AgentName: "Hong Kong", Entry: model.AgentEntryConfig{PortForwarding: model.RealmForwardConfig{Rules: []model.RealmForwardRule{hkRule}}}},
+				"hk":   {AgentID: "hk", AgentName: "Hong Kong", Entry: model.AgentEntryConfig{PortForwarding: model.RealmForwardConfig{Enabled: true, Backend: "realm", Rules: []model.RealmForwardRule{hkRule}}}},
 				"dmit": {AgentID: "dmit", AgentName: "DMIT"},
 			}
 			overviews := map[string]*model.XUIOverview{
@@ -33,8 +33,8 @@ func TestResolveRealmForwardTargetDetectsLoop(t *testing.T) {
 	gzRule := model.RealmForwardRule{Enabled: true, ListenPort: 20001, TargetAgentID: "hk", TargetPort: 20001}
 	hkRule := model.RealmForwardRule{Enabled: true, ListenPort: 20001, TargetAgentID: "gz", TargetPort: 20001}
 	agents := map[string]model.DashboardAgentView{
-		"gz": {AgentID: "gz", Entry: model.AgentEntryConfig{PortForwarding: model.RealmForwardConfig{Rules: []model.RealmForwardRule{gzRule}}}},
-		"hk": {AgentID: "hk", Entry: model.AgentEntryConfig{PortForwarding: model.RealmForwardConfig{Rules: []model.RealmForwardRule{hkRule}}}},
+		"gz": {AgentID: "gz", Entry: model.AgentEntryConfig{PortForwarding: model.RealmForwardConfig{Enabled: true, Backend: "realm", Rules: []model.RealmForwardRule{gzRule}}}},
+		"hk": {AgentID: "hk", Entry: model.AgentEntryConfig{PortForwarding: model.RealmForwardConfig{Enabled: true, Backend: "realm", Rules: []model.RealmForwardRule{hkRule}}}},
 	}
 	resolved := resolveRealmForwardTarget("gz", gzRule, agents, nil)
 	if resolved.Resolved || !resolved.LoopDetected || resolved.UnresolvedReason == "" {
@@ -50,7 +50,7 @@ func TestCustomerRealmPublicEntryUsesOutermostHop(t *testing.T) {
 			AgentID: agentID,
 			Entry: model.AgentEntryConfig{
 				ImportDomain:   domain,
-				PortForwarding: model.RealmForwardConfig{Rules: []model.RealmForwardRule{rule}},
+				PortForwarding: model.RealmForwardConfig{Enabled: true, Backend: "realm", Rules: []model.RealmForwardRule{rule}},
 			},
 		}
 	}

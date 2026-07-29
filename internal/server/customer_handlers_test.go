@@ -238,7 +238,7 @@ func TestBuildCustomerLinkViewRewritesImportURLToRealmEntry(t *testing.T) {
 			Entry: model.AgentEntryConfig{
 				ImportDomain: "gz.example.com",
 				Addresses:    []string{"1.1.1.1"},
-				PortForwarding: model.RealmForwardConfig{Rules: []model.RealmForwardRule{{
+				PortForwarding: model.RealmForwardConfig{Enabled: true, Backend: "realm", Rules: []model.RealmForwardRule{{
 					Enabled:       true,
 					ListenAddress: "0.0.0.0",
 					ListenPort:    2443,
@@ -332,7 +332,7 @@ func TestBuildCustomerLinkViewResolvesFirstRealmHopToFinalClient(t *testing.T) {
 			CustomerDisplayName: "Guangzhou Entry",
 			Entry: model.AgentEntryConfig{
 				ImportDomain: "gz.example.com",
-				PortForwarding: model.RealmForwardConfig{Rules: []model.RealmForwardRule{{
+				PortForwarding: model.RealmForwardConfig{Enabled: true, Backend: "realm", Rules: []model.RealmForwardRule{{
 					Enabled:       true,
 					ListenPort:    20001,
 					TargetAgentID: "hk",
@@ -342,7 +342,7 @@ func TestBuildCustomerLinkViewResolvesFirstRealmHopToFinalClient(t *testing.T) {
 		},
 		"hk": {
 			AgentID: "hk",
-			Entry: model.AgentEntryConfig{PortForwarding: model.RealmForwardConfig{Rules: []model.RealmForwardRule{{
+			Entry: model.AgentEntryConfig{PortForwarding: model.RealmForwardConfig{Enabled: true, Backend: "realm", Rules: []model.RealmForwardRule{{
 				Enabled:       true,
 				ListenPort:    20001,
 				TargetAgentID: "dmit",

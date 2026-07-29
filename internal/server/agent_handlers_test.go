@@ -757,7 +757,7 @@ func TestAppendRealmForwardedImportURLsScopesAdminExportToEntryAgent(t *testing.
 		AgentName: "Guangzhou",
 		Entry: model.AgentEntryConfig{
 			ImportDomain: "gz.example.com",
-			PortForwarding: model.RealmForwardConfig{Rules: []model.RealmForwardRule{{
+			PortForwarding: model.RealmForwardConfig{Enabled: true, Backend: "realm", Rules: []model.RealmForwardRule{{
 				Enabled:       true,
 				ListenAddress: "0.0.0.0",
 				ListenPort:    20001,
@@ -781,7 +781,7 @@ func TestAppendRealmForwardedImportURLsScopesAdminExportToEntryAgent(t *testing.
 		AgentName: "Shenzhen",
 		Entry: model.AgentEntryConfig{
 			ImportDomain: "sz.example.com",
-			PortForwarding: model.RealmForwardConfig{Rules: []model.RealmForwardRule{{
+			PortForwarding: model.RealmForwardConfig{Enabled: true, Backend: "realm", Rules: []model.RealmForwardRule{{
 				Enabled:       true,
 				ListenAddress: "0.0.0.0",
 				ListenPort:    30001,

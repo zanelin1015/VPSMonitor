@@ -763,7 +763,11 @@ func appendForwardedImportURLsWithContext(agentID string, overview *model.XUIOve
 	for index, node := range overview.Nodes {
 		forwardedNodes[overviewInboundKey(node.ID, node.Tag)] = index
 	}
-	for _, rule := range sourceAgent.Entry.PortForwarding.Rules {
+	realmRules := sourceAgent.Entry.PortForwarding.Rules
+	if !realmForwardingActive(sourceAgent.Entry.PortForwarding) {
+		realmRules = nil
+	}
+	for _, rule := range realmRules {
 		if !rule.Enabled || rule.ListenPort <= 0 || rule.TargetPort <= 0 {
 			continue
 		}

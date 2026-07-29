@@ -87,7 +87,7 @@ func TestResolveHAProxyRulePathsRequiresSameFinalXUINode(t *testing.T) {
 	makeRealmAgent := func(agentID, ruleID string, targetPort int) model.DashboardAgentView {
 		return model.DashboardAgentView{
 			AgentID: agentID,
-			Entry: model.AgentEntryConfig{PortForwarding: model.RealmForwardConfig{Rules: []model.RealmForwardRule{{
+			Entry: model.AgentEntryConfig{PortForwarding: model.RealmForwardConfig{Enabled: true, Backend: "realm", Rules: []model.RealmForwardRule{{
 				ID: ruleID, Enabled: true, ListenPort: 20001, TargetAgentID: "dmit", TargetPort: targetPort, Network: "tcp",
 			}}}},
 		}
@@ -134,13 +134,23 @@ func TestAppendForwardedImportURLsMapsHAProxyToFinalClient(t *testing.T) {
 		Backups: []model.HAProxyRealmTarget{{AgentID: "hk-c", RealmRuleID: "c-20001", Port: 20001}},
 	}
 	realmAgent := func(agentID, ruleID string) model.DashboardAgentView {
-		return model.DashboardAgentView{AgentID: agentID, AgentName: agentID, Entry: model.AgentEntryConfig{PortForwarding: model.RealmForwardConfig{Rules: []model.RealmForwardRule{{
+		return model.DashboardAgentView{AgentID: agentID, AgentName: agentID, Entry: model.AgentEntryConfig{PortForwarding: model.RealmForwardConfig{Enabled: true, Backend: "realm", Rules: []model.RealmForwardRule{{
 			ID: ruleID, Enabled: true, ListenPort: 20001, TargetAgentID: "dmit", TargetPort: 443, Network: "tcp",
 		}}}}}
 	}
 	context := forwardedOverviewContext{
 		agentMap: map[string]model.DashboardAgentView{
-			"gz":   {AgentID: "gz", AgentName: "GZ", Entry: model.AgentEntryConfig{ImportDomain: "gz.example.com", HAProxy: model.HAProxyConfig{Enabled: true, Rules: []model.HAProxyRule{rule}}}},
+			"gz": {
+				AgentID: "gz", AgentName: "GZ",
+				Entry: model.AgentEntryConfig{
+					ImportDomain: "gz.example.com",
+					PortForwarding: model.RealmForwardConfig{
+						Enabled: false, Backend: "none",
+						Rules: []model.RealmForwardRule{{ID: "legacy", Enabled: true, ListenPort: 20002, TargetAgentID: "dmit", TargetPort: 443}},
+					},
+					HAProxy: model.HAProxyConfig{Enabled: true, Rules: []model.HAProxyRule{rule}},
+				},
+			},
 			"hk-b": realmAgent("hk-b", "b-20001"),
 			"hk-c": realmAgent("hk-c", "c-20001"),
 			"dmit": {AgentID: "dmit", AgentName: "DMIT"},
@@ -173,6 +183,25 @@ func TestAppendForwardedImportURLsMapsHAProxyToFinalClient(t *testing.T) {
 	}
 	if parsed.Query().Get("sni") != "shop.example.com" || client.Up != 100 || client.Down != 200 {
 		t.Fatalf("expected Reality parameters and traffic to remain intact, got %#v", client)
+	}
+}
+
+func TestResolveHAProxyRulePathsRejectsDisabledRealmTarget(t *testing.T) {
+	rule := model.HAProxyRule{
+		Enabled: true, ListenPort: 10001,
+		Primary: model.HAProxyRealmTarget{AgentID: "hk-b", RealmRuleID: "b-20001", Port: 20001},
+	}
+	context := forwardedOverviewContext{agentMap: map[string]model.DashboardAgentView{
+		"hk-b": {
+			AgentID: "hk-b", AgentName: "HK B",
+			Entry: model.AgentEntryConfig{PortForwarding: model.RealmForwardConfig{
+				Enabled: false, Backend: "none",
+				Rules: []model.RealmForwardRule{{ID: "b-20001", Enabled: true, ListenPort: 20001, TargetAgentID: "dmit", TargetPort: 443}},
+			}},
+		},
+	}}
+	if _, err := resolveHAProxyRulePaths(rule, context); err == nil || !strings.Contains(err.Error(), "未启用 Realm") {
+		t.Fatalf("expected disabled Realm target to be rejected, got %v", err)
 	}
 }
 

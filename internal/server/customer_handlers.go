@@ -550,7 +550,7 @@ func customerForwardingPublicEntry(assignment model.CustomerAssignment, chain mo
 				return customerPublicEntry{Host: host, Port: rule.ListenPort}, true
 			}
 		}
-		if rule, found := realmRuleListeningOnPort(assignmentAgent.Entry.PortForwarding.Rules, assignment.InboundID); found {
+		if rule, found := realmRuleListeningOnPort(assignmentAgent.Entry.PortForwarding.Rules, assignment.InboundID); realmForwardingActive(assignmentAgent.Entry.PortForwarding) && found {
 			if host := customerRealmSourceHost(assignmentAgent, rule); host != "" {
 				return customerPublicEntry{Host: host, Port: rule.ListenPort}, true
 			}
@@ -592,7 +592,11 @@ func customerOutermostForwardingEntry(
 	bestDepth := 0
 	for _, sourceAgentID := range agentIDs {
 		sourceAgent := agentMap[sourceAgentID]
-		for _, rule := range sourceAgent.Entry.PortForwarding.Rules {
+		realmRules := sourceAgent.Entry.PortForwarding.Rules
+		if !realmForwardingActive(sourceAgent.Entry.PortForwarding) {
+			realmRules = nil
+		}
+		for _, rule := range realmRules {
 			if !rule.Enabled || rule.ListenPort <= 0 || rule.TargetPort != targetPort {
 				continue
 			}

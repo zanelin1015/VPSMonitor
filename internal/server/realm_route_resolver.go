@@ -66,6 +66,10 @@ func resolveRealmForwardTarget(
 			resolution.UnresolvedReason = "Realm target Client is not present in the current dashboard"
 			return resolution
 		}
+		if !realmForwardingActive(targetAgent.Entry.PortForwarding) {
+			resolution.UnresolvedReason = fmt.Sprintf("%s has Realm forwarding disabled", firstNonEmptyString(targetAgent.AgentName, targetAgentID))
+			return resolution
+		}
 		nextRule, ok := realmRuleListeningOnPort(targetAgent.Entry.PortForwarding.Rules, currentRule.TargetPort)
 		if !ok {
 			resolution.UnresolvedReason = fmt.Sprintf("%s:%d is neither an x-ui inbound nor an enabled Realm listener", firstNonEmptyString(targetAgent.AgentName, targetAgentID), currentRule.TargetPort)
@@ -76,6 +80,10 @@ func resolveRealmForwardTarget(
 	}
 	resolution.UnresolvedReason = fmt.Sprintf("Realm forwarding exceeded %d hops", maxRealmForwardDepth)
 	return resolution
+}
+
+func realmForwardingActive(cfg model.RealmForwardConfig) bool {
+	return cfg.Enabled && !strings.EqualFold(strings.TrimSpace(cfg.Backend), "none")
 }
 
 func realmForwardEndpointKey(agentID string, port int) string {

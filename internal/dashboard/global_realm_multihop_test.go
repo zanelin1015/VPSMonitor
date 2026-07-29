@@ -19,14 +19,14 @@ func TestBuildGlobalDashboardResolvesMultiHopRealmToXUIInbound(t *testing.T) {
 				{
 					AgentID: "gz", AgentName: "Guangzhou", RegisteredAt: now, UpdatedAt: now,
 					Summary: model.VPSSummary{PublicIPv4: "192.0.2.10"},
-					Config: model.ManagedAgentConfig{Entry: model.AgentEntryConfig{PortForwarding: model.RealmForwardConfig{Rules: []model.RealmForwardRule{{
+					Config: model.ManagedAgentConfig{Entry: model.AgentEntryConfig{PortForwarding: model.RealmForwardConfig{Enabled: true, Backend: "realm", Rules: []model.RealmForwardRule{{
 						ID: "gz-20001", Enabled: true, ListenPort: 20001, TargetAgentID: "hk", TargetAddress: "192.0.2.20", TargetPort: 20001, Network: "tcp",
 					}}}}},
 				},
 				{
 					AgentID: "hk", AgentName: "Hong Kong Relay", RegisteredAt: now, UpdatedAt: now,
 					Summary: model.VPSSummary{PublicIPv4: "192.0.2.20"},
-					Config: model.ManagedAgentConfig{Entry: model.AgentEntryConfig{PortForwarding: model.RealmForwardConfig{Rules: []model.RealmForwardRule{{
+					Config: model.ManagedAgentConfig{Entry: model.AgentEntryConfig{PortForwarding: model.RealmForwardConfig{Enabled: true, Backend: "realm", Rules: []model.RealmForwardRule{{
 						ID: "hk-20001", Enabled: true, ListenPort: 20001, TargetAgentID: "dmit", TargetAddress: "192.0.2.30", TargetPort: 443, Network: "tcp",
 					}}}}},
 				},
@@ -83,14 +83,14 @@ func TestBuildGlobalDashboardResolvesHAProxyPrimaryRealmPathToFinalInbound(t *te
 		{
 			AgentID: "hk-b", AgentName: "HK B", RegisteredAt: now, UpdatedAt: now,
 			Summary: model.VPSSummary{PublicIPv4: "192.0.2.20"},
-			Config: model.ManagedAgentConfig{Entry: model.AgentEntryConfig{ImportDomain: "b.example.com", PortForwarding: model.RealmForwardConfig{Rules: []model.RealmForwardRule{{
+			Config: model.ManagedAgentConfig{Entry: model.AgentEntryConfig{ImportDomain: "b.example.com", PortForwarding: model.RealmForwardConfig{Enabled: true, Backend: "realm", Rules: []model.RealmForwardRule{{
 				ID: "b-20001", Enabled: true, ListenPort: 20001, TargetAgentID: "dmit", TargetAddress: "d.example.com", TargetPort: 443, Network: "tcp",
 			}}}}},
 		},
 		{
 			AgentID: "hk-c", AgentName: "HK C", RegisteredAt: now, UpdatedAt: now,
 			Summary: model.VPSSummary{PublicIPv4: "192.0.2.21"},
-			Config: model.ManagedAgentConfig{Entry: model.AgentEntryConfig{ImportDomain: "c.example.com", PortForwarding: model.RealmForwardConfig{Rules: []model.RealmForwardRule{{
+			Config: model.ManagedAgentConfig{Entry: model.AgentEntryConfig{ImportDomain: "c.example.com", PortForwarding: model.RealmForwardConfig{Enabled: true, Backend: "realm", Rules: []model.RealmForwardRule{{
 				ID: "c-20001", Enabled: true, ListenPort: 20001, TargetAgentID: "dmit", TargetAddress: "d.example.com", TargetPort: 443, Network: "tcp",
 			}}}}},
 		},
@@ -126,7 +126,7 @@ func TestBuildGlobalDashboardMarksRealmLoopAndBrokenMiddleHop(t *testing.T) {
 	baseAgent := func(id, ip string, rule model.RealmForwardRule) model.AgentRecord {
 		return model.AgentRecord{
 			AgentID: id, AgentName: id, RegisteredAt: now, UpdatedAt: now, Summary: model.VPSSummary{PublicIPv4: ip},
-			Config: model.ManagedAgentConfig{Entry: model.AgentEntryConfig{PortForwarding: model.RealmForwardConfig{Rules: []model.RealmForwardRule{rule}}}},
+			Config: model.ManagedAgentConfig{Entry: model.AgentEntryConfig{PortForwarding: model.RealmForwardConfig{Enabled: true, Backend: "realm", Rules: []model.RealmForwardRule{rule}}}},
 		}
 	}
 

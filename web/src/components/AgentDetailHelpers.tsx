@@ -16,6 +16,49 @@ export type RealmForwardClientView = XUIClientView & {
   realm_target_agent_name?: string
 }
 
+export type HAProxyForwardNodeView = RealmForwardNodeView
+export type HAProxyForwardClientView = RealmForwardClientView
+
+export function buildHAProxyForwardNodes(
+  dashboardView: GlobalDashboardView | null,
+  overviewNodes: XUINodeView[] = [],
+): HAProxyForwardNodeView[] {
+  const nodes = new Map<string, HAProxyForwardNodeView>()
+  const agentNameByID = new Map((dashboardView?.agents || []).map((agent) => [agent.agent_id, agent.agent_name || agent.customer_display_name || agent.agent_id]))
+  overviewNodes
+    .filter((node) => (node.route?.match_scope || '').toLowerCase() === 'haproxy')
+    .forEach((node) => {
+      const key = realmForwardNodeIdentityKey(node)
+      nodes.set(key, {
+        ...node,
+        realm_target_agent_name: node.realm_target_agent_name || agentNameByID.get(node.realm_target_agent_id || '') || node.realm_target_agent_id,
+      })
+    })
+  return Array.from(nodes.values()).sort((a, b) => (a.listen || '').localeCompare(b.listen || '') || (a.port || 0) - (b.port || 0))
+}
+
+export function buildHAProxyForwardClients(
+  dashboardView: GlobalDashboardView | null,
+  overviewClients: XUIClientView[] = [],
+): HAProxyForwardClientView[] {
+  const clients = new Map<string, HAProxyForwardClientView>()
+  const agentNameByID = new Map((dashboardView?.agents || []).map((agent) => [agent.agent_id, agent.agent_name || agent.customer_display_name || agent.agent_id]))
+  overviewClients
+    .filter((client) => (client.forward_type || '').toLowerCase() === 'haproxy')
+    .forEach((client) => {
+      const targetAgentID = client.realm_target_agent_id || ''
+      const key = `${targetAgentID}:${client.realm_target_inbound_id || client.inbound_id}:${client.realm_target_inbound_tag || client.inbound_tag || ''}:${client.email || client.comment || client.import_url || ''}`
+      if (clients.has(key)) {
+        return
+      }
+      clients.set(key, {
+        ...client,
+        realm_target_agent_name: client.realm_target_agent_name || agentNameByID.get(targetAgentID) || targetAgentID,
+      })
+    })
+  return Array.from(clients.values()).sort((a, b) => (a.inbound_remark || '').localeCompare(b.inbound_remark || '') || (a.email || '').localeCompare(b.email || ''))
+}
+
 export function buildRealmForwardNodes(
   links: TopologyLinkView[],
   dashboardView: GlobalDashboardView | null,

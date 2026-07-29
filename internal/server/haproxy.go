@@ -214,6 +214,9 @@ func resolveHAProxyRulePaths(rule model.HAProxyRule, context forwardedOverviewCo
 		if !ok {
 			return nil, fmt.Errorf("%s引用的 Client %q 不存在", item.label, item.target.AgentID)
 		}
+		if !realmForwardingActive(targetAgent.Entry.PortForwarding) {
+			return nil, fmt.Errorf("%s引用的 Client %q 未启用 Realm", item.label, firstNonEmptyString(targetAgent.AgentName, item.target.AgentID))
+		}
 		realmRule, ok := findHAProxyRealmRule(targetAgent.Entry.PortForwarding.Rules, item.target.RealmRuleID, item.target.Port)
 		if !ok || !realmRule.Enabled {
 			return nil, fmt.Errorf("%s引用的 Realm 规则不存在或未启用", item.label)

@@ -124,7 +124,7 @@ func buildInboundCandidates(agentViews map[string]model.DashboardAgentView, over
 			}),
 			resolvedIPs,
 		)
-		for _, rule := range activeRealmForwardRulesForTopology(agentView.Entry.PortForwarding.Rules) {
+		for _, rule := range activeRealmForwardRulesForTopology(agentView.Entry.PortForwarding) {
 			tag := realmTopologyTag(rule)
 			ref := model.TopologyInboundRef{
 				AgentID:        agentID,
@@ -151,7 +151,7 @@ func buildInboundCandidates(agentViews map[string]model.DashboardAgentView, over
 				},
 			}
 		}
-		for _, rule := range activeHAProxyRulesForTopology(agentView.Entry.HAProxy.Rules) {
+		for _, rule := range activeHAProxyRulesForTopology(agentView.Entry.HAProxy) {
 			tag := haProxyTopologyTag(rule)
 			ref := model.TopologyInboundRef{
 				AgentID:        agentID,
@@ -222,7 +222,7 @@ func buildOutboundCandidates(agentViews map[string]model.DashboardAgentView, ove
 		}
 	}
 	for agentID, agentView := range agentViews {
-		for _, rule := range activeRealmForwardRulesForTopology(agentView.Entry.PortForwarding.Rules) {
+		for _, rule := range activeRealmForwardRulesForTopology(agentView.Entry.PortForwarding) {
 			targetAddress := strings.TrimSpace(rule.TargetAddress)
 			if targetAddress == "" {
 				targetAddress = realmTargetAgentAddress(rule.TargetAgentID, agentViews)
@@ -244,7 +244,7 @@ func buildOutboundCandidates(agentViews map[string]model.DashboardAgentView, ove
 			}
 			result[outboundTopologyKey(agentID, tag)] = topologyOutboundCandidate{ref: ref}
 		}
-		for _, rule := range activeHAProxyRulesForTopology(agentView.Entry.HAProxy.Rules) {
+		for _, rule := range activeHAProxyRulesForTopology(agentView.Entry.HAProxy) {
 			targetAddress := strings.TrimSpace(rule.Primary.Address)
 			if targetAddress == "" {
 				targetAddress = realmTargetAgentAddress(rule.Primary.AgentID, agentViews)
@@ -305,9 +305,12 @@ func realmTargetAgentAddress(agentID string, agentViews map[string]model.Dashboa
 	return firstNonEmpty(agent.Summary.ObservedIP, agent.Summary.PublicIPv4, agent.Summary.PublicIPv6, agent.Summary.Hostname)
 }
 
-func activeRealmForwardRulesForTopology(items []model.RealmForwardRule) []model.RealmForwardRule {
-	rules := make([]model.RealmForwardRule, 0, len(items))
-	for _, rule := range items {
+func activeRealmForwardRulesForTopology(cfg model.RealmForwardConfig) []model.RealmForwardRule {
+	if !cfg.Enabled || strings.EqualFold(strings.TrimSpace(cfg.Backend), "none") {
+		return nil
+	}
+	rules := make([]model.RealmForwardRule, 0, len(cfg.Rules))
+	for _, rule := range cfg.Rules {
 		rule.TargetAddress = strings.TrimSpace(rule.TargetAddress)
 		rule.TargetAgentID = strings.TrimSpace(rule.TargetAgentID)
 		if !rule.Enabled || (rule.TargetAddress == "" && rule.TargetAgentID == "") || rule.ListenPort <= 0 || rule.TargetPort <= 0 {
@@ -318,9 +321,12 @@ func activeRealmForwardRulesForTopology(items []model.RealmForwardRule) []model.
 	return rules
 }
 
-func activeHAProxyRulesForTopology(items []model.HAProxyRule) []model.HAProxyRule {
-	rules := make([]model.HAProxyRule, 0, len(items))
-	for _, rule := range items {
+func activeHAProxyRulesForTopology(cfg model.HAProxyConfig) []model.HAProxyRule {
+	if !cfg.Enabled {
+		return nil
+	}
+	rules := make([]model.HAProxyRule, 0, len(cfg.Rules))
+	for _, rule := range cfg.Rules {
 		rule.Primary.AgentID = strings.TrimSpace(rule.Primary.AgentID)
 		rule.Primary.Address = strings.TrimSpace(rule.Primary.Address)
 		if !rule.Enabled || rule.ListenPort <= 0 || rule.Primary.Port <= 0 || (rule.Primary.AgentID == "" && rule.Primary.Address == "") {

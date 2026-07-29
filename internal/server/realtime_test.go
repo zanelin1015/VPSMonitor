@@ -723,7 +723,7 @@ func TestAreaManagerDashboardTrafficIncludesAuthorizedRealmForwardedClients(t *t
 		t.Fatalf("GetAgentConfig gz: found=%v err=%v", found, err)
 	}
 	gzConfig.Entry.ImportDomain = "gz.example.com"
-	gzConfig.Entry.PortForwarding = model.RealmForwardConfig{Rules: []model.RealmForwardRule{{
+	gzConfig.Entry.PortForwarding = model.RealmForwardConfig{Enabled: true, Backend: "realm", Rules: []model.RealmForwardRule{{
 		Enabled:       true,
 		ListenAddress: "0.0.0.0",
 		ListenPort:    20001,
