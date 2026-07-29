@@ -47,6 +47,21 @@ export interface AgentListItem {
   finance_clients_ready?: boolean
 }
 
+export interface AgentReplacementResult {
+  status: string
+  source_agent_id: string
+  replacement_agent_id: string
+  area_manager_agents_migrated: number
+  area_manager_tags_migrated: number
+  area_assignments_migrated: number
+  customer_assignments_migrated: number
+  outbound_grants_migrated: number
+  realm_references_updated: number
+  haproxy_references_updated: number
+  updated_config_agent_ids: string[]
+  config_apply_sent_agent_ids?: string[]
+}
+
 export interface FinanceClientView {
   inbound_id: number
   inbound_tag?: string

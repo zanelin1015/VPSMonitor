@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Alert, AutoComplete, Badge, Button, Card, Empty, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, Tag, Tooltip, Typography } from 'antd'
 import type { TabsProps } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { ReloadOutlined, SaveOutlined, SettingOutlined } from '@ant-design/icons'
+import { ReloadOutlined, SaveOutlined, SettingOutlined, SwapOutlined } from '@ant-design/icons'
 
 import type {
   AgentEntryConfig,
@@ -114,6 +114,8 @@ export interface AgentDetailPanelProps {
   xuiClientTrafficSavingKey: string
   xuiClientToggleLoadingKey: string
   agentDeleteLoading: boolean
+  agentReplaceLoading: boolean
+  replacementAgents: DashboardAgentView[]
   canOpenXUI: boolean
   canManageConfig: boolean
   restrictedView?: boolean
@@ -142,6 +144,7 @@ export interface AgentDetailPanelProps {
   onOpenXUI: () => void
   onAuthorizeCustomer: (draft: CustomerAssignmentDraft) => void
   onDeleteCurrentAgent: () => void
+  onReplaceCurrentAgent: (replacementAgentID: string) => Promise<boolean>
   onDeleteXUIClient: (client: XUIClientView) => void
   onSaveXUIClientTrafficLimit: (client: XUIClientView, totalGB: number) => void
   onSetXUIClientEnabled: (client: XUIClientView, enabled: boolean) => void
@@ -221,6 +224,8 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     xuiClientTrafficSavingKey,
     xuiClientToggleLoadingKey,
     agentDeleteLoading,
+    agentReplaceLoading,
+    replacementAgents,
     canOpenXUI,
     canManageConfig,
     restrictedView = false,
@@ -249,6 +254,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onOpenXUI,
     onAuthorizeCustomer,
     onDeleteCurrentAgent,
+    onReplaceCurrentAgent,
     onDeleteXUIClient,
     onSaveXUIClientTrafficLimit,
     onSetXUIClientEnabled,
@@ -278,9 +284,21 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const [clientTrafficLimitDrafts, setClientTrafficLimitDrafts] = useState<Record<string, number>>({})
   const [commandOutputAction, setCommandOutputAction] = useState<XUIAction | null>(null)
   const [terminalOpen, setTerminalOpen] = useState(false)
+  const [replacementModalOpen, setReplacementModalOpen] = useState(false)
+  const [replacementAgentID, setReplacementAgentID] = useState('')
   const [terminalShell, setTerminalShell] = useState(defaultTerminalShell(selectedAgent.client_os, selectedAgent.system_version))
   const [terminalFontSize, setTerminalFontSize] = useState(13)
   const [terminalExpanded, setTerminalExpanded] = useState(false)
+
+  async function submitAgentReplacement() {
+    if (!replacementAgentID) {
+      return
+    }
+    if (await onReplaceCurrentAgent(replacementAgentID)) {
+      setReplacementModalOpen(false)
+      setReplacementAgentID('')
+    }
+  }
   const currentAgentLinks = filteredTagLinks.filter((link) => link.source.agent_id === selectedAgentId || link.target.agent_id === selectedAgentId)
   const currentAgentRealmLinks = currentAgentLinks.filter((link) => link.source.agent_id === selectedAgentId && (link.source.protocol || '').toLowerCase() === 'realm')
   const realmForwardNodes = buildRealmForwardNodes(currentAgentRealmLinks, dashboardView, overview?.nodes || [])
@@ -907,17 +925,11 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const visibleRealmClientColumns = restrictedView
     ? realmClientColumns.filter((column) => !['target_agent', 'inbound', 'route'].includes(String(column.key || '')))
     : realmClientColumns
-  const haProxyNodeColumns: ColumnsType<HAProxyForwardNodeView> = realmNodeColumns.map((column) => (
-    column.key === 'route' ? { ...column, title: 'HAProxy 来源' } : column
-  ))
-  const visibleHAProxyNodeColumns = restrictedView
-    ? haProxyNodeColumns.filter((column) => column.key !== 'route')
-    : haProxyNodeColumns
-  const haProxyClientColumns: ColumnsType<HAProxyForwardClientView> = realmClientColumns.map((column) => (
-    column.key === 'route' ? { ...column, title: 'HAProxy 来源' } : column
-  ))
+  const haProxyNodeColumns: ColumnsType<HAProxyForwardNodeView> = realmNodeColumns.filter((column) => column.key !== 'route')
+  const visibleHAProxyNodeColumns = haProxyNodeColumns
+  const haProxyClientColumns: ColumnsType<HAProxyForwardClientView> = realmClientColumns.filter((column) => column.key !== 'route')
   const visibleHAProxyClientColumns = restrictedView
-    ? haProxyClientColumns.filter((column) => !['target_agent', 'inbound', 'route'].includes(String(column.key || '')))
+    ? haProxyClientColumns.filter((column) => !['target_agent', 'inbound'].includes(String(column.key || '')))
     : haProxyClientColumns
 
   const routingColumns: ColumnsType<XUIRoutingRuleView> = [
@@ -1558,6 +1570,18 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
               </Popconfirm>
             ) : null}
             {!restrictedView && canManageConfig ? (
+              <Button
+                icon={<SwapOutlined />}
+                loading={agentReplaceLoading}
+                onClick={() => {
+                  setReplacementAgentID('')
+                  setReplacementModalOpen(true)
+                }}
+              >
+                替换 Client
+              </Button>
+            ) : null}
+            {!restrictedView && canManageConfig ? (
               <Popconfirm
                 title="删除这个 VPS / Client？"
                 description="会从后台移除该 VPS 的配置、快照、授权和操作记录；如果远端 Client 当前在线，会同时下发停止服务并关闭开机自启。"
@@ -1597,6 +1621,51 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
           items={detailTabs}
         />
       </Card>
+      <Modal
+        title="替换 Client"
+        open={replacementModalOpen}
+        okText="确认替换"
+        cancelText="取消"
+        confirmLoading={agentReplaceLoading}
+        okButtonProps={{ disabled: !replacementAgentID }}
+        onOk={() => void submitAgentReplacement()}
+        onCancel={() => {
+          if (!agentReplaceLoading) {
+            setReplacementModalOpen(false)
+            setReplacementAgentID('')
+          }
+        }}
+        destroyOnClose
+      >
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Alert
+            type="warning"
+            showIcon
+            message={`将 ${selectedAgent.agent_name || selectedAgent.agent_id} 的关联关系迁移到新 Client`}
+            description="会迁移区域账号权限、节点/客户端/转发端口授权、出站授权、区域私有标签、下属用户授权，以及其他 Client 中引用旧 Client 的 Realm/HAProxy 目标。"
+          />
+          <div>
+            <Text type="secondary">新 Client</Text>
+            <Select
+              showSearch
+              optionFilterProp="label"
+              style={{ width: '100%', marginTop: 6 }}
+              placeholder="选择用于接替的 Client"
+              value={replacementAgentID || undefined}
+              options={replacementAgents.map((agent) => ({
+                value: agent.agent_id,
+                label: `${agent.agent_name || agent.agent_id} (${agent.agent_id})`,
+              }))}
+              onChange={setReplacementAgentID}
+            />
+          </div>
+          <Alert
+            type="info"
+            showIcon
+            message="新 Client 的 x-ui、Realm、HAProxy、续费和运行配置不会被覆盖；旧 Client 也不会自动删除。"
+          />
+        </Space>
+      </Modal>
       <Modal
         title="实时 TTY"
         open={terminalOpen}

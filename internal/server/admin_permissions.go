@@ -615,11 +615,54 @@ func (a *App) areaManagerGrantedClientScope(user model.AdminUser) areaManagerCli
 	}
 	assignments, err := a.store.ListAreaManagerAssignments(user.ID)
 	if err == nil {
+		configCache := make(map[string]*model.ManagedAgentConfig)
 		for _, assignment := range assignments {
-			addAreaManagerScopeAssignment(&scope, assignment.AgentID, assignment.InboundID, assignment.InboundTag, assignment.ClientEmail, assignment.Enabled)
+			inboundTag := assignment.InboundTag
+			if assignment.ClientEmail == "" {
+				inboundTag = a.normalizeAreaManagerForwardingAssignmentTag(assignment.AgentID, assignment.InboundID, inboundTag, configCache)
+			}
+			addAreaManagerScopeAssignment(&scope, assignment.AgentID, assignment.InboundID, inboundTag, assignment.ClientEmail, assignment.Enabled)
 		}
 	}
 	return scope
+}
+
+func (a *App) normalizeAreaManagerForwardingAssignmentTag(agentID string, listenPort int, inboundTag string, cache map[string]*model.ManagedAgentConfig) string {
+	if a == nil || a.store == nil || listenPort <= 0 || (!isRealmAssignmentTag(inboundTag) && !isHAProxyAssignmentTag(inboundTag)) {
+		return inboundTag
+	}
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return inboundTag
+	}
+	cfg, cached := cache[agentID]
+	if !cached {
+		loaded, found, err := a.store.GetAgentConfig(agentID)
+		if err != nil || !found {
+			cache[agentID] = nil
+			return inboundTag
+		}
+		cfg = &loaded
+		cache[agentID] = cfg
+	}
+	if cfg == nil {
+		return inboundTag
+	}
+	if cfg.Entry.HAProxy.Enabled {
+		for _, rule := range cfg.Entry.HAProxy.Rules {
+			if rule.Enabled && rule.ListenPort == listenPort {
+				return "haproxy:" + strconv.Itoa(listenPort)
+			}
+		}
+	}
+	if realmForwardingActive(cfg.Entry.PortForwarding) {
+		for _, rule := range cfg.Entry.PortForwarding.Rules {
+			if rule.Enabled && rule.ListenPort == listenPort {
+				return "realm:" + strconv.Itoa(listenPort)
+			}
+		}
+	}
+	return inboundTag
 }
 
 func (a *App) areaManagerAssignmentClientScope(user model.AdminUser, agentID string) areaManagerClientScope {

@@ -499,6 +499,12 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch parts[1] {
+	case "replace":
+		if len(parts) != 2 {
+			writeError(w, http.StatusNotFound, "route not found")
+			return
+		}
+		a.handleAgentReplacement(w, r, agentID)
 	case "heartbeat":
 		if r.Method != http.MethodPost {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")

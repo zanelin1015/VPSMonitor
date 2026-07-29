@@ -222,8 +222,9 @@ export function assignmentNodeKeys(agentID: string, overview: XUIOverview | null
 
 export function buildRealmGrantOptions(agentID: string, agents: DashboardAgentView[]) {
   const agent = agents.find((item) => item.agent_id === agentID)
-  const realmRules = agent?.entry?.port_forwarding?.rules || []
-  const haProxyRules = agent?.entry?.haproxy?.enabled === false ? [] : agent?.entry?.haproxy?.rules || []
+  const realmConfig = agent?.entry?.port_forwarding
+  const realmRules = realmConfig?.enabled && (realmConfig.backend || '').trim().toLowerCase() !== 'none' ? realmConfig.rules || [] : []
+  const haProxyRules = agent?.entry?.haproxy?.enabled ? agent.entry.haproxy.rules || [] : []
   const seenPorts = new Set<number>()
   const realmOptions = realmRules
     .filter((rule) => rule.enabled !== false && Number(rule.listen_port || 0) > 0)
@@ -416,7 +417,10 @@ export function areaAssignmentDraftFromTargetOption(
   }
 }
 
-export function normalizeAreaManagerAssignmentDrafts(items: Array<AreaManagerAssignment | AreaManagerAssignmentDraft>): AreaManagerAssignmentDraft[] {
+export function normalizeAreaManagerAssignmentDrafts(
+  items: Array<AreaManagerAssignment | AreaManagerAssignmentDraft>,
+  agents: DashboardAgentView[] = [],
+): AreaManagerAssignmentDraft[] {
   const result: AreaManagerAssignmentDraft[] = []
   const seen = new Set<string>()
   for (const item of items || []) {
@@ -435,7 +439,8 @@ export function normalizeAreaManagerAssignmentDrafts(items: Array<AreaManagerAss
       continue
     }
     if (!draft.client_email && isRealmAssignmentTagValue(draft.inbound_tag)) {
-      const prefix = draft.inbound_tag.trim().toLowerCase().startsWith('haproxy:') ? 'haproxy' : 'realm'
+      const activePrefix = activeForwardingAssignmentPrefix(draft.agent_id, draft.inbound_id, agents)
+      const prefix = activePrefix || (draft.inbound_tag.trim().toLowerCase().startsWith('haproxy:') ? 'haproxy' : 'realm')
       draft.inbound_tag = `${prefix}:${draft.inbound_id}`
       draft.public_client_name = draft.public_client_name || `${prefix === 'haproxy' ? 'HAProxy' : 'Realm'} ${draft.inbound_id}`
     }
@@ -502,11 +507,26 @@ export function assignmentMatchesInbound(item: { agent_id: string; inbound_id: n
 }
 
 export function firstRealmAssignmentAgentID(items: AreaManagerAssignment[], agents: DashboardAgentView[]): string {
-  return normalizeAreaManagerAssignmentDrafts(items).find((item) => isRealmAssignmentDraft(item, agents))?.agent_id || ''
+  return normalizeAreaManagerAssignmentDrafts(items, agents).find((item) => isRealmAssignmentDraft(item, agents))?.agent_id || ''
 }
 
 export function firstXUIAssignmentAgentID(items: AreaManagerAssignment[], agents: DashboardAgentView[]): string {
-  return normalizeAreaManagerAssignmentDrafts(items).find((item) => !isRealmAssignmentDraft(item, agents))?.agent_id || ''
+  return normalizeAreaManagerAssignmentDrafts(items, agents).find((item) => !isRealmAssignmentDraft(item, agents))?.agent_id || ''
+}
+
+function activeForwardingAssignmentPrefix(agentID: string, listenPort: number, agents: DashboardAgentView[]): 'realm' | 'haproxy' | '' {
+  const agent = agents.find((item) => item.agent_id === agentID)
+  if (!agent || listenPort <= 0) {
+    return ''
+  }
+  if (agent.entry?.haproxy?.enabled && (agent.entry.haproxy.rules || []).some((rule) => rule.enabled !== false && Number(rule.listen_port || 0) === listenPort)) {
+    return 'haproxy'
+  }
+  const realmConfig = agent.entry?.port_forwarding
+  if (realmConfig?.enabled && (realmConfig.backend || '').trim().toLowerCase() !== 'none' && (realmConfig.rules || []).some((rule) => rule.enabled !== false && Number(rule.listen_port || 0) === listenPort)) {
+    return 'realm'
+  }
+  return ''
 }
 
 function isRealmForwardedClientOption(client: XUIClientView): boolean {

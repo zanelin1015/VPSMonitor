@@ -456,7 +456,7 @@ export function CustomerManagementModal(props: {
       render: (_, record) => {
         const ownedCustomers = record.customers || []
         const assignmentCount = ownedCustomers.reduce((sum, customer) => sum + (customer.assignments?.length || 0), 0)
-        const directCount = normalizeAreaManagerAssignmentDrafts(record.assignments || []).length
+        const directCount = normalizeAreaManagerAssignmentDrafts(record.assignments || [], agents).length
         return (
           <Space size={6}>
             <Tag color="geekblue">{ownedCustomers.length} 用户</Tag>
@@ -469,7 +469,7 @@ export function CustomerManagementModal(props: {
     {
       title: '可管理节点',
       render: (_, record) => {
-        const assignments = normalizeAreaManagerAssignmentDrafts(record.assignments || [])
+        const assignments = normalizeAreaManagerAssignmentDrafts(record.assignments || [], agents)
         if (assignments.length) {
           return renderAssignmentHierarchy(assignments, agents)
         }
@@ -652,7 +652,7 @@ export function CustomerManagementModal(props: {
       message.warning('新区域账号密码至少 8 位')
       return
     }
-    const assignments = normalizeAreaManagerAssignmentDrafts(areaManagerForm.assignments)
+    const assignments = normalizeAreaManagerAssignmentDrafts(areaManagerForm.assignments, agents)
     const authorizedAgentIDs = new Set(assignments.map((assignment) => assignment.agent_id))
     const outboundGrants = normalizeAreaManagerOutboundGrants(areaManagerForm.outbound_grants)
       .filter((grant) => authorizedAgentIDs.has(grant.agent_id))
@@ -837,7 +837,7 @@ export function CustomerManagementModal(props: {
       outbound_create_enabled: Boolean(record.outbound_create_enabled),
       outbound_grant_agent_id: record.outbound_grants?.[0]?.agent_id || '',
       outbound_grants: normalizeAreaManagerOutboundGrants(record.outbound_grants || []),
-      assignments: normalizeAreaManagerAssignmentDrafts(record.assignments || []),
+      assignments: normalizeAreaManagerAssignmentDrafts(record.assignments || [], agents),
     })
     setAreaManagerModalOpen(true)
   }

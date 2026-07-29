@@ -12,6 +12,7 @@ import type {
   AreaAgentTagsResponse,
   AgentLogsResponse,
   AgentRefreshResponse,
+  AgentReplacementResult,
   AgentRealtimeMetrics,
   ConfigAuditLog,
   CustomerAdminView,
@@ -199,6 +200,7 @@ export default function App() {
   const [agentLogsError, setAgentLogsError] = useState('')
   const [agentRefreshLoading, setAgentRefreshLoading] = useState(false)
   const [agentDeleteLoading, setAgentDeleteLoading] = useState(false)
+  const [agentReplaceLoading, setAgentReplaceLoading] = useState(false)
   const [realmCopyLoading, setRealmCopyLoading] = useState(false)
   const [xuiActionModalOpen, setXUIActionModalOpen] = useState(false)
   const [xuiActionSaving, setXUIActionSaving] = useState(false)
@@ -1004,6 +1006,43 @@ export default function App() {
       message.error(error instanceof Error ? error.message : '删除 Client / VPS 失败')
     } finally {
       setAgentDeleteLoading(false)
+    }
+  }
+
+  async function replaceAgent(replacementAgentID: string, sourceAgentID = selectedAgentId): Promise<boolean> {
+    if (!sourceAgentID || !replacementAgentID || sourceAgentID === replacementAgentID) {
+      return false
+    }
+    const sourceName = agents.find((item) => item.agent_id === sourceAgentID)?.agent_name || sourceAgentID
+    const replacementName = agents.find((item) => item.agent_id === replacementAgentID)?.agent_name || replacementAgentID
+    setAgentReplaceLoading(true)
+    try {
+      const result = await fetchJSON<AgentReplacementResult>(`/api/v1/agents/${encodeURIComponent(sourceAgentID)}/replace`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ replacement_agent_id: replacementAgentID }),
+      })
+      setSelectedAgentId(replacementAgentID)
+      setReloadToken((current) => current + 1)
+      await loadAgents({ silent: true })
+      if (topologyLoaded || topologyVisible) {
+        await loadTopology({ silent: true })
+      }
+      const permissionCount = result.area_manager_agents_migrated
+        + result.area_assignments_migrated
+        + result.customer_assignments_migrated
+        + result.outbound_grants_migrated
+      const forwardingCount = result.realm_references_updated + result.haproxy_references_updated
+      message.success(`已将 ${sourceName} 替换为 ${replacementName}：迁移 ${permissionCount} 条授权，更新 ${forwardingCount} 条转发引用；旧 Client 已保留`)
+      return true
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setAdminUser(null)
+      }
+      message.error(error instanceof Error ? error.message : '替换 Client 失败')
+      return false
+    } finally {
+      setAgentReplaceLoading(false)
     }
   }
 
@@ -1869,6 +1908,8 @@ export default function App() {
                 xuiClientTrafficSavingKey={xuiClientTrafficSavingKey}
                 xuiClientToggleLoadingKey={xuiClientToggleLoadingKey}
                 agentDeleteLoading={agentDeleteLoading}
+                agentReplaceLoading={agentReplaceLoading}
+                replacementAgents={agents.filter((agent) => agent.agent_id !== selectedAgentId)}
                 onActiveTabChange={setActiveTabKey}
                 onClientSearchChange={setClientSearch}
                 onCopyImportURL={(client) => void copyImportURL(client)}
@@ -1928,6 +1969,7 @@ export default function App() {
                 }}
                 onAuthorizeCustomer={openCustomerAuthorization}
                 onDeleteCurrentAgent={() => void deleteAgent(selectedAgentId)}
+                onReplaceCurrentAgent={(replacementAgentID) => replaceAgent(replacementAgentID, selectedAgentId)}
                 onDeleteXUIClient={(client) => void deleteXUIClient(client, selectedAgentId)}
                 onSaveXUIClientTrafficLimit={(client, totalGB) => void saveXUIClientTrafficLimit(client, totalGB, selectedAgentId)}
                 onSetXUIClientEnabled={(client, enabled) => void setXUIClientEnabled(client, enabled, selectedAgentId)}

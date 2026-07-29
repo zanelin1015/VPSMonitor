@@ -219,3 +219,22 @@ type AgentRecord struct {
 	HasConfig           bool               `json:"has_config"`
 	Config              ManagedAgentConfig `json:"config,omitempty"`
 }
+
+type AgentReplacementRequest struct {
+	ReplacementAgentID string `json:"replacement_agent_id"`
+}
+
+type AgentReplacementResult struct {
+	Status                      string   `json:"status"`
+	SourceAgentID               string   `json:"source_agent_id"`
+	ReplacementAgentID          string   `json:"replacement_agent_id"`
+	AreaManagerAgentsMigrated   int      `json:"area_manager_agents_migrated"`
+	AreaManagerTagsMigrated     int      `json:"area_manager_tags_migrated"`
+	AreaAssignmentsMigrated     int      `json:"area_assignments_migrated"`
+	CustomerAssignmentsMigrated int      `json:"customer_assignments_migrated"`
+	OutboundGrantsMigrated      int      `json:"outbound_grants_migrated"`
+	RealmReferencesUpdated      int      `json:"realm_references_updated"`
+	HAProxyReferencesUpdated    int      `json:"haproxy_references_updated"`
+	UpdatedConfigAgentIDs       []string `json:"updated_config_agent_ids"`
+	ConfigApplySentAgentIDs     []string `json:"config_apply_sent_agent_ids,omitempty"`
+}

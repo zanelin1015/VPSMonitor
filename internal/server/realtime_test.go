@@ -878,6 +878,82 @@ func TestAreaManagerDashboardTrafficIncludesAuthorizedHAProxyForwardedClients(t 
 	}
 }
 
+func TestAreaManagerXUIOverviewMigratesLegacyRealmPortGrantToHAProxy(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+	for _, agentID := range []string{"gz", "dmit"} {
+		if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: agentID, AgentName: agentID}); err != nil {
+			t.Fatalf("RegisterAgent %s: %v", agentID, err)
+		}
+	}
+	gzConfig, found, err := sqliteStore.GetAgentConfig("gz")
+	if err != nil || !found {
+		t.Fatalf("GetAgentConfig gz: found=%v err=%v", found, err)
+	}
+	gzConfig.Entry.PortForwarding = model.RealmForwardConfig{
+		Enabled: false,
+		Backend: "none",
+		Rules: []model.RealmForwardRule{{
+			ID: "old-realm-20001", Enabled: true, ListenPort: 20001, TargetAgentID: "dmit", TargetPort: 443,
+		}},
+	}
+	gzConfig.Entry.HAProxy = model.HAProxyConfig{Enabled: true, Rules: []model.HAProxyRule{{
+		ID: "ha-20001", Enabled: true, ListenPort: 20001,
+		Primary: model.HAProxyRealmTarget{AgentID: "dmit", Port: 443},
+	}}}
+	if _, err := sqliteStore.UpdateAgentConfig("gz", gzConfig); err != nil {
+		t.Fatalf("UpdateAgentConfig gz: %v", err)
+	}
+
+	enabled := true
+	manager, err := sqliteStore.CreateAreaManager(model.AreaManagerAccountRequest{
+		Username: "area-ha-legacy",
+		Password: "password123",
+		Enabled:  &enabled,
+		AgentIDs: []string{"gz", "dmit"},
+	})
+	if err != nil {
+		t.Fatalf("CreateAreaManager: %v", err)
+	}
+	for _, assignment := range []model.AreaManagerAssignmentRequest{
+		{AgentID: "gz", InboundID: 20001, InboundTag: "realm:20001", Enabled: &enabled},
+		{AgentID: "dmit", InboundID: 1, InboundTag: "in-20001-tcp", ClientEmail: "VN-111", Enabled: &enabled},
+	} {
+		if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, assignment); err != nil {
+			t.Fatalf("CreateAreaManagerAssignment: %v", err)
+		}
+	}
+
+	app := &App{store: sqliteStore}
+	user := model.AdminUser{ID: manager.ID, Role: model.AdminRoleAreaManager, AgentIDs: []string{"gz", "dmit"}}
+	scope := app.areaManagerGrantedClientScope(user)
+	if !scope.allowsForwardingPort("gz", 20001, "haproxy") {
+		t.Fatalf("legacy Realm port grant must follow the active HAProxy mode")
+	}
+	overview := &model.XUIOverview{
+		AgentID: "gz",
+		Clients: []model.XUIClientView{
+			{
+				InboundID: 20001, InboundTag: "HAProxy 20001 -> DMIT", Email: "VN-111", ForwardType: "haproxy",
+				RealmSourceAgentID: "gz", RealmTargetAgentID: "dmit", RealmTargetInboundID: 1,
+				RealmTargetInboundTag: "in-20001-tcp", RealmListenPort: 20001,
+			},
+			{
+				InboundID: 20001, InboundTag: "HAProxy 20001 -> DMIT", Email: "VN-200", ForwardType: "haproxy",
+				RealmSourceAgentID: "gz", RealmTargetAgentID: "dmit", RealmTargetInboundID: 1,
+				RealmTargetInboundTag: "in-20001-tcp", RealmListenPort: 20001,
+			},
+		},
+	}
+	app.sanitizeXUIOverviewForAdmin(user, overview)
+	if len(overview.Clients) != 1 || overview.Clients[0].Email != "VN-111" {
+		t.Fatalf("expected only the authorized HAProxy-forwarded client, got %#v", overview.Clients)
+	}
+}
+
 func TestScopedClientTrafficTotalsDeduplicatesRealmAliases(t *testing.T) {
 	clients := []model.XUIClientView{
 		{InboundID: 20001, Email: "same@example.com", Up: 100, Down: 200, IsRealmForwarded: true, RealmTargetAgentID: "target", RealmTargetInboundID: 7, RealmTargetInboundTag: "node-7"},
