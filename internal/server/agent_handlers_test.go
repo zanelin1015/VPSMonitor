@@ -901,3 +901,99 @@ func TestPendingTopologyLookupValuesIncludesUncachedOutboundIP(t *testing.T) {
 		t.Fatalf("expected only uncached VN outbound IP to be refreshed, got %#v", values)
 	}
 }
+
+func TestBuildAreaManagerTopologyResolvesUndirectlyAssignedRelay(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+
+	for _, agentID := range []string{"gz", "hk-primary", "hk-backup", "dmit", "unrelated"} {
+		if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: agentID, AgentName: agentID}); err != nil {
+			t.Fatalf("RegisterAgent %s: %v", agentID, err)
+		}
+	}
+	updateEntry := func(agentID string, entry model.AgentEntryConfig) {
+		cfg, found, err := sqliteStore.GetAgentConfig(agentID)
+		if err != nil || !found {
+			t.Fatalf("GetAgentConfig %s: found=%v err=%v", agentID, found, err)
+		}
+		cfg.Entry = entry
+		if _, err := sqliteStore.UpdateAgentConfig(agentID, cfg); err != nil {
+			t.Fatalf("UpdateAgentConfig %s: %v", agentID, err)
+		}
+	}
+	updateEntry("gz", model.AgentEntryConfig{ImportDomain: "gz.example.com", HAProxy: model.HAProxyConfig{
+		Enabled: true,
+		Rules: []model.HAProxyRule{{
+			ID: "gz-ha-20001", Enabled: true, ListenPort: 20001,
+			Primary: model.HAProxyRealmTarget{AgentID: "hk-primary", Address: "hk-primary.example.com", Port: 20001},
+			Backups: []model.HAProxyRealmTarget{{AgentID: "hk-backup", Address: "hk-backup.example.com", Port: 20001}},
+		}},
+	}})
+	for _, agentID := range []string{"hk-primary", "hk-backup"} {
+		updateEntry(agentID, model.AgentEntryConfig{ImportDomain: agentID + ".example.com", PortForwarding: model.RealmForwardConfig{
+			Enabled: true, Backend: "realm",
+			Rules: []model.RealmForwardRule{{
+				ID: agentID + "-20001", Enabled: true, ListenPort: 20001,
+				TargetAgentID: "dmit", TargetAddress: "dmit.example.com", TargetPort: 20001, Network: "tcp",
+			}},
+		}})
+	}
+	updateEntry("dmit", model.AgentEntryConfig{ImportDomain: "dmit.example.com"})
+
+	now := time.Now().UTC()
+	if err := sqliteStore.SaveSnapshot(model.AgentSnapshot{
+		AgentID: "dmit", AgentName: "dmit", ReportedAt: now,
+		XUI: &model.XUISnapshot{CollectedAt: now, Inbounds: []map[string]any{{
+			"id": 1, "tag": "in-20001-tcp", "remark": "HK", "protocol": "vless", "port": 20001, "enable": true,
+			"settings": `{"clients":[{"email":"alice@example.com","enable":true}]}`,
+		}}},
+	}); err != nil {
+		t.Fatalf("SaveSnapshot dmit: %v", err)
+	}
+
+	enabled := true
+	manager, err := sqliteStore.CreateAreaManager(model.AreaManagerAccountRequest{
+		Username: "area-topology-build", Password: "password123", Enabled: &enabled,
+		AgentIDs: []string{"gz", "dmit"},
+	})
+	if err != nil {
+		t.Fatalf("CreateAreaManager: %v", err)
+	}
+	for _, assignment := range []model.AreaManagerAssignmentRequest{
+		{AgentID: "gz", InboundID: 20001, InboundTag: "haproxy:20001", Enabled: &enabled},
+		{AgentID: "dmit", InboundID: 1, InboundTag: "in-20001-tcp", ClientEmail: "alice@example.com", Enabled: &enabled},
+	} {
+		if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, assignment); err != nil {
+			t.Fatalf("CreateAreaManagerAssignment: %v", err)
+		}
+	}
+
+	app := &App{store: sqliteStore}
+	view, err := app.buildDashboardViewForAdmin(model.AdminUser{
+		ID: manager.ID, Username: manager.Username, Role: model.AdminRoleAreaManager,
+		AgentIDs: []string{"gz", "dmit"}, UpdatedAt: manager.UpdatedAt,
+	}, true)
+	if err != nil {
+		t.Fatalf("buildDashboardViewForAdmin: %v", err)
+	}
+	if len(view.Links) != 2 || len(view.ClientChains) != 1 {
+		t.Fatalf("expected GZ HAProxy and primary HK Realm links, got links=%#v chains=%#v", view.Links, view.ClientChains)
+	}
+	agentIDs := make(map[string]struct{}, len(view.Agents))
+	for _, agent := range view.Agents {
+		agentIDs[agent.AgentID] = struct{}{}
+	}
+	for _, expected := range []string{"gz", "dmit"} {
+		if _, ok := agentIDs[expected]; !ok {
+			t.Fatalf("expected %s in sanitized topology agents, got %#v", expected, agentIDs)
+		}
+	}
+	for _, hidden := range []string{"hk-primary", "hk-backup", "unrelated"} {
+		if _, ok := agentIDs[hidden]; ok {
+			t.Fatalf("%s must not be exposed in sanitized topology agents: %#v", hidden, agentIDs)
+		}
+	}
+}

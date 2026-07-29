@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/netip"
@@ -150,10 +151,17 @@ func (a *App) sanitizeDashboardForAdmin(user model.AdminUser, view *model.Global
 	allowed := cloneAgentSet(clientScope.agents)
 	expandAreaManagerForwardingPathAgents(allowed, view.Links, clientScope)
 	agentNames := make(map[string]string, len(view.Agents))
-	for index := range view.Agents {
-		view.Agents[index] = sanitizeDashboardAgentForAreaManager(view.Agents[index], tagMap)
-		agentNames[view.Agents[index].AgentID] = view.Agents[index].AgentName
+	filteredAgents := make([]model.DashboardAgentView, 0, len(clientScope.agents))
+	for _, agent := range view.Agents {
+		if _, directlyAssigned := clientScope.agents[agent.AgentID]; !directlyAssigned {
+			agentNames[agent.AgentID] = firstNonEmptyString(agent.CustomerDisplayName, "转发节点")
+			continue
+		}
+		publicAgent := sanitizeDashboardAgentForAreaManager(agent, tagMap)
+		agentNames[agent.AgentID] = publicAgent.AgentName
+		filteredAgents = append(filteredAgents, publicAgent)
 	}
+	view.Agents = filteredAgents
 	view.Links = sanitizeTopologyLinksForAreaManager(view.Links, allowed, tagMap, agentNames)
 	view.ClientChains = sanitizeClientChainsForAreaManager(view.ClientChains, allowed, tagMap, agentNames, clientScope)
 	view.Links = filterTopologyLinksVisibleToAreaManager(view.Links, view.ClientChains, clientScope)
@@ -384,16 +392,33 @@ func (a *App) sanitizeRealmTargetNamesForAreaManager(overview *model.XUIOverview
 		}
 		return agentID
 	}
+	forwardedLabel := func(listenPort int, targetAgentID string, targetInboundID int) string {
+		sourceName := firstNonEmptyString(publicName(overview.AgentID), "当前 Client")
+		targetName := firstNonEmptyString(publicName(targetAgentID), "目标 Client")
+		source := sourceName
+		if listenPort > 0 {
+			source = fmt.Sprintf("%s:%d", source, listenPort)
+		}
+		target := targetName
+		if targetInboundID > 0 {
+			target = fmt.Sprintf("%s:%d", target, targetInboundID)
+		}
+		return source + " -> " + target
+	}
 	for index := range overview.Nodes {
 		node := &overview.Nodes[index]
 		if node.RealmTargetAgentID != "" || node.RealmTargetAgentName != "" {
 			node.RealmTargetAgentName = publicName(node.RealmTargetAgentID)
+			node.Remark = forwardedLabel(node.Port, node.RealmTargetAgentID, node.RealmTargetInboundID)
+			node.Route.Note = ""
 		}
 	}
 	for index := range overview.Clients {
 		client := &overview.Clients[index]
 		if client.RealmTargetAgentID != "" || client.RealmTargetAgentName != "" {
 			client.RealmTargetAgentName = publicName(client.RealmTargetAgentID)
+			client.InboundRemark = forwardedLabel(client.RealmListenPort, client.RealmTargetAgentID, client.RealmTargetInboundID)
+			client.Route.Note = ""
 		}
 	}
 }

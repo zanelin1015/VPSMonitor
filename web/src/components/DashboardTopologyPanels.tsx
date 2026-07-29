@@ -557,7 +557,7 @@ function buildCNFlowRows(chains: ClientChainView[], agents: DashboardAgentView[]
     const clientStep = chain.steps.find((step) => step.step_type === 'client')
     const entryStep = chain.steps.find((step) => step.step_type === 'inbound')
     const entryLabel = entryStep ? `${entryStep.label}${entryStep.port ? `:${entryStep.port}` : ''}` : chain.root_inbound_tag || '-'
-    const entryRelay = findEntryRealmRelay(chain, entryStep, entryLabel, links)
+    const entryRelay = findEntryForwardingRelay(chain, entryStep, entryLabel, links)
     const hops: CNFlowHop[] = []
     for (let index = 0; index < chain.steps.length; index += 1) {
       const step = chain.steps[index]
@@ -643,7 +643,7 @@ function filterCNFlowRows(rows: CNFlowRow[], query: string): CNFlowRow[] {
   return rows.filter((row) => tokens.every((token) => row.searchText.includes(token)))
 }
 
-function findEntryRealmRelay(
+function findEntryForwardingRelay(
   chain: ClientChainView,
   entryStep: ClientChainStep | undefined,
   entryLabel: string,
@@ -651,9 +651,10 @@ function findEntryRealmRelay(
 ): CNFlowRelay | undefined {
   const targetPort = entryStep?.port || 0
   const normalizedEntryLabel = normalizeNodeAnchorLabel(entryLabel).toLowerCase()
-  const relayLink = links.find((link) => {
+  const candidates = links.filter((link) => {
     const target = link.final_target || link.target
-    if ((link.source.protocol || '').toLowerCase() !== 'realm' || link.source.agent_id === chain.root_agent_id) {
+    const protocol = (link.source.protocol || '').toLowerCase()
+    if (!['realm', 'haproxy'].includes(protocol) || link.source.agent_id === chain.root_agent_id) {
       return false
     }
     if (target.agent_id !== chain.root_agent_id) {
@@ -665,6 +666,9 @@ function findEntryRealmRelay(
     const targetLabel = normalizeNodeAnchorLabel(`${target.inbound_name || target.inbound_tag || ''}${target.port ? `:${target.port}` : ''}`).toLowerCase()
     return targetLabel !== '' && targetLabel === normalizedEntryLabel
   })
+  const relayLink = candidates.find((candidate) => !candidates.some((other) => (
+    other.key !== candidate.key && other.target.agent_id === candidate.source.agent_id
+  ))) || candidates.sort((a, b) => (b.realm_hops?.length || 0) - (a.realm_hops?.length || 0))[0]
   if (!relayLink) {
     return undefined
   }

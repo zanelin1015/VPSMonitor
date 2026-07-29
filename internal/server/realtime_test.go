@@ -462,6 +462,74 @@ func TestAreaManagerVisibleLinksKeepGrantedRealmEntry(t *testing.T) {
 	}
 }
 
+func TestAreaManagerDashboardKeepsAuthorizedForwardingRelayOnly(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+
+	for _, agentID := range []string{"gz", "hk-relay", "dmit", "unrelated"} {
+		if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: agentID, AgentName: agentID + " internal"}); err != nil {
+			t.Fatalf("RegisterAgent %s: %v", agentID, err)
+		}
+	}
+	enabled := true
+	manager, err := sqliteStore.CreateAreaManager(model.AreaManagerAccountRequest{
+		Username: "area-forwarding-topology", Password: "password123", Enabled: &enabled,
+		AgentIDs: []string{"gz", "dmit"},
+	})
+	if err != nil {
+		t.Fatalf("CreateAreaManager: %v", err)
+	}
+	for _, assignment := range []model.AreaManagerAssignmentRequest{
+		{AgentID: "gz", InboundID: 20001, InboundTag: "haproxy:20001", Enabled: &enabled},
+		{AgentID: "dmit", InboundID: 1, InboundTag: "in-20001-tcp", ClientEmail: "alice@example.com", Enabled: &enabled},
+	} {
+		if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, assignment); err != nil {
+			t.Fatalf("CreateAreaManagerAssignment: %v", err)
+		}
+	}
+
+	final := model.TopologyInboundRef{AgentID: "dmit", InboundID: 1, InboundTag: "in-20001-tcp", Protocol: "vless", Port: 20001}
+	relay := model.TopologyInboundRef{AgentID: "hk-relay", InboundID: 20001, InboundTag: "realm:hk-20001", Protocol: "realm", Port: 20001}
+	view := model.GlobalDashboardView{
+		Agents: []model.DashboardAgentView{
+			{AgentID: "gz", AgentName: "GZ Internal"},
+			{AgentID: "hk-relay", AgentName: "HK Relay Internal"},
+			{AgentID: "dmit", AgentName: "DMIT Internal"},
+			{AgentID: "unrelated", AgentName: "Unrelated Internal"},
+		},
+		Links: []model.TopologyLinkView{
+			{Key: "gz::haproxy", Source: model.TopologyOutboundRef{AgentID: "gz", OutboundTag: "haproxy:gz-20001", Protocol: "haproxy", ListenPort: 20001}, Target: relay, FinalTarget: &final, RealmHops: []model.TopologyInboundRef{relay}},
+			{Key: "hk::realm", Source: model.TopologyOutboundRef{AgentID: "hk-relay", OutboundTag: "realm:hk-20001", Protocol: "realm", ListenPort: 20001}, Target: final, FinalTarget: &final},
+			{Key: "unrelated::link", Source: model.TopologyOutboundRef{AgentID: "unrelated", OutboundTag: "hidden", Protocol: "vless"}, Target: final},
+		},
+		ClientChains: []model.ClientChainView{{
+			Key: "dmit::1::alice@example.com", RootAgentID: "dmit", RootInboundID: 1,
+			RootInboundTag: "in-20001-tcp", RootClientEmail: "alice@example.com",
+			Steps: []model.ClientChainStep{{StepType: "client", AgentID: "dmit", Label: "alice@example.com"}},
+		}},
+	}
+
+	app := &App{store: sqliteStore}
+	app.sanitizeDashboardForAdmin(model.AdminUser{
+		ID: manager.ID, Role: model.AdminRoleAreaManager, AgentIDs: []string{"gz", "dmit"},
+	}, &view)
+
+	if len(view.Agents) != 2 || len(view.Links) != 2 || len(view.ClientChains) != 1 {
+		t.Fatalf("expected authorized GZ -> HK relay -> DMIT path only, got agents=%#v links=%#v chains=%#v", view.Agents, view.Links, view.ClientChains)
+	}
+	for _, agent := range view.Agents {
+		if agent.AgentID == "hk-relay" || agent.AgentID == "unrelated" {
+			t.Fatalf("indirect or unrelated Client must not be visible as an asset: %#v", view.Agents)
+		}
+	}
+	if view.Links[0].Target.AgentName == "HK Relay Internal" || view.Links[1].Source.AgentName == "HK Relay Internal" {
+		t.Fatalf("relay link must not expose its internal Client name: %#v", view.Links)
+	}
+}
+
 func TestAreaManagerXUIOverviewFiltersUnassignedClients(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "bridge.db")
 	sqliteStore, err := store.NewSQLiteStore(dbPath)
@@ -977,6 +1045,14 @@ func TestAreaManagerXUIOverviewAllowsRealmForwardedClientsFromAssignedEntry(t *t
 	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK Exit"}); err != nil {
 		t.Fatalf("RegisterAgent hk: %v", err)
 	}
+	gzConfig, found, err := sqliteStore.GetAgentConfig("gz")
+	if err != nil || !found {
+		t.Fatalf("GetAgentConfig gz: found=%v err=%v", found, err)
+	}
+	gzConfig.CustomerDisplayName = "GZ Public"
+	if _, err := sqliteStore.UpdateAgentConfig("gz", gzConfig); err != nil {
+		t.Fatalf("UpdateAgentConfig gz display name: %v", err)
+	}
 	hkConfig, found, err := sqliteStore.GetAgentConfig("hk")
 	if err != nil || !found {
 		t.Fatalf("GetAgentConfig hk: found=%v err=%v", found, err)
@@ -1025,6 +1101,7 @@ func TestAreaManagerXUIOverviewAllowsRealmForwardedClientsFromAssignedEntry(t *t
 			{
 				InboundID:             20001,
 				InboundTag:            "Realm 20001 -> HK VLESS",
+				InboundRemark:         "GZ Entry:20001 -> HK Exit:1001 / HK",
 				Email:                 "alice@example.com",
 				ImportURL:             "vless://uuid@gz.example.com:20001?security=reality#HK",
 				TotalGB:               100,
@@ -1042,8 +1119,11 @@ func TestAreaManagerXUIOverviewAllowsRealmForwardedClientsFromAssignedEntry(t *t
 		Nodes: []model.XUINodeView{{
 			ID:                   20001,
 			Tag:                  "Realm 20001 -> HK VLESS",
+			Remark:               "GZ Entry:20001 -> HK Exit:1001 / HK",
+			Port:                 20001,
 			RealmTargetAgentID:   "hk",
 			RealmTargetAgentName: "HK Exit",
+			RealmTargetInboundID: 1001,
 		}},
 	}
 
@@ -1064,6 +1144,9 @@ func TestAreaManagerXUIOverviewAllowsRealmForwardedClientsFromAssignedEntry(t *t
 	}
 	if len(overview.Nodes) != 1 || overview.Nodes[0].RealmTargetAgentName != "HK Public" {
 		t.Fatalf("expected public target node Client name, got %#v", overview.Nodes)
+	}
+	if overview.Nodes[0].Remark != "GZ Public:20001 -> HK Public:1001" || overview.Clients[0].InboundRemark != "GZ Public:20001 -> HK Public:1001" {
+		t.Fatalf("expected forwarded node labels to use public Client names, got node=%q client=%q", overview.Nodes[0].Remark, overview.Clients[0].InboundRemark)
 	}
 	if overview.Clients[0].TotalGB != 0 || overview.Clients[0].ExpiryTime != 0 || overview.Clients[0].LastOnline != 0 {
 		t.Fatalf("expected sensitive client metrics stripped, got %#v", overview.Clients[0])

@@ -1,4 +1,5 @@
-import { lazy, startTransition, Suspense, useDeferredValue, useEffect, useRef, useState } from 'react'
+import { lazy, startTransition, Suspense, useCallback, useDeferredValue, useEffect, useRef, useState } from 'react'
+import type { Dispatch, SetStateAction } from 'react'
 import {
   Alert,
   App as AntdApp,
@@ -186,10 +187,19 @@ export default function App() {
   const [customerAssignmentDraft, setCustomerAssignmentDraft] = useState<CustomerAssignmentDraft | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
   const [activeTabKey, setActiveTabKey] = useState('overview')
-  const [topologyVisible, setTopologyVisible] = useState(false)
+  const [topologyVisible, setTopologyVisibleState] = useState(false)
   const [topologyLoading, setTopologyLoading] = useState(false)
   const [topologyError, setTopologyError] = useState('')
   const [topologyLoaded, setTopologyLoaded] = useState(false)
+  const topologyVisibleRef = useRef(false)
+  const topologyLoadedRef = useRef(false)
+  const setTopologyVisible = useCallback<Dispatch<SetStateAction<boolean>>>((value) => {
+    setTopologyVisibleState((current) => {
+      const next = typeof value === 'function' ? value(current) : value
+      topologyVisibleRef.current = next
+      return next
+    })
+  }, [])
   const [selectedOutboundTag, setSelectedOutboundTag] = useState('')
   const [selectedRuleIndex, setSelectedRuleIndex] = useState<number | null>(null)
   const [selectedNodeAnchor, setSelectedNodeAnchor] = useState('')
@@ -613,7 +623,7 @@ export default function App() {
       const sortedAgents = sortAgentsByOrder((data.agents || []).map(applyCachedCustomerDisplayName))
       const nextView = { ...data, agents: sortedAgents }
       setDashboardView((current) => {
-        if (!topologyVisible || !current || !topologyLoaded) {
+        if (!topologyVisibleRef.current || !current || !topologyLoadedRef.current) {
           return nextView
         }
         return {
@@ -633,7 +643,7 @@ export default function App() {
       if (!sortedAgents.length || (selectedAgentId && !sortedAgents.some((item) => item.agent_id === selectedAgentId))) {
         setSelectedAgentId('')
       }
-      if (topologyVisible) {
+      if (topologyVisibleRef.current) {
         void loadTopology({ silent: true })
       }
     } catch (error) {
@@ -669,6 +679,7 @@ export default function App() {
       setDashboardView({ ...data, agents: sortedAgents })
       setAgents(sortedAgents)
       setTagOptions((current) => mergeTagOptions(current, sortedAgents.flatMap((agent) => agent.tags || [])))
+      topologyLoadedRef.current = true
       setTopologyLoaded(true)
       setTopologyError('')
     } catch (error) {

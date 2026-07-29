@@ -272,8 +272,13 @@ func (a *App) buildDashboardViewForAdmin(user model.AdminUser, includeTopology b
 	if err != nil {
 		return model.GlobalDashboardView{}, err
 	}
-	agents = a.filterAgentRecordsForAdmin(user, agents)
-	snapshots = a.filterSnapshotsForAdmin(user, snapshots)
+	// Area-manager forwarding paths can include relay Clients that are not
+	// directly assigned. Topology must resolve against the complete graph first;
+	// sanitizeDashboardForAdmin removes every Client outside an authorized path.
+	if !includeTopology || isRootAdmin(user) {
+		agents = a.filterAgentRecordsForAdmin(user, agents)
+		snapshots = a.filterSnapshotsForAdmin(user, snapshots)
+	}
 
 	view := dashboard.BuildGlobalDashboardWithOptions(agents, snapshots, dashboard.GlobalDashboardOptions{
 		IncludeTopology:    includeTopology,
