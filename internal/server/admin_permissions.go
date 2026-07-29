@@ -1227,6 +1227,9 @@ func (a *App) areaManagerCustomerAssignmentAllowed(user model.AdminUser, req mod
 	if !isAreaManager(user) || strings.TrimSpace(req.AgentID) == "" || req.InboundID <= 0 {
 		return false
 	}
+	if a.areaManagerCustomerAssignmentAgentTargetsForwarding(user, req.AgentID) {
+		return false
+	}
 	clientScope := a.areaManagerAssignmentClientScope(user, req.AgentID)
 	if strings.TrimSpace(req.ClientEmail) == "" {
 		return clientScope.allowsInbound(req.AgentID, req.InboundID, req.InboundTag)

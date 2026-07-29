@@ -249,6 +249,42 @@ func TestAreaManagerCustomerAssignmentRequiresGrantedOrCreatedClient(t *testing.
 	}
 }
 
+func TestCustomerAssignmentForwardingTargetAgents(t *testing.T) {
+	links := []model.TopologyLinkView{{
+		Source:      model.TopologyOutboundRef{AgentID: "gz", Protocol: "haproxy", ListenPort: 20001},
+		Target:      model.TopologyInboundRef{AgentID: "hk", Protocol: "realm", Port: 20001},
+		FinalTarget: &model.TopologyInboundRef{AgentID: "dmit", InboundID: 7, InboundTag: "dmit-in"},
+		RealmHops:   []model.TopologyInboundRef{{AgentID: "hk", Protocol: "realm", Port: 20001}},
+	}}
+	targets := customerAssignmentForwardingTargetAgents(links)
+	for _, agentID := range []string{"hk", "dmit"} {
+		if !customerAssignmentAgentTargetsForwarding(agentID, targets) {
+			t.Fatalf("expected forwarding target %s to be blocked", agentID)
+		}
+	}
+	if customerAssignmentAgentTargetsForwarding("gz", targets) {
+		t.Fatal("expected the HAProxy entry assignment itself to remain assignable")
+	}
+}
+
+func TestXUIOverviewForOutboundAuthorizationAllowsForwardingOnlyEntry(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "entry", AgentName: "Entry"}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	if err := sqliteStore.SaveSnapshot(model.AgentSnapshot{AgentID: "entry", AgentName: "Entry", ReportedAt: time.Now()}); err != nil {
+		t.Fatalf("SaveSnapshot: %v", err)
+	}
+	overview := (&App{store: sqliteStore}).xuiOverviewForOutboundAuthorization("entry")
+	if overview == nil || overview.AgentID != "entry" {
+		t.Fatalf("expected an empty overview for a forwarding-only Client, got %#v", overview)
+	}
+}
+
 func cloneTestAnyMap(input map[string]any) map[string]any {
 	result := make(map[string]any, len(input))
 	for key, value := range input {

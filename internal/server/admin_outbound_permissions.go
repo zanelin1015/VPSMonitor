@@ -109,7 +109,7 @@ func (a *App) xuiOverviewForOutboundAuthorization(agentID string) *model.XUIOver
 		return nil
 	}
 	snapshot, ok := a.store.GetLatest(strings.TrimSpace(agentID))
-	if !ok || snapshot.XUI == nil {
+	if !ok {
 		return nil
 	}
 	cfg, _, err := a.store.GetAgentConfig(agentID)
@@ -117,9 +117,10 @@ func (a *App) xuiOverviewForOutboundAuthorization(agentID string) *model.XUIOver
 		return nil
 	}
 	overview := dashboard.BuildXUIOverviewWithOptions(snapshot, dashboard.XUIOverviewOptions{Entry: cfg.Entry})
-	if overview != nil {
-		a.appendForwardedImportURLs(agentID, overview)
+	if overview == nil {
+		overview = emptyAgentXUIOverview(snapshot, cfg)
 	}
+	a.appendForwardedImportURLs(agentID, overview)
 	return overview
 }
 

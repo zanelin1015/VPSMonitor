@@ -13,8 +13,11 @@ warn() { printf 'Warning: %s\n' "$*" >&2; }
 die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
 cleanup() {
-  if [ -n "$tmp_dir" ] && [ -d "$tmp_dir" ]; then
-    rm -rf "$tmp_dir"
+  cleanup_dir="$tmp_dir"
+  tmp_dir=""
+  bundle_dir=""
+  if [ -n "$cleanup_dir" ] && [ -d "$cleanup_dir" ]; then
+    rm -rf "$cleanup_dir" || warn "Failed to remove temporary directory: $cleanup_dir"
   fi
 }
 trap cleanup EXIT INT TERM
@@ -378,6 +381,9 @@ install_client() {
 
   install_realm_if_enabled "$arch"
   install_haproxy_if_enabled
+
+  # A procd restart may terminate the updater before the EXIT trap runs.
+  cleanup
 
   service_name="${VPSMONITOR_CLIENT_SERVICE:-vpsmonitor-client}"
   install_procd_service "$service_name" "$install_dir" "$config_path"

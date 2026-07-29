@@ -55,6 +55,19 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 		}
 		return
 	}
+	if len(parts) == 1 && parts[0] == "assignment-sources" {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		sources, err := a.customerAssignmentSourcesForAdmin(user)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, sources)
+		return
+	}
 
 	customerID, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil || customerID <= 0 {
@@ -228,6 +241,101 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func (a *App) customerAssignmentSourcesForAdmin(user model.AdminUser) ([]model.CustomerAssignmentSourceView, error) {
+	view, err := a.dashboardTopologyViewForAdmin(user)
+	if err != nil {
+		return nil, err
+	}
+	eligible := make(map[string]struct{}, len(view.Agents))
+	if isRootAdmin(user) {
+		for _, agent := range view.Agents {
+			eligible[agent.AgentID] = struct{}{}
+		}
+	} else {
+		forwardingTargets := customerAssignmentForwardingTargetAgents(view.Links)
+		visibleAgents := make(map[string]struct{}, len(view.Agents))
+		for _, agent := range view.Agents {
+			visibleAgents[agent.AgentID] = struct{}{}
+		}
+		for _, link := range view.Links {
+			if !isForwardingProtocol(link.Source.Protocol) {
+				continue
+			}
+			if customerAssignmentAgentTargetsForwarding(link.Source.AgentID, forwardingTargets) {
+				continue
+			}
+			if _, visible := visibleAgents[link.Source.AgentID]; visible {
+				eligible[link.Source.AgentID] = struct{}{}
+			}
+		}
+		assignments, listErr := a.store.ListAreaManagerAssignments(user.ID)
+		if listErr != nil {
+			return nil, listErr
+		}
+		configCache := make(map[string]*model.ManagedAgentConfig)
+		for _, assignment := range assignments {
+			if !assignment.Enabled {
+				continue
+			}
+			inboundTag := a.normalizeAreaManagerForwardingAssignmentTag(assignment.AgentID, assignment.InboundID, assignment.InboundTag, configCache)
+			if isRealmAssignmentTag(inboundTag) || isHAProxyAssignmentTag(inboundTag) {
+				continue
+			}
+			if customerAssignmentAgentTargetsForwarding(assignment.AgentID, forwardingTargets) {
+				continue
+			}
+			eligible[assignment.AgentID] = struct{}{}
+		}
+	}
+
+	result := make([]model.CustomerAssignmentSourceView, 0, len(eligible))
+	for _, agent := range view.Agents {
+		if _, ok := eligible[agent.AgentID]; !ok {
+			continue
+		}
+		result = append(result, model.CustomerAssignmentSourceView{
+			AgentID:   agent.AgentID,
+			AgentName: firstNonEmptyString(agent.AgentName, agent.AgentID),
+		})
+	}
+	return result, nil
+}
+
+func (a *App) areaManagerCustomerAssignmentAgentTargetsForwarding(user model.AdminUser, agentID string) bool {
+	if !isAreaManager(user) {
+		return false
+	}
+	view, err := a.dashboardTopologyViewForAdmin(user)
+	return err == nil && customerAssignmentAgentTargetsForwarding(agentID, customerAssignmentForwardingTargetAgents(view.Links))
+}
+
+func customerAssignmentForwardingTargetAgents(links []model.TopologyLinkView) map[string]struct{} {
+	targets := make(map[string]struct{})
+	add := func(agentID string) {
+		if key := strings.ToLower(strings.TrimSpace(agentID)); key != "" {
+			targets[key] = struct{}{}
+		}
+	}
+	for _, link := range links {
+		if !isForwardingProtocol(link.Source.Protocol) {
+			continue
+		}
+		add(link.Target.AgentID)
+		if link.FinalTarget != nil {
+			add(link.FinalTarget.AgentID)
+		}
+		for _, hop := range link.RealmHops {
+			add(hop.AgentID)
+		}
+	}
+	return targets
+}
+
+func customerAssignmentAgentTargetsForwarding(agentID string, targets map[string]struct{}) bool {
+	_, ok := targets[strings.ToLower(strings.TrimSpace(agentID))]
+	return ok
 }
 
 func (a *App) syncCustomerAssignmentRevenue(req model.CustomerAssignmentRequest, actor string) error {

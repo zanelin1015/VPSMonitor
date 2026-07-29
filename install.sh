@@ -12,10 +12,14 @@ version="${VPSMONITOR_VERSION:-latest}"
 prefix="${VPSMONITOR_PREFIX:-/opt/vpsmonitor}"
 package_prefix="${VPSMONITOR_PACKAGE_PREFIX:-VPSMonitor}"
 tmp_dir=""
+bundle_dir=""
 
 cleanup() {
-  if [[ -n "$tmp_dir" && -d "$tmp_dir" ]]; then
-    rm -rf "$tmp_dir"
+  local cleanup_dir="$tmp_dir"
+  tmp_dir=""
+  bundle_dir=""
+  if [[ -n "$cleanup_dir" && -d "$cleanup_dir" ]]; then
+    rm -rf "$cleanup_dir" || warn "Failed to remove temporary directory: $cleanup_dir"
   fi
 }
 trap cleanup EXIT
@@ -459,7 +463,7 @@ fetch_bundle() {
   if use_local_bundle && local_dir="$(local_bundle_dir "$component")"; then
     info "Using local bridge-$component bundle:"
     echo "  $local_dir" >&2
-    echo "$local_dir"
+    bundle_dir="$local_dir"
     return
   fi
 
@@ -486,7 +490,7 @@ fetch_bundle() {
   local binary
   binary="$(find "$tmp_dir" -type f -name "bridge-$component" | head -n 1 || true)"
   [[ -n "$binary" ]] || die "bridge-$component binary was not found in package."
-  dirname "$binary"
+  bundle_dir="$(dirname "$binary")"
 }
 
 write_server_config() {
@@ -668,8 +672,8 @@ service_logs_hint() {
 
 install_server() {
   local arch="$1"
-  local source_dir
-  source_dir="$(fetch_bundle server "$arch")"
+  fetch_bundle server "$arch"
+  local source_dir="$bundle_dir"
   local install_dir="${VPSMONITOR_SERVER_DIR:-$prefix/server}"
   prompt_default install_dir "Install directory for bridge-server" "$install_dir"
   install_dir="$(absolute_path "$install_dir")"
@@ -717,6 +721,9 @@ install_server() {
   install -m 0755 "$source_dir/bridge-server" "$install_dir/bridge-server"
   [[ -f "$source_dir/README.md" ]] && install -m 0644 "$source_dir/README.md" "$install_dir/README.md"
 
+  # A self-update may terminate this installer while restarting its own service.
+  cleanup
+
   local service_name="${VPSMONITOR_SERVER_SERVICE:-vpsmonitor-server}"
   prompt_default service_name "Service name" "$service_name"
   install_service "$service_name" "VPSMonitor Bridge Server" "$install_dir" "bridge-server" "$config_path"
@@ -741,8 +748,8 @@ install_server() {
 
 install_client() {
   local arch="$1"
-  local source_dir
-  source_dir="$(fetch_bundle client "$arch")"
+  fetch_bundle client "$arch"
+  local source_dir="$bundle_dir"
   local install_dir="${VPSMONITOR_CLIENT_DIR:-$prefix/client}"
   prompt_default install_dir "Install directory for bridge-client" "$install_dir"
   install_dir="$(absolute_path "$install_dir")"
@@ -803,6 +810,9 @@ install_client() {
 
   install_realm_if_enabled "$arch"
   install_haproxy_if_enabled
+
+  # Remove downloaded artifacts before restarting the client service.
+  cleanup
 
   local service_name="${VPSMONITOR_CLIENT_SERVICE:-vpsmonitor-client}"
   prompt_default service_name "Service name" "$service_name"

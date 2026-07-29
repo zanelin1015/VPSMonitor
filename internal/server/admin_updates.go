@@ -141,11 +141,15 @@ func (a *App) startServerUpdate(req model.UpdateRequest) (*model.UpdateLatestInf
 	}
 	scriptURL := firstNonEmptyString(req.ScriptURL, "https://raw.githubusercontent.com/"+repo+"/main/install.sh")
 	serviceName := firstNonEmptyString(req.ServiceName, "vpsmonitor-server")
-	command := fmt.Sprintf(`(sleep 2; tmp="$(mktemp /tmp/vpsmonitor-server-install.XXXXXX.sh)"; (curl -fsSL %[1]q -o "$tmp" || wget -O "$tmp" %[1]q) && chmod +x "$tmp" && env VPSMONITOR_ASSUME_YES=true VPSMONITOR_VERSION=%[2]q VPSMONITOR_REPO=%[3]q VPSMONITOR_PACKAGE_PREFIX=%[4]q VPSMONITOR_SERVER_DIR=%[5]q VPSMONITOR_SERVER_SERVICE=%[6]q bash "$tmp" server >>/tmp/vpsmonitor-server-update.log 2>&1) >/dev/null 2>&1 &`, scriptURL, version, repo, packagePrefix, installDir, serviceName)
+	command := buildServerSelfUpdateCommand(scriptURL, version, repo, packagePrefix, installDir, serviceName)
 	if err := exec.Command("sh", "-c", command).Start(); err != nil {
 		return latest, err
 	}
 	return latest, nil
+}
+
+func buildServerSelfUpdateCommand(scriptURL, version, repo, packagePrefix, installDir, serviceName string) string {
+	return fmt.Sprintf(`(sleep 2; { tmp=""; trap 'if [ -n "$tmp" ]; then rm -f "$tmp"; fi' EXIT; tmp_base="${VPSMONITOR_TMP_DIR:-/var/tmp}"; tmp="$(mktemp "$tmp_base/vpsmonitor-server-install.XXXXXX.sh" 2>/dev/null || mktemp /tmp/vpsmonitor-server-install.XXXXXX.sh)" || exit 1; (curl -fsSL %[1]q -o "$tmp" || wget -O "$tmp" %[1]q) && exec 3<"$tmp" && rm -f "$tmp" && tmp="" && env VPSMONITOR_ASSUME_YES=true VPSMONITOR_VERSION=%[2]q VPSMONITOR_REPO=%[3]q VPSMONITOR_PACKAGE_PREFIX=%[4]q VPSMONITOR_SERVER_DIR=%[5]q VPSMONITOR_SERVER_SERVICE=%[6]q bash -s -- server <&3; } >>/tmp/vpsmonitor-server-update.log 2>&1) >/dev/null 2>&1 &`, scriptURL, version, repo, packagePrefix, installDir, serviceName)
 }
 
 func (a *App) createClientUpdateActions(req model.UpdateRequest) (model.UpdateResponse, error) {

@@ -63,6 +63,11 @@ type CustomerAssignmentRequest struct {
 	Enabled           *bool    `json:"enabled,omitempty"`
 }
 
+type CustomerAssignmentSourceView struct {
+	AgentID   string `json:"agent_id"`
+	AgentName string `json:"agent_name,omitempty"`
+}
+
 type CustomerAdminView struct {
 	CustomerUser
 	Assignments []CustomerAssignment `json:"assignments"`

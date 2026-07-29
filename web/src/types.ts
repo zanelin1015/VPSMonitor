@@ -339,6 +339,11 @@ export interface CustomerAssignment {
   updated_at: string
 }
 
+export interface CustomerAssignmentSourceView {
+  agent_id: string
+  agent_name?: string
+}
+
 export interface AreaManagerAssignment {
   id: number
   manager_id: number

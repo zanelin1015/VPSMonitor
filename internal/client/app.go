@@ -233,7 +233,7 @@ func (a *App) startSelfUpdate(payload map[string]any) (map[string]any, error) {
 	if runtime.GOOS == "windows" {
 		scriptURL := payloadString(payload, "ps_script_url", "https://raw.githubusercontent.com/"+repo+"/main/install.ps1")
 		serviceName := payloadString(payload, "service_name", "VPSMonitorClient")
-		command := fmt.Sprintf(`Start-Sleep -Seconds 2; $env:VPSMONITOR_ASSUME_YES='true'; $env:VPSMONITOR_VERSION=%q; $env:VPSMONITOR_REPO=%q; $env:VPSMONITOR_PACKAGE_PREFIX=%q; $env:VPSMONITOR_CLIENT_DIR=%q; $env:VPSMONITOR_CLIENT_SERVICE=%q; iwr -UseBasicParsing %q -OutFile "$env:TEMP\vpsmonitor-install.ps1"; powershell -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\vpsmonitor-install.ps1" client *> "$env:TEMP\vpsmonitor-client-update.log"`, version, repo, packagePrefix, installDir, serviceName, scriptURL)
+		command := buildWindowsSelfUpdateCommand(scriptURL, version, repo, packagePrefix, installDir, serviceName)
 		cmd := exec.Command("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-Command", command)
 		if err := cmd.Start(); err != nil {
 			return nil, fmt.Errorf("start windows update: %w", err)
@@ -252,19 +252,33 @@ func (a *App) startSelfUpdate(payload map[string]any) (map[string]any, error) {
 	}
 	if isOpenWrtLike() {
 		openWrtScriptURL := payloadString(payload, "openwrt_script_url", openWrtInstallerURL(scriptURL))
-		command := fmt.Sprintf(`(sleep 2; { tmp="$(mktemp /tmp/vpsmonitor-install.XXXXXX.sh)"; if command -v uclient-fetch >/dev/null 2>&1; then uclient-fetch -O "$tmp" %[1]q; elif command -v wget >/dev/null 2>&1; then wget -O "$tmp" %[1]q; else curl -fL %[1]q -o "$tmp"; fi && chmod +x "$tmp" && env VPSMONITOR_ASSUME_YES=true VPSMONITOR_VERSION=%[2]q VPSMONITOR_REPO=%[3]q VPSMONITOR_PACKAGE_PREFIX=%[4]q VPSMONITOR_CLIENT_DIR=%[5]q VPSMONITOR_CLIENT_SERVICE=%[6]q VPSMONITOR_REALM_AUTO_INSTALL=%[7]q VPSMONITOR_REALM_VERSION=%[8]q VPSMONITOR_REALM_DOWNLOAD_BASE_URL=%[9]q VPSMONITOR_HAPROXY_AUTO_INSTALL=%[10]q sh "$tmp" client; } >>/tmp/vpsmonitor-client-update.log 2>&1) >/dev/null 2>&1 &`, openWrtScriptURL, version, repo, packagePrefix, installDir, serviceName, strconv.FormatBool(realmAutoInstall), realmVersion, realmDownloadBaseURL, strconv.FormatBool(haProxyAutoInstall))
+		command := buildUnixSelfUpdateCommand(openWrtScriptURL, version, repo, packagePrefix, installDir, serviceName, realmAutoInstall, realmVersion, realmDownloadBaseURL, haProxyAutoInstall, true)
 		cmd := exec.Command("sh", "-c", command)
 		if err := cmd.Start(); err != nil {
 			return nil, fmt.Errorf("start OpenWrt update: %w", err)
 		}
 		return map[string]any{"status": "started", "install_dir": installDir, "service_name": serviceName, "service_manager": "procd"}, nil
 	}
-	command := fmt.Sprintf(`(sleep 2; tmp="$(mktemp /tmp/vpsmonitor-install.XXXXXX.sh)"; (curl -fsSL %[1]q -o "$tmp" || wget -O "$tmp" %[1]q) && chmod +x "$tmp" && env VPSMONITOR_ASSUME_YES=true VPSMONITOR_VERSION=%[2]q VPSMONITOR_REPO=%[3]q VPSMONITOR_PACKAGE_PREFIX=%[4]q VPSMONITOR_CLIENT_DIR=%[5]q VPSMONITOR_CLIENT_SERVICE=%[6]q VPSMONITOR_REALM_AUTO_INSTALL=%[7]q VPSMONITOR_REALM_VERSION=%[8]q VPSMONITOR_REALM_DOWNLOAD_BASE_URL=%[9]q VPSMONITOR_HAPROXY_AUTO_INSTALL=%[10]q bash "$tmp" client >>/tmp/vpsmonitor-client-update.log 2>&1) >/dev/null 2>&1 &`, scriptURL, version, repo, packagePrefix, installDir, serviceName, strconv.FormatBool(realmAutoInstall), realmVersion, realmDownloadBaseURL, strconv.FormatBool(haProxyAutoInstall))
+	command := buildUnixSelfUpdateCommand(scriptURL, version, repo, packagePrefix, installDir, serviceName, realmAutoInstall, realmVersion, realmDownloadBaseURL, haProxyAutoInstall, false)
 	cmd := exec.Command("sh", "-c", command)
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start linux update: %w", err)
 	}
 	return map[string]any{"status": "started", "install_dir": installDir, "service_name": serviceName}, nil
+}
+
+func buildWindowsSelfUpdateCommand(scriptURL, version, repo, packagePrefix, installDir, serviceName string) string {
+	return fmt.Sprintf(`Start-Sleep -Seconds 2; $env:VPSMONITOR_ASSUME_YES='true'; $env:VPSMONITOR_VERSION=%q; $env:VPSMONITOR_REPO=%q; $env:VPSMONITOR_PACKAGE_PREFIX=%q; $env:VPSMONITOR_CLIENT_DIR=%q; $env:VPSMONITOR_CLIENT_SERVICE=%q; $scriptPath=Join-Path $env:TEMP ('vpsmonitor-install-' + [guid]::NewGuid().ToString('N') + '.ps1'); try { iwr -UseBasicParsing %q -OutFile $scriptPath; powershell -NoProfile -ExecutionPolicy Bypass -File $scriptPath client *> "$env:TEMP\vpsmonitor-client-update.log" } finally { Remove-Item -Force -ErrorAction SilentlyContinue $scriptPath }`, version, repo, packagePrefix, installDir, serviceName, scriptURL)
+}
+
+func buildUnixSelfUpdateCommand(scriptURL, version, repo, packagePrefix, installDir, serviceName string, realmAutoInstall bool, realmVersion, realmDownloadBaseURL string, haProxyAutoInstall, openWrt bool) string {
+	downloadCommand := fmt.Sprintf(`(curl -fsSL %[1]q -o "$tmp" || wget -O "$tmp" %[1]q)`, scriptURL)
+	installerShell := "bash"
+	if openWrt {
+		downloadCommand = fmt.Sprintf(`if command -v uclient-fetch >/dev/null 2>&1; then uclient-fetch -O "$tmp" %[1]q; elif command -v wget >/dev/null 2>&1; then wget -O "$tmp" %[1]q; else curl -fL %[1]q -o "$tmp"; fi`, scriptURL)
+		installerShell = "sh"
+	}
+	return fmt.Sprintf(`(sleep 2; { tmp=""; trap 'if [ -n "$tmp" ]; then rm -f "$tmp"; fi' EXIT; tmp_base="${VPSMONITOR_TMP_DIR:-/var/tmp}"; tmp="$(mktemp "$tmp_base/vpsmonitor-install.XXXXXX.sh" 2>/dev/null || mktemp /tmp/vpsmonitor-install.XXXXXX.sh)" || exit 1; %[1]s && exec 3<"$tmp" && rm -f "$tmp" && tmp="" && env VPSMONITOR_ASSUME_YES=true VPSMONITOR_VERSION=%[2]q VPSMONITOR_REPO=%[3]q VPSMONITOR_PACKAGE_PREFIX=%[4]q VPSMONITOR_CLIENT_DIR=%[5]q VPSMONITOR_CLIENT_SERVICE=%[6]q VPSMONITOR_REALM_AUTO_INSTALL=%[7]q VPSMONITOR_REALM_VERSION=%[8]q VPSMONITOR_REALM_DOWNLOAD_BASE_URL=%[9]q VPSMONITOR_HAPROXY_AUTO_INSTALL=%[10]q %[11]s -s -- client <&3; } >>/tmp/vpsmonitor-client-update.log 2>&1) >/dev/null 2>&1 &`, downloadCommand, version, repo, packagePrefix, installDir, serviceName, strconv.FormatBool(realmAutoInstall), realmVersion, realmDownloadBaseURL, strconv.FormatBool(haProxyAutoInstall), installerShell)
 }
 
 func openWrtInstallerURL(scriptURL string) string {

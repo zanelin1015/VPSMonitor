@@ -3,7 +3,7 @@ import { Alert, App as AntdApp, Button, Card, Col, Empty, Modal, Popconfirm, Row
 import type { ColumnsType } from 'antd/es/table'
 import { DeleteOutlined, EditOutlined, ExportOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SyncOutlined } from '@ant-design/icons'
 
-import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, DashboardAgentView, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
+import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, CustomerAssignmentSourceView, DashboardAgentView, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
 import { fetchJSON } from '../lib/appHelpers'
 import { CustomerAssignmentManagerCard } from './CustomerAssignmentManagerCard'
 import {
@@ -85,6 +85,7 @@ export function CustomerManagementModal(props: {
   const { message } = AntdApp.useApp()
   const [activeManagementTab, setActiveManagementTab] = useState<ManagementTabKey>(canManageAreaManagers ? 'area' : 'customers')
   const [customers, setCustomers] = useState<CustomerAdminView[]>([])
+  const [customerAssignmentSources, setCustomerAssignmentSources] = useState<CustomerAssignmentSourceView[]>([])
   const [areaManagers, setAreaManagers] = useState<AreaManagerAdminView[]>([])
   const [loading, setLoading] = useState(false)
   const [areaManagersLoading, setAreaManagersLoading] = useState(false)
@@ -122,6 +123,12 @@ export function CustomerManagementModal(props: {
     value: agent.agent_id,
     label: agent.agent_name || agent.agent_id,
   })), [agents])
+  const customerAssignmentAgentOptions = useMemo(() => canManageAreaManagers
+    ? agentOptions
+    : customerAssignmentSources.map((source) => ({
+      value: source.agent_id,
+      label: source.agent_name || source.agent_id,
+    })), [agentOptions, canManageAreaManagers, customerAssignmentSources])
   const clientOptions = useMemo(() => {
     const clients = (overview?.clients || []).map((client) => ({
       value: clientKey(client),
@@ -161,6 +168,8 @@ export function CustomerManagementModal(props: {
       void loadCustomers()
       if (canManageAreaManagers) {
         void loadAreaManagers()
+      } else {
+        void loadCustomerAssignmentSources()
       }
     }
   }, [active, canManageAreaManagers])
@@ -1014,6 +1023,16 @@ export function CustomerManagementModal(props: {
     }
   }
 
+  async function loadCustomerAssignmentSources() {
+    try {
+      const sources = await fetchJSON<CustomerAssignmentSourceView[]>('/api/v1/admin/customers/assignment-sources')
+      setCustomerAssignmentSources(sources)
+    } catch (error) {
+      setCustomerAssignmentSources([])
+      message.error(error instanceof Error ? error.message : '加载可分配入口失败')
+    }
+  }
+
   async function saveAssignment() {
     if (!selectedCustomerID) {
       message.warning('请先选择用户')
@@ -1441,7 +1460,7 @@ export function CustomerManagementModal(props: {
       setAssignmentForm={setAssignmentForm}
       savingAssignment={savingAssignment}
       overviewLoading={overviewLoading}
-      agentOptions={agentOptions}
+      agentOptions={customerAssignmentAgentOptions}
       clientTreeData={clientTreeData}
       visibleAssignmentColumns={visibleAssignmentColumns}
       onReset={() => {

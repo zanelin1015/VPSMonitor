@@ -945,10 +945,15 @@ func TestBuildAreaManagerTopologyResolvesUndirectlyAssignedRelay(t *testing.T) {
 
 	now := time.Now().UTC()
 	if err := sqliteStore.SaveSnapshot(model.AgentSnapshot{
+		AgentID: "gz", AgentName: "gz", ReportedAt: now,
+	}); err != nil {
+		t.Fatalf("SaveSnapshot gz: %v", err)
+	}
+	if err := sqliteStore.SaveSnapshot(model.AgentSnapshot{
 		AgentID: "dmit", AgentName: "dmit", ReportedAt: now,
 		XUI: &model.XUISnapshot{CollectedAt: now, Inbounds: []map[string]any{{
 			"id": 1, "tag": "in-20001-tcp", "remark": "HK", "protocol": "vless", "port": 20001, "enable": true,
-			"settings": `{"clients":[{"email":"alice@example.com","enable":true}]}`,
+			"settings": `{"clients":[{"id":"11111111-1111-1111-1111-111111111111","email":"alice@example.com","enable":true}]}`,
 		}}},
 	}); err != nil {
 		t.Fatalf("SaveSnapshot dmit: %v", err)
@@ -965,6 +970,7 @@ func TestBuildAreaManagerTopologyResolvesUndirectlyAssignedRelay(t *testing.T) {
 	for _, assignment := range []model.AreaManagerAssignmentRequest{
 		{AgentID: "gz", InboundID: 20001, InboundTag: "haproxy:20001", Enabled: &enabled},
 		{AgentID: "dmit", InboundID: 1, InboundTag: "in-20001-tcp", ClientEmail: "alice@example.com", Enabled: &enabled},
+		{AgentID: "dmit", InboundID: 2, InboundTag: "direct-in", ClientEmail: "direct@example.com", Enabled: &enabled},
 	} {
 		if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, assignment); err != nil {
 			t.Fatalf("CreateAreaManagerAssignment: %v", err)
@@ -972,10 +978,11 @@ func TestBuildAreaManagerTopologyResolvesUndirectlyAssignedRelay(t *testing.T) {
 	}
 
 	app := &App{store: sqliteStore}
-	view, err := app.buildDashboardViewForAdmin(model.AdminUser{
+	user := model.AdminUser{
 		ID: manager.ID, Username: manager.Username, Role: model.AdminRoleAreaManager,
 		AgentIDs: []string{"gz", "dmit"}, UpdatedAt: manager.UpdatedAt,
-	}, true)
+	}
+	view, err := app.buildDashboardViewForAdmin(user, true)
 	if err != nil {
 		t.Fatalf("buildDashboardViewForAdmin: %v", err)
 	}
@@ -995,5 +1002,33 @@ func TestBuildAreaManagerTopologyResolvesUndirectlyAssignedRelay(t *testing.T) {
 		if _, ok := agentIDs[hidden]; ok {
 			t.Fatalf("%s must not be exposed in sanitized topology agents: %#v", hidden, agentIDs)
 		}
+	}
+
+	overview := app.xuiOverviewForOutboundAuthorization("gz")
+	if overview == nil || len(overview.Clients) != 1 {
+		t.Fatalf("expected the forwarding-only GZ entry to expose one mapped client, got %#v", overview)
+	}
+	forwarded := overview.Clients[0]
+	if !app.areaManagerCustomerAssignmentAllowed(user, model.CustomerAssignmentRequest{
+		AgentID: "gz", InboundID: forwarded.InboundID, InboundTag: forwarded.InboundTag, ClientEmail: forwarded.Email,
+	}) {
+		t.Fatal("expected the authorized HAProxy entry client to be assignable to a customer")
+	}
+	if app.areaManagerCustomerAssignmentAllowed(user, model.CustomerAssignmentRequest{
+		AgentID: "dmit", InboundID: 1, InboundTag: "in-20001-tcp", ClientEmail: "alice@example.com",
+	}) {
+		t.Fatal("expected the final X-ui client behind the forwarding path to reject direct assignment")
+	}
+	if app.areaManagerCustomerAssignmentAllowed(user, model.CustomerAssignmentRequest{
+		AgentID: "dmit", InboundID: 2, InboundTag: "direct-in", ClientEmail: "direct@example.com",
+	}) {
+		t.Fatal("expected every X-ui assignment on a forwarding target Client to be rejected")
+	}
+	sources, err := app.customerAssignmentSourcesForAdmin(user)
+	if err != nil {
+		t.Fatalf("customerAssignmentSourcesForAdmin: %v", err)
+	}
+	if len(sources) != 1 || sources[0].AgentID != "gz" {
+		t.Fatalf("expected only the GZ forwarding entry as an assignment source, got %#v", sources)
 	}
 }
