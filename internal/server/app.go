@@ -28,6 +28,8 @@ type App struct {
 	topologyBuilds     map[string]chan struct{}
 	areaTrafficMu      sync.Mutex
 	areaTrafficSamples map[string]areaManagerTrafficSample
+	areaRealtimeMu     sync.Mutex
+	areaRealtimeCache  areaManagerRealtimeContextCache
 	lookupCacheMu      sync.Mutex
 	updateLatestMu     sync.Mutex
 	updateLatestCache  map[string]updateLatestCacheEntry

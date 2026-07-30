@@ -384,7 +384,7 @@ body {
   backdrop-filter: blur(14px);
 }
 
-.admin-page-shell .workbench-status-legend > div,
+.admin-page-shell .workbench-status-legend > .workbench-health-link,
 .admin-page-shell .workbench-topology-summary > div,
 .admin-page-shell .workbench-topology-pills > div,
 .admin-page-shell .workbench-topology-hub,

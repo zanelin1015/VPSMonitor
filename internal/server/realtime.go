@@ -22,6 +22,7 @@ const (
 	realtimeSnapshotMessage = "snapshot"
 	realtimeMetricsMessage  = "metrics"
 	realtimeMetricTTL       = 2 * time.Minute
+	areaRealtimeRefresh     = 2 * time.Second
 )
 
 type realtimeHub struct {
@@ -72,13 +73,26 @@ func (h *realtimeHub) update(metric model.AgentRealtimeMetrics) {
 		return
 	}
 	// Realtime freshness is measured by server receipt time, not the client clock.
-	metric.ReportedAt = time.Now().UTC()
+	receivedAt := time.Now().UTC()
+	metric.ReportedAt = receivedAt
 
 	h.mu.Lock()
+	eventMetric := metric
+	if metric.XUITraffic != nil {
+		previous := h.metrics[metric.AgentID].XUITraffic
+		if previous != nil && previous.SampleID == metric.XUITraffic.SampleID {
+			metric.XUITraffic.CollectedAt = previous.CollectedAt
+			// Subscribers only need a scoped recalculation for a new X-ui sample.
+			eventMetric.XUITraffic = nil
+		} else {
+			metric.XUITraffic.CollectedAt = receivedAt
+			eventMetric.XUITraffic = metric.XUITraffic
+		}
+	}
 	h.metrics[metric.AgentID] = metric
 	for ch := range h.subscribers {
 		select {
-		case ch <- metric:
+		case ch <- eventMetric:
 		default:
 		}
 	}
@@ -326,7 +340,12 @@ func (a *App) handleDashboardRealtime(w http.ResponseWriter, r *http.Request) {
 	updates, snapshot, unsubscribe := a.realtime.subscribe()
 	defer unsubscribe()
 
-	if err := conn.WriteJSON(model.DashboardRealtimeMessage{Type: realtimeSnapshotMessage, Metrics: a.filterRealtimeMetricsForAdmin(user, snapshot)}); err != nil {
+	areaManagerView := isAreaManager(user)
+	initialMetrics := a.filterRealtimeMetricsForAdmin(user, snapshot)
+	if areaManagerView {
+		initialMetrics = a.areaManagerRealtimeMetrics(user, snapshot)
+	}
+	if err := conn.WriteJSON(model.DashboardRealtimeMessage{Type: realtimeSnapshotMessage, Metrics: initialMetrics}); err != nil {
 		return
 	}
 
@@ -342,6 +361,13 @@ func (a *App) handleDashboardRealtime(w http.ResponseWriter, r *http.Request) {
 
 	pingTicker := time.NewTicker(25 * time.Second)
 	defer pingTicker.Stop()
+	var areaRefreshTicker *time.Ticker
+	var areaRefresh <-chan time.Time
+	if areaManagerView {
+		areaRefreshTicker = time.NewTicker(areaRealtimeRefresh)
+		areaRefresh = areaRefreshTicker.C
+		defer areaRefreshTicker.Stop()
+	}
 
 	for {
 		select {
@@ -349,11 +375,21 @@ func (a *App) handleDashboardRealtime(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
+			if areaManagerView {
+				// The fixed ticker below batches all authorized X-ui agents into one
+				// scoped update instead of emitting one frame per Client event.
+				continue
+			}
 			if !a.adminCanAccessAgent(user, metric.AgentID) {
 				continue
 			}
 			metric = a.sanitizeRealtimeMetricForAdmin(user, metric)
 			if err := conn.WriteJSON(model.DashboardRealtimeMessage{Type: realtimeMetricsMessage, Metric: &metric}); err != nil {
+				return
+			}
+		case <-areaRefresh:
+			metrics := a.areaManagerRealtimeMetrics(user, a.realtime.snapshot())
+			if err := conn.WriteJSON(model.DashboardRealtimeMessage{Type: realtimeSnapshotMessage, Metrics: metrics}); err != nil {
 				return
 			}
 		case <-pingTicker.C:
@@ -581,6 +617,7 @@ func (a *App) handleAgentMetricsWS(w http.ResponseWriter, r *http.Request, agent
 			metric.Summary.ServerSeenIP = serverSeenIP
 		}
 		a.realtime.update(metric)
+		a.dispatchXUITrafficCollectionRealtime(agentID)
 	}
 }
 

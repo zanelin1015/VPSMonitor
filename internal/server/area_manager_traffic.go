@@ -26,6 +26,14 @@ type scopedClientTraffic struct {
 	Count   int
 }
 
+type areaManagerRealtimeContextCache struct {
+	expiresAt       time.Time
+	snapshotByAgent map[string]model.AgentSnapshot
+	forwarding      forwardedOverviewContext
+}
+
+const xuiRealtimeTrafficTTL = 10 * time.Second
+
 func (a *App) areaManagerScopedTrafficSummary(user model.AdminUser, overview *model.XUIOverview) model.VPSSummary {
 	if overview == nil {
 		return model.VPSSummary{}
@@ -197,19 +205,27 @@ func applyScopedClientTrafficToOutbounds(outbounds []model.XUIOutboundView, clie
 }
 
 func (a *App) applyAreaManagerDashboardTraffic(user model.AdminUser, view *model.GlobalDashboardView, clientScope areaManagerClientScope) {
+	a.applyAreaManagerDashboardTrafficWithRealtime(user, view, clientScope, nil)
+}
+
+func (a *App) applyAreaManagerDashboardTrafficWithRealtime(user model.AdminUser, view *model.GlobalDashboardView, clientScope areaManagerClientScope, metrics []model.AgentRealtimeMetrics) {
 	if a == nil || a.store == nil || view == nil || !isAreaManager(user) {
 		return
 	}
-	agents, err := a.store.ListAgents()
+	agents, snapshots, err := a.store.ListAgentsWithLatestSnapshots()
 	if err != nil {
 		return
 	}
-	snapshots := a.store.ListLatest()
 	snapshotByAgent := make(map[string]model.AgentSnapshot)
 	for _, snapshot := range snapshots {
 		snapshotByAgent[snapshot.AgentID] = snapshot
 	}
 	forwardingContext := buildForwardedOverviewContext(agents, snapshots)
+	a.applyAreaManagerDashboardTrafficFromContext(user, view, clientScope, metrics, snapshotByAgent, forwardingContext)
+}
+
+func (a *App) applyAreaManagerDashboardTrafficFromContext(user model.AdminUser, view *model.GlobalDashboardView, clientScope areaManagerClientScope, metrics []model.AgentRealtimeMetrics, snapshotByAgent map[string]model.AgentSnapshot, forwardingContext forwardedOverviewContext) {
+	realtimeAtByClient := applyRealtimeTrafficToForwardingContext(forwardingContext, metrics)
 	for index := range view.Agents {
 		agent := &view.Agents[index]
 		snapshot, found := snapshotByAgent[agent.AgentID]
@@ -233,8 +249,151 @@ func (a *App) applyAreaManagerDashboardTraffic(user model.AdminUser, view *model
 			}
 		}
 		overview.Clients = visibleClients
+		if reportedAt := latestScopedRealtimeTrafficAt(agent.AgentID, visibleClients, realtimeAtByClient); !reportedAt.IsZero() {
+			overview.ReportedAt = reportedAt
+			overview.CollectedAt = reportedAt
+		}
 		// The dashboard path has not sanitized nodes; only use its filtered clients.
 		overview.Nodes = nil
 		agent.Summary = a.areaManagerScopedTrafficSummary(user, overview)
 	}
+}
+
+func applyRealtimeTrafficToForwardingContext(context forwardedOverviewContext, metrics []model.AgentRealtimeMetrics) map[string]time.Time {
+	realtimeAtByClient := make(map[string]time.Time)
+	for _, metric := range metrics {
+		traffic := metric.XUITraffic
+		if traffic == nil || !freshXUIRealtimeTraffic(traffic.CollectedAt) {
+			continue
+		}
+		overview := context.targetOverviewByAgent[metric.AgentID]
+		if overview == nil {
+			continue
+		}
+		byClient := make(map[string]model.XUIRealtimeClientTraffic, len(traffic.Clients)*2)
+		for _, client := range traffic.Clients {
+			key := areaClientExactKey(metric.AgentID, client.InboundID, client.InboundTag, client.Email)
+			byClient[key] = client
+			if strings.TrimSpace(client.InboundTag) != "" {
+				byClient[areaClientExactKey(metric.AgentID, client.InboundID, "", client.Email)] = client
+			}
+		}
+		for index := range overview.Clients {
+			client := &overview.Clients[index]
+			key := areaClientExactKey(metric.AgentID, client.InboundID, client.InboundTag, client.Email)
+			realtimeClient, found := byClient[key]
+			if !found && strings.TrimSpace(client.InboundTag) != "" {
+				realtimeClient, found = byClient[areaClientExactKey(metric.AgentID, client.InboundID, "", client.Email)]
+			}
+			if !found {
+				continue
+			}
+			client.Up = realtimeClient.Up
+			client.Down = realtimeClient.Down
+			client.TrafficTotal = realtimeClient.Up + realtimeClient.Down
+			realtimeAtByClient[scopedClientTrafficKey(metric.AgentID, *client)] = traffic.CollectedAt
+		}
+	}
+	return realtimeAtByClient
+}
+
+func freshXUIRealtimeTraffic(collectedAt time.Time) bool {
+	if collectedAt.IsZero() {
+		return false
+	}
+	age := time.Since(collectedAt)
+	return age >= 0 && age <= xuiRealtimeTrafficTTL
+}
+
+func latestScopedRealtimeTrafficAt(agentID string, clients []model.XUIClientView, realtimeAtByClient map[string]time.Time) time.Time {
+	var latest time.Time
+	for _, client := range clients {
+		if collectedAt := realtimeAtByClient[scopedClientTrafficKey(agentID, client)]; collectedAt.After(latest) {
+			latest = collectedAt
+		}
+	}
+	return latest
+}
+
+func (a *App) areaManagerRealtimeMetrics(user model.AdminUser, rawMetrics []model.AgentRealtimeMetrics) []model.AgentRealtimeMetrics {
+	if a == nil || !isAreaManager(user) {
+		return nil
+	}
+	clientScope := a.areaManagerClientScope(user)
+	agentIDs := make([]string, 0, len(clientScope.agents))
+	for agentID := range clientScope.agents {
+		agentIDs = append(agentIDs, agentID)
+	}
+	sort.Strings(agentIDs)
+	view := model.GlobalDashboardView{Agents: make([]model.DashboardAgentView, 0, len(agentIDs))}
+	for _, agentID := range agentIDs {
+		view.Agents = append(view.Agents, model.DashboardAgentView{AgentID: agentID})
+	}
+	snapshotByAgent, forwardingContext, ok := a.areaManagerRealtimeContext()
+	if ok {
+		a.applyAreaManagerDashboardTrafficFromContext(user, &view, clientScope, rawMetrics, snapshotByAgent, forwardingContext)
+	}
+
+	reportedAt := time.Now().UTC()
+	metrics := make([]model.AgentRealtimeMetrics, 0, len(view.Agents))
+	for _, agent := range view.Agents {
+		metrics = append(metrics, model.AgentRealtimeMetrics{
+			AgentID:    agent.AgentID,
+			ReportedAt: reportedAt,
+			Summary:    agent.Summary,
+		})
+	}
+	return metrics
+}
+
+func (a *App) areaManagerRealtimeContext() (map[string]model.AgentSnapshot, forwardedOverviewContext, bool) {
+	if a == nil || a.store == nil {
+		return nil, forwardedOverviewContext{}, false
+	}
+	now := time.Now()
+	a.areaRealtimeMu.Lock()
+	cached := a.areaRealtimeCache
+	a.areaRealtimeMu.Unlock()
+	if now.Before(cached.expiresAt) {
+		return cloneAreaManagerRealtimeContext(cached)
+	}
+
+	agents, snapshots, err := a.store.ListAgentsWithLatestSnapshots()
+	if err != nil {
+		return nil, forwardedOverviewContext{}, false
+	}
+	snapshotByAgent := make(map[string]model.AgentSnapshot, len(snapshots))
+	for _, snapshot := range snapshots {
+		snapshotByAgent[snapshot.AgentID] = snapshot
+	}
+	cached = areaManagerRealtimeContextCache{
+		expiresAt:       now.Add(dashboardCacheTTL),
+		snapshotByAgent: snapshotByAgent,
+		forwarding:      buildForwardedOverviewContext(agents, snapshots),
+	}
+	a.areaRealtimeMu.Lock()
+	a.areaRealtimeCache = cached
+	a.areaRealtimeMu.Unlock()
+	return cloneAreaManagerRealtimeContext(cached)
+}
+
+func cloneAreaManagerRealtimeContext(cached areaManagerRealtimeContextCache) (map[string]model.AgentSnapshot, forwardedOverviewContext, bool) {
+	if cached.snapshotByAgent == nil {
+		return nil, forwardedOverviewContext{}, false
+	}
+	snapshots := make(map[string]model.AgentSnapshot, len(cached.snapshotByAgent))
+	for agentID, snapshot := range cached.snapshotByAgent {
+		snapshots[agentID] = snapshot
+	}
+	context := forwardedOverviewContext{
+		agentMap:              make(map[string]model.DashboardAgentView, len(cached.forwarding.agentMap)),
+		targetOverviewByAgent: make(map[string]*model.XUIOverview, len(cached.forwarding.targetOverviewByAgent)),
+	}
+	for agentID, agent := range cached.forwarding.agentMap {
+		context.agentMap[agentID] = agent
+	}
+	for agentID, overview := range cached.forwarding.targetOverviewByAgent {
+		context.targetOverviewByAgent[agentID] = cloneForwardedBaseOverview(overview)
+	}
+	return snapshots, context, true
 }

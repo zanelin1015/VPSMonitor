@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 
 import type { AdminPageKey, AdminRouteState } from '../lib/adminRoute'
 import { buildAdminRouteURL, parseAdminRouteState } from '../lib/adminRoute'
+import type { AgentHealthFilter } from '../lib/agentHealth'
 
 export function useAdminRouteSync(input: {
   enabled: boolean
@@ -14,6 +15,7 @@ export function useAdminRouteSync(input: {
   selectedOutboundTag: string
   selectedRuleIndex: number | null
   selectedTag: string
+  agentHealthFilter: AgentHealthFilter
   topologySearch: string
   topologyVisible: boolean
   applyAdminRoute: (route: AdminRouteState) => void
@@ -31,6 +33,7 @@ export function useAdminRouteSync(input: {
     selectedOutboundTag,
     selectedRuleIndex,
     selectedTag,
+    agentHealthFilter,
     topologySearch,
     topologyVisible,
     applyAdminRoute,
@@ -73,6 +76,7 @@ export function useAdminRouteSync(input: {
       agentId: selectedAgentId,
       tabKey: activeTabKey,
       tag: selectedTag,
+      healthFilter: agentHealthFilter,
       outboundTag: selectedOutboundTag,
       ruleIndex: selectedRuleIndex,
       nodeAnchor: selectedNodeAnchor,
@@ -91,6 +95,7 @@ export function useAdminRouteSync(input: {
     enabled,
     sessionIdentity,
     selectedAgentId,
+    agentHealthFilter,
     selectedNodeAnchor,
     selectedOutboundTag,
     selectedRuleIndex,

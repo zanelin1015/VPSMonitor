@@ -3,14 +3,31 @@ package model
 import "time"
 
 type AgentRealtimeMetrics struct {
-	AgentID       string     `json:"agent_id"`
-	AgentName     string     `json:"agent_name,omitempty"`
-	ClientVersion string     `json:"client_version,omitempty"`
-	ClientOS      string     `json:"client_os,omitempty"`
-	ClientArch    string     `json:"client_arch,omitempty"`
-	SystemVersion string     `json:"system_version,omitempty"`
-	ReportedAt    time.Time  `json:"reported_at"`
-	Summary       VPSSummary `json:"summary"`
+	AgentID       string              `json:"agent_id"`
+	AgentName     string              `json:"agent_name,omitempty"`
+	ClientVersion string              `json:"client_version,omitempty"`
+	ClientOS      string              `json:"client_os,omitempty"`
+	ClientArch    string              `json:"client_arch,omitempty"`
+	SystemVersion string              `json:"system_version,omitempty"`
+	ReportedAt    time.Time           `json:"reported_at"`
+	Summary       VPSSummary          `json:"summary"`
+	XUITraffic    *XUIRealtimeTraffic `json:"xui_traffic,omitempty"`
+}
+
+// XUIRealtimeTraffic is an internal Client-to-Server payload. The Server must
+// remove it before forwarding realtime metrics to any browser.
+type XUIRealtimeTraffic struct {
+	SampleID    int64                      `json:"sample_id"`
+	CollectedAt time.Time                  `json:"collected_at,omitempty"`
+	Clients     []XUIRealtimeClientTraffic `json:"clients"`
+}
+
+type XUIRealtimeClientTraffic struct {
+	InboundID  int    `json:"inbound_id"`
+	InboundTag string `json:"inbound_tag,omitempty"`
+	Email      string `json:"email"`
+	Up         int64  `json:"up"`
+	Down       int64  `json:"down"`
 }
 
 type DashboardRealtimeMessage struct {
@@ -24,6 +41,7 @@ const (
 	AgentControlApplyConfig    = "apply_config"
 	AgentControlRestartXUI     = "restart_xui"
 	AgentControlExecuteXUI     = "execute_xui_action"
+	AgentControlCollectXUI     = "collect_xui_traffic"
 	AgentControlDisableClient  = "disable_client_service"
 	AgentControlTerminalOpen   = "terminal_open"
 	AgentControlTerminalInput  = "terminal_input"

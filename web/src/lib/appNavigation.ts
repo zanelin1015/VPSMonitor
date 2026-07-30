@@ -2,6 +2,7 @@ import type { Dispatch, SetStateAction } from 'react'
 
 import type { CustomerAssignment, CustomerAssignmentDraft } from '../types'
 import { type AdminRouteState, type AdminPageKey } from './adminRoute'
+import type { AgentHealthFilter } from './agentHealth'
 import { nodeElementId, outboundElementId, ruleElementId } from './appHelpersAgent'
 
 interface LoadOptions {
@@ -19,6 +20,7 @@ interface AppNavigationHandlersOptions {
   setActiveAdminPage: Dispatch<SetStateAction<AdminPageKey>>
   setTopologyVisible: Dispatch<SetStateAction<boolean>>
   setSelectedTag: Dispatch<SetStateAction<string>>
+  setAgentHealthFilter: Dispatch<SetStateAction<AgentHealthFilter>>
   setTopologySearch: Dispatch<SetStateAction<string>>
   setSelectedOutboundTag: Dispatch<SetStateAction<string>>
   setSelectedRuleIndex: NumberSetter
@@ -66,6 +68,7 @@ export function createAppNavigationHandlers(options: AppNavigationHandlersOption
     setActiveAdminPage,
     setTopologyVisible,
     setSelectedTag,
+    setAgentHealthFilter,
     setTopologySearch,
     setSelectedOutboundTag,
     setSelectedRuleIndex,
@@ -84,6 +87,7 @@ export function createAppNavigationHandlers(options: AppNavigationHandlersOption
       setActiveAdminPage(route.page)
       setTopologyVisible(route.topology)
       setSelectedTag(route.tag)
+      setAgentHealthFilter(route.healthFilter)
       setTopologySearch(route.topologySearch)
       setSelectedOutboundTag(route.outboundTag)
       setSelectedRuleIndex(route.ruleIndex)
@@ -105,6 +109,7 @@ export function createAppNavigationHandlers(options: AppNavigationHandlersOption
 
     openTopologyPanel() {
       setActiveAdminPage('dashboard')
+      setAgentHealthFilter('all')
       setTopologyVisible(true)
       void loadTopology({ silent: topologyLoaded })
       scrollIntoViewById('topology-panel', { behavior: 'smooth', block: 'start' })
@@ -133,6 +138,7 @@ export function createAppNavigationHandlers(options: AppNavigationHandlersOption
 
     returnHome() {
       setActiveAdminPage('dashboard')
+      setAgentHealthFilter('all')
       setTopologyVisible(false)
       setSelectedAgentId('')
       setActiveTabKey('overview')
@@ -143,6 +149,7 @@ export function createAppNavigationHandlers(options: AppNavigationHandlersOption
 
     openAgentDetailPanel(agentID: string, tabKey = 'overview') {
       setActiveAdminPage('assets')
+      setAgentHealthFilter('all')
       setTopologyVisible(false)
       setActiveTabKey(tabKey)
       runTransition(() => {
@@ -151,12 +158,25 @@ export function createAppNavigationHandlers(options: AppNavigationHandlersOption
       scrollIntoViewById('agent-detail-panel', { behavior: 'smooth', block: 'start' })
     },
 
+    openAgentHealthFilter(filter: Exclude<AgentHealthFilter, 'all'>) {
+      setActiveAdminPage('assets')
+      setTopologyVisible(false)
+      setSelectedTag('')
+      setAgentHealthFilter(filter)
+      setSelectedAgentId('')
+      setActiveTabKey('overview')
+      setSelectedOutboundTag('')
+      setSelectedRuleIndex(null)
+      setSelectedNodeAnchor('')
+    },
+
     openCustomerAssignment(assignment: CustomerAssignment) {
       if (!assignment.agent_id) {
         return
       }
       setCustomerModalOpen(false)
       setActiveAdminPage('assets')
+      setAgentHealthFilter('all')
       setTopologyVisible(false)
       setSelectedOutboundTag('')
       setSelectedRuleIndex(null)
@@ -233,6 +253,7 @@ export function createAppNavigationHandlers(options: AppNavigationHandlersOption
         return
       }
       setActiveAdminPage('assets')
+      setAgentHealthFilter('all')
       setTopologyVisible(false)
       setSelectedAgentId(agentID)
       setActiveTabKey('nodes')

@@ -52,6 +52,7 @@ import { isAreaManagerAdminUser, sanitizeAreaRealtimeMetric } from './lib/adminU
 import { createAppNavigationHandlers } from './lib/appNavigation'
 import { normalizeScheduledTaskSettings } from './lib/scheduledTasks'
 import { buildDashboardScope } from './lib/appDashboardScope'
+import { agentMatchesHealthFilter, type AgentHealthFilter } from './lib/agentHealth'
 
 import type {
   AgentViewMode,
@@ -162,6 +163,7 @@ export default function App() {
   const [exchangeRates, setExchangeRates] = useState<ExchangeRatesState>(() => defaultExchangeRatesState())
   const [currencyOptions, setCurrencyOptions] = useState<CurrencyCode[]>(() => [...COMMON_COST_CURRENCIES])
   const [selectedTag, setSelectedTag] = useState('')
+  const [agentHealthFilter, setAgentHealthFilter] = useState<AgentHealthFilter>('all')
   const [topologySearch, setTopologySearch] = useState('')
   const [activeAdminPage, setActiveAdminPage] = useState<AdminPageKey>('dashboard')
   const [agentViewMode, setAgentViewMode] = useState<AgentViewMode>('card')
@@ -321,6 +323,7 @@ export default function App() {
     jumpToOutbound,
     jumpToRule,
     openAgentDetailPanel,
+    openAgentHealthFilter,
     openCustomerAssignment,
     openCustomerAuthorization,
     openTopologyPanel,
@@ -333,6 +336,7 @@ export default function App() {
     setActiveAdminPage,
     setTopologyVisible,
     setSelectedTag,
+    setAgentHealthFilter,
     setTopologySearch,
     setSelectedOutboundTag,
     setSelectedRuleIndex,
@@ -363,6 +367,7 @@ export default function App() {
     selectedOutboundTag,
     selectedRuleIndex,
     selectedTag,
+    agentHealthFilter,
     topologySearch,
     topologyVisible,
     applyAdminRoute,
@@ -594,6 +599,7 @@ export default function App() {
     await logoutSession()
     setDashboardView(null)
     setSelectedTag('')
+    setAgentHealthFilter('all')
     setAgents([])
     setFinanceCustomers([])
     setFinanceAreaManagers([])
@@ -1484,6 +1490,7 @@ export default function App() {
     costCurrency,
     exchangeRates,
   })
+  const agentListAgents = filteredAgents.filter((agent) => agentMatchesHealthFilter(agent, agentHealthFilter))
 
   if (publicSiteMode) {
     return (
@@ -1548,6 +1555,7 @@ export default function App() {
   }
   const openAssetsPage = () => {
     setActiveAdminPage('assets')
+    setAgentHealthFilter('all')
     setTopologyVisible(false)
     setSelectedAgentId('')
     setActiveTabKey('overview')
@@ -1747,6 +1755,7 @@ export default function App() {
               costCurrency={costCurrency}
               restrictedView={isAreaManagerAccount}
               onSelectAgent={(agentID) => openAgentDetailPanel(agentID)}
+              onOpenHealthFilter={openAgentHealthFilter}
               onOpenTopology={openTopologyPanel}
             />
           </main>
@@ -1777,11 +1786,12 @@ export default function App() {
           />
 
           <AgentRail
-            agents={filteredAgents}
+            agents={agentListAgents}
             loading={agentsLoading}
             error={agentsError}
             selectedTag={selectedTag}
-          selectedAgentId={selectedAgentId}
+            healthFilter={agentHealthFilter}
+            selectedAgentId={selectedAgentId}
             tagFilterOptions={tagFilterOptions}
             viewMode={agentViewMode}
             panelExpanded={centerPanelOpen}
@@ -1799,6 +1809,7 @@ export default function App() {
             }}
             onRefresh={() => void loadAgents()}
             onSelectTag={selectDashboardTag}
+            onHealthFilterChange={setAgentHealthFilter}
             onSelectAgent={(agentID, active) => {
               if (topologyVisible) {
                 selectTopologyAgent(agentID)

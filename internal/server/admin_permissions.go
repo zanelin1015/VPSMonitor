@@ -78,7 +78,11 @@ func (a *App) filterSnapshotsForAdmin(user model.AdminUser, snapshots []model.Ag
 
 func (a *App) filterRealtimeMetricsForAdmin(user model.AdminUser, metrics []model.AgentRealtimeMetrics) []model.AgentRealtimeMetrics {
 	if isRootAdmin(user) {
-		return metrics
+		filtered := make([]model.AgentRealtimeMetrics, 0, len(metrics))
+		for _, metric := range metrics {
+			filtered = append(filtered, sanitizeRealtimeMetricForBrowser(metric))
+		}
+		return filtered
 	}
 	allowed := a.adminVisibleAgentSet(user)
 	filtered := make([]model.AgentRealtimeMetrics, 0, len(metrics))
@@ -92,7 +96,7 @@ func (a *App) filterRealtimeMetricsForAdmin(user model.AdminUser, metrics []mode
 
 func (a *App) sanitizeRealtimeMetricForAdmin(user model.AdminUser, metric model.AgentRealtimeMetrics) model.AgentRealtimeMetrics {
 	if isRootAdmin(user) {
-		return metric
+		return sanitizeRealtimeMetricForBrowser(metric)
 	}
 	return sanitizeRealtimeMetricForAreaManager(metric)
 }
@@ -481,6 +485,12 @@ func sanitizeRealtimeMetricForAreaManager(metric model.AgentRealtimeMetrics) mod
 	metric.ClientArch = ""
 	metric.SystemVersion = ""
 	metric.Summary = sanitizeAreaManagerSummary(metric.Summary)
+	metric.XUITraffic = nil
+	return metric
+}
+
+func sanitizeRealtimeMetricForBrowser(metric model.AgentRealtimeMetrics) model.AgentRealtimeMetrics {
+	metric.XUITraffic = nil
 	return metric
 }
 

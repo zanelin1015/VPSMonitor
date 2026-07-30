@@ -1489,6 +1489,24 @@ func (a *App) xuiActionAuth(agentID, kind string) *model.XUIActionAuth {
 	return &model.XUIActionAuth{APIToken: cfg.XUI.APIToken}
 }
 
+func (a *App) dispatchXUITrafficCollectionRealtime(agentID string) {
+	if a == nil || a.realtime == nil || a.store == nil {
+		return
+	}
+	cfg, found, err := a.store.GetAgentConfig(agentID)
+	if err != nil || !found || !cfg.XUI.Enabled {
+		return
+	}
+	var auth *model.XUIActionAuth
+	if token := strings.TrimSpace(cfg.XUI.APIToken); token != "" {
+		auth = &model.XUIActionAuth{APIToken: token}
+	}
+	a.realtime.sendAgentControl(agentID, model.AgentControlMessage{
+		Type:    model.AgentControlCollectXUI,
+		XUIAuth: auth,
+	})
+}
+
 func xuiActionUsesPanelAuth(kind string) bool {
 	switch kind {
 	case model.XUIActionAddOutbound,

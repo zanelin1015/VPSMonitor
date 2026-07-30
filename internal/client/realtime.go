@@ -85,6 +85,8 @@ func (a *App) runRealtimeMetricsSession(ctx context.Context, interval time.Durat
 	}
 connected:
 	defer conn.Close()
+	sessionCtx, cancelSession := context.WithCancel(ctx)
+	defer cancelSession()
 	var writeMu sync.Mutex
 	writeJSON := func(value any) error {
 		writeMu.Lock()
@@ -100,6 +102,50 @@ connected:
 		}
 	})
 	defer terminals.closeAll()
+
+	var xuiConfigMu sync.RWMutex
+	xuiConfig := effectiveConfig.XUI
+	// API tokens are supplied by the Server for each collection request.
+	xuiConfig.APIToken = ""
+	effectiveConfig.XUI.APIToken = ""
+	var xuiTrafficMu sync.RWMutex
+	var xuiTraffic *model.XUIRealtimeTraffic
+	xuiCollectRequests := make(chan model.AgentControlMessage, 1)
+	go func() {
+		var lastSampleID int64
+		for {
+			select {
+			case message := <-xuiCollectRequests:
+				xuiConfigMu.RLock()
+				cfg := xuiConfig
+				xuiConfigMu.RUnlock()
+				if !cfg.Enabled {
+					continue
+				}
+				xuiClient, clientErr := a.xuiClientForAction(cfg, message.XUIAuth)
+				message.XUIAuth = nil
+				if clientErr != nil {
+					continue
+				}
+				collectCtx, collectCancel := context.WithTimeout(sessionCtx, a.requestTimeout)
+				clients, collectErr := xuiClient.CollectClientTraffic(collectCtx)
+				collectCancel()
+				if collectErr != nil {
+					continue
+				}
+				sampleID := time.Now().UnixNano()
+				if sampleID <= lastSampleID {
+					sampleID = lastSampleID + 1
+				}
+				lastSampleID = sampleID
+				xuiTrafficMu.Lock()
+				xuiTraffic = &model.XUIRealtimeTraffic{SampleID: sampleID, Clients: clients}
+				xuiTrafficMu.Unlock()
+			case <-sessionCtx.Done():
+				return
+			}
+		}
+	}()
 
 	done := make(chan struct{})
 	var lastApplyConfigAt time.Time
@@ -120,6 +166,18 @@ connected:
 					go a.handleCollectNowControl(ctx)
 				}
 			case model.AgentControlApplyConfig:
+				if message.Config != nil {
+					nextXUIConfig := message.Config.XUI
+					nextXUIConfig.APIToken = ""
+					xuiConfigMu.Lock()
+					xuiConfig = nextXUIConfig
+					xuiConfigMu.Unlock()
+					if !nextXUIConfig.Enabled {
+						xuiTrafficMu.Lock()
+						xuiTraffic = nil
+						xuiTrafficMu.Unlock()
+					}
+				}
 				lastApplyConfigMu.Lock()
 				lastApplyConfigAt = time.Now()
 				lastApplyConfigMu.Unlock()
@@ -128,6 +186,11 @@ connected:
 				go a.handleRestartXUIControl(ctx, message)
 			case model.AgentControlExecuteXUI:
 				go a.handleExecuteXUIControl(ctx, message)
+			case model.AgentControlCollectXUI:
+				select {
+				case xuiCollectRequests <- message:
+				default:
+				}
 			case model.AgentControlDisableClient:
 				go a.handleDisableClientControl(ctx, message)
 			case model.AgentControlTerminalOpen, model.AgentControlTerminalInput, model.AgentControlTerminalResize, model.AgentControlTerminalClose:
@@ -141,6 +204,9 @@ connected:
 	defer ticker.Stop()
 
 	for {
+		xuiTrafficMu.RLock()
+		latestXUITraffic := xuiTraffic
+		xuiTrafficMu.RUnlock()
 		metric := model.AgentRealtimeMetrics{
 			AgentID:       a.config.AgentID,
 			AgentName:     firstNonEmpty(effectiveConfig.AgentName, a.config.AgentName, a.config.AgentID),
@@ -150,6 +216,7 @@ connected:
 			SystemVersion: currentSystemVersion(),
 			ReportedAt:    time.Now().UTC(),
 			Summary:       sampler.sample(),
+			XUITraffic:    latestXUITraffic,
 		}
 		if err := writeJSON(metric); err != nil {
 			return fmt.Errorf("send realtime metrics: %w", err)

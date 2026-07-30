@@ -944,6 +944,27 @@ func TestAreaManagerDashboardTrafficIncludesAuthorizedHAProxyForwardedClients(t 
 			t.Fatalf("%s traffic must include only the authorized final client, got %#v", agent.AgentID, got)
 		}
 	}
+	firstAt := now.Add(-2 * time.Second)
+	_ = app.areaManagerRealtimeMetrics(user, []model.AgentRealtimeMetrics{{
+		AgentID: "dmit",
+		XUITraffic: &model.XUIRealtimeTraffic{SampleID: firstAt.UnixNano(), CollectedAt: firstAt, Clients: []model.XUIRealtimeClientTraffic{
+			{InboundID: 7, InboundTag: "dmit-in", Email: "assigned@example.com", Up: 100, Down: 200},
+			{InboundID: 7, InboundTag: "dmit-in", Email: "hidden@example.com", Up: 10_000, Down: 20_000},
+		}},
+	}})
+	realtime := app.areaManagerRealtimeMetrics(user, []model.AgentRealtimeMetrics{{
+		AgentID: "dmit",
+		XUITraffic: &model.XUIRealtimeTraffic{SampleID: now.UnixNano(), CollectedAt: now, Clients: []model.XUIRealtimeClientTraffic{
+			{InboundID: 7, InboundTag: "dmit-in", Email: "assigned@example.com", Up: 160, Down: 280},
+			{InboundID: 7, InboundTag: "dmit-in", Email: "hidden@example.com", Up: 900_000, Down: 1_000_000},
+		}},
+	}})
+	for _, agentID := range []string{"gz", "dmit"} {
+		metric := realtimeMetricByAgent(t, realtime, agentID)
+		if metric.Summary.NetTrafficSent != 160 || metric.Summary.NetTrafficRecv != 280 || metric.Summary.NetIOUp != 30 || metric.Summary.NetIODown != 40 {
+			t.Fatalf("%s HAProxy realtime traffic did not follow the authorized final client: %#v", agentID, metric.Summary)
+		}
+	}
 }
 
 func TestAreaManagerXUIOverviewMigratesLegacyRealmPortGrantToHAProxy(t *testing.T) {

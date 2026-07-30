@@ -25,6 +25,7 @@ import {
   formatSpeed,
 } from '../lib/traffic'
 import { MiniProgress } from './MiniProgress'
+import { agentHealthCategory, type AgentHealthCategory } from '../lib/agentHealth'
 
 const { Text } = Typography
 
@@ -82,9 +83,10 @@ export function AdminWorkbenchDashboard(props: {
   costCurrency: CurrencyCode
   restrictedView?: boolean
   onSelectAgent: (agentID: string) => void
+  onOpenHealthFilter: (filter: AgentHealthCategory) => void
   onOpenTopology: () => void
 }) {
-  const { agents, dashboardView, scopedNetwork, monthlyFinance, costCurrency, restrictedView = false, onSelectAgent, onOpenTopology } = props
+  const { agents, dashboardView, scopedNetwork, monthlyFinance, costCurrency, restrictedView = false, onSelectAgent, onOpenHealthFilter, onOpenTopology } = props
   const statusRows = useMemo<WorkbenchMetricRow[]>(() => agents.map((agent) => {
     const renewal = calculateRenewalStatus(agent.renewal)
     return {
@@ -101,17 +103,13 @@ export function AdminWorkbenchDashboard(props: {
   const scopedOnlineClientCount = dashboardView?.totals.online_client_count ?? 0
   const scopedNodeCount = dashboardView?.totals.node_count ?? 0
   const totalAgents = agents.length
-  const onlineRows = statusRows.filter((row) => row.status.level !== 'bad')
-  const offlineRows = statusRows.filter((row) => row.status.level === 'bad')
+  const healthyRows = statusRows.filter((row) => agentHealthCategory(row.agent) === 'healthy')
+  const warningRows = statusRows.filter((row) => agentHealthCategory(row.agent) === 'warning')
+  const offlineRows = statusRows.filter((row) => agentHealthCategory(row.agent) === 'offline')
+  const onlineRows = [...healthyRows, ...warningRows]
   const highLoadRows = statusRows.filter((row) => row.status.level !== 'bad' && (row.memoryPercent >= 75 || Number(row.agent.summary.cpu || 0) >= 75))
   const xuiErrorRows = statusRows.filter((row) => Boolean(row.agent.summary.last_collection_err))
-  const warningRows = statusRows.filter((row) => row.status.level !== 'bad' && (
-    row.status.level === 'warn' ||
-    row.memoryPercent >= 75 ||
-    Number(row.agent.summary.cpu || 0) >= 75 ||
-    Boolean(row.agent.summary.last_collection_err)
-  ))
-  const healthyRows = onlineRows.filter((row) => !warningRows.includes(row))
+  const healthAlertCount = warningRows.length + offlineRows.length
   const onlinePercent = totalAgents ? (onlineRows.length / totalAgents) * 100 : 0
   const clientOnlinePercent = scopedClientCount ? (scopedOnlineClientCount / scopedClientCount) * 100 : 0
 
@@ -175,7 +173,7 @@ export function AdminWorkbenchDashboard(props: {
         <Card bordered={false} className="surface-card admin-workbench-card workbench-health-card">
           <div className="admin-workbench-card-title">
             <Text strong>系统健康</Text>
-            <Tag color={alertRows.length ? 'orange' : 'green'}>{alertRows.length ? `告警 ${alertRows.length}` : '运行平稳'}</Tag>
+            <Tag color={healthAlertCount ? 'orange' : 'green'}>{healthAlertCount ? `告警 ${healthAlertCount}` : '运行平稳'}</Tag>
           </div>
           <div className="workbench-health-chart">
             <WorkbenchStatusDonut
@@ -185,9 +183,9 @@ export function AdminWorkbenchDashboard(props: {
               total={totalAgents}
             />
             <div className="workbench-status-legend">
-              <div><i className="legend-dot legend-online" /><strong>{healthyRows.length}</strong><span>健康在线</span></div>
-              <div><i className="legend-dot legend-warning" /><strong>{warningRows.length}</strong><span>负载/采集告警</span></div>
-              <div><i className="legend-dot legend-offline" /><strong>{offlineRows.length}</strong><span>离线 Client</span></div>
+              <WorkbenchHealthLink tone="online" count={healthyRows.length} label="健康在线" onClick={() => onOpenHealthFilter('healthy')} />
+              <WorkbenchHealthLink tone="warning" count={warningRows.length} label="负载/采集告警" onClick={() => onOpenHealthFilter('warning')} />
+              <WorkbenchHealthLink tone="offline" count={offlineRows.length} label="离线 Client" onClick={() => onOpenHealthFilter('offline')} />
             </div>
           </div>
           <div className="workbench-health-foot">
@@ -283,6 +281,21 @@ export function AdminWorkbenchDashboard(props: {
         </Card> : null}
       </div>
     </section>
+  )
+}
+
+function WorkbenchHealthLink(props: {
+  tone: 'online' | 'warning' | 'offline'
+  count: number
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button type="button" className="workbench-health-link" onClick={props.onClick} aria-label={`查看${props.label}`}>
+      <i className={`legend-dot legend-${props.tone}`} />
+      <strong>{props.count}</strong>
+      <span>{props.label}</span>
+    </button>
   )
 }
 

@@ -206,16 +206,16 @@
   display: grid;
   min-height: 0;
   flex: 1 1 auto;
-  grid-template-columns: 104px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 8px;
   align-items: center;
 }
 
 .workbench-donut {
   position: relative;
   display: grid;
-  width: 104px;
-  height: 104px;
+  width: 82px;
+  height: 82px;
   place-items: center;
   border-radius: 50%;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 72%, transparent);
@@ -223,7 +223,7 @@
 
 .workbench-donut::after {
   position: absolute;
-  inset: 15px;
+  inset: 12px;
   border-radius: inherit;
   background: color-mix(in srgb, var(--card) 82%, transparent);
   box-shadow: inset 0 0 0 1px var(--border);
@@ -239,7 +239,7 @@
 }
 
 .workbench-donut-center strong {
-  font-size: 22px;
+  font-size: 18px;
   line-height: 1;
 }
 
@@ -255,7 +255,7 @@
   min-width: 0;
 }
 
-.workbench-status-legend > div,
+.workbench-status-legend > .workbench-health-link,
 .workbench-health-foot span,
 .workbench-ops-grid > div,
 .workbench-speed-list button,
@@ -266,19 +266,36 @@
   backdrop-filter: blur(10px);
 }
 
-.workbench-status-legend > div {
+.workbench-status-legend > .workbench-health-link {
   display: grid;
+  width: 100%;
   min-width: 0;
-  grid-template-columns: auto minmax(26px, auto) minmax(0, 1fr);
-  gap: 6px;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 4px;
   align-items: center;
-  padding: 6px 8px;
+  padding: 6px;
   border-radius: 12px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+.workbench-status-legend > .workbench-health-link:hover {
+  border-color: color-mix(in srgb, var(--blue) 52%, var(--border));
+  background: color-mix(in srgb, var(--blue) 8%, var(--surface-soft));
+  transform: translateX(2px);
+}
+
+.workbench-status-legend > .workbench-health-link:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--blue) 72%, transparent);
+  outline-offset: 2px;
 }
 
 .workbench-status-legend strong {
   color: var(--text);
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1;
 }
 

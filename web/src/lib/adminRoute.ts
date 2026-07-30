@@ -1,3 +1,5 @@
+import { normalizeAgentHealthFilter, type AgentHealthFilter } from './agentHealth'
+
 export type AdminPageKey = 'dashboard' | 'assets' | 'customers' | 'access-logs' | 'settings' | 'schedules'
 
 export interface AdminRouteState {
@@ -6,6 +8,7 @@ export interface AdminRouteState {
   agentId: string
   tabKey: string
   tag: string
+  healthFilter: AgentHealthFilter
   outboundTag: string
   ruleIndex: number | null
   nodeAnchor: string
@@ -29,6 +32,7 @@ export function parseAdminRouteState(canManageSystem: boolean): AdminRouteState 
     agentId: params.get('agent') || agentFromAdminPath(path),
     tabKey: params.get('tab') || 'overview',
     tag: params.get('tag') || '',
+    healthFilter: normalizeAgentHealthFilter(params.get('health')),
     outboundTag: params.get('outbound') || '',
     ruleIndex: Number.isInteger(ruleParam) && ruleParam > 0 ? ruleParam : null,
     nodeAnchor: params.get('node') || '',
@@ -54,6 +58,9 @@ export function buildAdminRouteURL(route: AdminRouteState): string {
       params.set('q', route.topologySearch.trim())
     }
   } else if (route.page === 'assets') {
+    if (route.healthFilter !== 'all') {
+      params.set('health', route.healthFilter)
+    }
     if (route.agentId) {
       params.set('agent', route.agentId)
     }

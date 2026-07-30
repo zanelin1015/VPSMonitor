@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Alert, Button, Card, Empty, List, Space, Tag } from 'antd'
+import { Alert, Button, Card, Empty, List, Segmented, Space, Tag } from 'antd'
 import { ApartmentOutlined, BarsOutlined, CloudServerOutlined, ReloadOutlined } from '@ant-design/icons'
 
 import type { DashboardAgentView, DashboardTagView } from '../types'
@@ -27,12 +27,14 @@ import {
   metricLevel,
 } from '../lib/traffic'
 import { MiniProgress } from './MiniProgress'
+import { agentHealthFilterLabel, normalizeAgentHealthFilter, type AgentHealthFilter } from '../lib/agentHealth'
 
 export function AgentRail(props: {
   agents: DashboardAgentView[]
   loading: boolean
   error: string
   selectedTag: string
+  healthFilter: AgentHealthFilter
   selectedAgentId: string
   tagFilterOptions: DashboardTagView[]
   viewMode: AgentViewMode
@@ -43,16 +45,17 @@ export function AgentRail(props: {
   onToggleTopology: () => void
   onRefresh: () => void
   onSelectTag: (tag: string) => void
+  onHealthFilterChange: (filter: AgentHealthFilter) => void
   onSelectAgent: (agentID: string, active: boolean) => void
 }) {
-  const { agents, loading, error, selectedTag, selectedAgentId, tagFilterOptions, viewMode, panelExpanded, topologyVisible, restrictedView = false, onToggleViewMode, onToggleTopology, onRefresh, onSelectTag, onSelectAgent } = props
+  const { agents, loading, error, selectedTag, healthFilter, selectedAgentId, tagFilterOptions, viewMode, panelExpanded, topologyVisible, restrictedView = false, onToggleViewMode, onToggleTopology, onRefresh, onSelectTag, onHealthFilterChange, onSelectAgent } = props
   const effectiveViewMode: AgentViewMode = panelExpanded ? 'list' : viewMode
   const [agentPage, setAgentPage] = useState(1)
   const [agentPageSize, setAgentPageSize] = useState(10)
 
   useEffect(() => {
     setAgentPage(1)
-  }, [selectedTag, effectiveViewMode])
+  }, [selectedTag, healthFilter, effectiveViewMode])
 
   useEffect(() => {
     const maxPage = Math.max(1, Math.ceil(agents.length / agentPageSize))
@@ -107,6 +110,17 @@ export function AgentRail(props: {
         }
       >
         {error ? <Alert type="error" showIcon message="加载失败" description={error} className="compact-alert" /> : null}
+        <Segmented
+          block
+          size="small"
+          className="agent-health-filter"
+          value={healthFilter}
+          options={(['all', 'healthy', 'warning', 'offline'] as AgentHealthFilter[]).map((value) => ({
+            value,
+            label: agentHealthFilterLabel(value),
+          }))}
+          onChange={(value) => onHealthFilterChange(normalizeAgentHealthFilter(String(value)))}
+        />
         <div className="agent-filter-strip">
           <Space wrap>
             <Tag color={!selectedTag ? 'blue' : 'default'} className="tag-filter-chip" onClick={() => onSelectTag('')}>全部</Tag>
@@ -122,7 +136,7 @@ export function AgentRail(props: {
             className={`agent-list agent-list-${effectiveViewMode}`}
             dataSource={agents}
             loading={loading}
-            locale={{ emptyText: <Empty description={selectedTag ? '该标签下暂无 client' : '暂无已注册 client'} /> }}
+            locale={{ emptyText: <Empty description={healthFilter !== 'all' ? `暂无${agentHealthFilterLabel(healthFilter)} Client` : selectedTag ? '该标签下暂无 client' : '暂无已注册 client'} /> }}
             pagination={{
               current: agentPage,
               pageSize: agentPageSize,
