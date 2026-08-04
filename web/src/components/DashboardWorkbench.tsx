@@ -563,7 +563,7 @@ function WorkbenchClientExpiryList(props: {
             <small title={`${row.agentName} · ${row.inboundName}`}>{row.agentName} · {row.inboundName}</small>
           </span>
           <span className="workbench-client-expiry-status">
-            <Tag color={row.cycle === 'quarter' ? 'geekblue' : row.cycle === 'year' ? 'purple' : 'blue'}>{clientExpiryCycleLabel(row.cycle)}</Tag>
+            <Tag color={row.cycle === 'quarter' ? 'geekblue' : row.cycle === 'semiannual' ? 'cyan' : row.cycle === 'year' ? 'purple' : 'blue'}>{clientExpiryCycleLabel(row.cycle)}</Tag>
             <strong className={row.level === 'bad' ? 'finance-negative' : ''}>{clientExpiryRemainingLabel(row.remainingDays)}</strong>
             <small>{row.expiryDate}</small>
           </span>

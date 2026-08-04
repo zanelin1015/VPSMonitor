@@ -69,6 +69,51 @@ func TestSQLiteStoreSaveAndReload(t *testing.T) {
 	}
 }
 
+func TestSQLiteStoreExchangeRatesCache(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "bridge.db")
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+
+	fetchedAt := time.Now().UTC().Add(-time.Hour)
+	if err := store.SaveExchangeRatesCache(model.ExchangeRatesResponse{
+		Base:      " eur ",
+		Date:      "2026-07-30",
+		Rates:     map[string]float64{" eur ": 0.9, " cny ": 7.85, "bad": 0},
+		Source:    " Frankfurter ",
+		FetchedAt: fetchedAt,
+		Stale:     true,
+		Error:     "temporary failure",
+	}); err != nil {
+		t.Fatalf("SaveExchangeRatesCache: %v", err)
+	}
+
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	reloaded, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("reload sqlite store: %v", err)
+	}
+	defer reloaded.Close()
+
+	cached, found, err := reloaded.GetExchangeRatesCache()
+	if err != nil || !found {
+		t.Fatalf("GetExchangeRatesCache found=%v err=%v", found, err)
+	}
+	if cached.Base != "EUR" || cached.Rates["EUR"] != 1 || cached.Rates["CNY"] != 7.85 {
+		t.Fatalf("unexpected normalized rates cache: %#v", cached)
+	}
+	if cached.Stale || cached.Error != "" {
+		t.Fatalf("transient stale/error fields should not be persisted: %#v", cached)
+	}
+	if !cached.FetchedAt.Equal(fetchedAt) {
+		t.Fatalf("expected fetched_at to survive reload, got %s want %s", cached.FetchedAt, fetchedAt)
+	}
+}
+
 func TestNormalizeClientBillingsTrafficMultiplier(t *testing.T) {
 	items := normalizeClientBillings([]model.XUIClientBillingConfig{
 		{InboundID: 1, Email: "legacy"},

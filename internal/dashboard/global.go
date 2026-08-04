@@ -207,7 +207,7 @@ func lookupAgentGeo(summary model.VPSSummary, resolver *topologyResolver) *model
 	if resolver == nil {
 		return nil
 	}
-	for _, address := range []string{summary.ObservedIP, summary.PublicIPv4, summary.PublicIPv6} {
+	for _, address := range []string{summary.ServerSeenIP, summary.ObservedIP, summary.PublicIPv4, summary.PublicIPv6} {
 		if address == "" {
 			continue
 		}

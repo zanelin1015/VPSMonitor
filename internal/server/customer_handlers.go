@@ -233,11 +233,36 @@ func (a *App) customerOverview(user model.CustomerUser) (model.CustomerOverviewR
 	for _, assignment := range assignments {
 		links = append(links, buildCustomerLinkView(assignment, chainMap, clientMap, agentMap))
 	}
+	frontendSettings, _, err := a.store.GetFrontendSettings()
+	if err != nil {
+		return model.CustomerOverviewResponse{}, err
+	}
 	return model.CustomerOverviewResponse{
-		User:        user,
-		GeneratedAt: time.Now().UTC(),
-		Links:       links,
+		User:          user,
+		GeneratedAt:   time.Now().UTC(),
+		Announcements: activeCustomerAnnouncements(frontendSettings.Announcements, time.Now().UTC()),
+		Links:         links,
 	}, nil
+}
+
+func activeCustomerAnnouncements(items []model.CustomerAnnouncement, now time.Time) []model.CustomerAnnouncement {
+	active := make([]model.CustomerAnnouncement, 0, len(items))
+	for _, item := range items {
+		if !item.Enabled {
+			continue
+		}
+		if startsAt, err := time.Parse(time.RFC3339, item.StartsAt); item.StartsAt != "" && (err != nil || now.Before(startsAt)) {
+			continue
+		}
+		if endsAt, err := time.Parse(time.RFC3339, item.EndsAt); item.EndsAt != "" && (err != nil || !now.Before(endsAt)) {
+			continue
+		}
+		active = append(active, item)
+	}
+	if len(active) == 0 {
+		return nil
+	}
+	return active
 }
 
 func buildCustomerChainMap(chains []model.ClientChainView, links []model.TopologyLinkView) map[string]model.ClientChainView {

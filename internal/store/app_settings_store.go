@@ -14,6 +14,7 @@ import (
 
 const (
 	clientInstallSettingsKey = "client_install"
+	exchangeRatesCacheKey    = "exchange_rates_cache"
 	tagSettingsKey           = "tag_settings"
 	frontendSettingsKey      = "frontend_settings"
 	scheduledTasksKey        = "scheduled_tasks"
@@ -121,6 +122,70 @@ func normalizeXUIBootstrapWebPath(value string) string {
 	return value + "/"
 }
 
+func (s *SQLiteStore) GetExchangeRatesCache() (model.ExchangeRatesResponse, bool, error) {
+	var raw string
+	err := s.db.QueryRow(`SELECT value_json FROM app_settings WHERE key = ?`, exchangeRatesCacheKey).Scan(&raw)
+	if err == sql.ErrNoRows {
+		return model.ExchangeRatesResponse{}, false, nil
+	}
+	if err != nil {
+		return model.ExchangeRatesResponse{}, false, fmt.Errorf("load exchange rates cache: %w", err)
+	}
+	var cached model.ExchangeRatesResponse
+	if err := json.Unmarshal([]byte(raw), &cached); err != nil {
+		return model.ExchangeRatesResponse{}, false, fmt.Errorf("decode exchange rates cache: %w", err)
+	}
+	cached = normalizeExchangeRatesCache(cached)
+	if cached.FetchedAt.IsZero() || len(cached.Rates) == 0 {
+		return model.ExchangeRatesResponse{}, false, nil
+	}
+	return cached, true, nil
+}
+
+func (s *SQLiteStore) SaveExchangeRatesCache(rates model.ExchangeRatesResponse) error {
+	rates = normalizeExchangeRatesCache(rates)
+	rates.Stale = false
+	rates.Error = ""
+	if rates.FetchedAt.IsZero() {
+		rates.FetchedAt = time.Now().UTC()
+	}
+	data, err := json.Marshal(rates)
+	if err != nil {
+		return fmt.Errorf("encode exchange rates cache: %w", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err = s.db.Exec(`
+		INSERT INTO app_settings (key, value_json, updated_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
+	`, exchangeRatesCacheKey, string(data), now)
+	if err != nil {
+		return fmt.Errorf("save exchange rates cache: %w", err)
+	}
+	return nil
+}
+
+func normalizeExchangeRatesCache(rates model.ExchangeRatesResponse) model.ExchangeRatesResponse {
+	rates.Base = strings.ToUpper(strings.TrimSpace(rates.Base))
+	if rates.Base == "" {
+		rates.Base = "EUR"
+	}
+	rates.Date = strings.TrimSpace(rates.Date)
+	rates.Source = strings.TrimSpace(rates.Source)
+	normalized := map[string]float64{}
+	for currency, rate := range rates.Rates {
+		currency = strings.ToUpper(strings.TrimSpace(currency))
+		if len(currency) == 3 && rate > 0 {
+			normalized[currency] = rate
+		}
+	}
+	if rates.Base == "EUR" {
+		normalized["EUR"] = 1
+	}
+	rates.Rates = normalized
+	return rates
+}
+
 func (s *SQLiteStore) GetTagSettings() ([]string, bool, error) {
 	var raw string
 	err := s.db.QueryRow(`SELECT value_json FROM app_settings WHERE key = ?`, tagSettingsKey).Scan(&raw)
@@ -168,10 +233,12 @@ func (s *SQLiteStore) GetFrontendSettings() (model.FrontendSettings, bool, error
 	if err := json.Unmarshal([]byte(raw), &settings); err != nil {
 		return model.FrontendSettings{}, false, fmt.Errorf("decode frontend settings: %w", err)
 	}
+	settings.Announcements = normalizeCustomerAnnouncements(settings.Announcements, false)
 	return settings, true, nil
 }
 
 func (s *SQLiteStore) SaveFrontendSettings(settings model.FrontendSettings) (model.FrontendSettings, error) {
+	settings.Announcements = normalizeCustomerAnnouncements(settings.Announcements, true)
 	data, err := json.Marshal(settings)
 	if err != nil {
 		return model.FrontendSettings{}, fmt.Errorf("encode frontend settings: %w", err)
@@ -186,6 +253,58 @@ func (s *SQLiteStore) SaveFrontendSettings(settings model.FrontendSettings) (mod
 		return model.FrontendSettings{}, fmt.Errorf("save frontend settings: %w", err)
 	}
 	return settings, nil
+}
+
+func normalizeCustomerAnnouncements(items []model.CustomerAnnouncement, generateID bool) []model.CustomerAnnouncement {
+	if len(items) == 0 {
+		return nil
+	}
+	normalized := make([]model.CustomerAnnouncement, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		item.ID = strings.TrimSpace(item.ID)
+		if item.ID == "" && generateID {
+			if generated, err := randomTokenBytes(12); err == nil {
+				item.ID = generated
+			}
+		}
+		if item.ID == "" {
+			continue
+		}
+		if _, exists := seen[item.ID]; exists {
+			continue
+		}
+		seen[item.ID] = struct{}{}
+		item.Title = strings.TrimSpace(item.Title)
+		item.Content = strings.TrimSpace(item.Content)
+		item.LinkLabel = strings.TrimSpace(item.LinkLabel)
+		item.LinkURL = strings.TrimSpace(item.LinkURL)
+		item.StartsAt = normalizeAnnouncementTime(item.StartsAt)
+		item.EndsAt = normalizeAnnouncementTime(item.EndsAt)
+		switch strings.ToLower(strings.TrimSpace(item.Level)) {
+		case "success", "warning", "error":
+			item.Level = strings.ToLower(strings.TrimSpace(item.Level))
+		default:
+			item.Level = "info"
+		}
+		if item.Title == "" && item.Content == "" {
+			continue
+		}
+		normalized = append(normalized, item)
+	}
+	return normalized
+}
+
+func normalizeAnnouncementTime(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return ""
+	}
+	return parsed.UTC().Format(time.RFC3339)
 }
 
 func (s *SQLiteStore) GetScheduledTaskSettings() (model.ScheduledTaskSettings, bool, error) {

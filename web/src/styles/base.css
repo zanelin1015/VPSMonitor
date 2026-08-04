@@ -481,6 +481,28 @@ body {
   padding: 0 0 16px;
 }
 
+.admin-settings-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-settings-section-heading h4.ant-typography {
+  margin: 0 0 4px;
+}
+
+.admin-announcement-editor .ant-card-head-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-announcement-editor .ant-col > .ant-typography {
+  display: block;
+  margin-bottom: 6px;
+}
+
 .admin-oa-shell.topology-open-shell .hero-panel h1.ant-typography {
   font-size: 17px;
 }

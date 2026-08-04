@@ -48,6 +48,7 @@ import {
   nodeLabel,
   normalizeAreaManagerAssignmentDrafts,
   normalizeAreaManagerOutboundGrants,
+  normalizeRevenueCycle,
   realmRuleTargetAgentID,
   renderAssignmentHierarchy,
   revenueCycleLabel,
@@ -840,7 +841,7 @@ export function CustomerManagementModal(props: {
       billing_enabled: Boolean(record.billing_enabled),
       revenue_amount: Number(record.revenue_amount || 0),
       revenue_currency: record.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
-      revenue_cycle: record.revenue_cycle === 'quarter' || record.revenue_cycle === 'year' ? record.revenue_cycle : 'month',
+      revenue_cycle: normalizeRevenueCycle(record.revenue_cycle),
       grant_agent_id: firstRealmAssignmentAgentID(record.assignments || [], agents) || '',
       xui_grant_agent_id: firstXUIAssignmentAgentID(record.assignments || [], agents) || '',
       outbound_create_enabled: Boolean(record.outbound_create_enabled),
@@ -1085,7 +1086,7 @@ export function CustomerManagementModal(props: {
           traffic_multiplier: Number(payload.traffic_multiplier ?? assignmentForm.traffic_multiplier ?? 1),
           revenue_amount: Number(payload.revenue_amount ?? assignmentForm.revenue_amount ?? 0),
           revenue_currency: payload.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
-          revenue_cycle: payload.revenue_cycle === 'quarter' || payload.revenue_cycle === 'year' ? payload.revenue_cycle : 'month',
+          revenue_cycle: normalizeRevenueCycle(payload.revenue_cycle),
         } : {}),
       })
       await onConfigChanged?.(customerID ? payload.agent_id : undefined)

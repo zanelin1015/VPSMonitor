@@ -25,7 +25,7 @@ export interface AssignmentFormState {
   traffic_multiplier: number
   revenue_amount: number
   revenue_currency: 'CNY' | 'USDT'
-  revenue_cycle: 'month' | 'quarter' | 'year'
+  revenue_cycle: 'month' | 'quarter' | 'semiannual' | 'year'
   enabled: boolean
 }
 
@@ -52,7 +52,7 @@ export interface AreaManagerFormState {
   billing_enabled: boolean
   revenue_amount: number
   revenue_currency: 'CNY' | 'USDT'
-  revenue_cycle: 'month' | 'quarter' | 'year'
+  revenue_cycle: 'month' | 'quarter' | 'semiannual' | 'year'
   grant_agent_id: string
   xui_grant_agent_id: string
   outbound_create_enabled: boolean
@@ -707,7 +707,7 @@ export function assignmentFormFromAssignment(record: CustomerAssignment, agents:
     traffic_multiplier: Number(billing?.traffic_multiplier || 1),
     revenue_amount: Number(billing?.revenue_amount || 0),
     revenue_currency: billing?.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
-    revenue_cycle: billing?.revenue_cycle === 'quarter' || billing?.revenue_cycle === 'year' ? billing.revenue_cycle : 'month',
+    revenue_cycle: normalizeRevenueCycle(billing?.revenue_cycle),
     enabled: record.enabled,
   }
 }
@@ -727,11 +727,7 @@ export function assignmentFormFromDraft(draft: CustomerAssignmentDraft, agents: 
     traffic_multiplier: Number(draft.traffic_multiplier ?? billing?.traffic_multiplier ?? 1),
     revenue_amount: Number(draft.revenue_amount ?? billing?.revenue_amount ?? 0),
     revenue_currency: draft.revenue_currency === 'USDT' ? 'USDT' : billing?.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
-    revenue_cycle: draft.revenue_cycle === 'quarter' || draft.revenue_cycle === 'year'
-      ? draft.revenue_cycle
-      : billing?.revenue_cycle === 'quarter' || billing?.revenue_cycle === 'year'
-        ? billing.revenue_cycle
-        : 'month',
+    revenue_cycle: normalizeRevenueCycle(draft.revenue_cycle || billing?.revenue_cycle),
     enabled: true,
   }
 }
@@ -778,7 +774,7 @@ export function billingFormPatch(billing?: XUIClientBillingConfig): Pick<Assignm
     traffic_multiplier: Number(billing?.traffic_multiplier || 1),
     revenue_amount: Number(billing?.revenue_amount || 0),
     revenue_currency: billing?.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
-    revenue_cycle: billing?.revenue_cycle === 'quarter' || billing?.revenue_cycle === 'year' ? billing.revenue_cycle : 'month',
+    revenue_cycle: normalizeRevenueCycle(billing?.revenue_cycle),
   }
 }
 
@@ -794,10 +790,16 @@ export function revenueCycleLabel(cycle?: string): string {
   switch (cycle) {
     case 'quarter':
       return '季'
+    case 'semiannual':
+      return '半年'
     case 'year':
       return '年'
     case 'month':
     default:
       return '月'
   }
+}
+
+export function normalizeRevenueCycle(cycle?: string): 'month' | 'quarter' | 'semiannual' | 'year' {
+  return cycle === 'quarter' || cycle === 'semiannual' || cycle === 'year' ? cycle : 'month'
 }

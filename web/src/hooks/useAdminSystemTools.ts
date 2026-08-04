@@ -30,6 +30,7 @@ import {
   isUnauthorized,
   normalizeClientInstallCommandForm,
   normalizeFrontendSettingsForm,
+  serializeFrontendSettingsForm,
 } from '../lib/appHelpers'
 import { defaultScheduledTaskSettings, normalizeScheduledTaskSettings } from '../lib/scheduledTasks'
 import { applyCustomFrontendCode } from '../components/VisualEffects'
@@ -157,7 +158,7 @@ export function useAdminSystemTools(setAdminUser: (user: AdminUser | null) => vo
       const data = await fetchJSON<FrontendSettings>('/api/v1/admin/frontend-settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(frontendSettingsForm),
+        body: JSON.stringify(serializeFrontendSettingsForm(frontendSettingsForm)),
       })
       setFrontendSettingsForm(normalizeFrontendSettingsForm(data))
       applyCustomFrontendCode(data.custom_code || '')

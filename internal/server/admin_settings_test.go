@@ -59,3 +59,33 @@ func TestValidateClientInstallSettingsRejectsInvalidRealmValues(t *testing.T) {
 		t.Fatal("expected non-http realm download base url to be rejected")
 	}
 }
+
+func TestValidateFrontendSettingsAnnouncements(t *testing.T) {
+	err := validateFrontendSettings(model.FrontendSettings{
+		Announcements: []model.CustomerAnnouncement{
+			{
+				Enabled:  true,
+				Title:    "Telegram 已更换",
+				LinkURL:  "https://t.me/example",
+				StartsAt: "2026-08-04T12:00:00Z",
+				EndsAt:   "2026-08-05T12:00:00Z",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("validateFrontendSettings: %v", err)
+	}
+}
+
+func TestValidateFrontendSettingsRejectsInvalidAnnouncement(t *testing.T) {
+	tests := []model.CustomerAnnouncement{
+		{Enabled: true, LinkURL: "https://t.me/example"},
+		{Enabled: true, Title: "Invalid URL", LinkURL: "javascript:alert(1)"},
+		{Enabled: true, Title: "Invalid window", StartsAt: "2026-08-05T12:00:00Z", EndsAt: "2026-08-04T12:00:00Z"},
+	}
+	for _, announcement := range tests {
+		if err := validateFrontendSettings(model.FrontendSettings{Announcements: []model.CustomerAnnouncement{announcement}}); err == nil {
+			t.Fatalf("expected announcement to be rejected: %#v", announcement)
+		}
+	}
+}

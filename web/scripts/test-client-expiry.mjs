@@ -28,6 +28,7 @@ try {
   const billings = [
     billing(1, 'monthly', 'month-user', 'month'),
     billing(2, 'quarterly', 'quarter-user', 'quarter'),
+    billing(9, 'semiannual', 'semiannual-user', 'semiannual'),
     billing(3, 'safe', 'safe-user', 'month'),
     billing(4, 'disabled', 'disabled-user', 'month'),
     billing(5, 'closed-node', 'closed-node-user', 'month'),
@@ -42,6 +43,7 @@ try {
     finance_clients: [
       client(1, 'monthly', 'month-user', day(now, 5)),
       client(2, 'quarterly', 'quarter-user', day(now, 4)),
+      client(9, 'semiannual', 'semiannual-user', day(now, 2)),
       client(3, 'safe', 'safe-user', day(now, 6)),
       client(4, 'disabled', 'disabled-user', day(now, 2), false),
       client(5, 'closed-node', 'closed-node-user', day(now, 3), true, false),
@@ -59,13 +61,15 @@ try {
   }
 
   const rows = buildClientExpiryRows([agent, fallbackAgent], now)
-  assert.deepEqual(rows.map((row) => row.clientName), ['expired-user', 'external-user', 'fallback-user', 'quarter-user', 'month-user'])
+  assert.deepEqual(rows.map((row) => row.clientName), ['expired-user', 'external-user', 'semiannual-user', 'fallback-user', 'quarter-user', 'month-user'])
   assert.equal(rows.find((row) => row.clientName === 'quarter-user')?.cycle, 'quarter')
+  assert.equal(rows.find((row) => row.clientName === 'semiannual-user')?.cycle, 'semiannual')
   assert.equal(rows.find((row) => row.clientName === 'external-user')?.cycle, '')
   assert(!rows.some((row) => row.clientName === 'safe-user'), 'clients beyond five days should not be listed')
   assert(!rows.some((row) => row.clientName === 'disabled-user'), 'disabled clients should not be listed')
   assert(!rows.some((row) => row.clientName === 'closed-node-user'), 'clients on disabled nodes should not be listed')
   assert.equal(clientExpiryCycleLabel('quarter'), '季付')
+  assert.equal(clientExpiryCycleLabel('semiannual'), '半年付')
   assert.equal(clientExpiryRemainingLabel(0), '今天到期')
   assert.equal(clientExpiryRemainingLabel(-2), '已过期 2 天')
 

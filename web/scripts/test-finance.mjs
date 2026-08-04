@@ -141,17 +141,19 @@ try {
   assert(unavailableRows.every((row) => row.reason === 'client_state_unavailable'), 'failed x-ui collection reports unavailable state instead of deleted clients')
 
   const coveredQuarterStart = monthTimestamp(-2, 5)
+  const coveredSemiannualStart = monthTimestamp(-5, 5)
   const finishedQuarterStart = monthTimestamp(-3, 5)
   const futureMonthStart = monthTimestamp(1, 5)
   const periodBillings = [
     { inbound_id: 1, inbound_tag: 'period', email: 'covered-quarter', revenue_amount: 300, revenue_currency: 'USDT', revenue_cycle: 'quarter', start_time: coveredQuarterStart, expire_time: cycleExpiry(coveredQuarterStart, 3) },
+    { inbound_id: 1, inbound_tag: 'period', email: 'covered-semiannual', revenue_amount: 600, revenue_currency: 'USDT', revenue_cycle: 'semiannual', start_time: coveredSemiannualStart, expire_time: cycleExpiry(coveredSemiannualStart, 6) },
     { inbound_id: 1, inbound_tag: 'period', email: 'finished-quarter', revenue_amount: 300, revenue_currency: 'USDT', revenue_cycle: 'quarter', start_time: finishedQuarterStart, expire_time: cycleExpiry(finishedQuarterStart, 3) },
     { inbound_id: 1, inbound_tag: 'period', email: 'renewed-quarter', revenue_amount: 600, revenue_currency: 'USDT', revenue_cycle: 'quarter', start_time: finishedQuarterStart, expire_time: cycleExpiry(finishedQuarterStart, 6) },
     { inbound_id: 1, inbound_tag: 'period', email: 'future-month', revenue_amount: 90, revenue_currency: 'USDT', revenue_cycle: 'month', start_time: futureMonthStart, expire_time: cycleExpiry(futureMonthStart, 1) },
   ]
   const periodAgent = agent('period', 0, periodBillings, periodBillings.map((billing) => financeClient(1, 'period', billing.email, true)))
   const periodSummary = summarizeMonthlyFinance([periodAgent], [], 'USD', exchangeRates)
-  approx(periodSummary.revenueTotal, 300, 'quarterly revenue is spread only across covered calendar months')
+  approx(periodSummary.revenueTotal, 400, 'quarterly and semiannual revenue is spread only across covered calendar months')
   assert.equal(periodSummary.excludedRevenueCount, 2, 'finished and future billing periods are excluded from the current month')
   assert.deepEqual(
     buildMonthlyFinanceExcludedRevenueDetails([periodAgent], [], 'USD', exchangeRates).map((row) => row.reason),

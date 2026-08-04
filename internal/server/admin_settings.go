@@ -22,6 +22,9 @@ func (a *App) handlePublicFrontendSettings(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// Customer announcements are only exposed through the authenticated
+	// customer overview endpoint.
+	settings.Announcements = nil
 	writeJSON(w, http.StatusOK, settings)
 }
 
@@ -43,6 +46,10 @@ func (a *App) handleAdminFrontendSettings(w http.ResponseWriter, r *http.Request
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode frontend settings: %v", err))
 			return
 		}
+		if err := validateFrontendSettings(req); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		settings, err := a.store.SaveFrontendSettings(req)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
@@ -51,6 +58,55 @@ func (a *App) handleAdminFrontendSettings(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusOK, settings)
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func validateFrontendSettings(settings model.FrontendSettings) error {
+	if len(settings.Announcements) > 20 {
+		return fmt.Errorf("customer announcements cannot exceed 20")
+	}
+	for index, item := range settings.Announcements {
+		if len([]rune(item.Title)) > 120 || len([]rune(item.Content)) > 1000 || len([]rune(item.LinkLabel)) > 60 || len([]rune(item.LinkURL)) > 500 {
+			return fmt.Errorf("customer announcement %d exceeds the length limit", index+1)
+		}
+		if item.Enabled && strings.TrimSpace(item.Title) == "" {
+			return fmt.Errorf("customer announcement %d title is required", index+1)
+		}
+		if value := strings.TrimSpace(item.LinkURL); value != "" {
+			parsed, err := url.Parse(value)
+			if err != nil || parsed.Scheme == "" || !allowedAnnouncementURLScheme(parsed.Scheme) {
+				return fmt.Errorf("customer announcement %d link is invalid", index+1)
+			}
+		}
+		startsAt, err := parseOptionalAnnouncementTime(item.StartsAt)
+		if err != nil {
+			return fmt.Errorf("customer announcement %d start time is invalid", index+1)
+		}
+		endsAt, err := parseOptionalAnnouncementTime(item.EndsAt)
+		if err != nil {
+			return fmt.Errorf("customer announcement %d end time is invalid", index+1)
+		}
+		if !startsAt.IsZero() && !endsAt.IsZero() && !endsAt.After(startsAt) {
+			return fmt.Errorf("customer announcement %d end time must be after start time", index+1)
+		}
+	}
+	return nil
+}
+
+func parseOptionalAnnouncementTime(value string) (time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, nil
+	}
+	return time.Parse(time.RFC3339, value)
+}
+
+func allowedAnnouncementURLScheme(scheme string) bool {
+	switch strings.ToLower(strings.TrimSpace(scheme)) {
+	case "http", "https", "tg", "mailto", "tel":
+		return true
+	default:
+		return false
 	}
 }
 

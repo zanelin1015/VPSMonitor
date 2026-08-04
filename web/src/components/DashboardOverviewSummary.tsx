@@ -378,7 +378,7 @@ export function OverviewSummaryCard(props: {
                 </div>
               ) : null}
               {monthlyFinance.error && monthlyFinance.available ? <div className="overview-stat-foot">财务账号数据未刷新：{monthlyFinance.error}</div> : null}
-              {exchangeRates.error ? <div className="overview-stat-foot">汇率加载失败：{exchangeRates.error}</div> : null}
+              {exchangeRates.error ? <div className="overview-stat-foot">汇率提示：{exchangeRates.error}</div> : null}
             </section> : null}
           </div>
           <div className="overview-summary-strip">
@@ -510,6 +510,8 @@ function cycleLabel(cycle?: string): string {
   switch (cycle) {
     case 'quarter':
       return '每季'
+    case 'semiannual':
+      return '每半年'
     case 'year':
       return '每年'
     case 'month':

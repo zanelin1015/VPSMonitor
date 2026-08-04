@@ -203,9 +203,10 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
                       options={[
                         { value: 'month', label: '月' },
                         { value: 'quarter', label: '季' },
+                        { value: 'semiannual', label: '半年' },
                         { value: 'year', label: '年' },
                       ]}
-                      onChange={(value) => setAreaManagerForm((current) => ({ ...current, revenue_cycle: value as 'month' | 'quarter' | 'year' }))}
+                      onChange={(value) => setAreaManagerForm((current) => ({ ...current, revenue_cycle: value as 'month' | 'quarter' | 'semiannual' | 'year' }))}
                     />
                   </Col>
                   <Col xs={24} md={4}>

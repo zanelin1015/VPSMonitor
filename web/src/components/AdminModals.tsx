@@ -3,10 +3,14 @@ import { Alert, Avatar, Button, Card, Col, Divider, Dropdown, Empty, Input, Inpu
 import type { MenuProps } from 'antd'
 import {
   BellOutlined,
+  ArrowDownOutlined,
+  ArrowUpOutlined,
   CloudDownloadOutlined,
   CopyOutlined,
+  DeleteOutlined,
   EditOutlined,
   LogoutOutlined,
+  PlusOutlined,
   SettingOutlined,
   TeamOutlined,
   UploadOutlined,
@@ -417,7 +421,7 @@ export function FrontendSettingsModal(props: {
 
   return (
     <Modal
-      title="管理员后台样式自定义"
+      title="系统设置"
       open={open}
       onCancel={onClose}
       width={920}
@@ -446,6 +450,21 @@ export function FrontendSettingsPanel(props: {
 }) {
   const { loading, saving, form, onSave, onFormChange } = props
 
+  const updateAnnouncement = (index: number, patch: Partial<FrontendSettingsForm['announcements'][number]>) => {
+    onFormChange({
+      ...form,
+      announcements: form.announcements.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item),
+    })
+  }
+
+  const moveAnnouncement = (index: number, offset: number) => {
+    const target = index + offset
+    if (target < 0 || target >= form.announcements.length) return
+    const announcements = [...form.announcements]
+    ;[announcements[index], announcements[target]] = [announcements[target], announcements[index]]
+    onFormChange({ ...form, announcements })
+  }
+
   return (
     <div className="frontend-settings-page">
       <div className="admin-content-title">
@@ -457,17 +476,98 @@ export function FrontendSettingsPanel(props: {
       </div>
       <Spin spinning={loading}>
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <Alert
-            type="info"
-            showIcon
-            message="只影响管理员后台"
-            description="用户账号不会继承这里的样式；每个用户账号请在用户页“页面样式”里单独保存。背景图可以用 window.CustomBackgroundImage = '图片地址'。"
-          />
+          <div className="admin-settings-section-heading">
+            <div>
+              <Typography.Title level={4}>客户公告</Typography.Title>
+              <Text type="secondary">启用后展示在 Customer 看板顶部，可用于更新 TG、WhatsApp 等联系方式。</Text>
+            </div>
+            <Button
+              icon={<PlusOutlined />}
+              onClick={() => onFormChange({
+                ...form,
+                announcements: [...form.announcements, newCustomerAnnouncement()],
+              })}
+            >新增公告</Button>
+          </div>
+          {form.announcements.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无客户公告" /> : null}
+          {form.announcements.map((announcement, index) => (
+            <Card
+              key={announcement.id}
+              size="small"
+              className="admin-announcement-editor"
+              title={announcement.title.trim() || `公告 ${index + 1}`}
+              extra={(
+                <Space size={4}>
+                  <Switch
+                    size="small"
+                    checked={announcement.enabled}
+                    checkedChildren="启用"
+                    unCheckedChildren="停用"
+                    onChange={(enabled) => updateAnnouncement(index, { enabled })}
+                  />
+                  <Button type="text" icon={<ArrowUpOutlined />} disabled={index === 0} title="上移" onClick={() => moveAnnouncement(index, -1)} />
+                  <Button type="text" icon={<ArrowDownOutlined />} disabled={index === form.announcements.length - 1} title="下移" onClick={() => moveAnnouncement(index, 1)} />
+                  <Button
+                    type="text"
+                    danger
+                    icon={<DeleteOutlined />}
+                    title="删除公告"
+                    onClick={() => onFormChange({
+                      ...form,
+                      announcements: form.announcements.filter((_, itemIndex) => itemIndex !== index),
+                    })}
+                  />
+                </Space>
+              )}
+            >
+              <Row gutter={[12, 12]}>
+                <Col xs={24} md={6}>
+                  <Text strong>类型</Text>
+                  <Select
+                    value={announcement.level || 'info'}
+                    style={{ width: '100%' }}
+                    options={[
+                      { value: 'info', label: '通知' },
+                      { value: 'success', label: '恢复' },
+                      { value: 'warning', label: '提醒' },
+                      { value: 'error', label: '紧急' },
+                    ]}
+                    onChange={(level) => updateAnnouncement(index, { level })}
+                  />
+                </Col>
+                <Col xs={24} md={18}>
+                  <Text strong>标题</Text>
+                  <Input value={announcement.title} maxLength={120} placeholder="例如：Telegram 联系方式已更新" onChange={(event) => updateAnnouncement(index, { title: event.target.value })} />
+                </Col>
+                <Col span={24}>
+                  <Text strong>内容</Text>
+                  <Input.TextArea value={announcement.content || ''} maxLength={1000} autoSize={{ minRows: 2, maxRows: 5 }} placeholder="说明原联系方式状态以及新的联系方式" onChange={(event) => updateAnnouncement(index, { content: event.target.value })} />
+                </Col>
+                <Col xs={24} md={8}>
+                  <Text strong>链接按钮文字</Text>
+                  <Input value={announcement.link_label || ''} maxLength={60} placeholder="联系新 Telegram" onChange={(event) => updateAnnouncement(index, { link_label: event.target.value })} />
+                </Col>
+                <Col xs={24} md={16}>
+                  <Text strong>新联系方式链接</Text>
+                  <Input value={announcement.link_url || ''} maxLength={500} placeholder="https://t.me/example 或 https://wa.me/..." onChange={(event) => updateAnnouncement(index, { link_url: event.target.value })} />
+                </Col>
+                <Col xs={24} md={12}>
+                  <Text strong>开始展示（可选）</Text>
+                  <Input type="datetime-local" value={announcement.starts_at || ''} onChange={(event) => updateAnnouncement(index, { starts_at: event.target.value })} />
+                </Col>
+                <Col xs={24} md={12}>
+                  <Text strong>结束展示（可选）</Text>
+                  <Input type="datetime-local" value={announcement.ends_at || ''} onChange={(event) => updateAnnouncement(index, { ends_at: event.target.value })} />
+                </Col>
+              </Row>
+            </Card>
+          ))}
+          <Divider />
           <div>
-            <Text strong>自定义代码（样式和脚本）</Text>
+            <Text strong>管理员后台自定义代码（样式和脚本）</Text>
             <Input.TextArea
               value={form.custom_code}
-              onChange={(event) => onFormChange({ custom_code: event.target.value })}
+              onChange={(event) => onFormChange({ ...form, custom_code: event.target.value })}
               autoSize={{ minRows: 16, maxRows: 28 }}
               placeholder={`<style>\n:root { --green: #2563eb; }\n</style>\n<script>\nwindow.CustomBackgroundImage = 'https://example.com/bg.jpg'\n</script>`}
             />
@@ -476,6 +576,20 @@ export function FrontendSettingsPanel(props: {
       </Spin>
     </div>
   )
+}
+
+function newCustomerAnnouncement(): FrontendSettingsForm['announcements'][number] {
+  return {
+    id: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `announcement-${Date.now()}`,
+    enabled: true,
+    level: 'warning',
+    title: '',
+    content: '',
+    link_label: '',
+    link_url: '',
+    starts_at: '',
+    ends_at: '',
+  }
 }
 
 export function ScheduledTasksPanel(props: {

@@ -86,6 +86,8 @@ func normalizeClientExpireCycle(cycle string) string {
 	switch strings.ToLower(strings.TrimSpace(cycle)) {
 	case "quarter", "quarterly", "season":
 		return "quarter"
+	case "semiannual", "halfyear", "half-year", "half_year", "half_yearly":
+		return "semiannual"
 	case "year", "yearly":
 		return "year"
 	default:
@@ -97,6 +99,8 @@ func addClientExpireCycle(value time.Time, cycle string) time.Time {
 	switch cycle {
 	case "quarter":
 		return value.AddDate(0, 3, 0)
+	case "semiannual":
+		return value.AddDate(0, 6, 0)
 	case "year":
 		return value.AddDate(1, 0, 0)
 	default:

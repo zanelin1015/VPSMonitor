@@ -3,11 +3,11 @@ import { DEFAULT_COST_CURRENCY, normalizeCurrencyCode } from './currency'
 import { clampMetricPercent } from './traffic'
 
 export function normalizeRenewalConfig(config?: VPSRenewalConfig): VPSRenewalConfig {
-  const cycle = config?.cycle === 'week' || config?.cycle === 'quarter' || config?.cycle === 'year' ? config.cycle : 'month'
+  const cycle = config?.cycle === 'week' || config?.cycle === 'quarter' || config?.cycle === 'semiannual' || config?.cycle === 'year' ? config.cycle : 'month'
   const trafficLimitBytes = Math.max(0, Number(config?.traffic_limit_bytes || 0))
   const costAmount = Math.max(0, Number(config?.cost_amount || 0))
   const costCurrency = normalizeCurrencyCode(config?.cost_currency || DEFAULT_COST_CURRENCY)
-  const costCycle = config?.cost_cycle === 'quarter' || config?.cost_cycle === 'year' ? config.cost_cycle : 'month'
+  const costCycle = config?.cost_cycle === 'quarter' || config?.cost_cycle === 'semiannual' || config?.cost_cycle === 'year' ? config.cost_cycle : 'month'
   return {
     enabled: Boolean(config?.enabled || config?.start_date || config?.expire_date),
     start_date: config?.start_date || '',
@@ -266,6 +266,9 @@ export function addRenewalCycle(date: Date, cycle: VPSRenewalConfig['cycle']): D
   if (cycle === 'quarter') {
     return addClampedMonths(date, 3)
   }
+  if (cycle === 'semiannual') {
+    return addClampedMonths(date, 6)
+  }
   if (cycle === 'year') {
     return addClampedMonths(date, 12)
   }
@@ -278,6 +281,9 @@ export function subtractRenewalCycle(date: Date, cycle: VPSRenewalConfig['cycle'
   }
   if (cycle === 'quarter') {
     return addClampedMonths(date, -3)
+  }
+  if (cycle === 'semiannual') {
+    return addClampedMonths(date, -6)
   }
   if (cycle === 'year') {
     return addClampedMonths(date, -12)
@@ -304,11 +310,11 @@ export function formatLocalDate(date: Date): string {
   return `${year}/${month}/${day}`
 }
 
-function normalizeClientExpireCycle(cycle?: string): 'month' | 'quarter' | 'year' {
-  return cycle === 'quarter' || cycle === 'year' ? cycle : 'month'
+function normalizeClientExpireCycle(cycle?: string): 'month' | 'quarter' | 'semiannual' | 'year' {
+  return cycle === 'quarter' || cycle === 'semiannual' || cycle === 'year' ? cycle : 'month'
 }
 
-function clientBillingCycle(billing: Pick<XUIClientBillingConfig, 'revenue_cycle' | 'expire_cycle'>): 'month' | 'quarter' | 'year' {
+function clientBillingCycle(billing: Pick<XUIClientBillingConfig, 'revenue_cycle' | 'expire_cycle'>): 'month' | 'quarter' | 'semiannual' | 'year' {
   return normalizeClientExpireCycle(billing.revenue_cycle || billing.expire_cycle)
 }
 

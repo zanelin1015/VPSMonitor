@@ -33,7 +33,7 @@ func TestSyncCustomerAssignmentRevenueCreatesBilling(t *testing.T) {
 		TrafficMultiplier: &multiplier,
 		RevenueAmount:     &amount,
 		RevenueCurrency:   "usdt",
-		RevenueCycle:      "quarter",
+		RevenueCycle:      "semiannual",
 	}, "admin"); err != nil {
 		t.Fatalf("syncCustomerAssignmentRevenue: %v", err)
 	}
@@ -52,10 +52,10 @@ func TestSyncCustomerAssignmentRevenueCreatesBilling(t *testing.T) {
 	if billing.InboundID != 7 || billing.InboundTag != "entry-hk" || billing.Email != "alice@example.com" {
 		t.Fatalf("unexpected billing target: %#v", billing)
 	}
-	if billing.TrafficMultiplier != 2 || billing.RevenueAmount != amount || billing.RevenueCurrency != "USDT" || billing.RevenueCycle != "quarter" {
+	if billing.TrafficMultiplier != 2 || billing.RevenueAmount != amount || billing.RevenueCurrency != "USDT" || billing.RevenueCycle != "semiannual" {
 		t.Fatalf("unexpected billing revenue: %#v", billing)
 	}
-	if billing.ExpireCycle != "quarter" {
+	if billing.ExpireCycle != "semiannual" {
 		t.Fatalf("expected expire cycle to follow revenue cycle, got %#v", billing)
 	}
 }

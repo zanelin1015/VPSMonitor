@@ -601,7 +601,9 @@ func (s *SQLiteStore) normalizeAreaManagerRequest(req model.AreaManagerAccountRe
 	}
 	revenueCycle := strings.ToLower(strings.TrimSpace(req.RevenueCycle))
 	switch revenueCycle {
-	case "quarter", "year":
+	case "quarter", "semiannual", "year":
+	case "halfyear", "half-year", "half_year", "half_yearly":
+		revenueCycle = "semiannual"
 	default:
 		revenueCycle = "month"
 	}
@@ -803,8 +805,10 @@ func normalizeAreaManagerRevenueCurrency(value string) string {
 
 func normalizeAreaManagerRevenueCycle(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "quarter", "year":
+	case "quarter", "semiannual", "year":
 		return strings.ToLower(strings.TrimSpace(value))
+	case "halfyear", "half-year", "half_year", "half_yearly":
+		return "semiannual"
 	default:
 		return "month"
 	}

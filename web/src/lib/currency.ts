@@ -367,7 +367,7 @@ function normalizeRevenueBilling(billing: XUIClientBillingConfig): NormalizedRev
     email: billing.email || '',
     revenue_amount: Math.max(0, Number(billing.revenue_amount || 0)),
     revenue_currency: billing.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
-    revenue_cycle: billing.revenue_cycle === 'quarter' || billing.revenue_cycle === 'year' ? billing.revenue_cycle : 'month',
+    revenue_cycle: normalizeBillingCycleValue(billing.revenue_cycle),
     start_time: Math.max(0, Number(billing.start_time || 0)),
     expire_time: Math.max(0, Number(billing.expire_time || 0)),
   }
@@ -514,7 +514,7 @@ function buildRevenueDetailRow(options: {
 }): MonthlyFinanceRevenueDetail {
   const amount = Math.max(0, Number(options.billing?.revenue_amount || 0))
   const currency = normalizeCurrencyCode(options.billing?.revenue_currency || 'CNY')
-  const cycle = options.billing?.revenue_cycle === 'quarter' || options.billing?.revenue_cycle === 'year' ? options.billing.revenue_cycle : 'month'
+  const cycle = normalizeBillingCycleValue(options.billing?.revenue_cycle)
   const clientEmail = options.clientEmail || options.billing?.email || ''
   const clientRemark = options.clientRemark || ''
   return {
@@ -540,7 +540,7 @@ function buildRevenueDetailRow(options: {
 function buildAreaManagerRevenueDetailRow(manager: AreaManagerAdminView, targetCurrency: CurrencyCode, exchangeRates: ExchangeRatesState): MonthlyFinanceRevenueDetail {
   const amount = Math.max(0, Number(manager.revenue_amount || 0))
   const currency = normalizeCurrencyCode(manager.revenue_currency || 'CNY')
-  const cycle = manager.revenue_cycle === 'quarter' || manager.revenue_cycle === 'year' ? manager.revenue_cycle : 'month'
+  const cycle = normalizeBillingCycleValue(manager.revenue_cycle)
   const label = manager.display_name || manager.username
   return {
     key: `area:${manager.id}`,
@@ -697,7 +697,7 @@ function normalizeCostConfig(config?: VPSRenewalConfig): Pick<VPSRenewalConfig, 
   return {
     cost_amount: Math.max(0, Number(config?.cost_amount || 0)),
     cost_currency: normalizeCurrencyCode(config?.cost_currency),
-    cost_cycle: config?.cost_cycle === 'quarter' || config?.cost_cycle === 'year' ? config.cost_cycle : 'month',
+    cost_cycle: normalizeBillingCycleValue(config?.cost_cycle),
   }
 }
 
@@ -705,7 +705,7 @@ function normalizeBillingConfig(config?: VPSRenewalConfig): Required<BillingConf
   return {
     cost_amount: Math.max(0, Number(config?.cost_amount || 0)),
     cost_currency: normalizeCurrencyCode(config?.cost_currency),
-    cost_cycle: config?.cost_cycle === 'quarter' || config?.cost_cycle === 'year' ? config.cost_cycle : 'month',
+    cost_cycle: normalizeBillingCycleValue(config?.cost_cycle),
   }
 }
 
@@ -713,12 +713,18 @@ function billingCycleMonths(cycle?: VPSRenewalConfig['cost_cycle']): number {
   switch (cycle) {
     case 'quarter':
       return 3
+    case 'semiannual':
+      return 6
     case 'year':
       return 12
     case 'month':
     default:
       return 1
   }
+}
+
+function normalizeBillingCycleValue<T extends string | undefined>(cycle: T): 'month' | 'quarter' | 'semiannual' | 'year' {
+  return cycle === 'quarter' || cycle === 'semiannual' || cycle === 'year' ? cycle : 'month'
 }
 
 function convertCurrency(amount: number, from: CurrencyCode, to: CurrencyCode, exchangeRates: ExchangeRatesState): number | null {

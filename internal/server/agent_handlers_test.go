@@ -116,6 +116,46 @@ func TestHandleRegisterDoesNotSeedDefaultXUIBootstrap(t *testing.T) {
 	}
 }
 
+func TestHandleRegisterStoresServerObservedIP(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+
+	app := &App{
+		config: config.ServerConfig{RegistrationToken: "reg-token"},
+		store:  sqliteStore,
+	}
+	body, err := json.Marshal(model.AgentRegisterRequest{
+		AgentID:    "observed-agent",
+		AgentName:  "Observed Agent",
+		PublicIPv4: "203.0.113.50",
+	})
+	if err != nil {
+		t.Fatalf("Marshal register body: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/register", bytes.NewReader(body))
+	req.Header.Set("X-Registration-Token", "reg-token")
+	req.Header.Set("X-Real-IP", "198.51.100.42")
+	rec := httptest.NewRecorder()
+
+	app.handleRegister(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("handleRegister status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	agent, found, err := sqliteStore.GetAgent("observed-agent")
+	if err != nil {
+		t.Fatalf("GetAgent: %v", err)
+	}
+	if !found {
+		t.Fatal("expected registered agent")
+	}
+	if agent.PublicIPv4 != "198.51.100.42" {
+		t.Fatalf("expected server-observed IP, got %q", agent.PublicIPv4)
+	}
+}
+
 func TestHandleRegisterDoesNotSeedLinuxXUIDBPathForWindows(t *testing.T) {
 	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
 	if err != nil {
@@ -211,6 +251,47 @@ func TestHandleHeartbeatUsesServerReceiveTime(t *testing.T) {
 	}
 	if latest.ReportedAt.Equal(clientTime) {
 		t.Fatalf("expected client reported time to be ignored")
+	}
+}
+
+func TestHandleHeartbeatOverridesClientObservedIP(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+
+	registerResp, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "ip-agent", AgentName: "IP Agent"})
+	if err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	app := &App{store: sqliteStore}
+	body, err := json.Marshal(model.AgentSnapshot{
+		AgentID:   "ip-agent",
+		AgentName: "IP Agent",
+		Summary: model.VPSSummary{
+			ObservedIP:   "192.0.2.10",
+			ServerSeenIP: "192.0.2.11",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal heartbeat body: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/ip-agent/heartbeat", bytes.NewReader(body))
+	req.Header.Set("X-Agent-Token", registerResp.AgentToken)
+	req.Header.Set("CF-Connecting-IP", "8.8.8.8")
+	rec := httptest.NewRecorder()
+
+	app.handleHeartbeat(rec, req, "ip-agent")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("handleHeartbeat status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	latest, found := sqliteStore.GetLatest("ip-agent")
+	if !found {
+		t.Fatal("expected latest snapshot")
+	}
+	if latest.Summary.ObservedIP != "8.8.8.8" || latest.Summary.ServerSeenIP != "8.8.8.8" {
+		t.Fatalf("expected server-observed heartbeat IP, got %#v", latest.Summary)
 	}
 }
 

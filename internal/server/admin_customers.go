@@ -359,7 +359,9 @@ func (a *App) syncCustomerAssignmentRevenue(req model.CustomerAssignmentRequest,
 	}
 	cycle := strings.ToLower(strings.TrimSpace(req.RevenueCycle))
 	switch cycle {
-	case "quarter", "year":
+	case "quarter", "semiannual", "year":
+	case "halfyear", "half-year", "half_year", "half_yearly":
+		cycle = "semiannual"
 	default:
 		cycle = "month"
 	}

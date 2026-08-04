@@ -369,6 +369,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
                 { value: 'week', label: '每周' },
                 { value: 'month', label: '每月' },
                 { value: 'quarter', label: '每季' },
+                { value: 'semiannual', label: '每半年' },
                 { value: 'year', label: '每年' },
               ]}
               onChange={(value) => onRenewalChange({ cycle: value })}
@@ -402,6 +403,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
               options={[
                 { value: 'month', label: '每月' },
                 { value: 'quarter', label: '每季' },
+                { value: 'semiannual', label: '每半年' },
                 { value: 'year', label: '每年' },
               ]}
               onChange={(value) => onRenewalChange({ cost_cycle: value })}

@@ -167,14 +167,16 @@ export interface AgentDetailPanelProps {
   onFeatureChange: (feature: AgentFeatureKey, enabled: boolean) => void
 }
 
-function normalizeBillingCycle(cycle?: string): 'month' | 'quarter' | 'year' {
-  return cycle === 'quarter' || cycle === 'year' ? cycle : 'month'
+function normalizeBillingCycle(cycle?: string): 'month' | 'quarter' | 'semiannual' | 'year' {
+  return cycle === 'quarter' || cycle === 'semiannual' || cycle === 'year' ? cycle : 'month'
 }
 
 function billingCycleLabel(cycle?: string): string {
   switch (normalizeBillingCycle(cycle)) {
     case 'quarter':
       return '季'
+    case 'semiannual':
+      return '半年'
     case 'year':
       return '年'
     default:
@@ -659,10 +661,11 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
               options={[
                 { value: 'month', label: '月' },
                 { value: 'quarter', label: '季' },
+                { value: 'semiannual', label: '半年' },
                 { value: 'year', label: '年' },
               ]}
               onChange={(value) => {
-                const nextCycle = value as 'month' | 'quarter' | 'year'
+                const nextCycle = value as 'month' | 'quarter' | 'semiannual' | 'year'
                 onUpdateClientBillingDraft(record, {
                   revenue_cycle: nextCycle,
                   ...clientBillingPatchFromStart(effectiveStart, nextCycle),

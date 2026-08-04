@@ -124,9 +124,10 @@ type CustomerLinkView struct {
 }
 
 type CustomerOverviewResponse struct {
-	User                  CustomerUser       `json:"user"`
-	GeneratedAt           time.Time          `json:"generated_at"`
-	ClashSubscriptionURL  string             `json:"clash_subscription_url,omitempty"`
-	MihomoSubscriptionURL string             `json:"mihomo_subscription_url,omitempty"`
-	Links                 []CustomerLinkView `json:"links"`
+	User                  CustomerUser           `json:"user"`
+	GeneratedAt           time.Time              `json:"generated_at"`
+	ClashSubscriptionURL  string                 `json:"clash_subscription_url,omitempty"`
+	MihomoSubscriptionURL string                 `json:"mihomo_subscription_url,omitempty"`
+	Announcements         []CustomerAnnouncement `json:"announcements,omitempty"`
+	Links                 []CustomerLinkView     `json:"links"`
 }

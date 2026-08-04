@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -35,8 +34,6 @@ type App struct {
 	certsScannedAt         time.Time
 	xuiClient              *panels.XUIClient
 	xuiClientKey           string
-	observedIP             string
-	observedIPAt           time.Time
 	runOnceMu              sync.Mutex
 	networkPolicySignature string
 	xuiBootstrapSignature  string
@@ -351,76 +348,11 @@ func (a *App) collect(ctx context.Context, effectiveConfig model.ManagedAgentCon
 	snapshot.NetworkPolicy = collectNetworkPolicySnapshot(ctx, effectiveConfig.Entry.NetworkPolicy)
 
 	snapshot.Summary = buildSummary(snapshot)
-	if outboundIP := a.detectOutboundIP(ctx); outboundIP != "" {
-		snapshot.Summary.ObservedIP = outboundIP
-	}
 	if len(lastErrs) > 0 {
 		snapshot.Summary.LastCollectionErr = strings.Join(lastErrs, "; ")
 	}
 	return snapshot
 }
-
-func (a *App) detectOutboundIP(ctx context.Context) string {
-	a.mu.RLock()
-	if a.observedIP != "" && time.Since(a.observedIPAt) < 10*time.Minute {
-		cached := a.observedIP
-		a.mu.RUnlock()
-		return cached
-	}
-	a.mu.RUnlock()
-
-	timeout := 3 * time.Second
-	if a.requestTimeout > 0 && a.requestTimeout < timeout {
-		timeout = a.requestTimeout
-	}
-	detectCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	for _, endpoint := range []string{"https://ipinfo.io/json", "https://api.ipify.org?format=json"} {
-		ip := a.fetchOutboundIP(detectCtx, endpoint)
-		if ip == "" {
-			continue
-		}
-		a.mu.Lock()
-		a.observedIP = ip
-		a.observedIPAt = time.Now()
-		a.mu.Unlock()
-		return ip
-	}
-	return ""
-}
-
-func (a *App) fetchOutboundIP(ctx context.Context, endpoint string) string {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return ""
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "VPSMonitor")
-	resp, err := a.httpClient.Do(req)
-	if err != nil {
-		return ""
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return ""
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	if err != nil {
-		return ""
-	}
-	var payload struct {
-		IP string `json:"ip"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return ""
-	}
-	if ip := net.ParseIP(strings.TrimSpace(payload.IP)); ip != nil {
-		return ip.String()
-	}
-	return ""
-}
-
 func xuiLogEntry(message string) model.AgentLogEntry {
 	return model.AgentLogEntry{
 		Time:    time.Now().UTC(),

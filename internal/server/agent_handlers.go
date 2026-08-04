@@ -44,6 +44,17 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if req.SeedConfig.AgentName == "" {
 		req.SeedConfig.AgentName = req.AgentName
 	}
+	// Network identity is server-observed; never trust an address supplied by the agent.
+	req.PublicIPv4 = ""
+	req.PublicIPv6 = ""
+	observedIP := requestObservedIP(r)
+	if isUsableObservedIP(observedIP) {
+		if net.ParseIP(observedIP).To4() != nil {
+			req.PublicIPv4 = observedIP
+		} else {
+			req.PublicIPv6 = observedIP
+		}
+	}
 	a.applyDefaultXUIBootstrap(&req)
 
 	result, err := a.store.RegisterAgent(req)
@@ -56,7 +67,6 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 	} else {
 		log.Printf("hydrate HAProxy targets for %s during registration failed: %v", req.AgentID, hydrateErr)
 	}
-	observedIP := requestObservedIP(r)
 	a.clearCustomerOverviewCache()
 	go a.refreshTopologyLookupCacheFromRegister(req, observedIP)
 	writeJSON(w, http.StatusOK, result)
@@ -1557,7 +1567,11 @@ func (a *App) handleHeartbeat(w http.ResponseWriter, r *http.Request, agentID st
 	}
 	// Online freshness must be based on the server receive time; VPS clocks can drift.
 	snapshot.ReportedAt = time.Now().UTC()
+	// Older clients may still report an IP obtained through their own proxy.
+	snapshot.Summary.ObservedIP = ""
+	snapshot.Summary.ServerSeenIP = ""
 	if serverSeenIP := requestObservedIP(r); isUsableObservedIP(serverSeenIP) {
+		snapshot.Summary.ObservedIP = serverSeenIP
 		snapshot.Summary.ServerSeenIP = serverSeenIP
 	}
 	if snapshot.AgentName == "" {

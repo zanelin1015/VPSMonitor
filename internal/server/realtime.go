@@ -613,7 +613,10 @@ func (a *App) handleAgentMetricsWS(w http.ResponseWriter, r *http.Request, agent
 		if metric.AgentName == "" && found {
 			metric.AgentName = agent.AgentName
 		}
+		metric.Summary.ObservedIP = ""
+		metric.Summary.ServerSeenIP = ""
 		if isUsableObservedIP(serverSeenIP) {
+			metric.Summary.ObservedIP = serverSeenIP
 			metric.Summary.ServerSeenIP = serverSeenIP
 		}
 		a.realtime.update(metric)

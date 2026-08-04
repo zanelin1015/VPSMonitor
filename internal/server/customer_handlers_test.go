@@ -3,9 +3,26 @@ package server
 import (
 	"net/url"
 	"testing"
+	"time"
 
 	"bridge-core/internal/model"
 )
+
+func TestActiveCustomerAnnouncementsFiltersDisabledAndScheduledItems(t *testing.T) {
+	now := time.Date(2026, time.August, 4, 12, 0, 0, 0, time.UTC)
+	items := []model.CustomerAnnouncement{
+		{ID: "active", Enabled: true, Title: "Active"},
+		{ID: "disabled", Enabled: false, Title: "Disabled"},
+		{ID: "future", Enabled: true, Title: "Future", StartsAt: now.Add(time.Hour).Format(time.RFC3339)},
+		{ID: "expired", Enabled: true, Title: "Expired", EndsAt: now.Format(time.RFC3339)},
+		{ID: "window", Enabled: true, Title: "Window", StartsAt: now.Add(-time.Hour).Format(time.RFC3339), EndsAt: now.Add(time.Hour).Format(time.RFC3339)},
+	}
+
+	active := activeCustomerAnnouncements(items, now)
+	if len(active) != 2 || active[0].ID != "active" || active[1].ID != "window" {
+		t.Fatalf("unexpected active announcements: %#v", active)
+	}
+}
 
 func TestCustomerExitInfoPrefersMatchedAgentObservedGeo(t *testing.T) {
 	chain := model.ClientChainView{

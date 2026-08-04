@@ -2,7 +2,7 @@ import type { DashboardAgentView, FinanceClientView, XUIClientBillingConfig } fr
 
 export const CLIENT_EXPIRY_WARNING_DAYS = 5
 
-export type ClientExpiryCycle = 'month' | 'quarter' | 'year' | ''
+export type ClientExpiryCycle = 'month' | 'quarter' | 'semiannual' | 'year' | ''
 
 export type ClientExpiryRow = {
   key: string
@@ -57,6 +57,8 @@ export function clientExpiryCycleLabel(cycle: ClientExpiryCycle): string {
       return '月付'
     case 'quarter':
       return '季付'
+    case 'semiannual':
+      return '半年付'
     case 'year':
       return '年付'
     default:
@@ -137,7 +139,7 @@ function normalizeIdentity(value?: string): string {
 }
 
 function normalizeCycle(cycle?: string): ClientExpiryCycle {
-  if (cycle === 'month' || cycle === 'quarter' || cycle === 'year') {
+  if (cycle === 'month' || cycle === 'quarter' || cycle === 'semiannual' || cycle === 'year') {
     return cycle
   }
   return ''

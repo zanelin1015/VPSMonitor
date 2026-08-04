@@ -46,6 +46,20 @@ html[data-theme='dark'] .customer-hero {
   background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(20, 184, 166, 0.06));
 }
 
+.customer-announcements {
+  display: grid;
+  gap: 10px;
+}
+
+.customer-announcements .ant-alert {
+  align-items: center;
+  border-radius: 12px;
+}
+
+.customer-announcement-content {
+  white-space: pre-wrap;
+}
+
 .customer-board-layout {
   display: grid;
   grid-template-columns: 250px minmax(0, 1fr);

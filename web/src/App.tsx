@@ -123,6 +123,17 @@ function hasCustomerDisplayNameField(value: unknown): boolean {
   return Boolean(value && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'customer_display_name'))
 }
 
+function exchangeRateNotice(data: ExchangeRatesResponse): string {
+  if (!data.stale) {
+    return ''
+  }
+  const source = String(data.source || '').toLowerCase()
+  if (source.includes('fallback')) {
+    return '汇率接口暂不可用，已使用兜底汇率'
+  }
+  return '汇率接口暂不可用，已使用缓存汇率'
+}
+
 const AgentDetailPanel = lazy(() => import('./components/AgentDetailPanel').then((module) => ({ default: module.AgentDetailPanel })))
 const ConsoleModals = lazy(() => import('./components/ConsoleModals').then((module) => ({ default: module.ConsoleModals })))
 const CustomerManagementModal = lazy(() => import('./components/CustomerManagementModal').then((module) => ({ default: module.CustomerManagementModal })))
@@ -752,7 +763,7 @@ export default function App() {
         date: data.date || '',
         rates,
         loading: false,
-        error: data.stale && data.error ? `使用缓存汇率：${data.error}` : '',
+        error: exchangeRateNotice(data),
       })
     } catch (error) {
       if (isUnauthorized(error)) {
@@ -761,7 +772,7 @@ export default function App() {
       setExchangeRates((current) => ({
         ...current,
         loading: false,
-        error: error instanceof Error ? error.message : '加载汇率失败',
+        error: '汇率接口暂不可用，已保留当前汇率',
       }))
     }
   }

@@ -91,11 +91,11 @@ export interface VPSRenewalConfig {
   enabled?: boolean
   start_date?: string
   expire_date?: string
-  cycle?: 'week' | 'month' | 'quarter' | 'year' | ''
+  cycle?: 'week' | 'month' | 'quarter' | 'semiannual' | 'year' | ''
   auto_renew?: boolean
   cost_amount?: number
   cost_currency?: string
-  cost_cycle?: 'month' | 'quarter' | 'year' | ''
+  cost_cycle?: 'month' | 'quarter' | 'semiannual' | 'year' | ''
   client_billings?: XUIClientBillingConfig[]
   traffic_limit_bytes?: number
   traffic_accounting_mode?: 'bidirectional' | 'single_direction' | ''
@@ -113,10 +113,10 @@ export interface XUIClientBillingConfig {
   traffic_multiplier?: number
   revenue_amount?: number
   revenue_currency?: 'CNY' | 'USDT' | ''
-  revenue_cycle?: 'month' | 'quarter' | 'year' | ''
+  revenue_cycle?: 'month' | 'quarter' | 'semiannual' | 'year' | ''
   start_time?: number
   expire_time?: number
-  expire_cycle?: 'month' | 'quarter' | 'year' | ''
+  expire_cycle?: 'month' | 'quarter' | 'semiannual' | 'year' | ''
   expire_auto_renew?: boolean
 }
 
@@ -373,7 +373,7 @@ export interface CustomerAssignmentDraft {
   traffic_multiplier?: number
   revenue_amount?: number
   revenue_currency?: 'CNY' | 'USDT'
-  revenue_cycle?: 'month' | 'quarter' | 'year'
+  revenue_cycle?: 'month' | 'quarter' | 'semiannual' | 'year'
 }
 
 export interface CustomerAdminView extends CustomerUser {
@@ -389,7 +389,7 @@ export interface AreaManagerAdminView {
   billing_enabled?: boolean
   revenue_amount?: number
   revenue_currency?: 'CNY' | 'USDT'
-  revenue_cycle?: 'month' | 'quarter' | 'year'
+  revenue_cycle?: 'month' | 'quarter' | 'semiannual' | 'year'
   outbound_create_enabled?: boolean
   outbound_grants?: AreaManagerOutboundGrant[]
   assignments?: AreaManagerAssignment[]
@@ -422,14 +422,14 @@ export interface CustomerLinkView {
   unresolved_reason?: string
   revenue_amount?: number
   revenue_currency?: 'CNY' | 'USDT' | string
-  revenue_cycle?: 'month' | 'quarter' | 'year' | string
+  revenue_cycle?: 'month' | 'quarter' | 'semiannual' | 'year' | string
   traffic_multiplier?: number
   traffic_used_bytes?: number
   traffic_limit_bytes?: number
   node_expire_time?: number
   start_time?: number
   expire_time?: number
-  expire_cycle?: 'month' | 'quarter' | 'year' | string
+  expire_cycle?: 'month' | 'quarter' | 'semiannual' | 'year' | string
   expire_auto_renew?: boolean
   steps: CustomerLinkStep[]
   updated_at: string
@@ -440,6 +440,7 @@ export interface CustomerOverviewResponse {
   generated_at: string
   clash_subscription_url?: string
   mihomo_subscription_url?: string
+  announcements?: CustomerAnnouncement[]
   links: CustomerLinkView[]
 }
 
@@ -543,6 +544,21 @@ export interface AreaAgentTagsResponse {
 
 export interface FrontendSettings {
   custom_code: string
+  announcements?: CustomerAnnouncement[]
+}
+
+export type CustomerAnnouncementLevel = 'info' | 'success' | 'warning' | 'error'
+
+export interface CustomerAnnouncement {
+  id: string
+  enabled: boolean
+  level?: CustomerAnnouncementLevel
+  title: string
+  content?: string
+  link_label?: string
+  link_url?: string
+  starts_at?: string
+  ends_at?: string
 }
 
 export interface ScheduledTaskSettings {

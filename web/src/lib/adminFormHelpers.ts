@@ -1,4 +1,4 @@
-import type { ClientInstallInfo, FrontendSettings } from '../types'
+import type { ClientInstallInfo, CustomerAnnouncement, FrontendSettings } from '../types'
 
 export type ClientInstallCommandKind = 'linux' | 'openwrt' | 'windows-powershell' | 'windows-cmd'
 
@@ -30,6 +30,7 @@ export interface ClientInstallCommandForm {
 
 export interface FrontendSettingsForm {
   custom_code: string
+  announcements: CustomerAnnouncement[]
 }
 
 export function defaultTelegramBotForm(): TelegramBotForm {
@@ -85,11 +86,44 @@ export function normalizeClientInstallCommandForm(info: ClientInstallInfo): Clie
 }
 
 export function defaultFrontendSettingsForm(): FrontendSettingsForm {
-  return { custom_code: '' }
+  return { custom_code: '', announcements: [] }
 }
 
 export function normalizeFrontendSettingsForm(settings: FrontendSettings): FrontendSettingsForm {
-  return { custom_code: settings.custom_code || '' }
+  return {
+    custom_code: settings.custom_code || '',
+    announcements: (settings.announcements || []).map((item) => ({
+      ...item,
+      level: item.level || 'info',
+      starts_at: announcementDateTimeInputValue(item.starts_at),
+      ends_at: announcementDateTimeInputValue(item.ends_at),
+    })),
+  }
+}
+
+export function serializeFrontendSettingsForm(form: FrontendSettingsForm): FrontendSettings {
+  return {
+    custom_code: form.custom_code,
+    announcements: form.announcements.map((item) => ({
+      ...item,
+      starts_at: announcementISOString(item.starts_at),
+      ends_at: announcementISOString(item.ends_at),
+    })),
+  }
+}
+
+function announcementDateTimeInputValue(value?: string): string {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return local.toISOString().slice(0, 16)
+}
+
+function announcementISOString(value?: string): string {
+  if (!value) return ''
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString()
 }
 
 export function clientInstallCommandByKind(

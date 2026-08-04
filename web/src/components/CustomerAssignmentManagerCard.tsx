@@ -128,9 +128,10 @@ export function CustomerAssignmentManagerCard(props: CustomerAssignmentManagerCa
             options={[
               { value: 'month', label: '月' },
               { value: 'quarter', label: '季' },
+              { value: 'semiannual', label: '半年' },
               { value: 'year', label: '年' },
             ]}
-            onChange={(value) => setAssignmentForm((current) => ({ ...current, revenue_cycle: value as 'month' | 'quarter' | 'year' }))}
+            onChange={(value) => setAssignmentForm((current) => ({ ...current, revenue_cycle: value as 'month' | 'quarter' | 'semiannual' | 'year' }))}
           />
         </Col> : null}
         <Col xs={24} md={8}>

@@ -348,6 +348,8 @@ func normalizeRenewalConfig(cfg model.VPSRenewalConfig) model.VPSRenewalConfig {
 		cfg.Cycle = "month"
 	case "quarter", "quarterly", "season":
 		cfg.Cycle = "quarter"
+	case "semiannual", "halfyear", "half-year", "half_year", "half_yearly":
+		cfg.Cycle = "semiannual"
 	case "year", "yearly":
 		cfg.Cycle = "year"
 	default:
@@ -362,6 +364,8 @@ func normalizeRenewalConfig(cfg model.VPSRenewalConfig) model.VPSRenewalConfig {
 		cfg.CostCycle = "month"
 	case "quarter", "quarterly", "season":
 		cfg.CostCycle = "quarter"
+	case "semiannual", "halfyear", "half-year", "half_year", "half_yearly":
+		cfg.CostCycle = "semiannual"
 	case "year", "yearly":
 		cfg.CostCycle = "year"
 	default:
@@ -369,7 +373,7 @@ func normalizeRenewalConfig(cfg model.VPSRenewalConfig) model.VPSRenewalConfig {
 	}
 	if cfg.CostCycle == "" && cfg.CostAmount > 0 {
 		switch cfg.Cycle {
-		case "quarter", "year":
+		case "quarter", "semiannual", "year":
 			cfg.CostCycle = cfg.Cycle
 		default:
 			cfg.CostCycle = "month"
@@ -428,6 +432,8 @@ func normalizeClientBillings(items []model.XUIClientBillingConfig) []model.XUICl
 		switch strings.ToLower(strings.TrimSpace(item.RevenueCycle)) {
 		case "quarter", "quarterly", "season":
 			item.RevenueCycle = "quarter"
+		case "semiannual", "halfyear", "half-year", "half_year", "half_yearly":
+			item.RevenueCycle = "semiannual"
 		case "year", "yearly":
 			item.RevenueCycle = "year"
 		default:
@@ -474,6 +480,8 @@ func addClientBillingCycle(value time.Time, cycle string) time.Time {
 	switch cycle {
 	case "quarter":
 		return value.AddDate(0, 3, 0)
+	case "semiannual":
+		return value.AddDate(0, 6, 0)
 	case "year":
 		return value.AddDate(1, 0, 0)
 	default:

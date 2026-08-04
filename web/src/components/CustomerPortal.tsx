@@ -305,6 +305,27 @@ export function CustomerPortal() {
             <Button icon={<LogoutOutlined />} onClick={() => void logout()}>退出</Button>
           </Space>
         </header>
+        {(overview?.announcements || []).length ? (
+          <section className="customer-announcements" aria-label="服务公告">
+            {(overview?.announcements || []).map((announcement) => {
+              const linkURL = safeCustomerAnnouncementURL(announcement.link_url)
+              return (
+                <Alert
+                  key={announcement.id}
+                  type={announcement.level || 'info'}
+                  showIcon
+                  message={announcement.title}
+                  description={announcement.content ? <span className="customer-announcement-content">{announcement.content}</span> : undefined}
+                  action={linkURL ? (
+                    <Button href={linkURL} target="_blank" rel="noreferrer" size="small">
+                      {announcement.link_label || '查看新联系方式'}
+                    </Button>
+                  ) : undefined}
+                />
+              )
+            })}
+          </section>
+        ) : null}
         <Alert
           className="customer-policy-alert"
           type="info"
@@ -538,6 +559,17 @@ export function CustomerPortal() {
   )
 }
 
+function safeCustomerAnnouncementURL(value?: string): string {
+  const raw = (value || '').trim()
+  if (!raw) return ''
+  try {
+    const parsed = new URL(raw)
+    return ['http:', 'https:', 'tg:', 'mailto:', 'tel:'].includes(parsed.protocol) ? parsed.toString() : ''
+  } catch {
+    return ''
+  }
+}
+
 function CustomerTopologyMap({ steps }: { steps: CustomerLinkStep[] }) {
   const visibleSteps = steps.length ? steps : [{ role: 'entry', label: '入口' }]
   return (
@@ -665,6 +697,8 @@ function cycleUnitLabel(cycle?: string): string {
   switch (cycle) {
     case 'quarter':
       return '季'
+    case 'semiannual':
+      return '半年'
     case 'year':
       return '年'
     case 'month':

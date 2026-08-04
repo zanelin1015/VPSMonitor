@@ -156,6 +156,8 @@ func normalizeAlertRenewal(cfg model.VPSRenewalConfig) model.VPSRenewalConfig {
 		cfg.Cycle = "month"
 	case "quarter", "quarterly", "season":
 		cfg.Cycle = "quarter"
+	case "semiannual", "halfyear", "half-year", "half_year", "half_yearly":
+		cfg.Cycle = "semiannual"
 	case "year", "yearly":
 		cfg.Cycle = "year"
 	default:
@@ -224,6 +226,10 @@ func addRenewalCycle(t time.Time, cycle string) time.Time {
 		return t.AddDate(0, 3, 0)
 	case "-quarter":
 		return t.AddDate(0, -3, 0)
+	case "semiannual":
+		return t.AddDate(0, 6, 0)
+	case "-semiannual":
+		return t.AddDate(0, -6, 0)
 	case "year":
 		return t.AddDate(1, 0, 0)
 	case "-year":
