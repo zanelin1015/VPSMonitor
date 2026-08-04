@@ -143,7 +143,7 @@ func formatTelegramAlert(alert alertMessage) string {
 	if alert.severity == "critical" {
 		icon = "🚨"
 	}
-	return fmt.Sprintf("%s NanFengMonitor 告警\nClient：%s (%s)\n标签：%s\n级别：%s\n类型：%s\n详情：%s\n时间：%s", icon, name, alert.agent.AgentID, tags, alert.severity, alert.title, alert.detail, time.Now().Format("2006-01-02 15:04:05"))
+	return fmt.Sprintf("%s ZaneLin 告警\nClient：%s (%s)\n标签：%s\n级别：%s\n类型：%s\n详情：%s\n时间：%s", icon, name, alert.agent.AgentID, tags, alert.severity, alert.title, alert.detail, time.Now().Format("2006-01-02 15:04:05"))
 }
 
 func normalizeAlertRenewal(cfg model.VPSRenewalConfig) model.VPSRenewalConfig {

@@ -23,6 +23,7 @@ import type {
   ExchangeRatesResponse,
   GlobalDashboardView,
   ManagedAgentConfig,
+  SupportUnreadResponse,
   TagSettingsResponse,
   VPSSummary,
   XUIAction,
@@ -138,6 +139,7 @@ const AgentDetailPanel = lazy(() => import('./components/AgentDetailPanel').then
 const ConsoleModals = lazy(() => import('./components/ConsoleModals').then((module) => ({ default: module.ConsoleModals })))
 const CustomerManagementModal = lazy(() => import('./components/CustomerManagementModal').then((module) => ({ default: module.CustomerManagementModal })))
 const CustomerPortal = lazy(() => import('./components/CustomerPortal').then((module) => ({ default: module.CustomerPortal })))
+const AdminSupportPage = lazy(() => import('./components/AdminSupportPage').then((module) => ({ default: module.AdminSupportPage })))
 const PublicSite = lazy(() => import('./components/PublicSite').then((module) => ({ default: module.PublicSite })))
 
 export default function App() {
@@ -177,6 +179,7 @@ export default function App() {
   const [agentHealthFilter, setAgentHealthFilter] = useState<AgentHealthFilter>('all')
   const [topologySearch, setTopologySearch] = useState('')
   const [activeAdminPage, setActiveAdminPage] = useState<AdminPageKey>('dashboard')
+  const [supportUnreadCount, setSupportUnreadCount] = useState(0)
   const [agentViewMode, setAgentViewMode] = useState<AgentViewMode>('card')
   const [selectedAgentId, setSelectedAgentId] = useState('')
   const [overview, setOverview] = useState<XUIOverview | null>(null)
@@ -419,6 +422,32 @@ export default function App() {
       }
     }
   }, [adminUser, canManageSystem])
+
+  useEffect(() => {
+    if (!adminUser) {
+      setSupportUnreadCount(0)
+      return
+    }
+    let cancelled = false
+    const loadUnread = async () => {
+      try {
+        const data = await fetchJSON<SupportUnreadResponse>('/api/v1/admin/support/unread')
+        if (!cancelled) setSupportUnreadCount(data.unread_count || 0)
+      } catch {
+        // The session loader handles authentication failures; the badge can stay stale briefly.
+      }
+    }
+    let timer: number | undefined
+    const poll = async () => {
+      await loadUnread()
+      if (!cancelled) timer = window.setTimeout(() => void poll(), 3000)
+    }
+    void poll()
+    return () => {
+      cancelled = true
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
+  }, [adminUser?.id, adminUser?.role, adminUser?.username])
 
   useEffect(() => {
     if (adminUser && updateModalOpen) {
@@ -1575,6 +1604,7 @@ export default function App() {
     setSelectedNodeAnchor('')
   }
   const openCustomersPage = () => setActiveAdminPage('customers')
+  const openSupportPage = () => setActiveAdminPage('support')
   const openSettingsPage = () => {
     setActiveAdminPage('settings')
     void openFrontendSettingsModal(false)
@@ -1590,6 +1620,7 @@ export default function App() {
     topologyVisible,
     onlineAgentCount,
     scopedAgentCount,
+    supportUnreadCount,
     agentsLoading,
     themeMode,
     effectiveMode,
@@ -1599,6 +1630,7 @@ export default function App() {
     onOpenClientInstall: () => void openClientInstallModal(),
     onOpenTelegram: () => setTelegramBotModalOpen(true),
     onOpenCustomers: openCustomersPage,
+    onOpenSupport: openSupportPage,
     onOpenFrontendSettings: openSettingsPage,
     onOpenUpdates: () => setUpdateModalOpen(true),
     onLogout: () => void logout(),
@@ -1726,6 +1758,10 @@ export default function App() {
               />
             </Suspense>
           </main>
+        ) : activeAdminPage === 'support' ? (
+          <Suspense fallback={<Spin size="large" />}>
+            <AdminSupportPage onUnreadCountChange={setSupportUnreadCount} />
+          </Suspense>
         ) : activeAdminPage === 'access-logs' ? (
           <AdminAccessLogsPage
             agents={agents}

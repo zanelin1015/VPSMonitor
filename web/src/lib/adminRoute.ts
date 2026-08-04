@@ -1,6 +1,6 @@
 import { normalizeAgentHealthFilter, type AgentHealthFilter } from './agentHealth'
 
-export type AdminPageKey = 'dashboard' | 'assets' | 'customers' | 'access-logs' | 'settings' | 'schedules'
+export type AdminPageKey = 'dashboard' | 'assets' | 'customers' | 'support' | 'access-logs' | 'settings' | 'schedules'
 
 export interface AdminRouteState {
   page: AdminPageKey
@@ -76,6 +76,11 @@ export function buildAdminRouteURL(route: AdminRouteState): string {
     if (route.nodeAnchor) {
       params.set('node', route.nodeAnchor)
     }
+  } else if (route.page === 'support') {
+    const conversation = Number(new URLSearchParams(window.location.search).get('conversation') || '')
+    if (Number.isInteger(conversation) && conversation > 0) {
+      params.set('conversation', String(conversation))
+    }
   }
   const query = params.toString()
   return query ? `/?${query}` : '/'
@@ -85,6 +90,7 @@ function normalizeAdminPage(value: string): AdminPageKey {
   switch (value) {
     case 'assets':
     case 'customers':
+    case 'support':
     case 'access-logs':
     case 'settings':
     case 'schedules':
@@ -100,6 +106,8 @@ function pageFromAdminPath(path: string): string {
       return 'assets'
     case '/admin/customers':
       return 'customers'
+    case '/admin/support':
+      return 'support'
     case '/admin/access-logs':
       return 'access-logs'
     case '/admin/settings':

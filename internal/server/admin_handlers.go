@@ -13,6 +13,15 @@ func (a *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		a.handleAdminTelegramBots(w, r, strings.Split(path, "/")[1:])
 		return
 	}
+	if path == "support" || strings.HasPrefix(path, "support/") {
+		rest := strings.Trim(strings.TrimPrefix(path, "support"), "/")
+		parts := []string{}
+		if rest != "" {
+			parts = strings.Split(rest, "/")
+		}
+		a.handleAdminSupport(w, r, parts)
+		return
+	}
 	if path == "area-managers" || strings.HasPrefix(path, "area-managers/") {
 		a.handleAdminAreaManagers(w, r, strings.Split(path, "/")[1:])
 		return

@@ -150,7 +150,7 @@ func (a *App) handleAdminTelegramBots(w http.ResponseWriter, r *http.Request, pa
 			writeError(w, http.StatusNotFound, "telegram bot not found")
 			return
 		}
-		text := fmt.Sprintf("✅ NanFengMonitor Telegram 测试消息\n机器人：%s\n时间：%s", bot.Name, time.Now().Format("2006-01-02 15:04:05"))
+		text := fmt.Sprintf("ZaneLin Telegram 测试消息\n机器人：%s\n时间：%s", bot.Name, time.Now().Format("2006-01-02 15:04:05"))
 		if err := a.alerts.sendTelegramMessage(bot.BotToken, bot.ChatID, text); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return

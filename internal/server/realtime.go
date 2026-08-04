@@ -336,6 +336,8 @@ func (a *App) handleDashboardRealtime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.Close()
+	disconnectSupport := a.supportPresence.connect(user)
+	defer disconnectSupport()
 
 	updates, snapshot, unsubscribe := a.realtime.subscribe()
 	defer unsubscribe()

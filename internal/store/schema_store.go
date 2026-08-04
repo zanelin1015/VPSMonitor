@@ -312,6 +312,35 @@ func (s *SQLiteStore) init() error {
 			FOREIGN KEY(agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE
 		);
 		`,
+		`
+		CREATE TABLE IF NOT EXISTS support_conversations (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			customer_id INTEGER NOT NULL UNIQUE,
+			status TEXT NOT NULL DEFAULT 'open',
+			last_message_id INTEGER NOT NULL DEFAULT 0,
+			last_message_preview TEXT NOT NULL DEFAULT '',
+			last_sender_role TEXT NOT NULL DEFAULT '',
+			last_message_at TEXT NOT NULL DEFAULT '',
+			admin_read_message_id INTEGER NOT NULL DEFAULT 0,
+			customer_read_message_id INTEGER NOT NULL DEFAULT 0,
+			last_notified_at TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			FOREIGN KEY(customer_id) REFERENCES customer_accounts(id) ON DELETE CASCADE
+		);
+		`,
+		`
+		CREATE TABLE IF NOT EXISTS support_messages (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			conversation_id INTEGER NOT NULL,
+			sender_role TEXT NOT NULL,
+			sender_account_id INTEGER NOT NULL DEFAULT 0,
+			sender_name TEXT NOT NULL DEFAULT '',
+			body TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			FOREIGN KEY(conversation_id) REFERENCES support_conversations(id) ON DELETE CASCADE
+		);
+		`,
 	}
 	for _, stmt := range schema {
 		if _, err := s.db.Exec(stmt); err != nil {
@@ -419,6 +448,8 @@ func (s *SQLiteStore) init() error {
 		`CREATE INDEX IF NOT EXISTS idx_access_logs_agent_created ON access_logs(agent_id, created_at DESC, id DESC);`,
 		`CREATE INDEX IF NOT EXISTS idx_access_logs_source ON access_logs(source_ip, created_at DESC);`,
 		`CREATE INDEX IF NOT EXISTS idx_access_logs_target ON access_logs(target_host, target_ip, created_at DESC);`,
+		`CREATE INDEX IF NOT EXISTS idx_support_conversations_updated ON support_conversations(status, updated_at DESC, id DESC);`,
+		`CREATE INDEX IF NOT EXISTS idx_support_messages_conversation ON support_messages(conversation_id, id DESC);`,
 	}
 	for _, stmt := range indexes {
 		if _, err := s.db.Exec(stmt); err != nil {

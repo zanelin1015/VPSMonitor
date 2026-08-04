@@ -1,10 +1,11 @@
-import { Button, Select, Typography } from 'antd'
+import { Badge, Button, Select, Typography } from 'antd'
 import {
   ApartmentOutlined,
   CloudServerOutlined,
   DashboardOutlined,
   DeploymentUnitOutlined,
   FileSearchOutlined,
+  MessageOutlined,
   ReloadOutlined,
   SettingOutlined,
   TeamOutlined,
@@ -26,6 +27,7 @@ export interface AdminShellNavigationProps {
   topologyVisible: boolean
   onlineAgentCount: number
   scopedAgentCount: number
+  supportUnreadCount: number
   agentsLoading: boolean
   themeMode: ThemeMode
   effectiveMode: ThemeMode
@@ -35,6 +37,7 @@ export interface AdminShellNavigationProps {
   onOpenClientInstall: () => void
   onOpenTelegram: () => void
   onOpenCustomers: () => void
+  onOpenSupport: () => void
   onOpenFrontendSettings: () => void
   onOpenUpdates: () => void
   onLogout: () => void
@@ -57,6 +60,7 @@ export function AdminShellNavigation(props: AdminShellNavigationProps) {
     topologyVisible,
     onlineAgentCount,
     scopedAgentCount,
+    supportUnreadCount,
     agentsLoading,
     themeMode,
     serverVersionLabel,
@@ -64,6 +68,7 @@ export function AdminShellNavigation(props: AdminShellNavigationProps) {
     onOpenClientInstall,
     onOpenTelegram,
     onOpenCustomers,
+    onOpenSupport,
     onOpenFrontendSettings,
     onOpenUpdates,
     onLogout,
@@ -118,6 +123,10 @@ export function AdminShellNavigation(props: AdminShellNavigationProps) {
           <button type="button" className={activeAdminPage === 'customers' ? 'active' : ''} onClick={onOpenCustomers}>
             <TeamOutlined />
             <span>用户</span>
+          </button>
+          <button type="button" className={activeAdminPage === 'support' ? 'active' : ''} onClick={onOpenSupport}>
+            <Badge count={supportUnreadCount} overflowCount={99} size="small"><MessageOutlined /></Badge>
+            <span>客服</span>
           </button>
           {canManageSystem ? <button type="button" className={activeAdminPage === 'access-logs' ? 'active' : ''} onClick={onOpenAccessLogs}>
             <FileSearchOutlined />
@@ -175,6 +184,11 @@ export function AdminShellNavigation(props: AdminShellNavigationProps) {
             <TeamOutlined />
             <span>用户管理</span>
             <small>账号与授权</small>
+          </button>
+          <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'support' ? ' active' : ''}`} onClick={onOpenSupport}>
+            <Badge className="admin-support-nav-badge" count={supportUnreadCount} overflowCount={99} size="small"><MessageOutlined /></Badge>
+            <span>在线客服</span>
+            <small>会话与留言</small>
           </button>
           {canManageSystem ? <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'access-logs' ? ' active' : ''}`} onClick={onOpenAccessLogs}>
             <FileSearchOutlined />

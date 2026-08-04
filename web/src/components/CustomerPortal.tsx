@@ -6,6 +6,7 @@ import type { CustomerAuthResponse, CustomerLinkStep, CustomerLinkView, Customer
 import { countryFlag, fetchJSON, formatDateTime } from '../lib/appHelpers'
 import { formatBytes } from '../lib/traffic'
 import { LoginScreen } from './LoginScreen'
+import { CustomerSupportWidget } from './CustomerSupportWidget'
 import { clearCustomFrontendCode } from './VisualEffects'
 
 const { Paragraph, Text, Title } = Typography
@@ -480,6 +481,8 @@ export function CustomerPortal() {
         onIndexChange={setAnnouncementIndex}
         onClose={() => setAnnouncementModalOpen(false)}
       />
+
+      <CustomerSupportWidget />
 
       <Modal
         title="我的页面样式"

@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -214,4 +215,21 @@ func (s *alertService) sendTelegramMessage(botToken, chatID, text string) error 
 		return fmt.Errorf("telegram api http %d: %s", resp.StatusCode, strings.TrimSpace(string(payload)))
 	}
 	return nil
+}
+
+func (s *alertService) sendMessageToEnabledTelegramBots(text string) error {
+	if s == nil || strings.TrimSpace(text) == "" {
+		return nil
+	}
+	bots, err := s.store.ListEnabledTelegramBotSecrets()
+	if err != nil {
+		return err
+	}
+	var sendErrors []error
+	for _, bot := range bots {
+		if err := s.sendTelegramMessage(bot.BotToken, bot.ChatID, text); err != nil {
+			sendErrors = append(sendErrors, fmt.Errorf("%s: %w", bot.Name, err))
+		}
+	}
+	return errors.Join(sendErrors...)
 }

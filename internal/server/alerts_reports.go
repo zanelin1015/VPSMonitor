@@ -51,7 +51,7 @@ func formatDailyTrafficReport(day time.Time, items []model.DailyTrafficUsage) st
 		download += item.Download
 	}
 	lines := []string{
-		fmt.Sprintf("📊 NanFengMonitor 昨日流量日报（%s）", day.Format("2006-01-02")),
+		fmt.Sprintf("📊 ZaneLin 昨日流量日报（%s）", day.Format("2006-01-02")),
 		fmt.Sprintf("Client 数：%d", len(items)),
 		fmt.Sprintf("总流量：%s", formatBytes(upload+download)),
 		fmt.Sprintf("总上传：%s", formatBytes(upload)),

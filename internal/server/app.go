@@ -17,6 +17,7 @@ type App struct {
 	config             config.ServerConfig
 	store              *store.SQLiteStore
 	realtime           *realtimeHub
+	supportPresence    *supportPresenceHub
 	alerts             *alertService
 	demoDataSource     http.Handler
 	exchangeRatesMu    sync.Mutex
@@ -101,6 +102,7 @@ func New(cfg config.ServerConfig) (*App, error) {
 		config:            cfg,
 		store:             fs,
 		realtime:          newRealtimeHub(),
+		supportPresence:   newSupportPresenceHub(),
 		alerts:            newAlertService(fs),
 		demoDataSource:    demoDataSource,
 		dashboardCache:    make(map[string]dashboardCacheEntry),

@@ -19,6 +19,15 @@ import (
 
 func (a *App) handleCustomer(w http.ResponseWriter, r *http.Request) {
 	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/customer/"), "/")
+	if path == "support" || strings.HasPrefix(path, "support/") {
+		rest := strings.Trim(strings.TrimPrefix(path, "support"), "/")
+		parts := []string{}
+		if rest != "" {
+			parts = strings.Split(rest, "/")
+		}
+		a.handleCustomerSupport(w, r, parts)
+		return
+	}
 	if strings.HasPrefix(path, "subscription/") {
 		a.handleCustomerSubscription(w, r, strings.Split(path, "/")[1:])
 		return

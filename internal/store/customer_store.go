@@ -461,12 +461,12 @@ func (s *SQLiteStore) ValidateCustomerSession(token string) (model.CustomerUser,
 	)
 	tokenHash := sessionTokenHash(token)
 	err := s.db.QueryRow(`
-		SELECT c.id, c.username, c.display_name, c.style_code, c.enabled, c.created_at, c.updated_at,
+		SELECT c.id, c.username, c.display_name, c.style_code, c.owner_type, c.owner_id, c.enabled, c.created_at, c.updated_at,
 		       s.created_at, s.expires_at
 		FROM customer_sessions s
 		JOIN customer_accounts c ON c.id = s.customer_id
 		WHERE s.token_hash = ?
-	`, tokenHash).Scan(&user.ID, &user.Username, &user.DisplayName, &user.StyleCode, &enabled, &createdAtText, &updatedAtText, &sCreatedAtText, &sExpiresAtText)
+	`, tokenHash).Scan(&user.ID, &user.Username, &user.DisplayName, &user.StyleCode, &user.OwnerType, &user.OwnerID, &enabled, &createdAtText, &updatedAtText, &sCreatedAtText, &sExpiresAtText)
 	if err == sql.ErrNoRows {
 		return model.CustomerUser{}, model.CustomerSession{}, false, nil
 	}

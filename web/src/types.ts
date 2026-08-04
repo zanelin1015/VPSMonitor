@@ -444,6 +444,50 @@ export interface CustomerOverviewResponse {
   links: CustomerLinkView[]
 }
 
+export type SupportConversationStatus = 'open' | 'closed'
+export type SupportSenderRole = 'customer' | 'admin' | 'area_manager'
+
+export interface SupportConversation {
+  id: number
+  customer_id: number
+  customer_username: string
+  customer_display_name?: string
+  owner_type: string
+  owner_id: number
+  status: SupportConversationStatus
+  last_message_preview?: string
+  last_sender_role?: SupportSenderRole
+  last_message_at?: string
+  unread_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface SupportMessage {
+  id: number
+  conversation_id: number
+  sender_role: SupportSenderRole
+  sender_account_id: number
+  sender_name: string
+  body: string
+  created_at: string
+}
+
+export interface SupportThreadResponse {
+  conversation: SupportConversation
+  messages: SupportMessage[]
+  support_online: boolean
+}
+
+export interface SupportConversationListResponse {
+  conversations: SupportConversation[]
+  unread_count: number
+}
+
+export interface SupportUnreadResponse {
+  unread_count: number
+}
+
 export interface SystemInfo {
   role: string
   version: string
