@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, App as AntdApp, Button, Card, Empty, Input, Modal, QRCode, Space, Spin, Statistic, Tag, Typography } from 'antd'
-import { BgColorsOutlined, CheckOutlined, CloseOutlined, CopyOutlined, EditOutlined, LockOutlined, LogoutOutlined, QrcodeOutlined, ReloadOutlined } from '@ant-design/icons'
+import { BgColorsOutlined, CheckCircleOutlined, CheckOutlined, CloseCircleOutlined, CloseOutlined, CopyOutlined, EditOutlined, InfoCircleOutlined, LockOutlined, LogoutOutlined, QrcodeOutlined, ReloadOutlined, WarningOutlined } from '@ant-design/icons'
 
 import type { CustomerAuthResponse, CustomerLinkStep, CustomerLinkView, CustomerOverviewResponse, CustomerUser } from '../types'
 import { countryFlag, fetchJSON, formatDateTime } from '../lib/appHelpers'
@@ -27,11 +27,14 @@ export function CustomerPortal() {
     confirm_password: '',
   })
   const [qrLink, setQrLink] = useState<CustomerLinkView | null>(null)
+  const [announcementModalOpen, setAnnouncementModalOpen] = useState(false)
+  const [announcementIndex, setAnnouncementIndex] = useState(0)
   const [editingRemarkID, setEditingRemarkID] = useState<number | null>(null)
   const [user, setUser] = useState<CustomerUser | null>(null)
   const [overview, setOverview] = useState<CustomerOverviewResponse | null>(null)
   const [loginForm, setLoginForm] = useState({ username: '', password: '' })
   const [remarkDrafts, setRemarkDrafts] = useState<Record<number, string>>({})
+  const lastAnnouncementSetRef = useRef('')
 
   useEffect(() => {
     document.title = 'ZaneLin Customer'
@@ -51,6 +54,21 @@ export function CustomerPortal() {
     setStyleDraft(user?.style_code || '')
     return () => applyCustomerStyle('')
   }, [user?.style_code])
+
+  useEffect(() => {
+    const announcements = overview?.announcements || []
+    const setKey = JSON.stringify(announcements.map((item) => [item.id, item.level, item.title, item.content, item.link_label, item.link_url]))
+    if (announcements.length === 0) {
+      setAnnouncementModalOpen(false)
+      lastAnnouncementSetRef.current = ''
+      return
+    }
+    if (setKey !== lastAnnouncementSetRef.current) {
+      lastAnnouncementSetRef.current = setKey
+      setAnnouncementIndex(0)
+      setAnnouncementModalOpen(true)
+    }
+  }, [overview?.announcements])
 
   const exitCountryCount = useMemo(() => {
     const values = new Set<string>()
@@ -105,6 +123,9 @@ export function CustomerPortal() {
     setUser(null)
     setOverview(null)
     setRemarkDrafts({})
+    setAnnouncementModalOpen(false)
+    setAnnouncementIndex(0)
+    lastAnnouncementSetRef.current = ''
   }
 
   async function loadOverview() {
@@ -305,27 +326,6 @@ export function CustomerPortal() {
             <Button icon={<LogoutOutlined />} onClick={() => void logout()}>退出</Button>
           </Space>
         </header>
-        {(overview?.announcements || []).length ? (
-          <section className="customer-announcements" aria-label="服务公告">
-            {(overview?.announcements || []).map((announcement) => {
-              const linkURL = safeCustomerAnnouncementURL(announcement.link_url)
-              return (
-                <Alert
-                  key={announcement.id}
-                  type={announcement.level || 'info'}
-                  showIcon
-                  message={announcement.title}
-                  description={announcement.content ? <span className="customer-announcement-content">{announcement.content}</span> : undefined}
-                  action={linkURL ? (
-                    <Button href={linkURL} target="_blank" rel="noreferrer" size="small">
-                      {announcement.link_label || '查看新联系方式'}
-                    </Button>
-                  ) : undefined}
-                />
-              )
-            })}
-          </section>
-        ) : null}
         <Alert
           className="customer-policy-alert"
           type="info"
@@ -473,6 +473,14 @@ export function CustomerPortal() {
         </div>
       </div>
 
+      <CustomerAnnouncementModal
+        announcements={overview?.announcements || []}
+        index={announcementIndex}
+        open={announcementModalOpen}
+        onIndexChange={setAnnouncementIndex}
+        onClose={() => setAnnouncementModalOpen(false)}
+      />
+
       <Modal
         title="我的页面样式"
         open={styleModalOpen}
@@ -559,6 +567,63 @@ export function CustomerPortal() {
   )
 }
 
+function CustomerAnnouncementModal(props: {
+  announcements: NonNullable<CustomerOverviewResponse['announcements']>
+  index: number
+  open: boolean
+  onIndexChange: (index: number) => void
+  onClose: () => void
+}) {
+  const { announcements, index, open, onIndexChange, onClose } = props
+  const announcement = announcements[index]
+  if (!announcement) return null
+  const level = announcement.level || 'info'
+  const linkURL = safeCustomerAnnouncementURL(announcement.link_url)
+  const isLast = index >= announcements.length - 1
+
+  return (
+    <Modal
+      className={`customer-announcement-modal customer-announcement-modal-${level}`}
+      title={(
+        <span className={`customer-announcement-title customer-announcement-title-${level}`}>
+          {customerAnnouncementIcon(level)}
+          <span>{announcement.title}</span>
+        </span>
+      )}
+      open={open}
+      centered
+      width={560}
+      onCancel={onClose}
+      footer={[
+        announcements.length > 1 ? <Text key="count" type="secondary" className="customer-announcement-count">{index + 1} / {announcements.length}</Text> : null,
+        index > 0 ? <Button key="previous" onClick={() => onIndexChange(index - 1)}>上一条</Button> : null,
+        !isLast ? <Button key="next" type="primary" onClick={() => onIndexChange(index + 1)}>下一条</Button> : null,
+        isLast ? <Button key="close" type="primary" onClick={onClose}>我知道了</Button> : null,
+      ]}
+    >
+      {announcement.content ? <Paragraph className="customer-announcement-content">{announcement.content}</Paragraph> : null}
+      {linkURL ? (
+        <Button type="primary" href={linkURL} target="_blank" rel="noreferrer">
+          {announcement.link_label || '查看新联系方式'}
+        </Button>
+      ) : null}
+    </Modal>
+  )
+}
+
+function customerAnnouncementIcon(level: string) {
+  switch (level) {
+    case 'success':
+      return <CheckCircleOutlined />
+    case 'warning':
+      return <WarningOutlined />
+    case 'error':
+      return <CloseCircleOutlined />
+    default:
+      return <InfoCircleOutlined />
+  }
+}
+
 function safeCustomerAnnouncementURL(value?: string): string {
   const raw = (value || '').trim()
   if (!raw) return ''
@@ -641,12 +706,6 @@ function customerLinkMetaItems(link: CustomerLinkView): Array<{ key: string; tex
     items.push({
       key: 'revenue',
       text: `费用：${formatCustomerRecurringPrice(Number(link.revenue_amount || 0), link.revenue_currency || 'CNY', link.revenue_cycle)}`,
-    })
-  }
-  if (Number(link.node_expire_time || 0) > 0) {
-    items.push({
-      key: 'node-expiry',
-      text: `节点到期：${formatCustomerExpiryTime(Number(link.node_expire_time || 0))}`,
     })
   }
   if (Number(link.expire_time || 0) > 0) {
