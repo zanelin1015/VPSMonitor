@@ -11,6 +11,7 @@ type AgentRealtimeMetrics struct {
 	SystemVersion string              `json:"system_version,omitempty"`
 	ReportedAt    time.Time           `json:"reported_at"`
 	Summary       VPSSummary          `json:"summary"`
+	HAProxy       *HAProxySnapshot    `json:"haproxy,omitempty"`
 	XUITraffic    *XUIRealtimeTraffic `json:"xui_traffic,omitempty"`
 }
 

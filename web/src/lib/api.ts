@@ -64,6 +64,7 @@ export function mergeRealtimeMetricsIntoAgents<T extends AgentListItem>(agents: 
       system_version: metric.system_version || agent.system_version,
       realtime_at: metric.reported_at || agent.realtime_at,
       summary: mergeRealtimeSummary(agent.summary, metric.summary),
+      ...(metric.haproxy ? { haproxy: metric.haproxy } : {}),
     }
   })
   return changed ? next : agents

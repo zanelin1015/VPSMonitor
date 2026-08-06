@@ -16,7 +16,7 @@ func buildAgentAlerts(agent model.AgentRecord, snapshot model.AgentSnapshot, inc
 		summary = snapshot.Summary
 	}
 	if includeOffline && agent.LastSeenAt != nil && now.Sub(agent.LastSeenAt.UTC()) > agentOfflineAfter {
-		detail := fmt.Sprintf("最后上报：%s，已超过 %s 未上报。", agent.LastSeenAt.UTC().Format(time.RFC3339), agentOfflineAfter)
+		detail := fmt.Sprintf("最后上报：%s，已超过 %s 未上报。", formatBeijingTime(*agent.LastSeenAt), agentOfflineAfter)
 		alerts = append(alerts, newAgentAlert(agent, "offline", "critical", "Client 离线", "offline", detail))
 	} else if includeOffline {
 		alerts = append(alerts, newResolvedAlert(agent.AgentID, "offline"))
@@ -143,7 +143,7 @@ func formatTelegramAlert(alert alertMessage) string {
 	if alert.severity == "critical" {
 		icon = "🚨"
 	}
-	return fmt.Sprintf("%s ZaneLin 告警\nClient：%s (%s)\n标签：%s\n级别：%s\n类型：%s\n详情：%s\n时间：%s", icon, name, alert.agent.AgentID, tags, alert.severity, alert.title, alert.detail, time.Now().Format("2006-01-02 15:04:05"))
+	return fmt.Sprintf("%s ZaneLin 告警\nClient：%s (%s)\n标签：%s\n级别：%s\n类型：%s\n详情：%s\n时间：%s", icon, name, alert.agent.AgentID, tags, alert.severity, alert.title, alert.detail, formatBeijingTime(time.Now()))
 }
 
 func normalizeAlertRenewal(cfg model.VPSRenewalConfig) model.VPSRenewalConfig {

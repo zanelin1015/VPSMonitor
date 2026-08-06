@@ -439,6 +439,7 @@ func sanitizeAgentListItemForAreaManager(item model.AgentListItem, tagMap map[st
 	item.HasConfig = false
 	item.Summary = sanitizeAreaManagerSummary(item.Summary)
 	item.Realm = nil
+	item.HAProxy = nil
 	item.Geo = nil
 	return item
 }
@@ -455,6 +456,7 @@ func sanitizeDashboardAgentForAreaManager(agent model.DashboardAgentView, tagMap
 	agent.HasConfig = false
 	agent.Summary = sanitizeAreaManagerSummary(agent.Summary)
 	agent.Realm = nil
+	agent.HAProxy = nil
 	agent.NetworkPolicy = nil
 	agent.Geo = nil
 	agent.FinanceClients = []model.FinanceClientView{}
@@ -485,6 +487,7 @@ func sanitizeRealtimeMetricForAreaManager(metric model.AgentRealtimeMetrics) mod
 	metric.ClientArch = ""
 	metric.SystemVersion = ""
 	metric.Summary = sanitizeAreaManagerSummary(metric.Summary)
+	metric.HAProxy = nil
 	metric.XUITraffic = nil
 	return metric
 }

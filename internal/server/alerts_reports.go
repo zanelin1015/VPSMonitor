@@ -74,6 +74,6 @@ func formatDailyTrafficReport(day time.Time, items []model.DailyTrafficUsage) st
 			lines = append(lines, fmt.Sprintf("%d. %s：%s（上传 %s / 下载 %s）", index+1, name, formatBytes(item.Total), formatBytes(item.Upload), formatBytes(item.Download)))
 		}
 	}
-	lines = append(lines, "发送时间："+time.Now().Format("2006-01-02 15:04:05"))
+	lines = append(lines, "发送时间："+formatBeijingTime(time.Now()))
 	return strings.Join(lines, "\n")
 }

@@ -75,6 +75,9 @@ func (h *realtimeHub) update(metric model.AgentRealtimeMetrics) {
 	// Realtime freshness is measured by server receipt time, not the client clock.
 	receivedAt := time.Now().UTC()
 	metric.ReportedAt = receivedAt
+	if metric.HAProxy != nil {
+		metric.HAProxy.CollectedAt = receivedAt
+	}
 
 	h.mu.Lock()
 	eventMetric := metric
@@ -144,6 +147,9 @@ func (h *realtimeHub) applyToDashboard(view *model.GlobalDashboardView) {
 	for i := range view.Agents {
 		if metric, ok := h.metrics[view.Agents[i].AgentID]; ok && realtimeMetricFresh(metric) {
 			mergeRealtimeSummary(&view.Agents[i].Summary, metric.Summary)
+			if metric.HAProxy != nil {
+				view.Agents[i].HAProxy = metric.HAProxy
+			}
 			realtimeAt := metric.ReportedAt
 			view.Agents[i].RealtimeAt = &realtimeAt
 			if view.Agents[i].AgentName == "" && metric.AgentName != "" {
@@ -159,6 +165,9 @@ func (h *realtimeHub) applyToAgentItems(items []model.AgentListItem) {
 	for i := range items {
 		if metric, ok := h.metrics[items[i].AgentID]; ok && realtimeMetricFresh(metric) {
 			mergeRealtimeSummary(&items[i].Summary, metric.Summary)
+			if metric.HAProxy != nil {
+				items[i].HAProxy = metric.HAProxy
+			}
 			realtimeAt := metric.ReportedAt
 			items[i].RealtimeAt = &realtimeAt
 			if items[i].AgentName == "" && metric.AgentName != "" {

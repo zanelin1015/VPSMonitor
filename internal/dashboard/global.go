@@ -32,6 +32,7 @@ func BuildGlobalDashboardWithOptions(agents []model.AgentRecord, snapshots []mod
 
 	overviewByAgent := make(map[string]*model.XUIOverview, len(snapshots))
 	realmByAgent := make(map[string]*model.RealmSnapshot, len(snapshots))
+	haProxyByAgent := make(map[string]*model.HAProxySnapshot, len(snapshots))
 	networkPolicyByAgent := make(map[string]*model.NetworkPolicySnapshot, len(snapshots))
 	for _, snapshot := range snapshots {
 		if overview := BuildXUIOverviewWithOptions(snapshot, XUIOverviewOptions{Entry: entryByAgent[snapshot.AgentID]}); overview != nil {
@@ -39,6 +40,9 @@ func BuildGlobalDashboardWithOptions(agents []model.AgentRecord, snapshots []mod
 		}
 		if snapshot.Realm != nil {
 			realmByAgent[snapshot.AgentID] = snapshot.Realm
+		}
+		if snapshot.HAProxy != nil {
+			haProxyByAgent[snapshot.AgentID] = snapshot.HAProxy
 		}
 		if snapshot.NetworkPolicy != nil {
 			networkPolicyByAgent[snapshot.AgentID] = snapshot.NetworkPolicy
@@ -83,6 +87,7 @@ func BuildGlobalDashboardWithOptions(agents []model.AgentRecord, snapshots []mod
 			HasConfig:           agent.HasConfig,
 			Summary:             summary,
 			Realm:               realmByAgent[agent.AgentID],
+			HAProxy:             haProxyByAgent[agent.AgentID],
 			NetworkPolicy:       networkPolicyByAgent[agent.AgentID],
 			FinanceClients:      make([]model.FinanceClientView, 0),
 		}

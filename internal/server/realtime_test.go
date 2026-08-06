@@ -133,6 +133,7 @@ func TestRealtimeHubUsesServerReceiveTime(t *testing.T) {
 	hub.update(model.AgentRealtimeMetrics{
 		AgentID:    "drifted-agent",
 		ReportedAt: clientTime,
+		HAProxy:    &model.HAProxySnapshot{CollectedAt: clientTime},
 	})
 	after := time.Now().UTC().Add(time.Second)
 
@@ -146,6 +147,25 @@ func TestRealtimeHubUsesServerReceiveTime(t *testing.T) {
 	}
 	if reportedAt.Equal(clientTime) {
 		t.Fatalf("expected client reported time to be ignored")
+	}
+	if snapshot[0].HAProxy == nil || !snapshot[0].HAProxy.CollectedAt.Equal(reportedAt) {
+		t.Fatalf("expected HAProxy collection time to use server receive time, got %#v", snapshot[0].HAProxy)
+	}
+}
+
+func TestRealtimeHubAppliesHAProxyStatusToAgentItems(t *testing.T) {
+	hub := newRealtimeHub()
+	hub.update(model.AgentRealtimeMetrics{
+		AgentID: "haproxy-agent",
+		HAProxy: &model.HAProxySnapshot{Rules: []model.HAProxyRuleRuntimeStatus{{
+			RuleID: "entry-20001",
+			Status: "backup",
+		}}},
+	})
+	items := []model.AgentListItem{{AgentID: "haproxy-agent"}}
+	hub.applyToAgentItems(items)
+	if items[0].HAProxy == nil || len(items[0].HAProxy.Rules) != 1 || items[0].HAProxy.Rules[0].Status != "backup" {
+		t.Fatalf("expected realtime HAProxy status on agent item, got %#v", items[0].HAProxy)
 	}
 }
 
@@ -340,7 +360,11 @@ func TestAreaManagerRealtimeMetricsAreSanitized(t *testing.T) {
 			ClientOS:      "linux",
 			ClientArch:    "amd64",
 			SystemVersion: "Debian 12",
-			ReportedAt:    time.Now().UTC(),
+			HAProxy: &model.HAProxySnapshot{Rules: []model.HAProxyRuleRuntimeStatus{{
+				RuleID: "private-rule",
+				Status: "primary",
+			}}},
+			ReportedAt: time.Now().UTC(),
 			Summary: model.VPSSummary{
 				Hostname:        "secret-host",
 				ObservedIP:      "203.0.113.10",
@@ -371,6 +395,9 @@ func TestAreaManagerRealtimeMetricsAreSanitized(t *testing.T) {
 	got := filtered[0]
 	if got.AgentName != "" || got.ClientVersion != "" || got.ClientOS != "" || got.ClientArch != "" || got.SystemVersion != "" {
 		t.Fatalf("expected client identity/runtime fields to be stripped, got %#v", got)
+	}
+	if got.HAProxy != nil {
+		t.Fatalf("expected HAProxy runtime details to be stripped, got %#v", got.HAProxy)
 	}
 	if got.Summary.Hostname != "" || got.Summary.ObservedIP != "" || got.Summary.ServerSeenIP != "" || got.Summary.PublicIPv4 != "" || got.Summary.CPU != 0 || got.Summary.MemTotal != 0 {
 		t.Fatalf("expected host/system metrics to be stripped, got %#v", got.Summary)

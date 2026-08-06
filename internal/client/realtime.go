@@ -108,6 +108,8 @@ connected:
 	// API tokens are supplied by the Server for each collection request.
 	xuiConfig.APIToken = ""
 	effectiveConfig.XUI.APIToken = ""
+	var haProxyConfigMu sync.RWMutex
+	haProxyConfig := effectiveConfig.Entry.HAProxy
 	var xuiTrafficMu sync.RWMutex
 	var xuiTraffic *model.XUIRealtimeTraffic
 	xuiCollectRequests := make(chan model.AgentControlMessage, 1)
@@ -177,6 +179,9 @@ connected:
 						xuiTraffic = nil
 						xuiTrafficMu.Unlock()
 					}
+					haProxyConfigMu.Lock()
+					haProxyConfig = message.Config.Entry.HAProxy
+					haProxyConfigMu.Unlock()
 				}
 				lastApplyConfigMu.Lock()
 				lastApplyConfigAt = time.Now()
@@ -207,6 +212,12 @@ connected:
 		xuiTrafficMu.RLock()
 		latestXUITraffic := xuiTraffic
 		xuiTrafficMu.RUnlock()
+		haProxyConfigMu.RLock()
+		currentHAProxyConfig := haProxyConfig
+		haProxyConfigMu.RUnlock()
+		haProxyCtx, cancelHAProxy := context.WithTimeout(sessionCtx, 1800*time.Millisecond)
+		haProxyStatus := collectHAProxySnapshot(haProxyCtx, currentHAProxyConfig)
+		cancelHAProxy()
 		metric := model.AgentRealtimeMetrics{
 			AgentID:       a.config.AgentID,
 			AgentName:     firstNonEmpty(effectiveConfig.AgentName, a.config.AgentName, a.config.AgentID),
@@ -216,6 +227,7 @@ connected:
 			SystemVersion: currentSystemVersion(),
 			ReportedAt:    time.Now().UTC(),
 			Summary:       sampler.sample(),
+			HAProxy:       haProxyStatus,
 			XUITraffic:    latestXUITraffic,
 		}
 		if err := writeJSON(metric); err != nil {

@@ -160,6 +160,18 @@ func TestSupportHandlersEnforceAreaOwnershipAndSendOfflineTelegram(t *testing.T)
 	}
 }
 
+func TestFormatOfflineSupportNotificationUsesBeijingTime(t *testing.T) {
+	text := formatOfflineSupportNotification(
+		model.CustomerUser{Username: "alice", DisplayName: "Alice"},
+		model.SupportConversation{ID: 9},
+		model.SupportMessage{Body: "Need help", CreatedAt: time.Date(2026, 8, 5, 2, 51, 52, 0, time.UTC)},
+		"https://monitor.example",
+	)
+	if !strings.Contains(text, "时间：2026-08-05 10:51:52") {
+		t.Fatalf("expected Beijing notification time, got %q", text)
+	}
+}
+
 func supportAdminToken(t *testing.T, s *store.SQLiteStore, username string) string {
 	t.Helper()
 	user, ok, err := s.AuthenticateAdmin(username, "password123")

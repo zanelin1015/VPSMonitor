@@ -111,9 +111,11 @@ func (a *App) handleAgents(w http.ResponseWriter, r *http.Request) {
 	for _, agent := range agents {
 		var networkPolicy *model.NetworkPolicySnapshot
 		var realmSnapshot *model.RealmSnapshot
+		var haProxySnapshot *model.HAProxySnapshot
 		if snapshot, ok := latestByAgent[agent.AgentID]; ok {
 			agent.Config.Entry = dashboard.MergeRealmSnapshotIntoEntry(agent.Config.Entry, snapshot.Realm)
 			realmSnapshot = snapshot.Realm
+			haProxySnapshot = snapshot.HAProxy
 			networkPolicy = snapshot.NetworkPolicy
 		}
 		items = append(items, model.AgentListItem{
@@ -134,6 +136,7 @@ func (a *App) handleAgents(w http.ResponseWriter, r *http.Request) {
 			LastSeenAt:          agent.LastSeenAt,
 			Summary:             agent.Summary,
 			Realm:               realmSnapshot,
+			HAProxy:             haProxySnapshot,
 			NetworkPolicy:       networkPolicy,
 			HasConfig:           agent.HasConfig,
 		})
@@ -1567,6 +1570,9 @@ func (a *App) handleHeartbeat(w http.ResponseWriter, r *http.Request, agentID st
 	}
 	// Online freshness must be based on the server receive time; VPS clocks can drift.
 	snapshot.ReportedAt = time.Now().UTC()
+	if snapshot.HAProxy != nil {
+		snapshot.HAProxy.CollectedAt = snapshot.ReportedAt
+	}
 	// Older clients may still report an IP obtained through their own proxy.
 	snapshot.Summary.ObservedIP = ""
 	snapshot.Summary.ServerSeenIP = ""

@@ -16,6 +16,7 @@ type AgentSnapshot struct {
 	Summary       VPSSummary             `json:"summary"`
 	XUI           *XUISnapshot           `json:"xui,omitempty"`
 	Realm         *RealmSnapshot         `json:"realm,omitempty"`
+	HAProxy       *HAProxySnapshot       `json:"haproxy,omitempty"`
 	NetworkPolicy *NetworkPolicySnapshot `json:"network_policy,omitempty"`
 	Nezha         *NezhaSnapshot         `json:"nezha,omitempty"`
 	Logs          []AgentLogEntry        `json:"logs,omitempty"`
@@ -93,6 +94,44 @@ type RealmSnapshot struct {
 	CollectedAt time.Time          `json:"collected_at"`
 	Error       string             `json:"error,omitempty"`
 	Rules       []RealmForwardRule `json:"rules,omitempty"`
+}
+
+type HAProxySnapshot struct {
+	CollectedAt time.Time                  `json:"collected_at"`
+	SocketPath  string                     `json:"socket_path,omitempty"`
+	Error       string                     `json:"error,omitempty"`
+	Rules       []HAProxyRuleRuntimeStatus `json:"rules,omitempty"`
+}
+
+type HAProxyRuleRuntimeStatus struct {
+	RuleID            string                       `json:"rule_id,omitempty"`
+	Name              string                       `json:"name,omitempty"`
+	ListenPort        int                          `json:"listen_port,omitempty"`
+	Status            string                       `json:"status"`
+	ActiveRole        string                       `json:"active_role,omitempty"`
+	ActiveBackupIndex int                          `json:"active_backup_index,omitempty"`
+	ActiveAgentID     string                       `json:"active_agent_id,omitempty"`
+	Targets           []HAProxyTargetRuntimeStatus `json:"targets,omitempty"`
+}
+
+type HAProxyTargetRuntimeStatus struct {
+	Role              string `json:"role"`
+	BackupIndex       int    `json:"backup_index,omitempty"`
+	AgentID           string `json:"agent_id,omitempty"`
+	RealmRuleID       string `json:"realm_rule_id,omitempty"`
+	Address           string `json:"address,omitempty"`
+	Port              int    `json:"port,omitempty"`
+	ServerName        string `json:"server_name,omitempty"`
+	Status            string `json:"status"`
+	Healthy           bool   `json:"healthy"`
+	Active            bool   `json:"active"`
+	CurrentSessions   int64  `json:"current_sessions,omitempty"`
+	TotalSessions     uint64 `json:"total_sessions,omitempty"`
+	CheckStatus       string `json:"check_status,omitempty"`
+	CheckDescription  string `json:"check_description,omitempty"`
+	CheckDurationMS   int64  `json:"check_duration_ms,omitempty"`
+	LastChangeSeconds int64  `json:"last_change_seconds,omitempty"`
+	TotalDowntimeSecs int64  `json:"total_downtime_seconds,omitempty"`
 }
 
 type NetworkPolicySnapshot struct {
@@ -222,6 +261,7 @@ type AgentListItem struct {
 	HasConfig           bool                   `json:"has_config"`
 	Summary             VPSSummary             `json:"summary"`
 	Realm               *RealmSnapshot         `json:"realm,omitempty"`
+	HAProxy             *HAProxySnapshot       `json:"haproxy,omitempty"`
 	NetworkPolicy       *NetworkPolicySnapshot `json:"network_policy,omitempty"`
 	Geo                 *IPGeoView             `json:"geo,omitempty"`
 }

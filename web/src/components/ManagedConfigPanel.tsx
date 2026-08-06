@@ -957,6 +957,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
         selectedAgent={selectedAgent}
         agents={agents}
         config={haProxy}
+        runtime={selectedAgent.haproxy}
         saving={configSavingSection === 'entry'}
         saveDisabled={sectionSaving && configSavingSection !== 'entry'}
         onChange={(next) => onEntryChange({

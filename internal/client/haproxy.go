@@ -255,7 +255,10 @@ func renderHAProxyConfig(cfg model.HAProxyConfig) string {
 	var builder strings.Builder
 	builder.WriteString("global\n")
 	builder.WriteString("  log stdout format raw local0\n")
-	builder.WriteString("  maxconn 100000\n\n")
+	builder.WriteString("  maxconn 100000\n")
+	builder.WriteString("  stats socket ")
+	builder.WriteString(haProxyRuntimeSocketPath(cfg))
+	builder.WriteString(" mode 660 level admin\n\n")
 	builder.WriteString("defaults\n")
 	builder.WriteString("  log global\n")
 	builder.WriteString("  mode tcp\n")
@@ -265,7 +268,7 @@ func renderHAProxyConfig(cfg model.HAProxyConfig) string {
 	builder.WriteString("  timeout server 1h\n")
 	builder.WriteString("  timeout check 5s\n\n")
 	for index, rule := range activeHAProxyRules(cfg.Rules) {
-		name := fmt.Sprintf("vpsm_%d_%s", rule.ListenPort, sanitizeHAProxyName(firstNonEmpty(rule.ID, rule.Name, fmt.Sprintf("rule_%d", index+1))))
+		name := haProxyRuleRuntimeName(rule, index)
 		builder.WriteString("frontend ")
 		builder.WriteString(name)
 		builder.WriteString("_frontend\n  bind ")
@@ -293,7 +296,7 @@ func renderHAProxyConfig(cfg model.HAProxyConfig) string {
 }
 
 func writeHAProxyServer(builder *strings.Builder, prefix string, target model.HAProxyRealmTarget, backup bool) {
-	name := sanitizeHAProxyName(prefix + "_" + target.AgentID + "_" + target.RealmRuleID)
+	name := haProxyTargetRuntimeName(prefix, target)
 	builder.WriteString("  server ")
 	builder.WriteString(name)
 	builder.WriteString(" ")
@@ -303,6 +306,14 @@ func writeHAProxyServer(builder *strings.Builder, prefix string, target model.HA
 		builder.WriteString(" backup")
 	}
 	builder.WriteString("\n")
+}
+
+func haProxyRuleRuntimeName(rule model.HAProxyRule, index int) string {
+	return fmt.Sprintf("vpsm_%d_%s", rule.ListenPort, sanitizeHAProxyName(firstNonEmpty(rule.ID, rule.Name, fmt.Sprintf("rule_%d", index+1))))
+}
+
+func haProxyTargetRuntimeName(prefix string, target model.HAProxyRealmTarget) string {
+	return sanitizeHAProxyName(prefix + "_" + target.AgentID + "_" + target.RealmRuleID)
 }
 
 func sanitizeHAProxyName(value string) string {

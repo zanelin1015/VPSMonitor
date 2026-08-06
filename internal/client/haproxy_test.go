@@ -47,6 +47,7 @@ func TestRenderHAProxyConfigUsesOrderedBackups(t *testing.T) {
 	cfg := normalizedHAProxyTestConfig()
 	rendered := renderHAProxyConfig(cfg)
 	for _, expected := range []string{
+		"stats socket /run/vpsmonitor-haproxy.sock mode 660 level admin",
 		"frontend vpsm_20001_gz-entry_frontend",
 		"bind 0.0.0.0:20001",
 		"default-server inter 3s fall 3 rise 2",
@@ -60,6 +61,58 @@ func TestRenderHAProxyConfigUsesOrderedBackups(t *testing.T) {
 	}
 	if strings.Index(rendered, "backup_1_hk-c") > strings.Index(rendered, "backup_2_hk-e") {
 		t.Fatalf("backup order was not preserved:\n%s", rendered)
+	}
+}
+
+func TestHAProxyRuntimeStatusSelectsFirstHealthyBackup(t *testing.T) {
+	cfg := normalizedHAProxyTestConfig()
+	body := strings.Join([]string{
+		"# pxname,svname,scur,stot,status,lastchg,downtime,type,check_status,check_duration,last_chk",
+		"vpsm_20001_gz-entry_backend,primary_hk-b_realm-20001,0,12,DOWN,9,9,2,L4CON,1,Connection refused",
+		"vpsm_20001_gz-entry_backend,backup_1_hk-c_realm-20001,3,21,UP,8,0,2,L4OK,2,",
+		"vpsm_20001_gz-entry_backend,backup_2_hk-e_realm-20001,0,5,UP,30,0,2,L4OK,2,",
+	}, "\n") + "\n"
+	stats, err := parseHAProxyRuntimeStats([]byte(body))
+	if err != nil {
+		t.Fatalf("parseHAProxyRuntimeStats: %v", err)
+	}
+	snapshot := newHAProxySnapshot(cfg)
+	populateHAProxySnapshot(cfg, snapshot, stats)
+	if len(snapshot.Rules) != 1 {
+		t.Fatalf("expected one rule, got %#v", snapshot.Rules)
+	}
+	rule := snapshot.Rules[0]
+	if rule.Status != "backup" || rule.ActiveRole != "backup" || rule.ActiveBackupIndex != 1 || rule.ActiveAgentID != "hk-c" {
+		t.Fatalf("expected first healthy backup to take over, got %#v", rule)
+	}
+	if rule.Targets[0].Healthy || rule.Targets[0].Status != "DOWN" || rule.Targets[0].CheckDescription != "Connection refused" {
+		t.Fatalf("unexpected primary status: %#v", rule.Targets[0])
+	}
+	if !rule.Targets[1].Active || rule.Targets[1].CurrentSessions != 3 || rule.Targets[1].TotalSessions != 21 {
+		t.Fatalf("unexpected active backup status: %#v", rule.Targets[1])
+	}
+	if rule.Targets[2].Active || !rule.Targets[2].Healthy {
+		t.Fatalf("second healthy backup should remain standby: %#v", rule.Targets[2])
+	}
+}
+
+func TestHAProxyRuntimeStatusPrefersHealthyPrimary(t *testing.T) {
+	cfg := normalizedHAProxyTestConfig()
+	body := strings.Join([]string{
+		"# pxname,svname,status,type",
+		"vpsm_20001_gz-entry_backend,primary_hk-b_realm-20001,UP,2",
+		"vpsm_20001_gz-entry_backend,backup_1_hk-c_realm-20001,UP,2",
+		"vpsm_20001_gz-entry_backend,backup_2_hk-e_realm-20001,UP,2",
+	}, "\n") + "\n"
+	stats, err := parseHAProxyRuntimeStats([]byte(body))
+	if err != nil {
+		t.Fatalf("parseHAProxyRuntimeStats: %v", err)
+	}
+	snapshot := newHAProxySnapshot(cfg)
+	populateHAProxySnapshot(cfg, snapshot, stats)
+	rule := snapshot.Rules[0]
+	if rule.Status != "primary" || rule.ActiveRole != "primary" || !rule.Targets[0].Active {
+		t.Fatalf("expected primary to handle new connections, got %#v", rule)
 	}
 }
 

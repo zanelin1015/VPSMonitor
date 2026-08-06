@@ -224,6 +224,7 @@ func TestHandleHeartbeatUsesServerReceiveTime(t *testing.T) {
 		AgentID:    "drifted-agent",
 		AgentName:  "Drifted Agent",
 		ReportedAt: clientTime,
+		HAProxy:    &model.HAProxySnapshot{CollectedAt: clientTime},
 		Summary: model.VPSSummary{
 			Hostname: "drifted-host",
 		},
@@ -251,6 +252,9 @@ func TestHandleHeartbeatUsesServerReceiveTime(t *testing.T) {
 	}
 	if latest.ReportedAt.Equal(clientTime) {
 		t.Fatalf("expected client reported time to be ignored")
+	}
+	if latest.HAProxy == nil || !latest.HAProxy.CollectedAt.Equal(latest.ReportedAt) {
+		t.Fatalf("expected HAProxy collection time to use server receive time, got %#v", latest.HAProxy)
 	}
 }
 

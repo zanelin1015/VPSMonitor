@@ -128,6 +128,7 @@ func TestRealtimeBrowserMetricsNeverExposeRawXUITraffic(t *testing.T) {
 	raw := []model.AgentRealtimeMetrics{{
 		AgentID: "agent-1",
 		Summary: model.VPSSummary{NetIOUp: 123},
+		HAProxy: &model.HAProxySnapshot{Rules: []model.HAProxyRuleRuntimeStatus{{RuleID: "entry", Status: "primary"}}},
 		XUITraffic: &model.XUIRealtimeTraffic{SampleID: 1, Clients: []model.XUIRealtimeClientTraffic{{
 			InboundID: 1, Email: "secret@example.com", Up: 10, Down: 20,
 		}}},
@@ -138,6 +139,9 @@ func TestRealtimeBrowserMetricsNeverExposeRawXUITraffic(t *testing.T) {
 	}
 	if filtered[0].Summary.NetIOUp != 123 {
 		t.Fatalf("root system metric was unexpectedly changed: %#v", filtered[0].Summary)
+	}
+	if filtered[0].HAProxy == nil || filtered[0].HAProxy.Rules[0].Status != "primary" {
+		t.Fatalf("root browser lost HAProxy runtime status: %#v", filtered[0].HAProxy)
 	}
 }
 

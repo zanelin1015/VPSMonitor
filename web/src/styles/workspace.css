@@ -19,6 +19,21 @@
   margin-bottom: 0;
 }
 
+.haproxy-runtime-strip {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface-strong) 56%, transparent);
+}
+
+.haproxy-runtime-strip .ant-tag {
+  max-width: 100%;
+  margin-inline-end: 0;
+  white-space: normal;
+}
+
 .entry-mapping-list {
   width: 100%;
   margin-top: 14px;

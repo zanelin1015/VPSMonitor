@@ -292,7 +292,7 @@ func formatOfflineSupportNotification(customer model.CustomerUser, conversation 
 		"ZaneLin 客服新消息",
 		"用户：" + name + " (" + customer.Username + ")",
 		"内容：" + body,
-		"时间：" + message.CreatedAt.Local().Format("2006-01-02 15:04:05"),
+		"时间：" + formatBeijingTime(message.CreatedAt),
 	}
 	if baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/"); baseURL != "" {
 		link := baseURL + "/?page=support&conversation=" + url.QueryEscape(strconv.FormatInt(conversation.ID, 10))

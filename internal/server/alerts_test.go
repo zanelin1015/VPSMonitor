@@ -26,6 +26,9 @@ func TestBuildXUIClientExpiryAlerts(t *testing.T) {
 	if alerts[0].severity != "warning" || alerts[0].title != "X-UI Client 即将到期" {
 		t.Fatalf("unexpected warning alert: %#v", alerts[0])
 	}
+	if !strings.Contains(alerts[0].detail, "到期时间：2026-05-16 20:00:00") {
+		t.Fatalf("expected Beijing expiry time, got %q", alerts[0].detail)
+	}
 	if alerts[1].severity != "critical" || !strings.Contains(alerts[1].fingerprint, "critical") {
 		t.Fatalf("unexpected urgent alert: %#v", alerts[1])
 	}
@@ -34,6 +37,13 @@ func TestBuildXUIClientExpiryAlerts(t *testing.T) {
 	}
 	if !strings.HasSuffix(alerts[3].key, ":resolved") {
 		t.Fatalf("expected safe client to resolve alert, got %q", alerts[3].key)
+	}
+}
+
+func TestFormatBeijingTime(t *testing.T) {
+	value := time.Date(2026, 8, 5, 2, 51, 52, 0, time.UTC)
+	if got := formatBeijingTime(value); got != "2026-08-05 10:51:52" {
+		t.Fatalf("formatBeijingTime=%q", got)
 	}
 }
 

@@ -41,6 +41,7 @@ export interface AgentListItem {
   has_config: boolean
   summary: VPSSummary
   realm?: RealmSnapshot
+  haproxy?: HAProxySnapshot
   network_policy?: NetworkPolicySnapshot
   geo?: IPGeoView
   finance_clients?: FinanceClientView[]
@@ -291,6 +292,44 @@ export interface HAProxyRealmTarget {
   realm_rule_id?: string
   address?: string
   port?: number
+}
+
+export interface HAProxySnapshot {
+  collected_at: string
+  socket_path?: string
+  error?: string
+  rules?: HAProxyRuleRuntimeStatus[]
+}
+
+export interface HAProxyRuleRuntimeStatus {
+  rule_id?: string
+  name?: string
+  listen_port?: number
+  status: 'primary' | 'backup' | 'unavailable' | 'unknown' | string
+  active_role?: 'primary' | 'backup' | string
+  active_backup_index?: number
+  active_agent_id?: string
+  targets?: HAProxyTargetRuntimeStatus[]
+}
+
+export interface HAProxyTargetRuntimeStatus {
+  role: 'primary' | 'backup' | string
+  backup_index?: number
+  agent_id?: string
+  realm_rule_id?: string
+  address?: string
+  port?: number
+  server_name?: string
+  status: string
+  healthy: boolean
+  active: boolean
+  current_sessions?: number
+  total_sessions?: number
+  check_status?: string
+  check_description?: string
+  check_duration_ms?: number
+  last_change_seconds?: number
+  total_downtime_seconds?: number
 }
 
 export interface AdminUser {
@@ -850,6 +889,7 @@ export interface AgentRealtimeMetrics {
   system_version?: string
   reported_at?: string
   summary: VPSSummary
+  haproxy?: HAProxySnapshot
 }
 
 export interface DashboardRealtimeMessage {

@@ -1,7 +1,8 @@
-import { Button, Card, Col, Input, InputNumber, List, Row, Select, Space, Switch, Typography } from 'antd'
+import { Alert, Badge, Button, Card, Col, Input, InputNumber, List, Row, Select, Space, Switch, Tag, Tooltip, Typography } from 'antd'
 import { DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 
-import type { AgentListItem, HAProxyConfig, HAProxyRealmTarget, HAProxyRule } from '../types'
+import type { AgentListItem, HAProxyConfig, HAProxyRealmTarget, HAProxyRule, HAProxyRuleRuntimeStatus, HAProxySnapshot, HAProxyTargetRuntimeStatus } from '../types'
+import { formatRelativeTime } from '../lib/appHelpers'
 
 const { Text, Title } = Typography
 
@@ -16,6 +17,7 @@ interface HAProxyConfigSectionProps {
   selectedAgent: AgentListItem
   agents: AgentListItem[]
   config: HAProxyConfig
+  runtime?: HAProxySnapshot
   saving: boolean
   saveDisabled: boolean
   onChange: (config: HAProxyConfig) => void
@@ -23,7 +25,7 @@ interface HAProxyConfigSectionProps {
 }
 
 export function HAProxyConfigSection(props: HAProxyConfigSectionProps) {
-  const { visible, selectedAgent, agents, config, saving, saveDisabled, onChange, onSave } = props
+  const { visible, selectedAgent, agents, config, runtime, saving, saveDisabled, onChange, onSave } = props
   const targetOptions = buildRealmTargetOptions(agents, selectedAgent.agent_id)
   const updateRule = (index: number, patch: Partial<HAProxyRule>) => {
     onChange({ ...config, rules: (config.rules || []).map((rule, current) => current === index ? { ...rule, ...patch } : rule) })
@@ -98,11 +100,24 @@ export function HAProxyConfigSection(props: HAProxyConfigSectionProps) {
           <Text type="secondary">配置路径</Text>
           <Input value={config.config_path || ''} placeholder="/etc/vpsmonitor/haproxy.cfg" onChange={(event) => onChange({ ...config, config_path: event.target.value })} />
         </Col>
+        {config.enabled && runtime?.error ? (
+          <Col xs={24}>
+            <Alert type="warning" showIcon message="HAProxy 运行状态读取失败" description={runtime.error} />
+          </Col>
+        ) : null}
+        {config.enabled && !runtime ? (
+          <Col xs={24}>
+            <div className="haproxy-runtime-strip">
+              <Badge status="processing" text="等待 Client 上报 HAProxy 运行状态" />
+            </div>
+          </Col>
+        ) : null}
         <Col xs={24}>
           <List
             locale={{ emptyText: '暂无 HAProxy 主备规则' }}
             dataSource={config.rules || []}
             renderItem={(rule, ruleIndex) => {
+              const runtimeRule = findHAProxyRuntimeRule(runtime, rule)
               const selectedTargets = new Set([
                 realmTargetValue(rule.primary),
                 ...(rule.backups || []).map(realmTargetValue),
@@ -114,6 +129,14 @@ export function HAProxyConfigSection(props: HAProxyConfigSectionProps) {
                   ]}
                 >
                   <Row gutter={[12, 12]} style={{ width: '100%' }}>
+                    <Col xs={24}>
+                      <HAProxyRuleStatusStrip
+                        rule={rule}
+                        runtime={runtimeRule}
+                        collectedAt={runtime?.collected_at}
+                        agents={agents}
+                      />
+                    </Col>
                     <Col xs={24} md={2}>
                       <Text type="secondary">启用</Text>
                       <Switch checked={rule.enabled !== false} onChange={(enabled) => updateRule(ruleIndex, { enabled })} />
@@ -187,6 +210,123 @@ export function HAProxyConfigSection(props: HAProxyConfigSectionProps) {
       </Row>
     </Card>
   )
+}
+
+function HAProxyRuleStatusStrip(props: {
+  rule: HAProxyRule
+  runtime?: HAProxyRuleRuntimeStatus
+  collectedAt?: string
+  agents: AgentListItem[]
+}) {
+  const { rule, runtime, collectedAt, agents } = props
+  if (rule.enabled === false) {
+    return (
+      <div className="haproxy-runtime-strip">
+        <Badge status="default" text="规则已停用" />
+      </div>
+    )
+  }
+  if (!runtime) {
+    return (
+      <div className="haproxy-runtime-strip">
+        <Badge status="processing" text="等待该规则的运行状态" />
+      </div>
+    )
+  }
+
+  const summary = haProxyRuleSummary(runtime)
+  return (
+    <div className="haproxy-runtime-strip">
+      <Space direction="vertical" size={6} style={{ width: '100%' }}>
+        <Space wrap size={[8, 4]}>
+          <Text strong>实时状态</Text>
+          <Tag color={summary.color}>{summary.label}</Tag>
+          {collectedAt ? <Text type="secondary">更新于 {formatRelativeTime(Date.parse(collectedAt))}</Text> : null}
+        </Space>
+        <Space wrap size={[8, 6]}>
+          {(runtime.targets || []).map((target) => (
+            <Tooltip
+              key={`${target.role}-${target.backup_index || 0}-${target.server_name || target.agent_id || ''}`}
+              title={<HAProxyTargetTooltip target={target} agents={agents} />}
+            >
+              <Tag color={haProxyTargetColor(target)}>
+                {haProxyTargetRoleLabel(target)} · {haProxyTargetAgentName(target, agents)} · {haProxyTargetStateLabel(target)}
+                {target.status !== 'UNKNOWN' ? ` · 连接 ${Number(target.current_sessions || 0)}` : ''}
+              </Tag>
+            </Tooltip>
+          ))}
+        </Space>
+      </Space>
+    </div>
+  )
+}
+
+function HAProxyTargetTooltip({ target, agents }: { target: HAProxyTargetRuntimeStatus; agents: AgentListItem[] }) {
+  const endpoint = target.address && target.port ? `${target.address}:${target.port}` : '未知'
+  const check = [target.check_status, target.check_description].filter(Boolean).join(' · ') || '暂无检查详情'
+  return (
+    <Space direction="vertical" size={2}>
+      <span>{haProxyTargetRoleLabel(target)}：{haProxyTargetAgentName(target, agents)}</span>
+      <span>目标：{endpoint}</span>
+      <span>状态：{target.status || 'UNKNOWN'}{target.active ? ' · 当前接管' : target.healthy ? ' · 正常待命' : ''}</span>
+      <span>检查：{check}{target.check_duration_ms ? ` · ${target.check_duration_ms} ms` : ''}</span>
+      <span>状态持续：{formatDuration(target.last_change_seconds || 0)}</span>
+      <span>累计连接：{Number(target.total_sessions || 0)}</span>
+    </Space>
+  )
+}
+
+function findHAProxyRuntimeRule(runtime: HAProxySnapshot | undefined, rule: HAProxyRule): HAProxyRuleRuntimeStatus | undefined {
+  const rules = runtime?.rules || []
+  if (rule.id) {
+    const byID = rules.find((item) => item.rule_id === rule.id)
+    if (byID) return byID
+  }
+  return rules.find((item) => Number(item.listen_port || 0) === Number(rule.listen_port || 0))
+}
+
+function haProxyRuleSummary(runtime: HAProxyRuleRuntimeStatus): { color: string; label: string } {
+  switch (runtime.status) {
+    case 'primary':
+      return { color: 'success', label: '主节点接管中' }
+    case 'backup':
+      return { color: 'warning', label: `备用 ${runtime.active_backup_index || 1} 接管中` }
+    case 'unavailable':
+      return { color: 'error', label: '无可用节点' }
+    default:
+      return { color: 'default', label: '状态检查中' }
+  }
+}
+
+function haProxyTargetColor(target: HAProxyTargetRuntimeStatus): string {
+  if (target.active && target.role === 'backup') return 'warning'
+  if (target.active || target.healthy) return 'success'
+  if ((target.status || '').toUpperCase() === 'UNKNOWN') return 'default'
+  return 'error'
+}
+
+function haProxyTargetStateLabel(target: HAProxyTargetRuntimeStatus): string {
+  if (target.active) return '当前接管'
+  if (target.healthy) return '正常待命'
+  if ((target.status || '').toUpperCase() === 'UNKNOWN') return '检查中'
+  return `异常 ${target.status}`
+}
+
+function haProxyTargetRoleLabel(target: HAProxyTargetRuntimeStatus): string {
+  return target.role === 'primary' ? '主节点' : `备用 ${target.backup_index || 1}`
+}
+
+function haProxyTargetAgentName(target: HAProxyTargetRuntimeStatus, agents: AgentListItem[]): string {
+  const agent = agents.find((item) => item.agent_id === target.agent_id)
+  return agent?.agent_name || target.agent_id || target.address || '未知节点'
+}
+
+function formatDuration(seconds: number): string {
+  const value = Math.max(0, Math.floor(seconds))
+  if (value < 60) return `${value} 秒`
+  if (value < 3600) return `${Math.floor(value / 60)} 分钟`
+  if (value < 86400) return `${Math.floor(value / 3600)} 小时`
+  return `${Math.floor(value / 86400)} 天`
 }
 
 function buildRealmTargetOptions(agents: AgentListItem[], sourceAgentID: string): RealmTargetOption[] {

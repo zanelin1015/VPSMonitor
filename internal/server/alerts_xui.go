@@ -52,7 +52,7 @@ func buildXUIClientExpiryAlerts(agent model.AgentRecord, clients []model.XUIClie
 
 		clientName := firstNonEmptyString(client.Email, client.Comment, "未命名")
 		inboundName := firstNonEmptyString(client.InboundRemark, client.InboundTag, fmt.Sprintf("Inbound %d", client.InboundID))
-		detail := fmt.Sprintf("入站：%s，Client：%s，到期时间：%s，%s。", inboundName, clientName, expiry.Local().Format("2006-01-02 15:04:05"), remainingText)
+		detail := fmt.Sprintf("入站：%s，Client：%s，到期时间：%s，%s。", inboundName, clientName, formatBeijingTime(expiry), remainingText)
 		alerts = append(alerts, newAgentAlert(agent, kind, severity, title, fmt.Sprintf("%s:%d", state, client.ExpiryTime), detail))
 	}
 	return alerts

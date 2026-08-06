@@ -345,6 +345,17 @@ func (a *App) collect(ctx context.Context, effectiveConfig model.ManagedAgentCon
 		}
 	}
 	snapshot.Realm = collectRealmSnapshot(effectiveConfig.Entry.PortForwarding)
+	snapshot.HAProxy = collectHAProxySnapshot(ctx, effectiveConfig.Entry.HAProxy)
+	if snapshot.HAProxy != nil && snapshot.HAProxy.Error != "" {
+		haProxyErr := "haproxy: " + snapshot.HAProxy.Error
+		lastErrs = append(lastErrs, haProxyErr)
+		snapshot.Logs = append(snapshot.Logs, model.AgentLogEntry{
+			Time:    time.Now().UTC(),
+			Level:   "error",
+			Source:  "haproxy",
+			Message: haProxyErr,
+		})
+	}
 	snapshot.NetworkPolicy = collectNetworkPolicySnapshot(ctx, effectiveConfig.Entry.NetworkPolicy)
 
 	snapshot.Summary = buildSummary(snapshot)
