@@ -2,9 +2,13 @@ package client
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"net"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"bridge-core/internal/model"
 )
@@ -113,6 +117,167 @@ func TestHAProxyRuntimeStatusPrefersHealthyPrimary(t *testing.T) {
 	rule := snapshot.Rules[0]
 	if rule.Status != "primary" || rule.ActiveRole != "primary" || !rule.Targets[0].Active {
 		t.Fatalf("expected primary to handle new connections, got %#v", rule)
+	}
+}
+
+func TestQueryHAProxyRuntimeStatsRetriesDuringReload(t *testing.T) {
+	tempDir, err := os.MkdirTemp("/tmp", "vpsm-haproxy-")
+	if err != nil {
+		t.Fatalf("create short socket directory: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(tempDir) })
+	socketPath := tempDir + "/haproxy.sock"
+	serverResult := make(chan error, 1)
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		listener, err := net.Listen("unix", socketPath)
+		if err != nil {
+			serverResult <- err
+			return
+		}
+		defer listener.Close()
+		conn, err := listener.Accept()
+		if err != nil {
+			serverResult <- err
+			return
+		}
+		defer conn.Close()
+		request := make([]byte, 32)
+		if _, err := conn.Read(request); err != nil {
+			serverResult <- err
+			return
+		}
+		if !strings.Contains(string(request), "show stat") {
+			serverResult <- fmt.Errorf("unexpected runtime request %q", request)
+			return
+		}
+		_, err = io.WriteString(conn, "# pxname,svname,status,type\n")
+		serverResult <- err
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	body, err := queryHAProxyRuntimeStats(ctx, socketPath)
+	if err != nil {
+		t.Fatalf("queryHAProxyRuntimeStats: %v", err)
+	}
+	if err := <-serverResult; err != nil {
+		t.Fatalf("runtime socket server: %v", err)
+	}
+	if !strings.Contains(string(body), "pxname") {
+		t.Fatalf("unexpected runtime response %q", body)
+	}
+}
+
+func TestQueryHAProxyRuntimeStatsRetriesWhenReloadDropsConnection(t *testing.T) {
+	tempDir, err := os.MkdirTemp("/tmp", "vpsm-haproxy-")
+	if err != nil {
+		t.Fatalf("create short socket directory: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(tempDir) })
+	socketPath := tempDir + "/haproxy.sock"
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("listen on runtime socket: %v", err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+
+	serverResult := make(chan error, 1)
+	go func() {
+		first, err := listener.Accept()
+		if err != nil {
+			serverResult <- err
+			return
+		}
+		_ = first.Close()
+
+		second, err := listener.Accept()
+		if err != nil {
+			serverResult <- err
+			return
+		}
+		defer second.Close()
+		request := make([]byte, 32)
+		if _, err := second.Read(request); err != nil {
+			serverResult <- err
+			return
+		}
+		_, err = io.WriteString(second, "# pxname,svname,status,type\n")
+		serverResult <- err
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	body, err := queryHAProxyRuntimeStats(ctx, socketPath)
+	if err != nil {
+		t.Fatalf("queryHAProxyRuntimeStats: %v", err)
+	}
+	if err := <-serverResult; err != nil {
+		t.Fatalf("runtime socket server: %v", err)
+	}
+	if !strings.Contains(string(body), "pxname") {
+		t.Fatalf("unexpected runtime response %q", body)
+	}
+}
+
+func TestQueryHAProxyRuntimeStatsRetriesTruncatedReloadResponse(t *testing.T) {
+	tempDir, err := os.MkdirTemp("/tmp", "vpsm-haproxy-")
+	if err != nil {
+		t.Fatalf("create short socket directory: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(tempDir) })
+	socketPath := tempDir + "/haproxy.sock"
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("listen on runtime socket: %v", err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+
+	serverResult := make(chan error, 1)
+	go func() {
+		first, err := listener.Accept()
+		if err != nil {
+			serverResult <- err
+			return
+		}
+		request := make([]byte, 32)
+		if _, err := first.Read(request); err != nil {
+			_ = first.Close()
+			serverResult <- err
+			return
+		}
+		_, err = io.WriteString(first, "# pxname,svname")
+		_ = first.Close()
+		if err != nil {
+			serverResult <- err
+			return
+		}
+
+		second, err := listener.Accept()
+		if err != nil {
+			serverResult <- err
+			return
+		}
+		defer second.Close()
+		if _, err := second.Read(request); err != nil {
+			serverResult <- err
+			return
+		}
+		_, err = io.WriteString(second, "# pxname,svname,status,type\n")
+		serverResult <- err
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	body, err := queryHAProxyRuntimeStats(ctx, socketPath)
+	if err != nil {
+		t.Fatalf("queryHAProxyRuntimeStats: %v", err)
+	}
+	if !strings.Contains(string(body), "status,type") {
+		t.Fatalf("expected complete response after retry, got %q", body)
+	}
+	if err := <-serverResult; err != nil {
+		t.Fatalf("runtime socket server: %v", err)
 	}
 }
 

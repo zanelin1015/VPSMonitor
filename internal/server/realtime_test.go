@@ -332,7 +332,16 @@ func TestSanitizeGeoForAreaManagerKeepsOnlyCountry(t *testing.T) {
 
 func TestSanitizeDashboardAgentForAreaManagerRemovesFinanceClients(t *testing.T) {
 	agent := sanitizeDashboardAgentForAreaManager(model.DashboardAgentView{
-		AgentID:             "agent-1",
+		AgentID:   "agent-1",
+		AgentName: "广州-阿里云",
+		Geo:       &model.IPGeoView{CountryCode: "CN", RegionName: "Guangdong"},
+		Entry: model.AgentEntryConfig{HAProxy: model.HAProxyConfig{
+			Enabled: true,
+			Rules: []model.HAProxyRule{{
+				Enabled:    true,
+				ListenPort: 20001,
+			}},
+		}},
 		FinanceClientsReady: true,
 		FinanceClients: []model.FinanceClientView{{
 			InboundID: 1,
@@ -342,6 +351,31 @@ func TestSanitizeDashboardAgentForAreaManagerRemovesFinanceClients(t *testing.T)
 	}, map[string][]string{"agent-1": {"public"}})
 	if agent.FinanceClientsReady || len(agent.FinanceClients) != 0 {
 		t.Fatalf("expected finance client state to be removed for area manager, got %#v", agent.FinanceClients)
+	}
+	if !agent.LineEntry {
+		t.Fatal("expected derived CN line-entry marker to survive area-manager redaction")
+	}
+	if agent.Geo != nil || agent.Entry.HAProxy.Enabled || len(agent.Entry.HAProxy.Rules) != 0 {
+		t.Fatalf("expected private geo and entry configuration to remain redacted, got geo=%#v entry=%#v", agent.Geo, agent.Entry)
+	}
+}
+
+func TestSanitizeDashboardAgentForAreaManagerDerivesLineEntryWithoutGeo(t *testing.T) {
+	agent := sanitizeDashboardAgentForAreaManager(model.DashboardAgentView{
+		AgentID:   "cn-entry-1",
+		AgentName: "CN-Guangzhou",
+		Entry: model.AgentEntryConfig{PortForwarding: model.RealmForwardConfig{
+			Enabled: true,
+			Backend: "realm",
+			Rules:   []model.RealmForwardRule{{Enabled: true, ListenPort: 20001}},
+		}},
+	}, nil)
+
+	if !agent.LineEntry {
+		t.Fatal("expected explicit CN marker to derive line entry when Geo is unavailable")
+	}
+	if agent.Geo != nil || agent.Entry.PortForwarding.Enabled || len(agent.Entry.PortForwarding.Rules) != 0 {
+		t.Fatalf("expected private geo and entry configuration to remain redacted, got geo=%#v entry=%#v", agent.Geo, agent.Entry)
 	}
 }
 

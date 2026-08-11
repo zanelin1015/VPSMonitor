@@ -1,4 +1,5 @@
 import type { AgentListItem, VPSRenewalConfig, VPSSummary, XUIClientView } from '../types'
+import { agentCountryCode } from './appHelpersAgent'
 
 export interface TrafficMeterStatus {
   label: string
@@ -119,6 +120,44 @@ export function summarizeAgentNetwork(agents: AgentListItem[]): AgentNetworkSumm
     },
     { used: 0, sent: 0, recv: 0, up: 0, down: 0 },
   )
+}
+
+export function summarizeWorkbenchNetwork(agents: AgentListItem[]): AgentNetworkSummary {
+  const summary = summarizeAgentNetwork(agents)
+  const entrySpeed = agents.filter(isCNLineEntryAgent).reduce(
+    (speed, agent) => ({
+      up: speed.up + Number(agent.summary.net_io_up || 0),
+      down: speed.down + Number(agent.summary.net_io_down || 0),
+    }),
+    { up: 0, down: 0 },
+  )
+  return { ...summary, ...entrySpeed }
+}
+
+export function isCNLineEntryAgent(agent: AgentListItem): boolean {
+  if (agent.line_entry === true) {
+    return true
+  }
+  if (agentCountryCode(agent) !== 'CN') {
+    return false
+  }
+
+  const realm = agent.entry?.port_forwarding
+  const haproxy = agent.entry?.haproxy
+  return (
+    hasEnabledForwardingRules(realm?.enabled, realm?.rules) ||
+    hasEnabledForwardingRules(haproxy?.enabled, haproxy?.rules) ||
+    (agent.tags || []).some(isDomesticEntryTag)
+  )
+}
+
+function hasEnabledForwardingRules(enabled: boolean | undefined, rules: Array<{ enabled?: boolean }> | undefined): boolean {
+  return Boolean(enabled && rules?.some((rule) => rule.enabled !== false))
+}
+
+function isDomesticEntryTag(tag: string): boolean {
+  const normalized = tag.trim().toLowerCase().replace(/[\s_-]+/g, '')
+  return normalized.includes('国内入口') || normalized === 'cn入口' || normalized === 'cnentry'
 }
 
 export function gbToBytes(value: number): number {

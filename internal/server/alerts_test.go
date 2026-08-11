@@ -47,6 +47,76 @@ func TestFormatBeijingTime(t *testing.T) {
 	}
 }
 
+func TestBuildAgentAlertsClassifiesHAProxyErrorSeparately(t *testing.T) {
+	agent := model.AgentRecord{AgentID: "agent-1", AgentName: "Guangzhou"}
+	snapshot := model.AgentSnapshot{
+		AgentID: "agent-1",
+		HAProxy: &model.HAProxySnapshot{Error: "runtime socket unavailable"},
+	}
+	alerts := buildAgentAlerts(agent, snapshot, false)
+
+	var haProxyAlert alertMessage
+	for _, alert := range alerts {
+		if alert.key == resolveAgentAlertKey(agent.AgentID, "haproxy_error") {
+			haProxyAlert = alert
+		}
+		if alert.key == resolveAgentAlertKey(agent.AgentID, "xui_error") {
+			t.Fatalf("HAProxy error must not be reported as X-UI error: %#v", alert)
+		}
+	}
+	if haProxyAlert.title != "HAProxy 状态采集异常" || !strings.Contains(haProxyAlert.detail, "runtime socket unavailable") {
+		t.Fatalf("unexpected HAProxy alert: %#v", haProxyAlert)
+	}
+}
+
+func TestBuildAgentAlertsClassifiesLegacyHAProxyCollectionError(t *testing.T) {
+	agent := model.AgentRecord{AgentID: "agent-1", AgentName: "Guangzhou"}
+	snapshot := model.AgentSnapshot{
+		AgentID: "agent-1",
+		Summary: model.VPSSummary{LastCollectionErr: "haproxy: runtime socket unavailable"},
+	}
+	alerts := buildAgentAlerts(agent, snapshot, false)
+
+	xuiAlert, xuiActive := activeAlertByKey(alerts, resolveAgentAlertKey(agent.AgentID, "xui_error"))
+	if xuiActive {
+		t.Fatalf("legacy HAProxy collection error must not create an X-UI alert: %#v", xuiAlert)
+	}
+	haProxyAlert, haProxyActive := activeAlertByKey(alerts, resolveAgentAlertKey(agent.AgentID, "haproxy_error"))
+	if !haProxyActive || !strings.Contains(haProxyAlert.detail, "runtime socket unavailable") {
+		t.Fatalf("expected legacy HAProxy collection error to create an HAProxy alert: %#v", haProxyAlert)
+	}
+}
+
+func TestBuildAgentAlertsSplitsMixedLegacyCollectionErrors(t *testing.T) {
+	agent := model.AgentRecord{AgentID: "agent-1", AgentName: "Guangzhou"}
+	snapshot := model.AgentSnapshot{
+		AgentID: "agent-1",
+		Summary: model.VPSSummary{LastCollectionErr: "x-ui: login failed; haproxy: runtime socket unavailable"},
+	}
+	alerts := buildAgentAlerts(agent, snapshot, false)
+
+	xuiAlert, xuiActive := activeAlertByKey(alerts, resolveAgentAlertKey(agent.AgentID, "xui_error"))
+	if !xuiActive || !strings.Contains(xuiAlert.detail, "x-ui: login failed") {
+		t.Fatalf("expected mixed collection error to preserve X-UI alert: %#v", xuiAlert)
+	}
+	if strings.Contains(strings.ToLower(xuiAlert.detail), "haproxy") || strings.Contains(strings.ToLower(xuiAlert.fingerprint), "haproxy") {
+		t.Fatalf("X-UI alert must not contain HAProxy error details: %#v", xuiAlert)
+	}
+	haProxyAlert, haProxyActive := activeAlertByKey(alerts, resolveAgentAlertKey(agent.AgentID, "haproxy_error"))
+	if !haProxyActive || !strings.Contains(haProxyAlert.detail, "runtime socket unavailable") {
+		t.Fatalf("expected mixed collection error to create an HAProxy alert: %#v", haProxyAlert)
+	}
+}
+
+func activeAlertByKey(alerts []alertMessage, key string) (alertMessage, bool) {
+	for _, alert := range alerts {
+		if alert.key == key {
+			return alert, true
+		}
+	}
+	return alertMessage{}, false
+}
+
 func TestAccountedTrafficUsedModes(t *testing.T) {
 	bidirectional := model.VPSRenewalConfig{TrafficAccountingMode: "bidirectional"}
 	if got := accountedTrafficUsed(bidirectional, 90, 40, 50); got != 90 {

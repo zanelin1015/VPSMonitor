@@ -3,17 +3,29 @@ package client
 import (
 	"context"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"bridge-core/internal/model"
 )
 
 const haProxyRuntimeReadLimit = 4 << 20
+
+const (
+	haProxyRuntimeDialAttempts = 4
+	haProxyRuntimeRetryDelay   = 150 * time.Millisecond
+)
+
+var (
+	errHAProxyRuntimeEmptyResponse     = errors.New("empty HAProxy runtime response")
+	errHAProxyRuntimeTruncatedResponse = errors.New("truncated HAProxy runtime response")
+)
 
 type haProxyRuntimeStat struct {
 	Status            string
@@ -96,6 +108,26 @@ func newHAProxyTargetRuntimeStatus(role string, backupIndex int, prefix string, 
 }
 
 func queryHAProxyRuntimeStats(ctx context.Context, socketPath string) ([]byte, error) {
+	var lastErr error
+	for attempt := 0; attempt < haProxyRuntimeDialAttempts; attempt++ {
+		body, err := queryHAProxyRuntimeStatsOnce(ctx, socketPath)
+		if err == nil {
+			return body, nil
+		}
+		lastErr = err
+		if attempt == haProxyRuntimeDialAttempts-1 || !retryHAProxyRuntimeQuery(err) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(haProxyRuntimeRetryDelay):
+		}
+	}
+	return nil, lastErr
+}
+
+func queryHAProxyRuntimeStatsOnce(ctx context.Context, socketPath string) ([]byte, error) {
 	dialer := net.Dialer{Timeout: time.Second}
 	conn, err := dialer.DialContext(ctx, "unix", socketPath)
 	if err != nil {
@@ -113,13 +145,27 @@ func queryHAProxyRuntimeStats(ctx context.Context, socketPath string) ([]byte, e
 		return nil, err
 	}
 	body, err := io.ReadAll(io.LimitReader(conn, haProxyRuntimeReadLimit))
-	if err != nil && len(body) == 0 {
+	if err != nil {
 		return nil, err
 	}
 	if len(body) == 0 {
-		return nil, fmt.Errorf("empty response from %s", socketPath)
+		return nil, fmt.Errorf("%w from %s", errHAProxyRuntimeEmptyResponse, socketPath)
+	}
+	if body[len(body)-1] != '\n' {
+		return nil, fmt.Errorf("%w from %s", errHAProxyRuntimeTruncatedResponse, socketPath)
 	}
 	return body, nil
+}
+
+func retryHAProxyRuntimeQuery(err error) bool {
+	return errors.Is(err, syscall.ENOENT) ||
+		errors.Is(err, syscall.ECONNREFUSED) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, errHAProxyRuntimeEmptyResponse) ||
+		errors.Is(err, errHAProxyRuntimeTruncatedResponse)
 }
 
 func parseHAProxyRuntimeStats(body []byte) (map[string]haProxyRuntimeStat, error) {

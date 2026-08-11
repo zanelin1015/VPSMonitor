@@ -14,7 +14,7 @@ import {
   mergeDashboardTagOptions,
   topologyMatchesSelectedTag,
 } from './appHelpers'
-import { summarizeAgentNetwork } from './traffic'
+import { summarizeAgentNetwork, summarizeWorkbenchNetwork } from './traffic'
 
 type DashboardScopeInput = {
   agents: DashboardAgentView[]
@@ -91,7 +91,7 @@ export function buildDashboardScope(input: DashboardScopeInput) {
         missingRevenueCount: 0,
         excludedRevenueCount: 0,
       }
-  const workbenchNetwork = summarizeAgentNetwork(agents)
+  const workbenchNetwork = summarizeWorkbenchNetwork(agents)
   const workbenchMonthlyFinance = canManageSystem && financeAccountsLoaded
     ? {
         ...summarizeMonthlyFinance(agents, dashboardView?.client_chains || [], costCurrency, exchangeRates, financeCustomers, financeAreaManagers),

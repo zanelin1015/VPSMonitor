@@ -165,7 +165,7 @@ export function AgentRail(props: {
               <AgentRailItem
                 key={item.agent_id}
                 item={item}
-                index={index}
+                displaySortOrder={(agentPage - 1) * agentPageSize + index + 1}
                 active={item.agent_id === selectedAgentId}
                 viewMode={effectiveViewMode}
                 compact={panelExpanded}
@@ -182,14 +182,14 @@ export function AgentRail(props: {
 
 function AgentRailItem(props: {
   item: DashboardAgentView
-  index: number
+  displaySortOrder: number
   active: boolean
   viewMode: AgentViewMode
   compact?: boolean
   restrictedView?: boolean
   onSelect: (agentID: string, active: boolean) => void
 }) {
-  const { item, index, active, viewMode, compact = false, restrictedView = false, onSelect } = props
+  const { item, displaySortOrder, active, viewMode, compact = false, restrictedView = false, onSelect } = props
   const renewalStatus = calculateRenewalStatus(item.renewal)
   const trafficStatus = calculateTrafficStatus(item)
   const trafficTotalLabel = restrictedView ? '周期已用流量' : trafficStatus.isPeriod ? '周期总流量' : '总流量'
@@ -202,7 +202,6 @@ function AgentRailItem(props: {
   const displayStatus = agentDisplayStatus(item)
   const statusLevel = displayStatus.level
   const showStatusText = statusLevel !== 'ok'
-  const displaySortOrder = item.sort_order || index + 1
   const addressText = item.summary.observed_ip || item.summary.public_ipv4 || item.summary.hostname || item.agent_id
   const serverSeenIP = differentServerSeenIP(item.summary.server_seen_ip, addressText) ? item.summary.server_seen_ip : ''
   const countryCode = agentCountryCode(item)

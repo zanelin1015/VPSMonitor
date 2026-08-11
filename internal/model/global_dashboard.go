@@ -47,6 +47,7 @@ type DashboardAgentView struct {
 	Geo                 *IPGeoView             `json:"geo,omitempty"`
 	FinanceClients      []FinanceClientView    `json:"finance_clients"`
 	FinanceClientsReady bool                   `json:"finance_clients_ready"`
+	LineEntry           bool                   `json:"line_entry,omitempty"`
 	NodeCount           int                    `json:"node_count"`
 	ClientCount         int                    `json:"client_count"`
 	OnlineClientCount   int                    `json:"online_client_count"`

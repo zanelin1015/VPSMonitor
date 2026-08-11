@@ -445,6 +445,7 @@ func sanitizeAgentListItemForAreaManager(item model.AgentListItem, tagMap map[st
 }
 
 func sanitizeDashboardAgentForAreaManager(agent model.DashboardAgentView, tagMap map[string][]string) model.DashboardAgentView {
+	agent.LineEntry = isCNLineEntryDashboardAgent(agent)
 	agent.AgentName = areaManagerDisplayName(agent.CustomerDisplayName, agent.AgentName, agent.AgentID)
 	agent.Tags = cloneStringSlice(tagMap[agent.AgentID])
 	agent.ClientVersion = ""
@@ -462,6 +463,59 @@ func sanitizeDashboardAgentForAreaManager(agent model.DashboardAgentView, tagMap
 	agent.FinanceClients = []model.FinanceClientView{}
 	agent.FinanceClientsReady = false
 	return agent
+}
+
+func isCNLineEntryDashboardAgent(agent model.DashboardAgentView) bool {
+	if dashboardAgentCountryCode(agent) != "CN" {
+		return false
+	}
+	if realmForwardingActive(agent.Entry.PortForwarding) {
+		for _, rule := range agent.Entry.PortForwarding.Rules {
+			if rule.Enabled {
+				return true
+			}
+		}
+	}
+	if agent.Entry.HAProxy.Enabled {
+		for _, rule := range agent.Entry.HAProxy.Rules {
+			if rule.Enabled {
+				return true
+			}
+		}
+	}
+	for _, tag := range agent.Tags {
+		normalized := strings.NewReplacer(" ", "", "\t", "", "_", "", "-", "").Replace(strings.ToLower(strings.TrimSpace(tag)))
+		if strings.Contains(normalized, "国内入口") || normalized == "cn入口" || normalized == "cnentry" {
+			return true
+		}
+	}
+	return false
+}
+
+func dashboardAgentCountryCode(agent model.DashboardAgentView) string {
+	candidates := append([]string{agent.AgentName}, agent.Tags...)
+	candidates = append(candidates, agent.Summary.Hostname, agent.AgentID)
+	for _, candidate := range candidates {
+		if code := explicitDashboardCountryCode(candidate); code != "" {
+			return code
+		}
+	}
+	if agent.Geo != nil {
+		return strings.ToUpper(strings.TrimSpace(agent.Geo.CountryCode))
+	}
+	return ""
+}
+
+func explicitDashboardCountryCode(value string) string {
+	for _, token := range strings.FieldsFunc(strings.ToUpper(strings.TrimSpace(value)), func(char rune) bool {
+		return !((char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9'))
+	}) {
+		switch token {
+		case "TH", "MY", "VN", "IN", "SG", "HK", "MO", "TW", "JP", "KR", "CA", "US", "CN", "PH", "DE", "FR", "GB", "AU":
+			return token
+		}
+	}
+	return ""
 }
 
 func sanitizeAreaManagerRenewal(cfg model.VPSRenewalConfig) model.VPSRenewalConfig {

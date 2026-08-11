@@ -46,6 +46,7 @@ export interface AgentListItem {
   geo?: IPGeoView
   finance_clients?: FinanceClientView[]
   finance_clients_ready?: boolean
+  line_entry?: boolean
 }
 
 export interface AgentReplacementResult {

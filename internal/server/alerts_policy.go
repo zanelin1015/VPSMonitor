@@ -22,15 +22,32 @@ func buildAgentAlerts(agent model.AgentRecord, snapshot model.AgentSnapshot, inc
 		alerts = append(alerts, newResolvedAlert(agent.AgentID, "offline"))
 	}
 
-	xuiError := strings.TrimSpace(summary.LastCollectionErr)
+	xuiError, legacyHAProxyError := splitLegacyCollectionErrors(summary.LastCollectionErr)
 	if xuiError == "" && snapshot.XUI != nil {
-		xuiError = strings.TrimSpace(snapshot.XUI.Error)
+		var snapshotHAProxyError string
+		xuiError, snapshotHAProxyError = splitLegacyCollectionErrors(snapshot.XUI.Error)
+		if legacyHAProxyError == "" {
+			legacyHAProxyError = snapshotHAProxyError
+		}
 	}
 	if xuiError != "" {
 		detail := xuiError + "\n日志：VPSMonitor 后台 → 选择 Client → 日志"
 		alerts = append(alerts, newAgentAlert(agent, "xui_error", "warning", "X-UI 采集异常", xuiError, detail))
 	} else {
 		alerts = append(alerts, newResolvedAlert(agent.AgentID, "xui_error"))
+	}
+
+	haProxyError := legacyHAProxyError
+	if snapshot.HAProxy != nil {
+		if currentError := strings.TrimSpace(snapshot.HAProxy.Error); currentError != "" {
+			haProxyError = currentError
+		}
+	}
+	if haProxyError != "" {
+		detail := haProxyError + "\n日志：VPSMonitor 后台 → 选择 Client → 日志"
+		alerts = append(alerts, newAgentAlert(agent, "haproxy_error", "warning", "HAProxy 状态采集异常", haProxyError, detail))
+	} else {
+		alerts = append(alerts, newResolvedAlert(agent.AgentID, "haproxy_error"))
 	}
 
 	xrayState := strings.TrimSpace(strings.ToLower(summary.XrayState))
@@ -53,6 +70,27 @@ func buildAgentAlerts(agent model.AgentRecord, snapshot model.AgentSnapshot, inc
 	}
 
 	return alerts
+}
+
+func splitLegacyCollectionErrors(value string) (string, string) {
+	xuiParts := make([]string, 0, 1)
+	haProxyParts := make([]string, 0, 1)
+	for _, part := range strings.Split(value, ";") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if strings.HasPrefix(strings.ToLower(part), "haproxy:") {
+			detail := strings.TrimSpace(part[len("haproxy:"):])
+			if detail == "" {
+				detail = part
+			}
+			haProxyParts = append(haProxyParts, detail)
+			continue
+		}
+		xuiParts = append(xuiParts, part)
+	}
+	return strings.Join(xuiParts, "; "), strings.Join(haProxyParts, "; ")
 }
 
 func newAgentAlert(agent model.AgentRecord, kind, severity, title, fingerprint, detail string) alertMessage {
