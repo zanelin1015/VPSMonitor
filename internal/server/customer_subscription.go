@@ -16,8 +16,10 @@ import (
 )
 
 const (
-	mihomoProxyMarker     = "{{VPSMONITOR_PROXIES}}"
-	mihomoProxyNameMarker = "{{VPSMONITOR_PROXY_NAMES}}"
+	mihomoProxyMarker                  = "{{VPSMONITOR_PROXIES}}"
+	mihomoProxyNameMarker              = "{{VPSMONITOR_PROXY_NAMES}}"
+	customerSubscriptionChainFrontName = "IEPL"
+	customerSubscriptionChainExitName  = "999"
 )
 
 //go:embed customer_subscription_acl4ssr.yaml.tmpl
@@ -92,6 +94,11 @@ func buildMihomoSubscription(user model.CustomerUser, links []model.CustomerLink
 		}
 		proxies = append(proxies, proxy)
 	}
+	for i := range proxies {
+		if proxies[i].Name == customerSubscriptionChainExitName {
+			proxies[i].DialerProxy = customerSubscriptionChainFrontName
+		}
+	}
 	sort.SliceStable(proxies, func(i, j int) bool {
 		return proxies[i].Name < proxies[j].Name
 	})
@@ -127,9 +134,10 @@ func renderMihomoSubscription(proxies []mihomoProxy) string {
 }
 
 type mihomoProxy struct {
-	Name    string
-	Fields  []mihomoField
-	Objects []mihomoObject
+	Name        string
+	DialerProxy string
+	Fields      []mihomoField
+	Objects     []mihomoObject
 }
 
 type mihomoField struct {
@@ -146,6 +154,11 @@ func (p mihomoProxy) writeYAML(b *strings.Builder) {
 	b.WriteString("  - name: ")
 	b.WriteString(yamlString(p.Name))
 	b.WriteString("\n")
+	if p.DialerProxy != "" {
+		b.WriteString("    dialer-proxy: ")
+		b.WriteString(yamlString(p.DialerProxy))
+		b.WriteString("\n")
+	}
 	for _, field := range p.Fields {
 		writeMihomoField(b, "    ", field)
 	}

@@ -72,12 +72,46 @@ func TestBuildMihomoSubscriptionConvertsCustomerLinks(t *testing.T) {
 	}
 }
 
+func TestBuildMihomoSubscriptionChainsExitNodeThroughFrontNode(t *testing.T) {
+	user := model.CustomerUser{Username: "alice"}
+	links := []model.CustomerLinkView{
+		{
+			EntryClientName: "IEPL",
+			Remark:          "IEPL",
+			ImportURL:       "ss://YWVzLTI1Ni1nY206cGFzcw@example.com:8388#IEPL",
+			Resolved:        true,
+		},
+		{
+			EntryClientName: "999",
+			Remark:          "999",
+			ImportURL:       "vless://11111111-1111-1111-1111-111111111111@example.com:443?encryption=none#999",
+			Resolved:        true,
+		},
+	}
+
+	content := buildMihomoSubscription(user, links)
+	assertContains(t, content, `name: "IEPL"`)
+	assertContains(t, content, `name: "999"`)
+	assertContains(t, content, `dialer-proxy: "IEPL"`)
+}
+
 func TestBuildMihomoSubscriptionWithoutLinksRemainsUsable(t *testing.T) {
 	content := buildMihomoSubscription(model.CustomerUser{Username: "empty"}, nil)
 	assertContains(t, content, "proxies:\n  []")
 	assertContains(t, content, "name: ♻️ 自动选择\n    type: url-test")
 	if strings.Contains(content, mihomoProxyMarker) || strings.Contains(content, mihomoProxyNameMarker) {
 		t.Fatal("subscription template markers must be fully rendered")
+	}
+}
+
+func TestBuildMihomoSubscriptionIncludesOpenClashFriendlyDNS(t *testing.T) {
+	content := buildMihomoSubscription(model.CustomerUser{Username: "alice"}, nil)
+	assertContains(t, content, "dns:\n  enable: true")
+	assertContains(t, content, "proxy-server-nameserver:")
+	assertContains(t, content, "    - 223.5.5.5")
+	assertContains(t, content, "    - 119.29.29.29")
+	if strings.Contains(content, "dns.google") {
+		t.Fatalf("customer subscription must not depend on dns.google in mainland OpenClash environments:\n%s", content)
 	}
 }
 
