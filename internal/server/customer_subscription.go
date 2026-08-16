@@ -16,10 +16,9 @@ import (
 )
 
 const (
-	mihomoProxyMarker                  = "{{VPSMONITOR_PROXIES}}"
-	mihomoProxyNameMarker              = "{{VPSMONITOR_PROXY_NAMES}}"
-	customerSubscriptionChainFrontName = "IEPL"
-	customerSubscriptionChainExitName  = "999"
+	mihomoProxyMarker           = "{{VPSMONITOR_PROXIES}}"
+	mihomoProxyNameMarker       = "{{VPSMONITOR_PROXY_NAMES}}"
+	mihomoFrontProxyGroupMarker = "{{VPSMONITOR_FRONT_PROXY_GROUPS}}"
 )
 
 //go:embed customer_subscription_acl4ssr.yaml.tmpl
@@ -82,7 +81,10 @@ func isMihomoSubscriptionFile(value string) bool {
 
 func buildMihomoSubscription(user model.CustomerUser, links []model.CustomerLinkView) string {
 	names := make(map[string]int, len(links))
+	frontProxyNames := make(map[int64]string)
 	proxies := make([]mihomoProxy, 0, len(links))
+	exitProxies := make([]mihomoProxy, 0, len(links))
+	frontGroups := make([]mihomoProxyGroup, 0)
 	for _, link := range links {
 		if !link.Resolved || strings.TrimSpace(link.ImportURL) == "" {
 			continue
@@ -92,21 +94,44 @@ func buildMihomoSubscription(user model.CustomerUser, links []model.CustomerLink
 		if !ok {
 			continue
 		}
-		proxies = append(proxies, proxy)
-	}
-	for i := range proxies {
-		if proxies[i].Name == customerSubscriptionChainExitName {
-			proxies[i].DialerProxy = customerSubscriptionChainFrontName
+		frontNames := make([]string, 0, len(link.FrontProxies))
+		for _, frontProxy := range link.FrontProxies {
+			if strings.TrimSpace(frontProxy.ShareURL) == "" {
+				continue
+			}
+			frontName, found := frontProxyNames[frontProxy.ID]
+			if !found || frontProxy.ID <= 0 {
+				frontName = uniqueSubscriptionName(firstNonEmptyString(frontProxy.Name, "前置代理"), names)
+				parsed, ok := parseMihomoProxy(frontProxy.ShareURL, frontName)
+				if !ok {
+					continue
+				}
+				proxies = append(proxies, parsed)
+				if frontProxy.ID > 0 {
+					frontProxyNames[frontProxy.ID] = frontName
+				}
+			}
+			frontNames = append(frontNames, frontName)
 		}
+		if len(frontNames) > 0 {
+			groupName := uniqueSubscriptionName(name+" 前置代理", names)
+			proxy.DialerProxy = groupName
+			frontGroups = append(frontGroups, mihomoProxyGroup{Name: groupName, Proxies: frontNames})
+		}
+		proxies = append(proxies, proxy)
+		exitProxies = append(exitProxies, proxy)
 	}
 	sort.SliceStable(proxies, func(i, j int) bool {
 		return proxies[i].Name < proxies[j].Name
 	})
+	sort.SliceStable(exitProxies, func(i, j int) bool {
+		return exitProxies[i].Name < exitProxies[j].Name
+	})
 
-	return renderMihomoSubscription(proxies)
+	return renderMihomoSubscription(proxies, exitProxies, frontGroups)
 }
 
-func renderMihomoSubscription(proxies []mihomoProxy) string {
+func renderMihomoSubscription(proxies []mihomoProxy, selectableProxies []mihomoProxy, frontGroups []mihomoProxyGroup) string {
 	var proxyYAML strings.Builder
 	if len(proxies) == 0 {
 		proxyYAML.WriteString("  []")
@@ -117,10 +142,10 @@ func renderMihomoSubscription(proxies []mihomoProxy) string {
 	}
 
 	var proxyNames strings.Builder
-	if len(proxies) == 0 {
+	if len(selectableProxies) == 0 {
 		proxyNames.WriteString("      - DIRECT")
 	} else {
-		for index, proxy := range proxies {
+		for index, proxy := range selectableProxies {
 			if index > 0 {
 				proxyNames.WriteByte('\n')
 			}
@@ -129,7 +154,12 @@ func renderMihomoSubscription(proxies []mihomoProxy) string {
 		}
 	}
 
+	var frontGroupYAML strings.Builder
+	for _, group := range frontGroups {
+		group.writeYAML(&frontGroupYAML)
+	}
 	content := strings.Replace(mihomoSubscriptionTemplate, mihomoProxyMarker, strings.TrimSuffix(proxyYAML.String(), "\n"), 1)
+	content = strings.Replace(content, mihomoFrontProxyGroupMarker, frontGroupYAML.String(), 1)
 	return strings.ReplaceAll(content, mihomoProxyNameMarker, proxyNames.String())
 }
 
@@ -148,6 +178,30 @@ type mihomoField struct {
 type mihomoObject struct {
 	Key    string
 	Fields []mihomoField
+}
+
+type mihomoProxyGroup struct {
+	Name    string
+	Proxies []string
+}
+
+func (g mihomoProxyGroup) writeYAML(b *strings.Builder) {
+	if strings.TrimSpace(g.Name) == "" || len(g.Proxies) == 0 {
+		return
+	}
+	b.WriteString("  - name: ")
+	b.WriteString(yamlString(g.Name))
+	b.WriteString("\n")
+	b.WriteString("    type: select\n")
+	b.WriteString("    proxies:\n")
+	for _, proxy := range g.Proxies {
+		if strings.TrimSpace(proxy) == "" {
+			continue
+		}
+		b.WriteString("      - ")
+		b.WriteString(yamlString(proxy))
+		b.WriteString("\n")
+	}
 }
 
 func (p mihomoProxy) writeYAML(b *strings.Builder) {

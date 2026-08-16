@@ -239,8 +239,18 @@ func (a *App) customerOverview(user model.CustomerUser) (model.CustomerOverviewR
 	}
 
 	links := make([]model.CustomerLinkView, 0, len(assignments))
+	assignmentIDs := make([]int64, 0, len(assignments))
 	for _, assignment := range assignments {
-		links = append(links, buildCustomerLinkView(assignment, chainMap, clientMap, agentMap))
+		assignmentIDs = append(assignmentIDs, assignment.ID)
+	}
+	frontProxyByAssignment, err := a.store.ListFrontProxyNodesForAssignments(assignmentIDs)
+	if err != nil {
+		return model.CustomerOverviewResponse{}, err
+	}
+	for _, assignment := range assignments {
+		link := buildCustomerLinkView(assignment, chainMap, clientMap, agentMap)
+		link.FrontProxies = customerLinkFrontProxies(frontProxyByAssignment[assignment.ID])
+		links = append(links, link)
 	}
 	frontendSettings, _, err := a.store.GetFrontendSettings()
 	if err != nil {
@@ -252,6 +262,22 @@ func (a *App) customerOverview(user model.CustomerUser) (model.CustomerOverviewR
 		Announcements: activeCustomerAnnouncements(frontendSettings.Announcements, time.Now().UTC()),
 		Links:         links,
 	}, nil
+}
+
+func customerLinkFrontProxies(items []model.FrontProxyNode) []model.CustomerLinkFrontProxy {
+	if len(items) == 0 {
+		return nil
+	}
+	result := make([]model.CustomerLinkFrontProxy, 0, len(items))
+	for _, item := range items {
+		result = append(result, model.CustomerLinkFrontProxy{
+			ID:       item.ID,
+			Name:     item.Name,
+			Protocol: item.Protocol,
+			ShareURL: item.ShareURL,
+		})
+	}
+	return result
 }
 
 func activeCustomerAnnouncements(items []model.CustomerAnnouncement, now time.Time) []model.CustomerAnnouncement {

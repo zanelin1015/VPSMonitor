@@ -72,27 +72,50 @@ func TestBuildMihomoSubscriptionConvertsCustomerLinks(t *testing.T) {
 	}
 }
 
-func TestBuildMihomoSubscriptionChainsExitNodeThroughFrontNode(t *testing.T) {
+func TestBuildMihomoSubscriptionUsesAssignmentFrontProxyGroup(t *testing.T) {
 	user := model.CustomerUser{Username: "alice"}
 	links := []model.CustomerLinkView{
 		{
-			EntryClientName: "IEPL",
-			Remark:          "IEPL",
-			ImportURL:       "ss://YWVzLTI1Ni1nY206cGFzcw@example.com:8388#IEPL",
+			AssignmentID:    10,
+			EntryClientName: "CS1",
+			Remark:          "CS1",
+			ImportURL:       "vless://11111111-1111-1111-1111-111111111111@example.com:443?encryption=none#CS1",
 			Resolved:        true,
+			FrontProxies: []model.CustomerLinkFrontProxy{
+				{
+					ID:       1,
+					Name:     "HK IEPL",
+					ShareURL: "ss://YWVzLTI1Ni1nY206cGFzcw@hk-iepl.example.com:8388#HK",
+				},
+				{
+					ID:       2,
+					Name:     "JP IEPL",
+					ShareURL: "ss://YWVzLTI1Ni1nY206cGFzczI@jp-iepl.example.com:12014#JP",
+				},
+			},
 		},
 		{
-			EntryClientName: "999",
-			Remark:          "999",
-			ImportURL:       "vless://11111111-1111-1111-1111-111111111111@example.com:443?encryption=none#999",
+			AssignmentID:    11,
+			EntryClientName: "CS2",
+			Remark:          "CS2",
+			ImportURL:       "vless://22222222-2222-2222-2222-222222222222@example.net:443?encryption=none#CS2",
 			Resolved:        true,
 		},
 	}
 
 	content := buildMihomoSubscription(user, links)
-	assertContains(t, content, `name: "IEPL"`)
-	assertContains(t, content, `name: "999"`)
-	assertContains(t, content, `dialer-proxy: "IEPL"`)
+	assertContains(t, content, `name: "CS1"`)
+	assertContains(t, content, `dialer-proxy: "CS1 前置代理"`)
+	assertContains(t, content, `name: "HK IEPL"`)
+	assertContains(t, content, `server: "hk-iepl.example.com"`)
+	assertContains(t, content, `name: "JP IEPL"`)
+	assertContains(t, content, `name: "CS1 前置代理"`)
+	assertContains(t, content, `type: select`)
+	assertContains(t, content, `      - "HK IEPL"`)
+	assertContains(t, content, `      - "JP IEPL"`)
+	if strings.Contains(content, `name: "CS2 前置代理"`) {
+		t.Fatalf("link without front proxies should not get a front proxy group:\n%s", content)
+	}
 }
 
 func TestBuildMihomoSubscriptionWithoutLinksRemainsUsable(t *testing.T) {
@@ -108,10 +131,15 @@ func TestBuildMihomoSubscriptionIncludesOpenClashFriendlyDNS(t *testing.T) {
 	content := buildMihomoSubscription(model.CustomerUser{Username: "alice"}, nil)
 	assertContains(t, content, "dns:\n  enable: true")
 	assertContains(t, content, "proxy-server-nameserver:")
+	assertContains(t, content, "nameserver-policy:")
+	assertContains(t, content, `    "+.zanelin.top":`)
 	assertContains(t, content, "    - 223.5.5.5")
 	assertContains(t, content, "    - 119.29.29.29")
 	if strings.Contains(content, "dns.google") {
 		t.Fatalf("customer subscription must not depend on dns.google in mainland OpenClash environments:\n%s", content)
+	}
+	if strings.Contains(content, "8.8.8.8") || strings.Contains(content, "1.1.1.1") {
+		t.Fatalf("customer subscription must not depend on public Google/Cloudflare DNS in mainland OpenClash environments:\n%s", content)
 	}
 }
 

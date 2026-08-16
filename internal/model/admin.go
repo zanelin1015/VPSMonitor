@@ -6,6 +6,9 @@ const (
 	AdminRoleRoot          = "admin"
 	AdminRoleAreaManager   = "area_manager"
 	DefaultAccountPassword = "12345678"
+
+	FrontProxyGranteeAreaManager = "area_manager"
+	FrontProxyGranteeCustomer    = "customer"
 )
 
 type AdminUser struct {
@@ -63,6 +66,45 @@ type AreaManagerAccountRequest struct {
 	RevenueCycle          string                            `json:"revenue_cycle,omitempty"`
 	OutboundCreateEnabled *bool                             `json:"outbound_create_enabled,omitempty"`
 	OutboundGrants        []AreaManagerOutboundGrantRequest `json:"outbound_grants,omitempty"`
+	FrontProxyNodeIDs     []int64                           `json:"front_proxy_node_ids,omitempty"`
+}
+
+type FrontProxyNodeRequest struct {
+	Name     string `json:"name"`
+	ShareURL string `json:"share_url"`
+	Enabled  *bool  `json:"enabled,omitempty"`
+	Remark   string `json:"remark,omitempty"`
+}
+
+type FrontProxyNode struct {
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	Protocol  string    `json:"protocol"`
+	ShareURL  string    `json:"share_url,omitempty"`
+	Enabled   bool      `json:"enabled"`
+	Remark    string    `json:"remark,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type FrontProxyNodeView struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	Protocol string `json:"protocol"`
+	Enabled  bool   `json:"enabled"`
+}
+
+type FrontProxyGrant struct {
+	NodeID      int64     `json:"node_id"`
+	GranteeType string    `json:"grantee_type"`
+	GranteeID   int64     `json:"grantee_id"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type FrontProxyGrantRequest struct {
+	GranteeType string  `json:"grantee_type"`
+	GranteeID   int64   `json:"grantee_id"`
+	NodeIDs     []int64 `json:"node_ids"`
 }
 
 type AreaManagerOutboundGrantRequest struct {
@@ -115,6 +157,7 @@ type AreaManagerAdminView struct {
 	RevenueCycle          string                     `json:"revenue_cycle,omitempty"`
 	OutboundCreateEnabled bool                       `json:"outbound_create_enabled"`
 	OutboundGrants        []AreaManagerOutboundGrant `json:"outbound_grants,omitempty"`
+	FrontProxies          []FrontProxyNodeView       `json:"front_proxies,omitempty"`
 	Assignments           []AreaManagerAssignment    `json:"assignments,omitempty"`
 	Customers             []CustomerAdminView        `json:"customers,omitempty"`
 	CreatedAt             time.Time                  `json:"created_at"`

@@ -43,6 +43,10 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 			if isAreaManager(user) {
 				ownerType = model.AdminRoleAreaManager
 				ownerID = user.ID
+				if !a.adminCanUseFrontProxyNodes(user, req.FrontProxyNodeIDs) {
+					writeError(w, http.StatusForbidden, "front proxy is outside the area manager authorization scope")
+					return
+				}
 			}
 			customer, err := a.store.CreateCustomerForOwner(req, ownerType, ownerID)
 			if err != nil {
@@ -89,6 +93,10 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 			var req model.CustomerAccountRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				writeError(w, http.StatusBadRequest, fmt.Sprintf("decode customer request: %v", err))
+				return
+			}
+			if isAreaManager(user) && !a.adminCanUseFrontProxyNodes(user, req.FrontProxyNodeIDs) {
+				writeError(w, http.StatusForbidden, "front proxy is outside the area manager authorization scope")
 				return
 			}
 			customer, err := a.store.UpdateCustomer(customerID, req)
@@ -164,6 +172,10 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 				writeError(w, http.StatusForbidden, "node or client is outside the area manager authorization scope")
 				return
 			}
+			if !a.adminCanUseFrontProxyNodes(user, req.FrontProxyNodeIDs) {
+				writeError(w, http.StatusForbidden, "front proxy is outside this account authorization scope")
+				return
+			}
 			if isAreaManager(user) {
 				req.RevenueAmount = nil
 				req.RevenueCurrency = ""
@@ -205,6 +217,10 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 		}
 		if isAreaManager(user) && !a.areaManagerCustomerAssignmentAllowed(user, req) {
 			writeError(w, http.StatusForbidden, "node or client is outside the area manager authorization scope")
+			return
+		}
+		if !a.adminCanUseFrontProxyNodes(user, req.FrontProxyNodeIDs) {
+			writeError(w, http.StatusForbidden, "front proxy is outside this account authorization scope")
 			return
 		}
 		if isAreaManager(user) {
@@ -309,6 +325,29 @@ func (a *App) areaManagerCustomerAssignmentAgentTargetsForwarding(user model.Adm
 	}
 	view, err := a.dashboardTopologyViewForAdmin(user)
 	return err == nil && customerAssignmentAgentTargetsForwarding(agentID, customerAssignmentForwardingTargetAgents(view.Links))
+}
+
+func (a *App) adminCanUseFrontProxyNodes(user model.AdminUser, nodeIDs []int64) bool {
+	if len(nodeIDs) == 0 || isRootAdmin(user) {
+		return true
+	}
+	if !isAreaManager(user) {
+		return false
+	}
+	allowed, err := a.store.ListFrontProxyNodesForGrantee(model.FrontProxyGranteeAreaManager, user.ID)
+	if err != nil {
+		return false
+	}
+	allowedIDs := make(map[int64]struct{}, len(allowed))
+	for _, item := range allowed {
+		allowedIDs[item.ID] = struct{}{}
+	}
+	for _, nodeID := range nodeIDs {
+		if _, ok := allowedIDs[nodeID]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func customerAssignmentForwardingTargetAgents(links []model.TopologyLinkView) map[string]struct{} {

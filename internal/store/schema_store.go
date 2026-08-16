@@ -104,6 +104,28 @@ func (s *SQLiteStore) init() error {
 		);
 		`,
 		`
+		CREATE TABLE IF NOT EXISTS front_proxy_nodes (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			protocol TEXT NOT NULL DEFAULT '',
+			share_url TEXT NOT NULL,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			remark TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+		`,
+		`
+		CREATE TABLE IF NOT EXISTS front_proxy_grants (
+			node_id INTEGER NOT NULL,
+			grantee_type TEXT NOT NULL,
+			grantee_id INTEGER NOT NULL,
+			created_at TEXT NOT NULL,
+			PRIMARY KEY(node_id, grantee_type, grantee_id),
+			FOREIGN KEY(node_id) REFERENCES front_proxy_nodes(id) ON DELETE CASCADE
+		);
+		`,
+		`
 		CREATE TABLE IF NOT EXISTS customer_accounts (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			username TEXT NOT NULL COLLATE NOCASE UNIQUE,
@@ -164,6 +186,17 @@ func (s *SQLiteStore) init() error {
 			FOREIGN KEY(customer_id) REFERENCES customer_accounts(id) ON DELETE CASCADE,
 			FOREIGN KEY(agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE,
 			UNIQUE(customer_id, agent_id, inbound_id, inbound_tag, client_email)
+		);
+		`,
+		`
+		CREATE TABLE IF NOT EXISTS customer_assignment_front_proxies (
+			assignment_id INTEGER NOT NULL,
+			node_id INTEGER NOT NULL,
+			sort_order INTEGER NOT NULL DEFAULT 0,
+			created_at TEXT NOT NULL,
+			PRIMARY KEY(assignment_id, node_id),
+			FOREIGN KEY(assignment_id) REFERENCES customer_assignments(id) ON DELETE CASCADE,
+			FOREIGN KEY(node_id) REFERENCES front_proxy_nodes(id) ON DELETE CASCADE
 		);
 		`,
 		`
@@ -436,6 +469,9 @@ func (s *SQLiteStore) init() error {
 		`CREATE INDEX IF NOT EXISTS idx_area_manager_assignments_manager ON area_manager_assignments(manager_id, enabled, id);`,
 		`CREATE INDEX IF NOT EXISTS idx_area_manager_assignments_agent ON area_manager_assignments(agent_id, inbound_id, client_email);`,
 		`CREATE INDEX IF NOT EXISTS idx_area_manager_outbound_grants_agent ON area_manager_outbound_grants(agent_id, outbound_tag, manager_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_front_proxy_nodes_enabled ON front_proxy_nodes(enabled, id);`,
+		`CREATE INDEX IF NOT EXISTS idx_front_proxy_grants_grantee ON front_proxy_grants(grantee_type, grantee_id, node_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_customer_assignment_front_proxies_node ON customer_assignment_front_proxies(node_id, assignment_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_accounts_owner ON customer_accounts(owner_type, owner_id, id);`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_accounts_subscription_token ON customer_accounts(subscription_token) WHERE subscription_token <> '';`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_sessions_expires_at ON customer_sessions(expires_at);`,

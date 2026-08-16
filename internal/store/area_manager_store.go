@@ -49,6 +49,10 @@ func (s *SQLiteStore) ListAreaManagers() ([]model.AreaManagerAdminView, error) {
 		if err != nil {
 			return nil, err
 		}
+		items[i].FrontProxies, err = s.ListFrontProxyNodeViewsForGrantee(model.FrontProxyGranteeAreaManager, items[i].ID)
+		if err != nil {
+			return nil, err
+		}
 		items[i].Customers, err = s.ListCustomersForOwner(model.AdminRoleAreaManager, items[i].ID)
 		if err != nil {
 			return nil, err
@@ -74,6 +78,10 @@ func (s *SQLiteStore) GetAreaManager(id int64) (model.AreaManagerAdminView, bool
 		return model.AreaManagerAdminView{}, false, err
 	}
 	item.OutboundGrants, err = s.ListAreaManagerOutboundGrants(id)
+	if err != nil {
+		return model.AreaManagerAdminView{}, false, err
+	}
+	item.FrontProxies, err = s.ListFrontProxyNodeViewsForGrantee(model.FrontProxyGranteeAreaManager, id)
 	if err != nil {
 		return model.AreaManagerAdminView{}, false, err
 	}
@@ -138,6 +146,11 @@ func (s *SQLiteStore) CreateAreaManager(req model.AreaManagerAccountRequest) (mo
 	}
 	if err = tx.Commit(); err != nil {
 		return model.AreaManagerAdminView{}, fmt.Errorf("commit area manager create: %w", err)
+	}
+	if len(req.FrontProxyNodeIDs) > 0 {
+		if err := s.ReplaceFrontProxyGrants(model.FrontProxyGranteeAreaManager, id, req.FrontProxyNodeIDs); err != nil {
+			return model.AreaManagerAdminView{}, err
+		}
 	}
 	item, found, err := s.GetAreaManager(id)
 	if err != nil {
@@ -249,6 +262,11 @@ func (s *SQLiteStore) UpdateAreaManager(id int64, req model.AreaManagerAccountRe
 	}
 	if err = tx.Commit(); err != nil {
 		return model.AreaManagerAdminView{}, fmt.Errorf("commit area manager update: %w", err)
+	}
+	if req.FrontProxyNodeIDs != nil {
+		if err := s.ReplaceFrontProxyGrants(model.FrontProxyGranteeAreaManager, id, req.FrontProxyNodeIDs); err != nil {
+			return model.AreaManagerAdminView{}, err
+		}
 	}
 	item, found, err := s.GetAreaManager(id)
 	if err != nil {

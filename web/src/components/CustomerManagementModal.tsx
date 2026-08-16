@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, App as AntdApp, Button, Card, Col, Empty, Modal, Popconfirm, Row, Select, Space, Spin, Table, Tabs, Tag, TreeSelect, Typography } from 'antd'
+import { Alert, App as AntdApp, Button, Card, Col, Empty, Input, Modal, Popconfirm, Row, Select, Space, Spin, Switch, Table, Tabs, Tag, TreeSelect, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { DeleteOutlined, EditOutlined, ExportOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SyncOutlined } from '@ant-design/icons'
 
-import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, CustomerAssignmentSourceView, DashboardAgentView, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
+import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, CustomerAssignmentSourceView, DashboardAgentView, FrontProxyNode, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
 import { fetchJSON } from '../lib/appHelpers'
 import { CustomerAssignmentManagerCard } from './CustomerAssignmentManagerCard'
 import {
@@ -88,8 +88,13 @@ export function CustomerManagementModal(props: {
   const [customers, setCustomers] = useState<CustomerAdminView[]>([])
   const [customerAssignmentSources, setCustomerAssignmentSources] = useState<CustomerAssignmentSourceView[]>([])
   const [areaManagers, setAreaManagers] = useState<AreaManagerAdminView[]>([])
+  const [frontProxies, setFrontProxies] = useState<FrontProxyNode[]>([])
+  const [frontProxyForm, setFrontProxyForm] = useState({ name: '', share_url: '', enabled: true, remark: '' })
+  const [editingFrontProxyID, setEditingFrontProxyID] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [areaManagersLoading, setAreaManagersLoading] = useState(false)
+  const [frontProxiesLoading, setFrontProxiesLoading] = useState(false)
+  const [savingFrontProxy, setSavingFrontProxy] = useState(false)
   const [savingCustomer, setSavingCustomer] = useState(false)
   const [resettingCustomerID, setResettingCustomerID] = useState<number | null>(null)
   const [savingAssignment, setSavingAssignment] = useState(false)
@@ -163,10 +168,23 @@ export function CustomerManagementModal(props: {
     const authorizedAgentIDs = new Set(areaManagerForm.assignments.map((assignment) => assignment.agent_id))
     return agentOptions.filter((option) => authorizedAgentIDs.has(option.value))
   }, [agentOptions, areaManagerForm.assignments])
+  const frontProxyOptions = useMemo(() => frontProxies
+    .filter((item) => item.enabled)
+    .map((item) => ({
+      value: item.id,
+      label: [item.name, item.protocol].filter(Boolean).join(' / '),
+    })), [frontProxies])
+  const selectedCustomerFrontProxyOptions = useMemo(() => (selectedCustomer?.front_proxies || [])
+    .filter((item) => item.enabled)
+    .map((item) => ({
+      value: item.id,
+      label: [item.name, item.protocol].filter(Boolean).join(' / '),
+    })), [selectedCustomer])
 
   useEffect(() => {
     if (active) {
       void loadCustomers()
+      void loadFrontProxies()
       if (canManageAreaManagers) {
         void loadAreaManagers()
       } else {
@@ -203,6 +221,7 @@ export function CustomerManagementModal(props: {
       password: '',
       display_name: selectedCustomer.display_name || selectedCustomer.username,
       enabled: selectedCustomer.enabled,
+      front_proxy_node_ids: (selectedCustomer.front_proxies || []).map((item) => item.id),
     })
     if (skipAssignmentResetRef.current) {
       skipAssignmentResetRef.current = false
@@ -591,6 +610,53 @@ export function CustomerManagementModal(props: {
     },
   ]
 
+  const frontProxyColumns: ColumnsType<FrontProxyNode> = [
+    {
+      title: '名称',
+      width: 180,
+      render: (_, record) => (
+        <div>
+          <Text strong>{record.name}</Text>
+          <div className="muted-line">{record.protocol || '-'}</div>
+        </div>
+      ),
+    },
+    {
+      title: '分享链接',
+      ellipsis: true,
+      render: (_, record) => <Text code>{record.share_url || '-'}</Text>,
+    },
+    {
+      title: '状态',
+      width: 90,
+      render: (_, record) => <Tag color={record.enabled ? 'blue' : 'default'}>{record.enabled ? '启用' : '停用'}</Tag>,
+    },
+    {
+      title: '操作',
+      width: 150,
+      render: (_, record) => (
+        <Space size={6}>
+          <Button
+            size="small"
+            icon={<EditOutlined />}
+            onClick={() => {
+              setEditingFrontProxyID(record.id)
+              setFrontProxyForm({
+                name: record.name,
+                share_url: record.share_url || '',
+                enabled: record.enabled,
+                remark: record.remark || '',
+              })
+            }}
+          />
+          <Popconfirm title="删除该前置代理？" okText="删除" cancelText="取消" onConfirm={() => void deleteFrontProxy(record.id)}>
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ]
+
   function renderAreaManagerCustomers(record: AreaManagerAdminView) {
     const ownedCustomers = record.customers || []
     const directAssignments = record.assignments || []
@@ -652,6 +718,78 @@ export function CustomerManagementModal(props: {
     }
   }
 
+  async function loadFrontProxies() {
+    setFrontProxiesLoading(true)
+    try {
+      const data = await fetchJSON<FrontProxyNode[]>('/api/v1/admin/front-proxies')
+      setFrontProxies(Array.isArray(data) ? data : [])
+    } catch (error) {
+      setFrontProxies([])
+      message.error(error instanceof Error ? error.message : '加载前置代理失败')
+    } finally {
+      setFrontProxiesLoading(false)
+    }
+  }
+
+  async function saveFrontProxy() {
+    if (!frontProxyForm.name.trim() || !frontProxyForm.share_url.trim()) {
+      message.warning('请填写前置代理名称和分享链接')
+      return
+    }
+    setSavingFrontProxy(true)
+    try {
+      const payload = {
+        name: frontProxyForm.name.trim(),
+        share_url: frontProxyForm.share_url.trim(),
+        enabled: frontProxyForm.enabled,
+        remark: frontProxyForm.remark.trim(),
+      }
+      if (editingFrontProxyID) {
+        await fetchJSON<FrontProxyNode>(`/api/v1/admin/front-proxies/${editingFrontProxyID}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        message.success('前置代理已更新')
+      } else {
+        await fetchJSON<FrontProxyNode>('/api/v1/admin/front-proxies', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        message.success('前置代理已新增')
+      }
+      setEditingFrontProxyID(null)
+      setFrontProxyForm({ name: '', share_url: '', enabled: true, remark: '' })
+      await loadFrontProxies()
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '保存前置代理失败')
+    } finally {
+      setSavingFrontProxy(false)
+    }
+  }
+
+  async function deleteFrontProxy(id: number) {
+    setSavingFrontProxy(true)
+    try {
+      await fetchJSON(`/api/v1/admin/front-proxies/${id}`, { method: 'DELETE' })
+      if (editingFrontProxyID === id) {
+        setEditingFrontProxyID(null)
+        setFrontProxyForm({ name: '', share_url: '', enabled: true, remark: '' })
+      }
+      message.success('前置代理已删除')
+      await loadFrontProxies()
+      await loadCustomers()
+      if (canManageAreaManagers) {
+        await loadAreaManagers()
+      }
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '删除前置代理失败')
+    } finally {
+      setSavingFrontProxy(false)
+    }
+  }
+
   async function saveAreaManager() {
     if (!areaManagerForm.username.trim()) {
       message.warning('请填写区域账号登录名')
@@ -685,6 +823,7 @@ export function CustomerManagementModal(props: {
         revenue_cycle: areaManagerForm.revenue_cycle,
         outbound_create_enabled: areaManagerForm.outbound_create_enabled,
         outbound_grants: outboundGrants,
+        front_proxy_node_ids: areaManagerForm.front_proxy_node_ids,
       }
       if (editingAreaManagerID) {
         const currentManager = areaManagers.find((item) => item.id === editingAreaManagerID)
@@ -847,6 +986,7 @@ export function CustomerManagementModal(props: {
       outbound_create_enabled: Boolean(record.outbound_create_enabled),
       outbound_grant_agent_id: record.outbound_grants?.[0]?.agent_id || '',
       outbound_grants: normalizeAreaManagerOutboundGrants(record.outbound_grants || []),
+      front_proxy_node_ids: (record.front_proxies || []).map((item) => item.id),
       assignments: normalizeAreaManagerAssignmentDrafts(record.assignments || [], agents),
     })
     setAreaManagerModalOpen(true)
@@ -882,6 +1022,7 @@ export function CustomerManagementModal(props: {
       password: '',
       display_name: record.display_name || record.username,
       enabled: record.enabled,
+      front_proxy_node_ids: (record.front_proxies || []).map((item) => item.id),
     })
     setCustomerEditModalOpen(true)
   }
@@ -917,6 +1058,7 @@ export function CustomerManagementModal(props: {
           password: customerCreateForm.password,
           display_name: customerCreateForm.display_name.trim(),
           enabled: customerCreateForm.enabled,
+          front_proxy_node_ids: customerCreateForm.front_proxy_node_ids,
         }),
       })
       message.success('用户已创建')
@@ -950,6 +1092,7 @@ export function CustomerManagementModal(props: {
         password: customerForm.password,
         display_name: customerForm.display_name.trim(),
         enabled: customerForm.enabled,
+        front_proxy_node_ids: customerForm.front_proxy_node_ids,
       }
       if (selectedCustomerID) {
         await fetchJSON<CustomerAdminView>(`/api/v1/admin/customers/${selectedCustomerID}`, {
@@ -1060,6 +1203,7 @@ export function CustomerManagementModal(props: {
           revenue_cycle: assignmentForm.revenue_cycle,
         } : {}),
         enabled: assignmentForm.enabled,
+        front_proxy_node_ids: assignmentForm.front_proxy_node_ids,
       }
       let savedAssignment: CustomerAssignment
       if (assignmentID) {
@@ -1320,6 +1464,58 @@ export function CustomerManagementModal(props: {
         message="区域账号权限"
         description="区域账号只能查看被分配的 Client，能下发 x-ui 转发规则，并且只能管理自己创建的普通用户；Admin 可见全部用户与区域账号。展开区域账号可直接查看其下属用户与链路。"
       />
+      <Card size="small" style={{ marginBottom: 14 }} bordered={false}>
+        <div className="customer-admin-card-head">
+          <div>
+            <Title level={5}>第三方前置代理</Title>
+            <Text type="secondary">导入 SS / VLESS / VMess / Trojan / HTTP 等分享链接，授权后可作为客户订阅的前置代理组。</Text>
+          </div>
+          <Space>
+            <Button size="small" icon={<ReloadOutlined />} onClick={() => void loadFrontProxies()}>刷新</Button>
+            <Button
+              size="small"
+              onClick={() => {
+                setEditingFrontProxyID(null)
+                setFrontProxyForm({ name: '', share_url: '', enabled: true, remark: '' })
+              }}
+            >
+              清空
+            </Button>
+          </Space>
+        </div>
+        <Row gutter={[12, 12]} align="middle">
+          <Col xs={24} md={5}>
+            <Text type="secondary">名称</Text>
+            <Input value={frontProxyForm.name} onChange={(event) => setFrontProxyForm((current) => ({ ...current, name: event.target.value }))} />
+          </Col>
+          <Col xs={24} md={11}>
+            <Text type="secondary">分享链接</Text>
+            <Input value={frontProxyForm.share_url} onChange={(event) => setFrontProxyForm((current) => ({ ...current, share_url: event.target.value }))} />
+          </Col>
+          <Col xs={24} md={4}>
+            <Text type="secondary">状态</Text>
+            <div className="customer-admin-switch-row">
+              <Switch checked={frontProxyForm.enabled} onChange={(checked) => setFrontProxyForm((current) => ({ ...current, enabled: checked }))} />
+              <Text>{frontProxyForm.enabled ? '启用' : '停用'}</Text>
+            </div>
+          </Col>
+          <Col xs={24} md={4}>
+            <Button block type="primary" icon={<SaveOutlined />} loading={savingFrontProxy} onClick={() => void saveFrontProxy()}>
+              {editingFrontProxyID ? '保存前置' : '新增前置'}
+            </Button>
+          </Col>
+        </Row>
+        <Table
+          style={{ marginTop: 12 }}
+          size="small"
+          rowKey={(record) => record.id}
+          loading={frontProxiesLoading}
+          columns={frontProxyColumns}
+          dataSource={frontProxies}
+          pagination={{ pageSize: 4, hideOnSinglePage: true }}
+          locale={{ emptyText: <Empty description="暂无第三方前置代理" /> }}
+        />
+      </Card>
       <Card size="small" style={{ marginTop: 14 }} bordered={false}>
         <div className="customer-admin-card-head">
           <div>
@@ -1462,6 +1658,7 @@ export function CustomerManagementModal(props: {
       savingAssignment={savingAssignment}
       overviewLoading={overviewLoading}
       agentOptions={customerAssignmentAgentOptions}
+      frontProxyOptions={selectedCustomerFrontProxyOptions}
       clientTreeData={clientTreeData}
       visibleAssignmentColumns={visibleAssignmentColumns}
       onReset={() => {
@@ -1489,6 +1686,7 @@ export function CustomerManagementModal(props: {
       canManageAreaManagers={canManageAreaManagers}
       agents={agents}
       agentOptions={agentOptions}
+      frontProxyOptions={frontProxyOptions}
       areaManagerOutboundAgentOptions={areaManagerOutboundAgentOptions}
       editingAreaManagerID={editingAreaManagerID}
       areaManagerModalOpen={areaManagerModalOpen}

@@ -375,6 +375,7 @@ export interface CustomerAssignment {
   public_client_name?: string
   remark?: string
   enabled: boolean
+  front_proxies?: FrontProxyNodeView[]
   created_at: string
   updated_at: string
 }
@@ -404,6 +405,24 @@ export interface AreaManagerOutboundGrant {
   created_at: string
 }
 
+export interface FrontProxyNode {
+  id: number
+  name: string
+  protocol: string
+  share_url?: string
+  enabled: boolean
+  remark?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface FrontProxyNodeView {
+  id: number
+  name: string
+  protocol: string
+  enabled: boolean
+}
+
 export interface CustomerAssignmentDraft {
   agent_id: string
   inbound_id: number
@@ -414,10 +433,12 @@ export interface CustomerAssignmentDraft {
   revenue_amount?: number
   revenue_currency?: 'CNY' | 'USDT'
   revenue_cycle?: 'month' | 'quarter' | 'semiannual' | 'year'
+  front_proxy_node_ids?: number[]
 }
 
 export interface CustomerAdminView extends CustomerUser {
   assignments: CustomerAssignment[]
+  front_proxies?: FrontProxyNodeView[]
 }
 
 export interface AreaManagerAdminView {
@@ -432,6 +453,7 @@ export interface AreaManagerAdminView {
   revenue_cycle?: 'month' | 'quarter' | 'semiannual' | 'year'
   outbound_create_enabled?: boolean
   outbound_grants?: AreaManagerOutboundGrant[]
+  front_proxies?: FrontProxyNodeView[]
   assignments?: AreaManagerAssignment[]
   customers?: CustomerAdminView[]
   created_at: string

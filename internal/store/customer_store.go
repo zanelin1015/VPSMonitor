@@ -56,6 +56,10 @@ func (s *SQLiteStore) listCustomers(ownerType string, ownerID int64) ([]model.Cu
 			return nil, err
 		}
 		customers[i].Assignments = assignments
+		customers[i].FrontProxies, err = s.ListFrontProxyNodeViewsForGrantee(model.FrontProxyGranteeCustomer, customers[i].ID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return customers, nil
 }
@@ -80,7 +84,11 @@ func (s *SQLiteStore) GetCustomer(id int64) (model.CustomerAdminView, bool, erro
 	if err != nil {
 		return model.CustomerAdminView{}, false, err
 	}
-	return model.CustomerAdminView{CustomerUser: user, Assignments: assignments}, true, nil
+	frontProxies, err := s.ListFrontProxyNodeViewsForGrantee(model.FrontProxyGranteeCustomer, id)
+	if err != nil {
+		return model.CustomerAdminView{}, false, err
+	}
+	return model.CustomerAdminView{CustomerUser: user, Assignments: assignments, FrontProxies: frontProxies}, true, nil
 }
 
 func (s *SQLiteStore) CreateCustomer(req model.CustomerAccountRequest) (model.CustomerAdminView, error) {
@@ -128,6 +136,18 @@ func (s *SQLiteStore) CreateCustomerForOwner(req model.CustomerAccountRequest, o
 	}
 	if !found {
 		return model.CustomerAdminView{}, fmt.Errorf("created customer not found")
+	}
+	if len(req.FrontProxyNodeIDs) > 0 {
+		if err := s.ReplaceFrontProxyGrants(model.FrontProxyGranteeCustomer, id, req.FrontProxyNodeIDs); err != nil {
+			return model.CustomerAdminView{}, err
+		}
+		customer, found, err = s.GetCustomer(id)
+		if err != nil {
+			return model.CustomerAdminView{}, err
+		}
+		if !found {
+			return model.CustomerAdminView{}, fmt.Errorf("created customer not found")
+		}
 	}
 	return customer, nil
 }
@@ -286,6 +306,11 @@ func (s *SQLiteStore) UpdateCustomer(id int64, req model.CustomerAccountRequest)
 	}
 	if !enabled || passwordChanged {
 		_, _ = s.db.Exec(`DELETE FROM customer_sessions WHERE customer_id = ?`, id)
+	}
+	if req.FrontProxyNodeIDs != nil {
+		if err := s.ReplaceFrontProxyGrants(model.FrontProxyGranteeCustomer, id, req.FrontProxyNodeIDs); err != nil {
+			return model.CustomerAdminView{}, err
+		}
 	}
 	customer, found, err := s.GetCustomer(id)
 	if err != nil {
@@ -534,6 +559,9 @@ func (s *SQLiteStore) listCustomerAssignments(customerID int64, enabledOnly bool
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate customer assignments: %w", err)
 	}
+	if err := s.attachFrontProxyViewsToCustomerAssignments(items); err != nil {
+		return nil, err
+	}
 	return items, nil
 }
 
@@ -566,6 +594,18 @@ func (s *SQLiteStore) CreateCustomerAssignment(customerID int64, req model.Custo
 	if !found {
 		return model.CustomerAssignment{}, fmt.Errorf("created customer assignment not found")
 	}
+	if len(normalized.FrontProxyNodeIDs) > 0 {
+		if err := s.ReplaceCustomerAssignmentFrontProxyNodes(assignment.ID, normalized.FrontProxyNodeIDs, model.AdminRoleRoot, adminAccountID); err != nil {
+			return model.CustomerAssignment{}, err
+		}
+		assignment, found, err = s.GetCustomerAssignment(customerID, id)
+		if err != nil {
+			return model.CustomerAssignment{}, err
+		}
+		if !found {
+			return model.CustomerAssignment{}, fmt.Errorf("created customer assignment not found")
+		}
+	}
 	return assignment, nil
 }
 
@@ -595,6 +635,11 @@ func (s *SQLiteStore) UpdateCustomerAssignment(customerID, assignmentID int64, r
 	`, normalized.AgentID, normalized.InboundID, normalized.InboundTag, normalized.ClientEmail, normalized.PublicClientName, boolInt(*normalized.Enabled), now.Format(time.RFC3339Nano), assignmentID, customerID)
 	if err != nil {
 		return model.CustomerAssignment{}, fmt.Errorf("update customer assignment: %w", err)
+	}
+	if req.FrontProxyNodeIDs != nil {
+		if err := s.ReplaceCustomerAssignmentFrontProxyNodes(assignmentID, normalized.FrontProxyNodeIDs, model.AdminRoleRoot, adminAccountID); err != nil {
+			return model.CustomerAssignment{}, err
+		}
 	}
 	assignment, found, err := s.GetCustomerAssignment(customerID, assignmentID)
 	if err != nil {
@@ -631,6 +676,11 @@ func (s *SQLiteStore) GetCustomerAssignment(customerID, assignmentID int64) (mod
 	if err != nil {
 		return model.CustomerAssignment{}, false, fmt.Errorf("load customer assignment: %w", err)
 	}
+	byAssignment, err := s.ListFrontProxyNodesForAssignments([]int64{item.ID})
+	if err != nil {
+		return model.CustomerAssignment{}, false, err
+	}
+	item.FrontProxies = frontProxyNodeViews(byAssignment[item.ID])
 	return item, true, nil
 }
 

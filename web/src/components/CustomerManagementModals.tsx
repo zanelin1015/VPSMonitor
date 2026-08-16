@@ -23,6 +23,7 @@ export interface CustomerManagementModalsProps {
   canManageAreaManagers: boolean
   agents: Parameters<typeof renderAssignmentHierarchy>[1]
   agentOptions: Array<{ value: string; label: string }>
+  frontProxyOptions: Array<{ value: number; label: string }>
   areaManagerOutboundAgentOptions: Array<{ value: string; label: string }>
   editingAreaManagerID: number | null
   areaManagerModalOpen: boolean
@@ -77,6 +78,7 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
     canManageAreaManagers,
     agents,
     agentOptions,
+    frontProxyOptions,
     areaManagerOutboundAgentOptions,
     editingAreaManagerID,
     areaManagerModalOpen,
@@ -334,6 +336,19 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
               />
             </Col>
             <Col xs={24}>
+              <Text type="secondary">第三方前置代理授权</Text>
+              <Select
+                mode="multiple"
+                style={{ width: '100%' }}
+                placeholder="选择允许该区域账号继续下发的前置代理"
+                value={areaManagerForm.front_proxy_node_ids}
+                options={frontProxyOptions}
+                optionFilterProp="label"
+                maxTagCount="responsive"
+                onChange={(values) => setAreaManagerForm((current) => ({ ...current, front_proxy_node_ids: values }))}
+              />
+            </Col>
+            <Col xs={24}>
               <Text type="secondary">已授权范围</Text>
               <div style={{ marginTop: 6 }}>
                 {areaManagerForm.assignments.length ? renderAssignmentHierarchy(areaManagerForm.assignments, agents, onRemoveAreaManagerGrant) : <Tag>未选择节点</Tag>}
@@ -403,6 +418,19 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
             </div>
           </Col>
           <Col xs={24}>
+            <Text type="secondary">第三方前置代理授权</Text>
+            <Select
+              mode="multiple"
+              style={{ width: '100%' }}
+              placeholder="选择允许该用户链路使用的前置代理"
+              value={customerCreateForm.front_proxy_node_ids}
+              options={frontProxyOptions}
+              optionFilterProp="label"
+              maxTagCount="responsive"
+              onChange={(values) => setCustomerCreateForm((current) => ({ ...current, front_proxy_node_ids: values }))}
+            />
+          </Col>
+          <Col xs={24}>
             <Text type="secondary">用户入口地址</Text>
             <Input value={`${window.location.origin}/customer`} readOnly />
           </Col>
@@ -448,6 +476,19 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
               <Switch checked={customerForm.enabled} onChange={(checked) => setCustomerForm((current) => ({ ...current, enabled: checked }))} />
               <Text>{customerForm.enabled ? '启用' : '停用'}</Text>
             </div>
+          </Col>
+          <Col xs={24}>
+            <Text type="secondary">第三方前置代理授权</Text>
+            <Select
+              mode="multiple"
+              style={{ width: '100%' }}
+              placeholder="选择允许该用户链路使用的前置代理"
+              value={customerForm.front_proxy_node_ids}
+              options={frontProxyOptions}
+              optionFilterProp="label"
+              maxTagCount="responsive"
+              onChange={(values) => setCustomerForm((current) => ({ ...current, front_proxy_node_ids: values }))}
+            />
           </Col>
           <Col xs={24}>
             <Text type="secondary">用户入口地址</Text>

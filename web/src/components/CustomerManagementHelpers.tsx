@@ -13,6 +13,7 @@ export interface CustomerFormState {
   password: string
   display_name: string
   enabled: boolean
+  front_proxy_node_ids: number[]
 }
 
 export interface AssignmentFormState {
@@ -27,6 +28,7 @@ export interface AssignmentFormState {
   revenue_currency: 'CNY' | 'USDT'
   revenue_cycle: 'month' | 'quarter' | 'semiannual' | 'year'
   enabled: boolean
+  front_proxy_node_ids: number[]
 }
 
 export interface AreaManagerAssignmentDraft {
@@ -58,6 +60,7 @@ export interface AreaManagerFormState {
   outbound_create_enabled: boolean
   outbound_grant_agent_id: string
   outbound_grants: AreaManagerOutboundGrantDraft[]
+  front_proxy_node_ids: number[]
   assignments: AreaManagerAssignmentDraft[]
 }
 
@@ -74,6 +77,7 @@ export const emptyCustomerForm: CustomerFormState = {
   password: '',
   display_name: '',
   enabled: true,
+  front_proxy_node_ids: [],
 }
 
 export const emptyAssignmentForm: AssignmentFormState = {
@@ -88,6 +92,7 @@ export const emptyAssignmentForm: AssignmentFormState = {
   revenue_currency: 'CNY',
   revenue_cycle: 'month',
   enabled: true,
+  front_proxy_node_ids: [],
 }
 
 export const emptyAreaManagerForm: AreaManagerFormState = {
@@ -105,6 +110,7 @@ export const emptyAreaManagerForm: AreaManagerFormState = {
   outbound_create_enabled: false,
   outbound_grant_agent_id: '',
   outbound_grants: [],
+  front_proxy_node_ids: [],
   assignments: [],
 }
 
@@ -709,6 +715,7 @@ export function assignmentFormFromAssignment(record: CustomerAssignment, agents:
     revenue_currency: billing?.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
     revenue_cycle: normalizeRevenueCycle(billing?.revenue_cycle),
     enabled: record.enabled,
+    front_proxy_node_ids: (record.front_proxies || []).map((item) => item.id),
   }
 }
 
@@ -729,6 +736,7 @@ export function assignmentFormFromDraft(draft: CustomerAssignmentDraft, agents: 
     revenue_currency: draft.revenue_currency === 'USDT' ? 'USDT' : billing?.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
     revenue_cycle: normalizeRevenueCycle(draft.revenue_cycle || billing?.revenue_cycle),
     enabled: true,
+    front_proxy_node_ids: draft.front_proxy_node_ids || [],
   }
 }
 

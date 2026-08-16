@@ -21,12 +21,22 @@ dns:
     - https://dns.alidns.com/dns-query
     - https://doh.pub/dns-query
     - 223.5.5.5
+  nameserver-policy:
+    "+.zanelin.top":
+      - 223.5.5.5
+      - 119.29.29.29
+      - 114.114.114.114
+    "zanelin.top":
+      - 223.5.5.5
+      - 119.29.29.29
+      - 114.114.114.114
   direct-nameserver:
     - system
     - 223.5.5.5
 proxies:
 {{VPSMONITOR_PROXIES}}
 proxy-groups:
+{{VPSMONITOR_FRONT_PROXY_GROUPS}}
   - name: 🚀 节点选择
     type: select
     proxies:

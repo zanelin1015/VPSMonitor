@@ -34,6 +34,10 @@ func (a *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		a.handleAdminOutboundLinks(w, r, strings.Split(path, "/")[1:])
 		return
 	}
+	if path == "front-proxies" || strings.HasPrefix(path, "front-proxies/") {
+		a.handleAdminFrontProxies(w, r, strings.Split(path, "/")[1:])
+		return
+	}
 	if path == "area-agent-tags" || strings.HasPrefix(path, "area-agent-tags/") {
 		a.handleAdminAreaAgentTags(w, r, strings.Split(path, "/")[1:])
 		return

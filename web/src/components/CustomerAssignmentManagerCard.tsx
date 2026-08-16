@@ -21,6 +21,7 @@ export interface CustomerAssignmentManagerCardProps {
   savingAssignment: boolean
   overviewLoading: boolean
   agentOptions: Array<{ value: string; label: string }>
+  frontProxyOptions: Array<{ value: number; label: string }>
   clientTreeData: TreeSelectProps['treeData']
   visibleAssignmentColumns: ColumnsType<CustomerAssignment>
   onReset: () => void
@@ -39,6 +40,7 @@ export function CustomerAssignmentManagerCard(props: CustomerAssignmentManagerCa
     savingAssignment,
     overviewLoading,
     agentOptions,
+    frontProxyOptions,
     clientTreeData,
     visibleAssignmentColumns,
     onReset,
@@ -144,6 +146,19 @@ export function CustomerAssignmentManagerCard(props: CustomerAssignmentManagerCa
         <Col xs={24} md={16}>
           <Text type="secondary">选择结果</Text>
           <Input value={assignmentForm.inbound_id ? `${assignmentForm.inbound_tag || `Inbound #${assignmentForm.inbound_id}`} / ${assignmentForm.client_email || '未指定客户端'}` : ''} readOnly />
+        </Col>
+        <Col xs={24}>
+          <Text type="secondary">前置代理组</Text>
+          <Select
+            mode="multiple"
+            style={{ width: '100%' }}
+            placeholder="可选：让这条链路先经过第三方前置代理"
+            value={assignmentForm.front_proxy_node_ids}
+            options={frontProxyOptions}
+            optionFilterProp="label"
+            maxTagCount="responsive"
+            onChange={(values) => setAssignmentForm((current) => ({ ...current, front_proxy_node_ids: values }))}
+          />
         </Col>
       </Row>
       <Button style={{ marginTop: 14 }} type="primary" icon={<SaveOutlined />} disabled={!selectedCustomerID} loading={savingAssignment} onClick={onSaveAssignment}>
