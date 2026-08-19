@@ -47,6 +47,24 @@ func TestFormatBeijingTime(t *testing.T) {
 	}
 }
 
+func TestAlertDeliveryPolicy(t *testing.T) {
+	offline := alertMessage{key: resolveAgentAlertKey("agent-1", "offline")}
+	xuiError := alertMessage{key: resolveAgentAlertKey("agent-1", "xui_error")}
+
+	if !shouldDeliverAlert(offline, deliverImmediateAlerts) {
+		t.Fatal("Client offline alert must be delivered immediately")
+	}
+	if shouldDeliverAlert(xuiError, deliverImmediateAlerts) {
+		t.Fatal("non-offline alert must not be delivered immediately")
+	}
+	if shouldDeliverAlert(offline, deliverDailyAlerts) {
+		t.Fatal("Client offline alert must not be repeated in the daily delivery")
+	}
+	if !shouldDeliverAlert(xuiError, deliverDailyAlerts) {
+		t.Fatal("non-offline alert must be delivered in the daily window")
+	}
+}
+
 func TestBuildAgentAlertsClassifiesHAProxyErrorSeparately(t *testing.T) {
 	agent := model.AgentRecord{AgentID: "agent-1", AgentName: "Guangzhou"}
 	snapshot := model.AgentSnapshot{

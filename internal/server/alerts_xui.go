@@ -9,7 +9,7 @@ import (
 	"bridge-core/internal/model"
 )
 
-func (s *alertService) evaluateXUIClientExpiryAlerts(agent model.AgentRecord, snapshot model.AgentSnapshot) {
+func (s *alertService) evaluateXUIClientExpiryAlerts(agent model.AgentRecord, snapshot model.AgentSnapshot, mode alertDeliveryMode) {
 	if snapshot.XUI == nil {
 		return
 	}
@@ -18,7 +18,7 @@ func (s *alertService) evaluateXUIClientExpiryAlerts(agent model.AgentRecord, sn
 		return
 	}
 	for _, alert := range buildXUIClientExpiryAlerts(agent, overview.Clients, time.Now()) {
-		s.dispatch(alert)
+		s.dispatch(alert, mode)
 	}
 }
 

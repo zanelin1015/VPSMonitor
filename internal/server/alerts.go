@@ -37,6 +37,13 @@ type alertMessage struct {
 	agent       model.AgentRecord
 }
 
+type alertDeliveryMode int
+
+const (
+	deliverImmediateAlerts alertDeliveryMode = iota
+	deliverDailyAlerts
+)
+
 func newAlertService(s *store.SQLiteStore) *alertService {
 	return &alertService{
 		store: s,
@@ -49,7 +56,7 @@ func (s *alertService) Start() {
 		return
 	}
 	go s.runAlertSweep()
-	go s.runDailyTrafficReports()
+	go s.runDailyNotifications()
 }
 
 func (s *alertService) runAlertSweep() {
@@ -73,29 +80,38 @@ func (s *alertService) runAlertSweep() {
 	}
 }
 
-func (s *alertService) runDailyTrafficReports() {
+func (s *alertService) runDailyNotifications() {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
-	var lastRun time.Time
+	var lastRunDate string
 	for range ticker.C {
-		settings := s.scheduledTaskSettings()
-		if !settings.DailyTrafficReport.Enabled {
+		now := time.Now().In(beijingTimeLocation)
+		if now.Hour() != 9 || now.Minute() != 0 {
 			continue
 		}
-		now := time.Now()
-		hour, minute := parseTaskTimeOfDay(settings.DailyTrafficReport.TimeOfDay, 9, 0)
-		if now.Hour() != hour || now.Minute() != minute {
+		runDate := now.Format("2006-01-02")
+		if lastRunDate == runDate {
+			continue
+		}
+
+		// Non-urgent alerts are deliberately evaluated only in the daily window.
+		// Customer support messages use their own immediate path, while Client
+		// offline alerts continue to be handled by the frequent alert sweep.
+		s.EvaluateAllDaily()
+		lastRunDate = runDate
+
+		settings := s.scheduledTaskSettings()
+		if !settings.DailyTrafficReport.Enabled {
 			continue
 		}
 		days := settings.DailyTrafficReport.IntervalDays
 		if days <= 0 {
 			days = 1
 		}
-		if !lastRun.IsZero() && now.Sub(lastRun) < time.Duration(days)*24*time.Hour-time.Minute {
+		if days > 1 && now.Day()%days != 0 {
 			continue
 		}
-		s.SendDailyTrafficReport(time.Now().AddDate(0, 0, -1))
-		lastRun = now
+		s.SendDailyTrafficReport(now.AddDate(0, 0, -1))
 	}
 }
 
@@ -131,11 +147,19 @@ func (s *alertService) EvaluateAgent(agentID string) {
 		return
 	}
 	snapshot, _ := s.store.GetLatest(agentID)
-	s.evaluateAgentRecord(agent, snapshot, false)
-	s.evaluateXUIClientExpiryAlerts(agent, snapshot)
+	s.evaluateAgentRecord(agent, snapshot, false, deliverImmediateAlerts)
+	s.evaluateXUIClientExpiryAlerts(agent, snapshot, deliverImmediateAlerts)
 }
 
 func (s *alertService) EvaluateAll() {
+	s.evaluateAll(deliverImmediateAlerts)
+}
+
+func (s *alertService) EvaluateAllDaily() {
+	s.evaluateAll(deliverDailyAlerts)
+}
+
+func (s *alertService) evaluateAll(mode alertDeliveryMode) {
 	if s == nil {
 		return
 	}
@@ -150,24 +174,27 @@ func (s *alertService) EvaluateAll() {
 	}
 	for _, agent := range agents {
 		snapshot := latest[agent.AgentID]
-		s.evaluateAgentRecord(agent, snapshot, true)
-		s.evaluateXUIClientExpiryAlerts(agent, snapshot)
+		s.evaluateAgentRecord(agent, snapshot, true, mode)
+		s.evaluateXUIClientExpiryAlerts(agent, snapshot, mode)
 	}
 }
 
-func (s *alertService) evaluateAgentRecord(agent model.AgentRecord, snapshot model.AgentSnapshot, includeOffline bool) {
+func (s *alertService) evaluateAgentRecord(agent model.AgentRecord, snapshot model.AgentSnapshot, includeOffline bool, mode alertDeliveryMode) {
 	alerts := buildAgentAlerts(agent, snapshot, includeOffline)
 	for _, alert := range alerts {
-		s.dispatch(alert)
+		s.dispatch(alert, mode)
 	}
 }
 
-func (s *alertService) dispatch(alert alertMessage) {
+func (s *alertService) dispatch(alert alertMessage, mode alertDeliveryMode) {
 	if strings.HasSuffix(alert.key, ":resolved") {
 		_ = s.store.ResolveAlert(strings.TrimSuffix(alert.key, ":resolved"))
 		return
 	}
 	if alert.key == "" {
+		return
+	}
+	if !shouldDeliverAlert(alert, mode) {
 		return
 	}
 	text := formatTelegramAlert(alert)
@@ -192,6 +219,14 @@ func (s *alertService) dispatch(alert alertMessage) {
 			log.Printf("send telegram alert to %s: %v", bot.Name, err)
 		}
 	}
+}
+
+func shouldDeliverAlert(alert alertMessage, mode alertDeliveryMode) bool {
+	isOffline := strings.HasSuffix(alert.key, ":offline")
+	if mode == deliverImmediateAlerts {
+		return isOffline
+	}
+	return !isOffline
 }
 
 func (s *alertService) sendTelegramMessage(botToken, chatID, text string) error {

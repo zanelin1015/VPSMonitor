@@ -626,7 +626,7 @@ export function ScheduledTasksPanel(props: {
               <div className="admin-content-title compact">
                 <div>
                   <Typography.Title level={4}>告警扫描</Typography.Title>
-                  <Text type="secondary">用于离线、X-UI 异常、Xray 状态、续费和流量等告警扫描。</Text>
+                  <Text type="secondary">用于即时发现 Client 离线；其他告警每天北京时间 09:00 统一扫描推送。</Text>
                 </div>
                 <Switch checked={settings.alert_sweep.enabled} onChange={(checked) => updateAlertSweep({ enabled: checked })} />
               </div>
@@ -649,7 +649,7 @@ export function ScheduledTasksPanel(props: {
               <div className="admin-content-title compact">
                 <div>
                   <Typography.Title level={4}>每日流量日报</Typography.Title>
-                  <Text type="secondary">统计前一天流量，并推送到已启用的 Telegram Bot。</Text>
+                  <Text type="secondary">统计前一天流量，并在每天北京时间 09:00 推送到已启用的 Telegram Bot。</Text>
                 </div>
                 <Switch checked={settings.daily_traffic_report.enabled} onChange={(checked) => updateDailyReport({ enabled: checked })} />
               </div>
@@ -658,8 +658,8 @@ export function ScheduledTasksPanel(props: {
                   <Text type="secondary">执行时间</Text>
                   <Input
                     type="time"
-                    value={settings.daily_traffic_report.time_of_day || '09:00'}
-                    onChange={(event) => updateDailyReport({ time_of_day: event.target.value })}
+                    value="09:00"
+                    disabled
                   />
                 </Col>
                 <Col xs={24} md={8}>
