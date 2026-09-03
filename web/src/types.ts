@@ -441,6 +441,11 @@ export interface CustomerAdminView extends CustomerUser {
   front_proxies?: FrontProxyNodeView[]
 }
 
+export interface CustomerSubscriptionURLResponse {
+  clash_subscription_url: string
+  mihomo_subscription_url: string
+}
+
 export interface AreaManagerAdminView {
   id: number
   username: string

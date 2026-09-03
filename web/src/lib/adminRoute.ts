@@ -15,13 +15,16 @@ export interface AdminRouteState {
   topologySearch: string
 }
 
-export function parseAdminRouteState(canManageSystem: boolean): AdminRouteState {
+export function parseAdminRouteState(canManageSystem: boolean, canViewFrontProxies = canManageSystem): AdminRouteState {
   const params = new URLSearchParams(window.location.search)
   const path = window.location.pathname.replace(/\/+$/, '')
   const rawPage = (params.get('page') || pageFromAdminPath(path)).toLowerCase()
   const topology = rawPage === 'topology' || params.get('topology') === '1'
   let page: AdminPageKey = topology ? 'dashboard' : normalizeAdminPage(rawPage)
-  if ((page === 'settings' || page === 'schedules' || page === 'access-logs' || page === 'front-proxies') && !canManageSystem) {
+  if ((page === 'settings' || page === 'schedules' || page === 'access-logs') && !canManageSystem) {
+    page = 'dashboard'
+  }
+  if (page === 'front-proxies' && !canViewFrontProxies) {
     page = 'dashboard'
   }
 

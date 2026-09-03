@@ -144,6 +144,52 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 		writeJSON(w, http.StatusOK, customer)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "subscription" {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		assignmentIDs, selectionProvided, err := parseCustomerSubscriptionAssignmentIDs(r.URL.Query())
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if selectionProvided && len(assignmentIDs) == 0 {
+			writeError(w, http.StatusBadRequest, "at least one customer subscription assignment is required")
+			return
+		}
+		if selectionProvided {
+			assignments, listErr := a.store.ListCustomerAssignments(customerID)
+			if listErr != nil {
+				writeError(w, http.StatusInternalServerError, listErr.Error())
+				return
+			}
+			allowed := make(map[int64]struct{}, len(assignments))
+			for _, assignment := range assignments {
+				allowed[assignment.ID] = struct{}{}
+			}
+			for _, assignmentID := range assignmentIDs {
+				if _, ok := allowed[assignmentID]; !ok {
+					writeError(w, http.StatusBadRequest, "customer subscription assignment is outside the customer scope")
+					return
+				}
+			}
+		}
+		token, err := a.store.EnsureCustomerSubscriptionToken(customerID)
+		if err != nil {
+			status := http.StatusBadRequest
+			if strings.Contains(err.Error(), "not found") {
+				status = http.StatusNotFound
+			}
+			writeError(w, status, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, model.CustomerSubscriptionURLResponse{
+			ClashSubscriptionURL:  customerSubscriptionURLForAssignments(r, token, "clash.yaml", assignmentIDs),
+			MihomoSubscriptionURL: customerSubscriptionURLForAssignments(r, token, "mihomo.yaml", assignmentIDs),
+		})
+		return
+	}
 
 	if parts[1] != "assignments" {
 		writeError(w, http.StatusNotFound, "route not found")

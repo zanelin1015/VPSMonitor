@@ -83,6 +83,7 @@ export function AdminShellNavigation(props: AdminShellNavigationProps) {
     onRefreshAgents,
     onThemeModeChange,
   } = props
+  const canViewFrontProxies = canManageSystem || isAreaManagerAccount
 
   return (
     <>
@@ -127,7 +128,7 @@ export function AdminShellNavigation(props: AdminShellNavigationProps) {
             <TeamOutlined />
             <span>用户</span>
           </button>
-          {canManageSystem ? <button type="button" className={activeAdminPage === 'front-proxies' ? 'active' : ''} onClick={onOpenFrontProxies}>
+          {canViewFrontProxies ? <button type="button" className={activeAdminPage === 'front-proxies' ? 'active' : ''} onClick={onOpenFrontProxies}>
             <ApiOutlined />
             <span>前置</span>
           </button> : null}
@@ -192,7 +193,7 @@ export function AdminShellNavigation(props: AdminShellNavigationProps) {
             <span>用户管理</span>
             <small>账号与授权</small>
           </button>
-          {canManageSystem ? <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'front-proxies' ? ' active' : ''}`} onClick={onOpenFrontProxies}>
+          {canViewFrontProxies ? <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'front-proxies' ? ' active' : ''}`} onClick={onOpenFrontProxies}>
             <ApiOutlined />
             <span>前置代理</span>
             <small>订阅转发组</small>

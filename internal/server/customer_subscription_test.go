@@ -1,11 +1,29 @@
 package server
 
 import (
+	"net/url"
 	"strings"
 	"testing"
 
 	"bridge-core/internal/model"
 )
+
+func TestFilterCustomerSubscriptionLinksByAssignmentSelection(t *testing.T) {
+	links := []model.CustomerLinkView{
+		{AssignmentID: 1, EntryClientName: "one"},
+		{AssignmentID: 2, EntryClientName: "two"},
+		{AssignmentID: 3, EntryClientName: "three"},
+	}
+	query := url.Values{}
+	query.Set("assignments", "3,1,3")
+	filtered := filterCustomerSubscriptionLinks(links, query)
+	if len(filtered) != 2 || filtered[0].AssignmentID != 1 || filtered[1].AssignmentID != 3 {
+		t.Fatalf("unexpected filtered links: %#v", filtered)
+	}
+	if got := filterCustomerSubscriptionLinks(links, nil); len(got) != len(links) {
+		t.Fatalf("missing selection should preserve all links, got %#v", got)
+	}
+}
 
 func TestBuildMihomoSubscriptionConvertsCustomerLinks(t *testing.T) {
 	user := model.CustomerUser{Username: "alice"}

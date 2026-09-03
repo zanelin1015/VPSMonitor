@@ -52,10 +52,59 @@ func (a *App) handleCustomerSubscription(w http.ResponseWriter, r *http.Request,
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	overview.Links = filterCustomerSubscriptionLinks(overview.Links, r.URL.Query())
 	content := buildMihomoSubscription(user, overview.Links)
 	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
 	w.Header().Set("Content-Disposition", customerSubscriptionContentDisposition(user.Username))
 	_, _ = w.Write([]byte(content))
+}
+
+func parseCustomerSubscriptionAssignmentIDs(query url.Values) ([]int64, bool, error) {
+	values, present := query["assignments"]
+	if !present {
+		return nil, false, nil
+	}
+	seen := make(map[int64]struct{})
+	ids := make([]int64, 0)
+	for _, value := range values {
+		for _, item := range strings.Split(value, ",") {
+			item = strings.TrimSpace(item)
+			if item == "" {
+				continue
+			}
+			id, err := strconv.ParseInt(item, 10, 64)
+			if err != nil || id <= 0 {
+				return nil, true, fmt.Errorf("invalid customer subscription assignment id")
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+	}
+	return ids, true, nil
+}
+
+func filterCustomerSubscriptionLinks(links []model.CustomerLinkView, query url.Values) []model.CustomerLinkView {
+	ids, present, err := parseCustomerSubscriptionAssignmentIDs(query)
+	if !present {
+		return links
+	}
+	if err != nil {
+		return []model.CustomerLinkView{}
+	}
+	selected := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		selected[id] = struct{}{}
+	}
+	filtered := make([]model.CustomerLinkView, 0, len(ids))
+	for _, link := range links {
+		if _, ok := selected[link.AssignmentID]; ok {
+			filtered = append(filtered, link)
+		}
+	}
+	return filtered
 }
 
 func customerSubscriptionContentDisposition(username string) string {

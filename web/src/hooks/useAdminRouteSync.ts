@@ -8,6 +8,7 @@ export function useAdminRouteSync(input: {
   enabled: boolean
   sessionIdentity: unknown
   canManageSystem: boolean
+  canViewFrontProxies: boolean
   activeAdminPage: AdminPageKey
   activeTabKey: string
   selectedAgentId: string
@@ -26,6 +27,7 @@ export function useAdminRouteSync(input: {
     enabled,
     sessionIdentity,
     canManageSystem,
+    canViewFrontProxies,
     activeAdminPage,
     activeTabKey,
     selectedAgentId,
@@ -45,7 +47,7 @@ export function useAdminRouteSync(input: {
     }
 
     const applyCurrentURL = () => {
-      const route = parseAdminRouteState(canManageSystem)
+      const route = parseAdminRouteState(canManageSystem, canViewFrontProxies)
       const normalizedURL = buildAdminRouteURL(route)
       const currentURL = `${window.location.pathname}${window.location.search}`
       if (currentURL !== normalizedURL) {
@@ -64,7 +66,7 @@ export function useAdminRouteSync(input: {
     return () => {
       window.removeEventListener('popstate', applyCurrentURL)
     }
-  }, [canManageSystem, enabled, sessionIdentity])
+  }, [canManageSystem, canViewFrontProxies, enabled, sessionIdentity])
 
   useEffect(() => {
     if (!enabled || applyingRouteRef.current) {

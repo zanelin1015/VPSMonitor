@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, App as AntdApp, Button, Card, Col, Empty, Input, Modal, Popconfirm, Row, Select, Space, Spin, Table, Tabs, Tag, TreeSelect, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { DeleteOutlined, EditOutlined, ExportOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SyncOutlined } from '@ant-design/icons'
+import { CopyOutlined, DeleteOutlined, EditOutlined, ExportOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SyncOutlined } from '@ant-design/icons'
 
-import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, CustomerAssignmentSourceView, DashboardAgentView, FrontProxyNode, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
+import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, CustomerAssignmentSourceView, CustomerSubscriptionURLResponse, DashboardAgentView, FrontProxyNode, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
 import { fetchJSON, formatDateTime } from '../lib/appHelpers'
 import { CustomerAssignmentManagerCard } from './CustomerAssignmentManagerCard'
 import {
@@ -93,6 +93,7 @@ export function CustomerManagementModal(props: {
   const [areaManagersLoading, setAreaManagersLoading] = useState(false)
   const [savingCustomer, setSavingCustomer] = useState(false)
   const [resettingCustomerID, setResettingCustomerID] = useState<number | null>(null)
+  const [copyingSubscriptionCustomerID, setCopyingSubscriptionCustomerID] = useState<number | null>(null)
   const [savingAssignment, setSavingAssignment] = useState(false)
   const [savingAreaManager, setSavingAreaManager] = useState(false)
   const [resettingAreaManagerID, setResettingAreaManagerID] = useState<number | null>(null)
@@ -100,6 +101,9 @@ export function CustomerManagementModal(props: {
   const [areaManagerModalOpen, setAreaManagerModalOpen] = useState(false)
   const [customerCreateModalOpen, setCustomerCreateModalOpen] = useState(false)
   const [customerEditModalOpen, setCustomerEditModalOpen] = useState(false)
+  const [customerSubscriptionModalOpen, setCustomerSubscriptionModalOpen] = useState(false)
+  const [subscriptionCustomer, setSubscriptionCustomer] = useState<CustomerAdminView | null>(null)
+  const [selectedSubscriptionAssignmentIDs, setSelectedSubscriptionAssignmentIDs] = useState<number[]>([])
   const [assignmentManagerModalOpen, setAssignmentManagerModalOpen] = useState(false)
   const [assignmentViewModalOpen, setAssignmentViewModalOpen] = useState(false)
   const [selectedCustomerID, setSelectedCustomerID] = useState<number | null>(null)
@@ -476,10 +480,11 @@ export function CustomerManagementModal(props: {
     },
     {
       title: '操作',
-      width: 230,
+      width: 330,
       render: (_, record) => (
         <Space size={6} wrap>
           <Button size="small" onClick={() => openAssignmentManagerModal(record)}>管理链路</Button>
+          <Button size="small" icon={<CopyOutlined />} disabled={!record.enabled} onClick={() => openCustomerSubscriptionModal(record)}>导出 Clash</Button>
           <Popconfirm title={`将 ${record.username} 的密码初始化为 ${DEFAULT_ACCOUNT_PASSWORD}？`} okText="初始化" cancelText="取消" onConfirm={() => void resetCustomerPassword(record.id)}>
             <Button size="small" icon={<SyncOutlined />} loading={resettingCustomerID === record.id}>初始化密码</Button>
           </Popconfirm>
@@ -616,11 +621,12 @@ export function CustomerManagementModal(props: {
     },
     {
       title: '操作',
-      width: 430,
+      width: 510,
       render: (_, record) => (
         <Space size={6} wrap>
           <Button size="small" icon={<EditOutlined />} onClick={() => openCustomerEditModal(record)}>编辑</Button>
           <Button size="small" type="primary" onClick={() => openAssignmentManagerModal(record)}>管理链路</Button>
+          <Button size="small" icon={<CopyOutlined />} disabled={!record.enabled} onClick={() => openCustomerSubscriptionModal(record)}>导出 Clash</Button>
           <Popconfirm title={`将 ${record.username} 的密码初始化为 ${DEFAULT_ACCOUNT_PASSWORD}？`} okText="初始化" cancelText="取消" onConfirm={() => void resetCustomerPassword(record.id)}>
             <Button size="small" icon={<SyncOutlined />} loading={resettingCustomerID === record.id}>初始化密码</Button>
           </Popconfirm>
@@ -973,6 +979,18 @@ export function CustomerManagementModal(props: {
     setAssignmentViewModalOpen(true)
   }
 
+  function openCustomerSubscriptionModal(record: CustomerAdminView) {
+    setSubscriptionCustomer(record)
+    setSelectedSubscriptionAssignmentIDs([])
+    setCustomerSubscriptionModalOpen(true)
+  }
+
+  function closeCustomerSubscriptionModal() {
+    setCustomerSubscriptionModalOpen(false)
+    setSubscriptionCustomer(null)
+    setSelectedSubscriptionAssignmentIDs([])
+  }
+
   async function createCustomer() {
     if (!customerCreateForm.username.trim()) {
       message.warning('请填写用户用户名')
@@ -1098,6 +1116,30 @@ export function CustomerManagementModal(props: {
       message.error(error instanceof Error ? error.message : '初始化普通用户密码失败')
     } finally {
       setResettingCustomerID(null)
+    }
+  }
+
+  async function copyCustomerSubscription(customerID: number, assignmentIDs: number[]) {
+    if (assignmentIDs.length === 0) {
+      message.warning('请至少选择一个导出节点')
+      return
+    }
+    setCopyingSubscriptionCustomerID(customerID)
+    try {
+      const query = new URLSearchParams({ assignments: assignmentIDs.join(',') })
+      const data = await fetchJSON<CustomerSubscriptionURLResponse>(`/api/v1/admin/customers/${customerID}/subscription?${query.toString()}`)
+      const subscriptionURL = data.clash_subscription_url || data.mihomo_subscription_url || ''
+      if (!subscriptionURL) {
+        message.warning('当前用户没有可用的 Clash 订阅地址')
+        return
+      }
+      await navigator.clipboard.writeText(subscriptionURL)
+      message.success('Clash 订阅地址已复制')
+      closeCustomerSubscriptionModal()
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '复制 Clash 订阅地址失败')
+    } finally {
+      setCopyingSubscriptionCustomerID(null)
     }
   }
 
@@ -1544,7 +1586,7 @@ export function CustomerManagementModal(props: {
         columns={customerColumns}
         dataSource={filteredCustomers}
         pagination={{ pageSize: 8, hideOnSinglePage: true }}
-        scroll={{ x: 1260 }}
+        scroll={{ x: 1400 }}
         locale={{ emptyText: <Empty description={customerSearch.trim() || customerStatusFilter !== 'all' ? '没有匹配的用户' : '暂无用户'} /> }}
       />
     </Card>
@@ -1626,6 +1668,13 @@ export function CustomerManagementModal(props: {
       savingCustomer={savingCustomer}
       onCreateCustomer={() => void createCustomer()}
       onSaveCustomer={() => void saveCustomer()}
+      customerSubscriptionModalOpen={customerSubscriptionModalOpen}
+      subscriptionCustomer={subscriptionCustomer}
+      selectedSubscriptionAssignmentIDs={selectedSubscriptionAssignmentIDs}
+      setSelectedSubscriptionAssignmentIDs={setSelectedSubscriptionAssignmentIDs}
+      copyingSubscriptionCustomerID={copyingSubscriptionCustomerID}
+      onCloseCustomerSubscriptionModal={closeCustomerSubscriptionModal}
+      onCopyCustomerSubscription={(customerID, assignmentIDs) => void copyCustomerSubscription(customerID, assignmentIDs)}
       assignmentViewModalOpen={assignmentViewModalOpen}
       setAssignmentViewModalOpen={setAssignmentViewModalOpen}
       assignmentManagerModalOpen={assignmentManagerModalOpen}

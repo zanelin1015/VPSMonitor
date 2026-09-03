@@ -1,12 +1,85 @@
 package server
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	"bridge-core/internal/model"
 	"bridge-core/internal/store"
 )
+
+func TestAdminCustomerSubscriptionURLIsScopedToVisibleCustomers(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+	if err := sqliteStore.EnsureAdminAccount("admin", "password123"); err != nil {
+		t.Fatalf("EnsureAdminAccount: %v", err)
+	}
+	enabled := true
+	manager, err := sqliteStore.CreateAreaManager(model.AreaManagerAccountRequest{
+		Username: "area-subscription",
+		Password: "password123",
+		Enabled:  &enabled,
+	})
+	if err != nil {
+		t.Fatalf("CreateAreaManager: %v", err)
+	}
+	rootCustomer, err := sqliteStore.CreateCustomer(model.CustomerAccountRequest{Username: "root-subscription", Password: "password123"})
+	if err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
+	areaCustomer, err := sqliteStore.CreateCustomerForOwner(model.CustomerAccountRequest{Username: "area-subscription-customer", Password: "password123"}, model.AdminRoleAreaManager, manager.ID)
+	if err != nil {
+		t.Fatalf("CreateCustomerForOwner: %v", err)
+	}
+	rootUser, ok, err := sqliteStore.AuthenticateAdmin("admin", "password123")
+	if err != nil || !ok {
+		t.Fatalf("AuthenticateAdmin root: ok=%v err=%v", ok, err)
+	}
+	rootToken, _, err := sqliteStore.CreateAdminSession(rootUser, time.Hour)
+	if err != nil {
+		t.Fatalf("CreateAdminSession root: %v", err)
+	}
+	areaUser, ok, err := sqliteStore.AuthenticateAdmin("area-subscription", "password123")
+	if err != nil || !ok {
+		t.Fatalf("AuthenticateAdmin area: ok=%v err=%v", ok, err)
+	}
+	areaToken, _, err := sqliteStore.CreateAdminSession(areaUser, time.Hour)
+	if err != nil {
+		t.Fatalf("CreateAdminSession area: %v", err)
+	}
+	app := &App{store: sqliteStore}
+	request := func(customerID int64, sessionToken string) (int, model.CustomerSubscriptionURLResponse) {
+		req := httptest.NewRequest(http.MethodGet, "https://monitor.example/api/v1/admin/customers/"+strconv.FormatInt(customerID, 10)+"/subscription", nil)
+		req.AddCookie(&http.Cookie{Name: adminSessionCookieName, Value: sessionToken})
+		recorder := httptest.NewRecorder()
+		app.Handler().ServeHTTP(recorder, req)
+		var response model.CustomerSubscriptionURLResponse
+		_ = json.NewDecoder(recorder.Body).Decode(&response)
+		return recorder.Code, response
+	}
+
+	status, rootURLs := request(rootCustomer.ID, rootToken)
+	if status != http.StatusOK || !strings.HasPrefix(rootURLs.ClashSubscriptionURL, "https://monitor.example/api/v1/customer/subscription/") {
+		t.Fatalf("root subscription URL response: status=%d body=%#v", status, rootURLs)
+	}
+	status, areaURLs := request(areaCustomer.ID, areaToken)
+	if status != http.StatusOK || !strings.HasPrefix(areaURLs.ClashSubscriptionURL, "https://monitor.example/api/v1/customer/subscription/") {
+		t.Fatalf("area subscription URL response: status=%d body=%#v", status, areaURLs)
+	}
+	status, _ = request(rootCustomer.ID, areaToken)
+	if status != http.StatusNotFound {
+		t.Fatalf("expected area manager to be denied access to root customer, got status=%d", status)
+	}
+}
 
 func TestSyncCustomerAssignmentRevenueCreatesBilling(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "bridge.db")

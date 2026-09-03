@@ -146,6 +146,20 @@ func customerSubscriptionURL(r *http.Request, token string, filename string) str
 	return requestPublicBaseURL(r) + "/api/v1/customer/subscription/" + url.PathEscape(token) + "/" + filename
 }
 
+func customerSubscriptionURLForAssignments(r *http.Request, token string, filename string, assignmentIDs []int64) string {
+	base := customerSubscriptionURL(r, token, filename)
+	if len(assignmentIDs) == 0 {
+		return base
+	}
+	values := make([]string, 0, len(assignmentIDs))
+	for _, assignmentID := range assignmentIDs {
+		values = append(values, strconv.FormatInt(assignmentID, 10))
+	}
+	query := url.Values{}
+	query.Set("assignments", strings.Join(values, ","))
+	return base + "?" + query.Encode()
+}
+
 func (a *App) handleCustomerStyleUpdate(w http.ResponseWriter, r *http.Request) {
 	user, _, ok := a.requireCustomer(w, r)
 	if !ok {

@@ -22,7 +22,8 @@ const emptyFrontProxyForm: FrontProxyFormState = {
   remark: '',
 }
 
-export function FrontProxyManagementPage() {
+export function FrontProxyManagementPage(props: { canManageNodes?: boolean }) {
+  const canManageNodes = props.canManageNodes ?? true
   const { message } = AntdApp.useApp()
   const [frontProxies, setFrontProxies] = useState<FrontProxyNode[]>([])
   const [frontProxyForm, setFrontProxyForm] = useState<FrontProxyFormState>(emptyFrontProxyForm)
@@ -146,10 +147,10 @@ export function FrontProxyManagementPage() {
       sorter: (left, right) => Date.parse(left.updated_at) - Date.parse(right.updated_at),
       render: (value: string) => formatDateTime(value),
     },
-    {
+    ...(canManageNodes ? [{
       title: '操作',
       width: 150,
-      render: (_, record) => (
+      render: (_value: unknown, record: FrontProxyNode) => (
         <Space size={6}>
           <Button
             size="small"
@@ -171,7 +172,7 @@ export function FrontProxyManagementPage() {
           </Popconfirm>
         </Space>
       ),
-    },
+    }] : []),
   ]
 
   return (
@@ -179,12 +180,12 @@ export function FrontProxyManagementPage() {
       <Card className="customer-admin-card" bordered={false}>
         <div className="customer-admin-card-head">
           <div>
-            <Title level={4}>第三方前置代理</Title>
-            <Text type="secondary">导入 SS / VLESS / VMess / Trojan / HTTP 等分享链接，授权后可作为客户订阅的前置代理组。</Text>
+            <Title level={4}>{canManageNodes ? '第三方前置代理' : '已授权前置代理'}</Title>
+            <Text type="secondary">{canManageNodes ? '导入 SS / VLESS / VMess / Trojan / HTTP 等分享链接，授权后可作为客户订阅的前置代理组。' : '以下为管理员已授权给当前区域账号、且处于启用状态的前置代理，可在用户和链路授权中选择使用。'}</Text>
           </div>
           <Space>
             <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadFrontProxies()}>刷新</Button>
-            <Button onClick={clearForm}>清空</Button>
+            {canManageNodes ? <Button onClick={clearForm}>清空</Button> : null}
           </Space>
         </div>
         <Alert
@@ -192,9 +193,9 @@ export function FrontProxyManagementPage() {
           type="info"
           showIcon
           message="前置代理只负责客户订阅链路的前置转发"
-          description="新增后还需要在用户或区域账号的授权配置中选择对应代理组；停用或删除会影响引用该代理的订阅链路。"
+          description={canManageNodes ? '新增后还需要在用户或区域账号的授权配置中选择对应代理组；停用或删除会影响引用该代理的订阅链路。' : '区域账号不能新增、编辑或删除前置代理。若列表为空或缺少代理，请联系管理员先启用代理并在区域账号授权配置中分配。'}
         />
-        <Row gutter={[12, 12]} align="middle">
+        {canManageNodes ? <Row gutter={[12, 12]} align="middle">
           <Col xs={24} md={5}>
             <Text type="secondary">名称</Text>
             <Input value={frontProxyForm.name} onChange={(event) => setFrontProxyForm((current) => ({ ...current, name: event.target.value }))} />
@@ -219,7 +220,7 @@ export function FrontProxyManagementPage() {
             <Text type="secondary">备注（可选）</Text>
             <Input value={frontProxyForm.remark} placeholder="例如：香港入口 / 仅供某区域账号使用" onChange={(event) => setFrontProxyForm((current) => ({ ...current, remark: event.target.value }))} />
           </Col>
-        </Row>
+        </Row> : null}
         <Table
           style={{ marginTop: 16 }}
           rowKey={(record) => record.id}
@@ -228,7 +229,7 @@ export function FrontProxyManagementPage() {
           dataSource={frontProxies}
           pagination={{ pageSize: 8, hideOnSinglePage: true }}
           scroll={{ x: 1000 }}
-          locale={{ emptyText: <Empty description="暂无第三方前置代理" /> }}
+          locale={{ emptyText: <Empty description={canManageNodes ? '暂无第三方前置代理' : '暂无已授权前置代理'} /> }}
         />
       </Card>
     </main>

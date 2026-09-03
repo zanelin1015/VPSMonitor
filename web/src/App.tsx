@@ -375,6 +375,7 @@ export default function App() {
     enabled: Boolean(!customerMode && !publicSiteMode && !sessionLoading && adminUser),
     sessionIdentity: adminUser,
     canManageSystem,
+    canViewFrontProxies: canManageSystem || isAreaManagerAccount,
     activeAdminPage,
     activeTabKey,
     selectedAgentId,
@@ -466,7 +467,7 @@ export default function App() {
     if (!adminUser || canManageSystem) {
       return
     }
-    if (activeAdminPage === 'settings' || activeAdminPage === 'schedules' || activeAdminPage === 'access-logs' || activeAdminPage === 'front-proxies') {
+    if (activeAdminPage === 'settings' || activeAdminPage === 'schedules' || activeAdminPage === 'access-logs') {
       setActiveAdminPage('dashboard')
     }
     if (['config', 'logs', 'certificates'].includes(activeTabKey)) {
@@ -1766,7 +1767,7 @@ export default function App() {
           </main>
         ) : activeAdminPage === 'front-proxies' ? (
           <Suspense fallback={<Spin size="large" />}>
-            <FrontProxyManagementPage />
+            <FrontProxyManagementPage canManageNodes={canManageSystem} />
           </Suspense>
         ) : activeAdminPage === 'support' ? (
           <Suspense fallback={<Spin size="large" />}>

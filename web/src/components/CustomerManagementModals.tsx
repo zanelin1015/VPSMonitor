@@ -1,10 +1,10 @@
 import type { Dispatch, ReactNode, SetStateAction } from 'react'
-import { Button, Card, Col, Empty, Input, InputNumber, Modal, Row, Select, Space, Switch, Table, Tag, TreeSelect, Typography } from 'antd'
+import { Button, Card, Checkbox, Col, Empty, Input, InputNumber, Modal, Row, Select, Space, Switch, Table, Tag, TreeSelect, Typography } from 'antd'
 import type { TreeSelectProps } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { SaveOutlined } from '@ant-design/icons'
 
-import type { AreaManagerAssignment, CustomerAssignment, XUIOverview } from '../types'
+import type { AreaManagerAssignment, CustomerAdminView, CustomerAssignment, XUIOverview } from '../types'
 import { REVENUE_CURRENCIES } from '../lib/currency'
 import type { AreaManagerFormState, AssignmentFormState, CustomerFormState } from './CustomerManagementHelpers'
 import {
@@ -61,6 +61,14 @@ export interface CustomerManagementModalsProps {
   onCreateCustomer: () => void
   onSaveCustomer: () => void
 
+  customerSubscriptionModalOpen: boolean
+  subscriptionCustomer: CustomerAdminView | null
+  selectedSubscriptionAssignmentIDs: number[]
+  setSelectedSubscriptionAssignmentIDs: Dispatch<SetStateAction<number[]>>
+  copyingSubscriptionCustomerID: number | null
+  onCloseCustomerSubscriptionModal: () => void
+  onCopyCustomerSubscription: (customerID: number, assignmentIDs: number[]) => void
+
   assignmentViewModalOpen: boolean
   setAssignmentViewModalOpen: Dispatch<SetStateAction<boolean>>
   assignmentManagerModalOpen: boolean
@@ -114,6 +122,13 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
     savingCustomer,
     onCreateCustomer,
     onSaveCustomer,
+    customerSubscriptionModalOpen,
+    subscriptionCustomer,
+    selectedSubscriptionAssignmentIDs,
+    setSelectedSubscriptionAssignmentIDs,
+    copyingSubscriptionCustomerID,
+    onCloseCustomerSubscriptionModal,
+    onCopyCustomerSubscription,
     assignmentViewModalOpen,
     setAssignmentViewModalOpen,
     assignmentManagerModalOpen,
@@ -435,6 +450,69 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
             <Input value={`${window.location.origin}/customer`} readOnly />
           </Col>
         </Row>
+      </Modal>
+      <Modal
+        title={`导出 Clash 订阅 · ${subscriptionCustomer?.display_name || subscriptionCustomer?.username || ''}`}
+        open={customerSubscriptionModalOpen}
+        onCancel={onCloseCustomerSubscriptionModal}
+        footer={(
+          <Space>
+            <Button onClick={onCloseCustomerSubscriptionModal}>取消</Button>
+            <Button
+              type="primary"
+              disabled={!subscriptionCustomer || selectedSubscriptionAssignmentIDs.length === 0}
+              loading={subscriptionCustomer ? copyingSubscriptionCustomerID === subscriptionCustomer.id : false}
+              onClick={() => {
+                if (subscriptionCustomer && selectedSubscriptionAssignmentIDs.length > 0) {
+                  onCopyCustomerSubscription(subscriptionCustomer.id, selectedSubscriptionAssignmentIDs)
+                }
+              }}
+            >
+              复制 Clash 订阅
+            </Button>
+          </Space>
+        )}
+        width={760}
+        destroyOnClose
+      >
+        {subscriptionCustomer ? (
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <div>
+              <Text strong>选择导出的节点</Text>
+              <div className="muted-line">默认全部不选；只会导出下方勾选且已启用的授权链路。</div>
+            </div>
+            <Space wrap>
+              <Button
+                size="small"
+                disabled={!subscriptionCustomer.assignments?.some((assignment) => assignment.enabled)}
+                onClick={() => setSelectedSubscriptionAssignmentIDs((subscriptionCustomer.assignments || []).filter((assignment) => assignment.enabled).map((assignment) => assignment.id))}
+              >
+                全选
+              </Button>
+              <Button size="small" onClick={() => setSelectedSubscriptionAssignmentIDs([])}>清空</Button>
+              <Text type="secondary">已选择 {selectedSubscriptionAssignmentIDs.length} / {(subscriptionCustomer.assignments || []).filter((assignment) => assignment.enabled).length} 条</Text>
+            </Space>
+            <Checkbox.Group
+              style={{ width: '100%' }}
+              value={selectedSubscriptionAssignmentIDs}
+              onChange={(values) => setSelectedSubscriptionAssignmentIDs(values.map((value) => Number(value)))}
+            >
+              <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                {(subscriptionCustomer.assignments || []).map((assignment) => (
+                  <Checkbox key={assignment.id} value={assignment.id} disabled={!assignment.enabled}>
+                    <div>
+                      <Text strong>{assignment.public_client_name || `链路 #${assignment.id}`}</Text>
+                      <div className="muted-line">
+                        {[assignment.inbound_tag, assignment.client_email].filter(Boolean).join(' / ') || '未指定客户端'}{assignment.enabled ? '' : '（已停用）'}
+                      </div>
+                    </div>
+                  </Checkbox>
+                ))}
+              </Space>
+            </Checkbox.Group>
+            {!(subscriptionCustomer.assignments || []).length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无授权链路" /> : null}
+          </Space>
+        ) : <Empty description="请选择一个用户" />}
       </Modal>
       <Modal
         title="编辑普通账号"
