@@ -1,6 +1,7 @@
 import { Badge, Button, Select, Typography } from 'antd'
 import {
   ApartmentOutlined,
+  ApiOutlined,
   CloudServerOutlined,
   DashboardOutlined,
   DeploymentUnitOutlined,
@@ -37,6 +38,7 @@ export interface AdminShellNavigationProps {
   onOpenClientInstall: () => void
   onOpenTelegram: () => void
   onOpenCustomers: () => void
+  onOpenFrontProxies: () => void
   onOpenSupport: () => void
   onOpenFrontendSettings: () => void
   onOpenUpdates: () => void
@@ -68,6 +70,7 @@ export function AdminShellNavigation(props: AdminShellNavigationProps) {
     onOpenClientInstall,
     onOpenTelegram,
     onOpenCustomers,
+    onOpenFrontProxies,
     onOpenSupport,
     onOpenFrontendSettings,
     onOpenUpdates,
@@ -124,6 +127,10 @@ export function AdminShellNavigation(props: AdminShellNavigationProps) {
             <TeamOutlined />
             <span>用户</span>
           </button>
+          {canManageSystem ? <button type="button" className={activeAdminPage === 'front-proxies' ? 'active' : ''} onClick={onOpenFrontProxies}>
+            <ApiOutlined />
+            <span>前置</span>
+          </button> : null}
           <button type="button" className={activeAdminPage === 'support' ? 'active' : ''} onClick={onOpenSupport}>
             <Badge count={supportUnreadCount} overflowCount={99} size="small"><MessageOutlined /></Badge>
             <span>客服</span>
@@ -185,6 +192,11 @@ export function AdminShellNavigation(props: AdminShellNavigationProps) {
             <span>用户管理</span>
             <small>账号与授权</small>
           </button>
+          {canManageSystem ? <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'front-proxies' ? ' active' : ''}`} onClick={onOpenFrontProxies}>
+            <ApiOutlined />
+            <span>前置代理</span>
+            <small>订阅转发组</small>
+          </button> : null}
           <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'support' ? ' active' : ''}`} onClick={onOpenSupport}>
             <Badge className="admin-support-nav-badge" count={supportUnreadCount} overflowCount={99} size="small"><MessageOutlined /></Badge>
             <span>在线客服</span>

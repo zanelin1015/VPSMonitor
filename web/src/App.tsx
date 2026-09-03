@@ -138,6 +138,7 @@ function exchangeRateNotice(data: ExchangeRatesResponse): string {
 const AgentDetailPanel = lazy(() => import('./components/AgentDetailPanel').then((module) => ({ default: module.AgentDetailPanel })))
 const ConsoleModals = lazy(() => import('./components/ConsoleModals').then((module) => ({ default: module.ConsoleModals })))
 const CustomerManagementModal = lazy(() => import('./components/CustomerManagementModal').then((module) => ({ default: module.CustomerManagementModal })))
+const FrontProxyManagementPage = lazy(() => import('./components/FrontProxyManagementPage').then((module) => ({ default: module.FrontProxyManagementPage })))
 const CustomerPortal = lazy(() => import('./components/CustomerPortal').then((module) => ({ default: module.CustomerPortal })))
 const AdminSupportPage = lazy(() => import('./components/AdminSupportPage').then((module) => ({ default: module.AdminSupportPage })))
 const PublicSite = lazy(() => import('./components/PublicSite').then((module) => ({ default: module.PublicSite })))
@@ -465,7 +466,7 @@ export default function App() {
     if (!adminUser || canManageSystem) {
       return
     }
-    if (activeAdminPage === 'settings' || activeAdminPage === 'schedules' || activeAdminPage === 'access-logs') {
+    if (activeAdminPage === 'settings' || activeAdminPage === 'schedules' || activeAdminPage === 'access-logs' || activeAdminPage === 'front-proxies') {
       setActiveAdminPage('dashboard')
     }
     if (['config', 'logs', 'certificates'].includes(activeTabKey)) {
@@ -1604,6 +1605,10 @@ export default function App() {
     setSelectedNodeAnchor('')
   }
   const openCustomersPage = () => setActiveAdminPage('customers')
+  const openFrontProxiesPage = () => {
+    setActiveAdminPage('front-proxies')
+    setTopologyVisible(false)
+  }
   const openSupportPage = () => setActiveAdminPage('support')
   const openSettingsPage = () => {
     setActiveAdminPage('settings')
@@ -1630,6 +1635,7 @@ export default function App() {
     onOpenClientInstall: () => void openClientInstallModal(),
     onOpenTelegram: () => setTelegramBotModalOpen(true),
     onOpenCustomers: openCustomersPage,
+    onOpenFrontProxies: openFrontProxiesPage,
     onOpenSupport: openSupportPage,
     onOpenFrontendSettings: openSettingsPage,
     onOpenUpdates: () => setUpdateModalOpen(true),
@@ -1758,6 +1764,10 @@ export default function App() {
               />
             </Suspense>
           </main>
+        ) : activeAdminPage === 'front-proxies' ? (
+          <Suspense fallback={<Spin size="large" />}>
+            <FrontProxyManagementPage />
+          </Suspense>
         ) : activeAdminPage === 'support' ? (
           <Suspense fallback={<Spin size="large" />}>
             <AdminSupportPage onUnreadCountChange={setSupportUnreadCount} />

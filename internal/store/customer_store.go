@@ -32,7 +32,7 @@ func (s *SQLiteStore) listCustomers(ownerType string, ownerID int64) ([]model.Cu
 		query += ` WHERE owner_type = ? AND owner_id = ?`
 		args = append(args, ownerType, ownerID)
 	}
-	query += ` ORDER BY created_at DESC, id DESC`
+	query += ` ORDER BY updated_at DESC, id DESC`
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list customers: %w", err)

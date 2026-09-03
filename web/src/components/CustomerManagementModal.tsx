@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, App as AntdApp, Button, Card, Col, Empty, Input, Modal, Popconfirm, Row, Select, Space, Spin, Switch, Table, Tabs, Tag, TreeSelect, Typography } from 'antd'
+import { Alert, App as AntdApp, Button, Card, Col, Empty, Input, Modal, Popconfirm, Row, Select, Space, Spin, Table, Tabs, Tag, TreeSelect, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { DeleteOutlined, EditOutlined, ExportOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SyncOutlined } from '@ant-design/icons'
 
 import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, CustomerAssignmentSourceView, DashboardAgentView, FrontProxyNode, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
-import { fetchJSON } from '../lib/appHelpers'
+import { fetchJSON, formatDateTime } from '../lib/appHelpers'
 import { CustomerAssignmentManagerCard } from './CustomerAssignmentManagerCard'
 import {
   DEFAULT_ACCOUNT_PASSWORD,
@@ -89,12 +89,8 @@ export function CustomerManagementModal(props: {
   const [customerAssignmentSources, setCustomerAssignmentSources] = useState<CustomerAssignmentSourceView[]>([])
   const [areaManagers, setAreaManagers] = useState<AreaManagerAdminView[]>([])
   const [frontProxies, setFrontProxies] = useState<FrontProxyNode[]>([])
-  const [frontProxyForm, setFrontProxyForm] = useState({ name: '', share_url: '', enabled: true, remark: '' })
-  const [editingFrontProxyID, setEditingFrontProxyID] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [areaManagersLoading, setAreaManagersLoading] = useState(false)
-  const [frontProxiesLoading, setFrontProxiesLoading] = useState(false)
-  const [savingFrontProxy, setSavingFrontProxy] = useState(false)
   const [savingCustomer, setSavingCustomer] = useState(false)
   const [resettingCustomerID, setResettingCustomerID] = useState<number | null>(null)
   const [savingAssignment, setSavingAssignment] = useState(false)
@@ -111,6 +107,8 @@ export function CustomerManagementModal(props: {
   const [editingAssignmentID, setEditingAssignmentID] = useState<number | null>(null)
   const [customerForm, setCustomerForm] = useState<CustomerFormState>(emptyCustomerForm)
   const [customerCreateForm, setCustomerCreateForm] = useState<CustomerFormState>(emptyCustomerForm)
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [customerStatusFilter, setCustomerStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all')
   const [areaManagerForm, setAreaManagerForm] = useState<AreaManagerFormState>(emptyAreaManagerForm)
   const [assignmentForm, setAssignmentForm] = useState<AssignmentFormState>(emptyAssignmentForm)
   const [overview, setOverview] = useState<XUIOverview | null>(null)
@@ -180,6 +178,28 @@ export function CustomerManagementModal(props: {
       value: item.id,
       label: [item.name, item.protocol].filter(Boolean).join(' / '),
     })), [selectedCustomer])
+  const filteredCustomers = useMemo(() => {
+    const normalizedSearch = customerSearch.trim().toLocaleLowerCase()
+    return customers.filter((customer) => {
+      if (customerStatusFilter !== 'all' && (customer.enabled ? 'enabled' : 'disabled') !== customerStatusFilter) {
+        return false
+      }
+      if (!normalizedSearch) {
+        return true
+      }
+      const searchableText = [
+        customer.username,
+        customer.display_name,
+        ...((customer.assignments || []).flatMap((assignment) => [
+          assignment.public_client_name,
+          assignment.inbound_tag,
+          assignment.client_email,
+          assignment.remark,
+        ])),
+      ].filter(Boolean).join(' ').toLocaleLowerCase()
+      return searchableText.includes(normalizedSearch)
+    })
+  }, [customerSearch, customerStatusFilter, customers])
 
   useEffect(() => {
     if (active) {
@@ -554,6 +574,7 @@ export function CustomerManagementModal(props: {
     {
       title: '用户账号',
       width: 220,
+      sorter: (left, right) => left.username.localeCompare(right.username, 'zh-CN'),
       render: (_, record) => (
         <div>
           <Text strong>{record.username}</Text>
@@ -564,6 +585,7 @@ export function CustomerManagementModal(props: {
     {
       title: '已授权链路',
       width: 160,
+      sorter: (left, right) => (left.assignments?.length || 0) - (right.assignments?.length || 0),
       render: (_, record) => (
         <Button size="small" onClick={() => openAssignmentViewModal(record)}>
           查看 {record.assignments?.length || 0} 条
@@ -574,7 +596,23 @@ export function CustomerManagementModal(props: {
       title: '状态',
       dataIndex: 'enabled',
       width: 90,
+      sorter: (left, right) => Number(left.enabled) - Number(right.enabled),
       render: (enabled: boolean) => <Tag color={enabled ? 'blue' : 'default'}>{enabled ? '启用' : '停用'}</Tag>,
+    },
+    {
+      title: '创建时间',
+      dataIndex: 'created_at',
+      width: 180,
+      sorter: (left, right) => timestampForSort(left.created_at) - timestampForSort(right.created_at),
+      render: (value: string) => formatDateTime(value),
+    },
+    {
+      title: '修改时间',
+      dataIndex: 'updated_at',
+      width: 180,
+      defaultSortOrder: 'descend',
+      sorter: (left, right) => timestampForSort(left.updated_at) - timestampForSort(right.updated_at),
+      render: (value: string) => formatDateTime(value),
     },
     {
       title: '操作',
@@ -594,6 +632,11 @@ export function CustomerManagementModal(props: {
     },
   ]
 
+  function timestampForSort(value?: string) {
+    const timestamp = value ? Date.parse(value) : Number.NaN
+    return Number.isFinite(timestamp) ? timestamp : 0
+  }
+
   const areaAssignmentColumns: ColumnsType<AreaManagerAssignment> = [
     {
       title: '已授权 Client / 节点 / 客户端',
@@ -606,53 +649,6 @@ export function CustomerManagementModal(props: {
         <Popconfirm title="移除该区域授权？" okText="移除" cancelText="取消" onConfirm={() => void deleteAreaManagerAssignment(record.manager_id, record.id)}>
           <Button size="small" danger icon={<DeleteOutlined />} />
         </Popconfirm>
-      ),
-    },
-  ]
-
-  const frontProxyColumns: ColumnsType<FrontProxyNode> = [
-    {
-      title: '名称',
-      width: 180,
-      render: (_, record) => (
-        <div>
-          <Text strong>{record.name}</Text>
-          <div className="muted-line">{record.protocol || '-'}</div>
-        </div>
-      ),
-    },
-    {
-      title: '分享链接',
-      ellipsis: true,
-      render: (_, record) => <Text code>{record.share_url || '-'}</Text>,
-    },
-    {
-      title: '状态',
-      width: 90,
-      render: (_, record) => <Tag color={record.enabled ? 'blue' : 'default'}>{record.enabled ? '启用' : '停用'}</Tag>,
-    },
-    {
-      title: '操作',
-      width: 150,
-      render: (_, record) => (
-        <Space size={6}>
-          <Button
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => {
-              setEditingFrontProxyID(record.id)
-              setFrontProxyForm({
-                name: record.name,
-                share_url: record.share_url || '',
-                enabled: record.enabled,
-                remark: record.remark || '',
-              })
-            }}
-          />
-          <Popconfirm title="删除该前置代理？" okText="删除" cancelText="取消" onConfirm={() => void deleteFrontProxy(record.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
-        </Space>
       ),
     },
   ]
@@ -719,74 +715,12 @@ export function CustomerManagementModal(props: {
   }
 
   async function loadFrontProxies() {
-    setFrontProxiesLoading(true)
     try {
       const data = await fetchJSON<FrontProxyNode[]>('/api/v1/admin/front-proxies')
       setFrontProxies(Array.isArray(data) ? data : [])
     } catch (error) {
       setFrontProxies([])
       message.error(error instanceof Error ? error.message : '加载前置代理失败')
-    } finally {
-      setFrontProxiesLoading(false)
-    }
-  }
-
-  async function saveFrontProxy() {
-    if (!frontProxyForm.name.trim() || !frontProxyForm.share_url.trim()) {
-      message.warning('请填写前置代理名称和分享链接')
-      return
-    }
-    setSavingFrontProxy(true)
-    try {
-      const payload = {
-        name: frontProxyForm.name.trim(),
-        share_url: frontProxyForm.share_url.trim(),
-        enabled: frontProxyForm.enabled,
-        remark: frontProxyForm.remark.trim(),
-      }
-      if (editingFrontProxyID) {
-        await fetchJSON<FrontProxyNode>(`/api/v1/admin/front-proxies/${editingFrontProxyID}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
-        message.success('前置代理已更新')
-      } else {
-        await fetchJSON<FrontProxyNode>('/api/v1/admin/front-proxies', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
-        message.success('前置代理已新增')
-      }
-      setEditingFrontProxyID(null)
-      setFrontProxyForm({ name: '', share_url: '', enabled: true, remark: '' })
-      await loadFrontProxies()
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '保存前置代理失败')
-    } finally {
-      setSavingFrontProxy(false)
-    }
-  }
-
-  async function deleteFrontProxy(id: number) {
-    setSavingFrontProxy(true)
-    try {
-      await fetchJSON(`/api/v1/admin/front-proxies/${id}`, { method: 'DELETE' })
-      if (editingFrontProxyID === id) {
-        setEditingFrontProxyID(null)
-        setFrontProxyForm({ name: '', share_url: '', enabled: true, remark: '' })
-      }
-      message.success('前置代理已删除')
-      await loadFrontProxies()
-      await loadCustomers()
-      if (canManageAreaManagers) {
-        await loadAreaManagers()
-      }
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '删除前置代理失败')
-    } finally {
-      setSavingFrontProxy(false)
     }
   }
 
@@ -1464,58 +1398,6 @@ export function CustomerManagementModal(props: {
         message="区域账号权限"
         description="区域账号只能查看被分配的 Client，能下发 x-ui 转发规则，并且只能管理自己创建的普通用户；Admin 可见全部用户与区域账号。展开区域账号可直接查看其下属用户与链路。"
       />
-      <Card size="small" style={{ marginBottom: 14 }} bordered={false}>
-        <div className="customer-admin-card-head">
-          <div>
-            <Title level={5}>第三方前置代理</Title>
-            <Text type="secondary">导入 SS / VLESS / VMess / Trojan / HTTP 等分享链接，授权后可作为客户订阅的前置代理组。</Text>
-          </div>
-          <Space>
-            <Button size="small" icon={<ReloadOutlined />} onClick={() => void loadFrontProxies()}>刷新</Button>
-            <Button
-              size="small"
-              onClick={() => {
-                setEditingFrontProxyID(null)
-                setFrontProxyForm({ name: '', share_url: '', enabled: true, remark: '' })
-              }}
-            >
-              清空
-            </Button>
-          </Space>
-        </div>
-        <Row gutter={[12, 12]} align="middle">
-          <Col xs={24} md={5}>
-            <Text type="secondary">名称</Text>
-            <Input value={frontProxyForm.name} onChange={(event) => setFrontProxyForm((current) => ({ ...current, name: event.target.value }))} />
-          </Col>
-          <Col xs={24} md={11}>
-            <Text type="secondary">分享链接</Text>
-            <Input value={frontProxyForm.share_url} onChange={(event) => setFrontProxyForm((current) => ({ ...current, share_url: event.target.value }))} />
-          </Col>
-          <Col xs={24} md={4}>
-            <Text type="secondary">状态</Text>
-            <div className="customer-admin-switch-row">
-              <Switch checked={frontProxyForm.enabled} onChange={(checked) => setFrontProxyForm((current) => ({ ...current, enabled: checked }))} />
-              <Text>{frontProxyForm.enabled ? '启用' : '停用'}</Text>
-            </div>
-          </Col>
-          <Col xs={24} md={4}>
-            <Button block type="primary" icon={<SaveOutlined />} loading={savingFrontProxy} onClick={() => void saveFrontProxy()}>
-              {editingFrontProxyID ? '保存前置' : '新增前置'}
-            </Button>
-          </Col>
-        </Row>
-        <Table
-          style={{ marginTop: 12 }}
-          size="small"
-          rowKey={(record) => record.id}
-          loading={frontProxiesLoading}
-          columns={frontProxyColumns}
-          dataSource={frontProxies}
-          pagination={{ pageSize: 4, hideOnSinglePage: true }}
-          locale={{ emptyText: <Empty description="暂无第三方前置代理" /> }}
-        />
-      </Card>
       <Card size="small" style={{ marginTop: 14 }} bordered={false}>
         <div className="customer-admin-card-head">
           <div>
@@ -1636,12 +1518,34 @@ export function CustomerManagementModal(props: {
           <Button type="primary" icon={<PlusOutlined />} onClick={openCustomerCreateModal}>新增普通账号</Button>
         </Space>
       </div>
+      <Space wrap style={{ width: '100%', marginBottom: 14 }}>
+        <Input.Search
+          allowClear
+          value={customerSearch}
+          style={{ minWidth: 280, flex: 1 }}
+          placeholder="搜索用户名 / 显示名 / 链路名称 / 客户端"
+          onChange={(event) => setCustomerSearch(event.target.value)}
+          onSearch={setCustomerSearch}
+        />
+        <Select
+          value={customerStatusFilter}
+          style={{ width: 120 }}
+          options={[
+            { value: 'all', label: '全部状态' },
+            { value: 'enabled', label: '仅启用' },
+            { value: 'disabled', label: '仅停用' },
+          ]}
+          onChange={(value: 'all' | 'enabled' | 'disabled') => setCustomerStatusFilter(value)}
+        />
+        <Text type="secondary">显示 {filteredCustomers.length} / {customers.length} 个用户</Text>
+      </Space>
       <Table
         rowKey={(record) => record.id}
         columns={customerColumns}
-        dataSource={customers}
+        dataSource={filteredCustomers}
         pagination={{ pageSize: 8, hideOnSinglePage: true }}
-        locale={{ emptyText: <Empty description="暂无用户" /> }}
+        scroll={{ x: 1260 }}
+        locale={{ emptyText: <Empty description={customerSearch.trim() || customerStatusFilter !== 'all' ? '没有匹配的用户' : '暂无用户'} /> }}
       />
     </Card>
   )
