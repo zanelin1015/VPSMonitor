@@ -26,6 +26,9 @@ func (a *App) handleAdminFrontProxies(w http.ResponseWriter, r *http.Request, pa
 				items, err = a.store.ListFrontProxyNodes()
 			} else {
 				items, err = a.store.ListFrontProxyNodesForGrantee(model.FrontProxyGranteeAreaManager, user.ID)
+				// Area managers can use granted proxies, but upstream share URLs
+				// are secrets and remain visible only to the root administrator.
+				items = redactFrontProxyShareURLs(items)
 			}
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
@@ -123,4 +126,16 @@ func (a *App) handleAdminFrontProxies(w http.ResponseWriter, r *http.Request, pa
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func redactFrontProxyShareURLs(items []model.FrontProxyNode) []model.FrontProxyNode {
+	if len(items) == 0 {
+		return items
+	}
+	redacted := make([]model.FrontProxyNode, len(items))
+	copy(redacted, items)
+	for index := range redacted {
+		redacted[index].ShareURL = ""
+	}
+	return redacted
 }

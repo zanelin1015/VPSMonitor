@@ -599,7 +599,7 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
           setAssignmentForm(emptyAssignmentForm)
         }}
         footer={null}
-        width={1160}
+        width={1260}
         destroyOnClose
       >
         {assignmentManagerContent}

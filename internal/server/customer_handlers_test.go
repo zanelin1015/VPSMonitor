@@ -24,6 +24,18 @@ func TestActiveCustomerAnnouncementsFiltersDisabledAndScheduledItems(t *testing.
 	}
 }
 
+func TestRedactCustomerOverviewFrontProxyShareURLs(t *testing.T) {
+	response := model.CustomerOverviewResponse{
+		Links: []model.CustomerLinkView{{
+			FrontProxies: []model.CustomerLinkFrontProxy{{ID: 7, Name: "HK", ShareURL: "ss://secret"}},
+		}},
+	}
+	redactCustomerOverviewFrontProxyShareURLs(&response)
+	if got := response.Links[0].FrontProxies[0].ShareURL; got != "" {
+		t.Fatalf("expected customer overview to omit front proxy share URL, got %q", got)
+	}
+}
+
 func TestCustomerExitInfoPrefersMatchedAgentObservedGeo(t *testing.T) {
 	chain := model.ClientChainView{
 		RootAgentID: "entry",

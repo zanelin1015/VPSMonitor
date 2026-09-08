@@ -131,7 +131,19 @@ func (a *App) handleCustomerOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	response.ClashSubscriptionURL = customerSubscriptionURL(r, token, "clash.yaml")
 	response.MihomoSubscriptionURL = customerSubscriptionURL(r, token, "mihomo.yaml")
+	redactCustomerOverviewFrontProxyShareURLs(&response)
 	writeJSON(w, http.StatusOK, response)
+}
+
+func redactCustomerOverviewFrontProxyShareURLs(response *model.CustomerOverviewResponse) {
+	if response == nil {
+		return
+	}
+	for linkIndex := range response.Links {
+		for proxyIndex := range response.Links[linkIndex].FrontProxies {
+			response.Links[linkIndex].FrontProxies[proxyIndex].ShareURL = ""
+		}
+	}
 }
 
 func customerSubscriptionURL(r *http.Request, token string, filename string) string {

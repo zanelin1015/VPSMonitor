@@ -36,6 +36,17 @@ func TestHasClientUpdateAsset(t *testing.T) {
 	}
 }
 
+func TestRedactFrontProxyShareURLs(t *testing.T) {
+	items := []model.FrontProxyNode{{ID: 1, Name: "HK", ShareURL: "ss://secret", Enabled: true}}
+	redacted := redactFrontProxyShareURLs(items)
+	if len(redacted) != 1 || redacted[0].ShareURL != "" {
+		t.Fatalf("expected share URL to be redacted, got %#v", redacted)
+	}
+	if items[0].ShareURL == "" {
+		t.Fatal("redaction should not mutate store result")
+	}
+}
+
 func TestFilterRootOnlyXUIActionsHidesRemoteCommands(t *testing.T) {
 	actions := []model.XUIAction{
 		{ID: 1, Kind: model.XUIActionUpsertRoutingRule},

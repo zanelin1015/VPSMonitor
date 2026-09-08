@@ -428,11 +428,11 @@ export function CustomerManagementModal(props: {
     {
       title: '费用',
       key: 'revenue',
-      width: 150,
+      width: 220,
       render: (_, record) => {
         const billing = effectiveAssignmentBilling(record, agents)
         return billing && Number(billing.revenue_amount || 0) > 0
-          ? <Space size={4}><span>{billing.revenue_currency || 'CNY'} {Number(billing.revenue_amount || 0).toFixed(2)} / {revenueCycleLabel(billing.revenue_cycle)}</span><Tag color={record.price_mode === 'override' ? 'gold' : 'blue'}>{record.price_mode === 'override' ? '用户覆盖' : '节点默认'}</Tag></Space>
+          ? <Space size={4} wrap={false}><span style={{ whiteSpace: 'nowrap' }}>{billing.revenue_currency || 'CNY'} {Number(billing.revenue_amount || 0).toFixed(2)} / {revenueCycleLabel(billing.revenue_cycle)}</span><Tag color={record.price_mode === 'override' ? 'gold' : 'blue'}>{record.price_mode === 'override' ? '用户覆盖' : '节点默认'}</Tag></Space>
           : <Tag>未设置</Tag>
       },
     },
