@@ -133,6 +133,45 @@ func TestSyncCustomerAssignmentRevenueCreatesBilling(t *testing.T) {
 	}
 }
 
+func TestReconcileCustomerAssignmentUsesStableClientIDBeforeLegacyEmail(t *testing.T) {
+	clients := []model.XUIClientView{{
+		ClientID:   "client-uuid-current",
+		InboundID:  7,
+		InboundTag: "entry-hk",
+		Email:      "actual@example.com",
+		Comment:    "Claudia",
+	}}
+
+	client, status, _ := reconcileCustomerAssignment(model.CustomerAssignment{
+		InboundID:   7,
+		InboundTag:  "entry-hk",
+		ClientID:    "client-uuid-current",
+		ClientEmail: "stale@example.com",
+	}, clients)
+	if status != "matched" || client == nil || client.Email != "actual@example.com" {
+		t.Fatalf("stable id should win over stale email: status=%s client=%#v", status, client)
+	}
+
+	client, status, _ = reconcileCustomerAssignment(model.CustomerAssignment{
+		InboundID:   7,
+		InboundTag:  "entry-hk",
+		ClientEmail: "actual@example.com",
+	}, clients)
+	if status != "legacy" || client == nil {
+		t.Fatalf("legacy email-only assignment should be reported as upgradeable: status=%s client=%#v", status, client)
+	}
+
+	client, status, _ = reconcileCustomerAssignment(model.CustomerAssignment{
+		InboundID:        7,
+		InboundTag:       "entry-hk",
+		ClientEmail:      "Claudia",
+		PublicClientName: "HK Claudia",
+	}, clients)
+	if status != "mismatch" || client == nil {
+		t.Fatalf("comment-based assignment should be flagged for repair: status=%s client=%#v", status, client)
+	}
+}
+
 func TestSyncCustomerAssignmentRevenueMatchesExistingBillingByEmail(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "bridge.db")
 	sqliteStore, err := store.NewSQLiteStore(dbPath)

@@ -65,6 +65,19 @@ try {
   const summaryWithoutAreaBilling = summarizeMonthlyFinance(agents, chains, 'USD', exchangeRates, customers, areaManagersWithoutAccountBilling)
   approx(summaryWithoutAreaBilling.revenueTotal, 117, 'area-owned node revenue is counted when account-level area billing is disabled')
 
+  const overrideAgent = agent('override', 0, [{
+    client_id: 'client-uuid-1', inbound_id: 10, inbound_tag: 'override-node', email: 'actual-client', revenue_amount: 5, revenue_currency: 'USDT', revenue_cycle: 'month',
+  }], [{
+    client_id: 'client-uuid-1', inbound_id: 10, inbound_tag: 'override-node', inbound_remark: 'override-node', email: 'actual-client', comment: 'Actual Client', enabled: true, node_enabled: true,
+  }])
+  const overrideCustomer = customer(10, 'admin', 1, [{
+    agent_id: 'override', inbound_id: 10, inbound_tag: 'override-node', client_id: 'client-uuid-1', client_email: 'actual-client', price_mode: 'override', revenue_amount: 30, revenue_currency: 'USDT', revenue_cycle: 'quarter',
+  }])
+  const overrideRows = buildMonthlyFinanceRevenueDetails([overrideAgent], [], 'USD', exchangeRates, [overrideCustomer])
+  assert.equal(overrideRows.length, 1, 'customer override replaces the node default price')
+  assert.equal(overrideRows[0].source, 'customer_override', 'customer override is labeled in finance details')
+  approx(overrideRows[0].monthlyAmount, 10, 'quarterly customer override is converted to its monthly revenue')
+
   const scopedManagers = [
     areaManager(7, true, 100, 'USDT', 'quarter', ['c']),
     areaManager(8, true, 60, 'USDT', 'month', ['outside']),

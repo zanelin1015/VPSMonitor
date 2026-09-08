@@ -102,6 +102,7 @@ func BuildGlobalDashboardWithOptions(agents []model.AgentRecord, snapshots []mod
 			view.FinanceClients = make([]model.FinanceClientView, 0, len(overview.Clients))
 			for _, client := range overview.Clients {
 				view.FinanceClients = append(view.FinanceClients, model.FinanceClientView{
+					ClientID:      client.ClientID,
 					InboundID:     client.InboundID,
 					InboundTag:    client.InboundTag,
 					InboundRemark: client.InboundRemark,

@@ -72,6 +72,19 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 		writeJSON(w, http.StatusOK, sources)
 		return
 	}
+	if len(parts) == 1 && parts[0] == "billing-reconciliation" {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		result, err := a.customerBillingReconciliationForAdmin(user)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+		return
+	}
 
 	customerID, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil || customerID <= 0 {
@@ -223,16 +236,18 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 				return
 			}
 			if isAreaManager(user) {
+				req.PriceMode = "inherit"
 				req.RevenueAmount = nil
 				req.RevenueCurrency = ""
 				req.RevenueCycle = ""
 			}
+			legacyPriceSync := strings.TrimSpace(req.PriceMode) == "" && (req.RevenueAmount != nil || req.TrafficMultiplier != nil)
 			assignment, err := a.store.CreateCustomerAssignment(customerID, req)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			if isRootAdmin(user) {
+			if isRootAdmin(user) && legacyPriceSync {
 				if err := a.syncCustomerAssignmentRevenue(req, user.Username); err != nil {
 					writeError(w, http.StatusBadRequest, err.Error())
 					return
@@ -248,6 +263,64 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 	assignmentID, err := strconv.ParseInt(parts[2], 10, 64)
 	if err != nil || assignmentID <= 0 {
 		writeError(w, http.StatusBadRequest, "invalid assignment id")
+		return
+	}
+	if len(parts) == 4 && parts[3] == "rebind" {
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		var req model.CustomerBillingRebindRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode rebind request: %v", err))
+			return
+		}
+		assignment, found, err := a.store.GetCustomerAssignment(customerID, assignmentID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if !found {
+			writeError(w, http.StatusNotFound, "assignment not found")
+			return
+		}
+		if !a.adminCanAccessAgent(user, assignment.AgentID) {
+			writeError(w, http.StatusForbidden, "agent is not assigned to this account")
+			return
+		}
+		client, found, err := a.currentXUIClient(assignment.AgentID, req.ClientID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if !found {
+			writeError(w, http.StatusNotFound, "client is not present in the latest x-ui snapshot")
+			return
+		}
+		enabled := assignment.Enabled
+		updated, err := a.store.UpdateCustomerAssignment(customerID, assignmentID, model.CustomerAssignmentRequest{
+			AgentID:           assignment.AgentID,
+			InboundID:         client.InboundID,
+			InboundTag:        client.InboundTag,
+			ClientID:          client.ClientID,
+			ClientEmail:       client.Email,
+			PublicClientName:  assignment.PublicClientName,
+			PriceMode:         assignment.PriceMode,
+			RevenueAmount:     assignment.RevenueAmount,
+			RevenueCurrency:   assignment.RevenueCurrency,
+			RevenueCycle:      assignment.RevenueCycle,
+			Enabled:           &enabled,
+			FrontProxyNodeIDs: frontProxyNodeIDs(assignment.FrontProxies),
+		})
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, updated)
+		return
+	}
+	if len(parts) != 3 {
+		writeError(w, http.StatusNotFound, "route not found")
 		return
 	}
 	switch r.Method {
@@ -270,10 +343,12 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 			return
 		}
 		if isAreaManager(user) {
+			req.PriceMode = "inherit"
 			req.RevenueAmount = nil
 			req.RevenueCurrency = ""
 			req.RevenueCycle = ""
 		}
+		legacyPriceSync := strings.TrimSpace(req.PriceMode) == "" && (req.RevenueAmount != nil || req.TrafficMultiplier != nil)
 		assignment, err := a.store.UpdateCustomerAssignment(customerID, assignmentID, req)
 		if err != nil {
 			status := http.StatusBadRequest
@@ -283,7 +358,7 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 			writeError(w, status, err.Error())
 			return
 		}
-		if isRootAdmin(user) {
+		if isRootAdmin(user) && legacyPriceSync {
 			if err := a.syncCustomerAssignmentRevenue(req, user.Username); err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
@@ -303,6 +378,14 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func frontProxyNodeIDs(items []model.FrontProxyNodeView) []int64 {
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	return ids
 }
 
 func (a *App) customerAssignmentSourcesForAdmin(user model.AdminUser) ([]model.CustomerAssignmentSourceView, error) {
@@ -458,6 +541,7 @@ func (a *App) syncCustomerAssignmentRevenue(req model.CustomerAssignmentRequest,
 		trafficMultiplier = normalizeClientTrafficMultiplier(*req.TrafficMultiplier)
 	}
 	billing := model.XUIClientBillingConfig{
+		ClientID:          strings.TrimSpace(req.ClientID),
 		InboundID:         req.InboundID,
 		InboundTag:        strings.TrimSpace(req.InboundTag),
 		Email:             strings.TrimSpace(req.ClientEmail),
@@ -471,7 +555,7 @@ func (a *App) syncCustomerAssignmentRevenue(req model.CustomerAssignmentRequest,
 	emailKey := customerBillingEmailKey(billing.InboundID, billing.Email)
 	replaced := false
 	for index, existing := range cfg.Renewal.ClientBillings {
-		if customerBillingKey(existing.InboundID, existing.InboundTag, existing.Email) != key &&
+		if (billing.ClientID == "" || existing.ClientID != billing.ClientID) && customerBillingKey(existing.InboundID, existing.InboundTag, existing.Email) != key &&
 			(emailKey == "" || customerBillingEmailKey(existing.InboundID, existing.Email) != emailKey) {
 			continue
 		}

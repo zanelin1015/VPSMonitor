@@ -3,7 +3,7 @@ import { Alert, App as AntdApp, Button, Card, Col, Empty, Input, Modal, Popconfi
 import type { ColumnsType } from 'antd/es/table'
 import { CopyOutlined, DeleteOutlined, EditOutlined, ExportOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SyncOutlined } from '@ant-design/icons'
 
-import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, CustomerAssignmentSourceView, CustomerSubscriptionURLResponse, DashboardAgentView, FrontProxyNode, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
+import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, CustomerAssignmentSourceView, CustomerBillingDiagnostic, CustomerBillingReconciliationResponse, CustomerSubscriptionURLResponse, DashboardAgentView, FrontProxyNode, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
 import { fetchJSON, formatDateTime } from '../lib/appHelpers'
 import { CustomerAssignmentManagerCard } from './CustomerAssignmentManagerCard'
 import {
@@ -18,7 +18,7 @@ import {
   areaAssignmentDraftFromTargetOption,
   areaAssignmentKey,
   agentName,
-  assignmentBilling,
+  assignmentBindingDiagnostic,
   assignmentFormFromAssignment,
   assignmentFormFromDraft,
   assignmentMatchesInbound,
@@ -38,6 +38,7 @@ import {
   emptyAreaManagerForm,
   emptyAssignmentForm,
   emptyCustomerForm,
+  effectiveAssignmentBilling,
   findMatchingAssignment,
   findRealmTargetNode,
   firstRealmAssignmentAgentID,
@@ -106,6 +107,10 @@ export function CustomerManagementModal(props: {
   const [selectedSubscriptionAssignmentIDs, setSelectedSubscriptionAssignmentIDs] = useState<number[]>([])
   const [assignmentManagerModalOpen, setAssignmentManagerModalOpen] = useState(false)
   const [assignmentViewModalOpen, setAssignmentViewModalOpen] = useState(false)
+  const [billingReconciliationModalOpen, setBillingReconciliationModalOpen] = useState(false)
+  const [billingReconciliation, setBillingReconciliation] = useState<CustomerBillingReconciliationResponse | null>(null)
+  const [billingReconciliationLoading, setBillingReconciliationLoading] = useState(false)
+  const [repairingAssignmentID, setRepairingAssignmentID] = useState<number | null>(null)
   const [selectedCustomerID, setSelectedCustomerID] = useState<number | null>(null)
   const [editingAreaManagerID, setEditingAreaManagerID] = useState<number | null>(null)
   const [editingAssignmentID, setEditingAssignmentID] = useState<number | null>(null)
@@ -127,6 +132,17 @@ export function CustomerManagementModal(props: {
   const skipAssignmentResetRef = useRef(false)
 
   const selectedCustomer = customers.find((item) => item.id === selectedCustomerID) || null
+  const inheritedAssignmentBilling = useMemo(() => clientBilling(
+    assignmentForm.agent_id,
+    assignmentForm.inbound_id,
+    assignmentForm.inbound_tag,
+    assignmentForm.client_email,
+    agents,
+    assignmentForm.client_id,
+  ), [agents, assignmentForm.agent_id, assignmentForm.client_email, assignmentForm.client_id, assignmentForm.inbound_id, assignmentForm.inbound_tag])
+  const inheritedPriceLabel = inheritedAssignmentBilling && Number(inheritedAssignmentBilling.revenue_amount || 0) > 0
+    ? `${inheritedAssignmentBilling.revenue_currency || 'CNY'} ${Number(inheritedAssignmentBilling.revenue_amount || 0).toFixed(2)} / ${revenueCycleLabel(inheritedAssignmentBilling.revenue_cycle)}`
+    : '未设置'
   const agentOptions = useMemo(() => agents.map((agent) => ({
     value: agent.agent_id,
     label: agent.agent_name || agent.agent_id,
@@ -197,6 +213,7 @@ export function CustomerManagementModal(props: {
         ...((customer.assignments || []).flatMap((assignment) => [
           assignment.public_client_name,
           assignment.inbound_tag,
+          assignment.client_id,
           assignment.client_email,
           assignment.remark,
         ])),
@@ -413,17 +430,27 @@ export function CustomerManagementModal(props: {
       key: 'revenue',
       width: 150,
       render: (_, record) => {
-        const billing = assignmentBilling(record, agents)
+        const billing = effectiveAssignmentBilling(record, agents)
         return billing && Number(billing.revenue_amount || 0) > 0
-          ? `${billing.revenue_currency || 'CNY'} ${Number(billing.revenue_amount || 0).toFixed(2)} / ${revenueCycleLabel(billing.revenue_cycle)}`
+          ? <Space size={4}><span>{billing.revenue_currency || 'CNY'} {Number(billing.revenue_amount || 0).toFixed(2)} / {revenueCycleLabel(billing.revenue_cycle)}</span><Tag color={record.price_mode === 'override' ? 'gold' : 'blue'}>{record.price_mode === 'override' ? '用户覆盖' : '节点默认'}</Tag></Space>
           : <Tag>未设置</Tag>
+      },
+    },
+    {
+      title: '绑定状态',
+      key: 'binding',
+      width: 120,
+      render: (_, record) => {
+        const diagnostic = assignmentBindingDiagnostic(record, agents)
+        const color = diagnostic.status === 'matched' ? 'green' : diagnostic.status === 'legacy' ? 'blue' : diagnostic.status === 'mismatch' ? 'orange' : 'red'
+        return <Tag color={color}>{diagnostic.label}</Tag>
       },
     },
     {
       title: '流量倍率',
       key: 'traffic_multiplier',
       width: 100,
-      render: (_, record) => `${Number(assignmentBilling(record, agents)?.traffic_multiplier || 1)} 倍`,
+      render: (_, record) => `${Number(effectiveAssignmentBilling(record, agents)?.traffic_multiplier || 1)} 倍`,
     },
     {
       title: '状态',
@@ -453,6 +480,42 @@ export function CustomerManagementModal(props: {
   const visibleAssignmentColumns = canViewFinance
     ? assignmentColumns
     : assignmentColumns.filter((column) => !['revenue', 'traffic_multiplier'].includes(String(column.key || '')))
+
+  const billingReconciliationColumns: ColumnsType<CustomerBillingDiagnostic> = [
+    {
+      title: '用户 / 授权',
+      width: 190,
+      render: (_, record) => <div><Text strong>{record.customer_name || `用户 #${record.customer_id}`}</Text><div className="muted-line">{record.agent_id} / {record.inbound_tag || `Inbound #${record.inbound_id}`}</div></div>,
+    },
+    {
+      title: '已存绑定',
+      width: 220,
+      render: (_, record) => <div>{record.client_email || '节点级授权'}<div className="muted-line">{record.client_id || '未保存稳定 ID'}</div></div>,
+    },
+    {
+      title: '当前 x-ui 客户端',
+      width: 220,
+      render: (_, record) => record.current_client_id
+        ? <div>{record.current_client_name || record.current_client_email}<div className="muted-line">{record.current_client_id}</div></div>
+        : '-',
+    },
+    {
+      title: '结果',
+      width: 220,
+      render: (_, record) => {
+        const color = record.status === 'matched' ? 'green' : record.status === 'legacy' ? 'blue' : record.status === 'mismatch' ? 'orange' : 'red'
+        const label = record.status === 'matched' ? '已匹配' : record.status === 'legacy' ? '旧数据' : record.status === 'mismatch' ? '需修复' : '未找到'
+        return <Space direction="vertical" size={2}><Tag color={color}>{label}</Tag><Text type="secondary">{record.message}</Text></Space>
+      },
+    },
+    {
+      title: '操作',
+      width: 110,
+      render: (_, record) => record.can_rebind
+        ? <Button size="small" type="primary" loading={repairingAssignmentID === record.assignment_id} onClick={() => void rebindBillingAssignment(record)}>重新绑定</Button>
+        : '-',
+    },
+  ]
 
   const areaCustomerColumns: ColumnsType<CustomerAdminView> = [
     {
@@ -1153,6 +1216,40 @@ export function CustomerManagementModal(props: {
     }
   }
 
+  async function openBillingReconciliation() {
+    setBillingReconciliationModalOpen(true)
+    setBillingReconciliationLoading(true)
+    try {
+      const result = await fetchJSON<CustomerBillingReconciliationResponse>('/api/v1/admin/customers/billing-reconciliation')
+      setBillingReconciliation(result)
+    } catch (error) {
+      setBillingReconciliation(null)
+      message.error(error instanceof Error ? error.message : '加载费用对账失败')
+    } finally {
+      setBillingReconciliationLoading(false)
+    }
+  }
+
+  async function rebindBillingAssignment(record: CustomerBillingDiagnostic) {
+    if (!record.current_client_id) {
+      return
+    }
+    setRepairingAssignmentID(record.assignment_id)
+    try {
+      await fetchJSON<CustomerAssignment>(`/api/v1/admin/customers/${record.customer_id}/assignments/${record.assignment_id}/rebind`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: record.current_client_id }),
+      })
+      message.success('客户端已重新绑定')
+      await Promise.all([loadCustomers(), openBillingReconciliation()])
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '重新绑定失败')
+    } finally {
+      setRepairingAssignmentID(null)
+    }
+  }
+
   async function saveAssignment() {
     if (!selectedCustomerID) {
       message.warning('请先选择用户')
@@ -1170,13 +1267,16 @@ export function CustomerManagementModal(props: {
         agent_id: assignmentForm.agent_id,
         inbound_id: assignmentForm.inbound_id,
         inbound_tag: assignmentForm.inbound_tag,
+        client_id: assignmentForm.client_id,
         client_email: assignmentForm.client_email,
         public_client_name: assignmentForm.public_client_name,
-        ...(canViewFinance ? {
-          traffic_multiplier: assignmentForm.traffic_multiplier,
+        ...(canViewFinance && assignmentForm.price_mode === 'override' ? {
+          price_mode: 'override' as const,
           revenue_amount: assignmentForm.revenue_amount,
           revenue_currency: assignmentForm.revenue_currency,
           revenue_cycle: assignmentForm.revenue_cycle,
+        } : canViewFinance ? {
+          price_mode: 'inherit' as const,
         } : {}),
         enabled: assignmentForm.enabled,
         front_proxy_node_ids: assignmentForm.front_proxy_node_ids,
@@ -1200,15 +1300,7 @@ export function CustomerManagementModal(props: {
       const nextForm = assignmentFormFromAssignment(savedAssignment, agents)
       setSelectedCustomerID(customerID)
       setEditingAssignmentID(savedAssignment.id)
-      setAssignmentForm({
-        ...nextForm,
-        ...(canViewFinance ? {
-          traffic_multiplier: Number(payload.traffic_multiplier ?? assignmentForm.traffic_multiplier ?? 1),
-          revenue_amount: Number(payload.revenue_amount ?? assignmentForm.revenue_amount ?? 0),
-          revenue_currency: payload.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
-          revenue_cycle: normalizeRevenueCycle(payload.revenue_cycle),
-        } : {}),
-      })
+      setAssignmentForm(nextForm)
       await onConfigChanged?.(customerID ? payload.agent_id : undefined)
       await loadCustomers()
       if (canManageAreaManagers) {
@@ -1263,9 +1355,10 @@ export function CustomerManagementModal(props: {
         client_key: key,
         inbound_id: client.inbound_id,
         inbound_tag: client.inbound_tag || '',
+        client_id: client.client_id || '',
         client_email: client.email || '',
         public_client_name: current.public_client_name || defaultPublicClientName(client, assignmentForm.agent_id, agents),
-        ...(canViewFinance ? billingFormPatch(clientBilling(assignmentForm.agent_id, client.inbound_id, client.inbound_tag || '', client.email || '', agents)) : {}),
+        ...(canViewFinance ? billingFormPatch(clientBilling(assignmentForm.agent_id, client.inbound_id, client.inbound_tag || '', client.email || '', agents, client.client_id || '')) : {}),
       }))
       return
     }
@@ -1276,6 +1369,7 @@ export function CustomerManagementModal(props: {
         client_key: key,
         inbound_id: node.id,
         inbound_tag: node.tag || '',
+        client_id: '',
         client_email: '',
         public_client_name: current.public_client_name || defaultPublicNodeName(node, assignmentForm.agent_id, agents),
         ...(canViewFinance ? billingFormPatch(clientBilling(assignmentForm.agent_id, node.id, node.tag || '', '', agents)) : {}),
@@ -1557,6 +1651,7 @@ export function CustomerManagementModal(props: {
         </div>
         <Space>
           <Button icon={<ReloadOutlined />} onClick={() => void loadCustomers()}>刷新用户</Button>
+          {canViewFinance ? <Button icon={<SyncOutlined />} onClick={() => void openBillingReconciliation()}>费用对账</Button> : null}
           <Button type="primary" icon={<PlusOutlined />} onClick={openCustomerCreateModal}>新增普通账号</Button>
         </Space>
       </div>
@@ -1605,6 +1700,7 @@ export function CustomerManagementModal(props: {
       overviewLoading={overviewLoading}
       agentOptions={customerAssignmentAgentOptions}
       frontProxyOptions={selectedCustomerFrontProxyOptions}
+      inheritedPriceLabel={inheritedPriceLabel}
       clientTreeData={clientTreeData}
       visibleAssignmentColumns={visibleAssignmentColumns}
       onReset={() => {
@@ -1628,7 +1724,8 @@ export function CustomerManagementModal(props: {
   const selectedCustomerTitle = selectedCustomer ? selectedCustomer.display_name || selectedCustomer.username : '未选择用户'
 
   const accountEditorModals = (
-    <CustomerManagementModals
+    <>
+      <CustomerManagementModals
       canManageAreaManagers={canManageAreaManagers}
       agents={agents}
       agentOptions={agentOptions}
@@ -1685,7 +1782,33 @@ export function CustomerManagementModal(props: {
       selectedCustomerAssignments={selectedCustomer?.assignments || []}
       readOnlyAssignmentColumns={readOnlyAssignmentColumns}
       assignmentManagerContent={assignmentManagerContent}
-    />
+      />
+      <Modal
+        title="用户费用与客户端绑定对账"
+        open={billingReconciliationModalOpen}
+        onCancel={() => setBillingReconciliationModalOpen(false)}
+        footer={<Button onClick={() => setBillingReconciliationModalOpen(false)}>关闭</Button>}
+        width={1080}
+      >
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Alert
+            type="info"
+            showIcon
+            message={billingReconciliation ? `已匹配 ${billingReconciliation.matched}，旧数据 ${billingReconciliation.legacy}，需修复 ${billingReconciliation.mismatch}，未找到 ${billingReconciliation.missing}` : '按最新 x-ui 上报检查授权绑定'}
+            description="“重新绑定”会保留授权名称、费用模式和前置代理，只把客户端关联更新为当前 x-ui 的稳定 ID。"
+          />
+          <Table
+            rowKey={(record) => record.assignment_id}
+            loading={billingReconciliationLoading}
+            columns={billingReconciliationColumns}
+            dataSource={billingReconciliation?.items || []}
+            pagination={{ pageSize: 8, hideOnSinglePage: true }}
+            scroll={{ x: 940 }}
+            locale={{ emptyText: <Empty description="暂无可对账的授权" /> }}
+          />
+        </Space>
+      </Modal>
+    </>
   )
 
   const managementTabs = [

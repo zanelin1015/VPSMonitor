@@ -176,6 +176,7 @@ export function OverviewSummaryCard(props: {
           <Text strong>{record.clientLabel}</Text>
           <Text type="secondary">{record.clientRemark || record.inboundTag || '未备注'}</Text>
           {record.source === 'billing' ? <Tag color="blue">仅收费配置</Tag> : null}
+          {record.source === 'customer_override' ? <Tag color="gold">用户覆盖价</Tag> : null}
           {record.source === 'area_account' ? <Tag color="gold">区域账号收入</Tag> : null}
         </Space>
       ),

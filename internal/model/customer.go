@@ -43,7 +43,12 @@ type CustomerAssignment struct {
 	AgentID          string               `json:"agent_id"`
 	InboundID        int                  `json:"inbound_id"`
 	InboundTag       string               `json:"inbound_tag,omitempty"`
+	ClientID         string               `json:"client_id,omitempty"`
 	ClientEmail      string               `json:"client_email,omitempty"`
+	PriceMode        string               `json:"price_mode,omitempty"`
+	RevenueAmount    *float64             `json:"revenue_amount,omitempty"`
+	RevenueCurrency  string               `json:"revenue_currency,omitempty"`
+	RevenueCycle     string               `json:"revenue_cycle,omitempty"`
 	PublicClientName string               `json:"public_client_name,omitempty"`
 	Remark           string               `json:"remark,omitempty"`
 	Enabled          bool                 `json:"enabled"`
@@ -56,8 +61,10 @@ type CustomerAssignmentRequest struct {
 	AgentID           string   `json:"agent_id"`
 	InboundID         int      `json:"inbound_id"`
 	InboundTag        string   `json:"inbound_tag,omitempty"`
+	ClientID          string   `json:"client_id,omitempty"`
 	ClientEmail       string   `json:"client_email,omitempty"`
 	PublicClientName  string   `json:"public_client_name,omitempty"`
+	PriceMode         string   `json:"price_mode,omitempty"`
 	TrafficMultiplier *float64 `json:"traffic_multiplier,omitempty"`
 	RevenueAmount     *float64 `json:"revenue_amount,omitempty"`
 	RevenueCurrency   string   `json:"revenue_currency,omitempty"`
@@ -147,4 +154,39 @@ type CustomerOverviewResponse struct {
 type CustomerSubscriptionURLResponse struct {
 	ClashSubscriptionURL  string `json:"clash_subscription_url"`
 	MihomoSubscriptionURL string `json:"mihomo_subscription_url"`
+}
+
+type CustomerBillingDiagnostic struct {
+	AssignmentID       int64    `json:"assignment_id"`
+	CustomerID         int64    `json:"customer_id"`
+	CustomerName       string   `json:"customer_name,omitempty"`
+	AgentID            string   `json:"agent_id"`
+	InboundID          int      `json:"inbound_id"`
+	InboundTag         string   `json:"inbound_tag,omitempty"`
+	ClientID           string   `json:"client_id,omitempty"`
+	ClientEmail        string   `json:"client_email,omitempty"`
+	Status             string   `json:"status"`
+	Message            string   `json:"message"`
+	CurrentClientID    string   `json:"current_client_id,omitempty"`
+	CurrentClientEmail string   `json:"current_client_email,omitempty"`
+	CurrentClientName  string   `json:"current_client_name,omitempty"`
+	CanRebind          bool     `json:"can_rebind"`
+	PriceMode          string   `json:"price_mode,omitempty"`
+	RevenueAmount      *float64 `json:"revenue_amount,omitempty"`
+	RevenueCurrency    string   `json:"revenue_currency,omitempty"`
+	RevenueCycle       string   `json:"revenue_cycle,omitempty"`
+}
+
+type CustomerBillingReconciliationResponse struct {
+	Items    []CustomerBillingDiagnostic `json:"items"`
+	Matched  int                         `json:"matched"`
+	Legacy   int                         `json:"legacy"`
+	Mismatch int                         `json:"mismatch"`
+	Missing  int                         `json:"missing"`
+}
+
+type CustomerBillingRebindRequest struct {
+	ClientID    string `json:"client_id"`
+	ClientEmail string `json:"client_email,omitempty"`
+	InboundTag  string `json:"inbound_tag,omitempty"`
 }

@@ -1,6 +1,6 @@
 import { Space, Tag, Typography } from 'antd'
 
-import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, AreaManagerOutboundGrant, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, DashboardAgentView, RealmForwardRule, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
+import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, AreaManagerOutboundGrant, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, DashboardAgentView, FinanceClientView, RealmForwardRule, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
 
 const { Text } = Typography
 
@@ -21,8 +21,10 @@ export interface AssignmentFormState {
   client_key: string
   inbound_id: number
   inbound_tag: string
+  client_id: string
   client_email: string
   public_client_name: string
+  price_mode: 'inherit' | 'override'
   traffic_multiplier: number
   revenue_amount: number
   revenue_currency: 'CNY' | 'USDT'
@@ -85,8 +87,10 @@ export const emptyAssignmentForm: AssignmentFormState = {
   client_key: '',
   inbound_id: 0,
   inbound_tag: '',
+  client_id: '',
   client_email: '',
   public_client_name: '',
+  price_mode: 'inherit',
   traffic_multiplier: 1,
   revenue_amount: 0,
   revenue_currency: 'CNY',
@@ -136,7 +140,7 @@ export function isAreaManagerAdminUser(user: AdminUser | null): boolean {
 }
 
 export function clientKey(client: XUIClientView): string {
-  return `client:${client.inbound_id}::${client.email || ''}`
+  return `client:${client.inbound_id}::${client.client_id || client.email || ''}`
 }
 
 export function buildAssignmentTargetOptions(overview: XUIOverview | null) {
@@ -698,18 +702,37 @@ export function customerAgentName(agentID: string, agents: DashboardAgentView[])
 }
 
 export function assignmentBilling(record: CustomerAssignment, agents: DashboardAgentView[]): XUIClientBillingConfig | undefined {
-  return clientBilling(record.agent_id, record.inbound_id, record.inbound_tag || '', record.client_email || '', agents)
+  return clientBilling(record.agent_id, record.inbound_id, record.inbound_tag || '', record.client_email || '', agents, record.client_id || '')
+}
+
+export function effectiveAssignmentBilling(record: CustomerAssignment, agents: DashboardAgentView[]): XUIClientBillingConfig | undefined {
+  if (record.price_mode === 'override' && record.revenue_amount !== undefined && record.revenue_amount !== null) {
+    const base = assignmentBilling(record, agents)
+    return {
+      ...(base || {}),
+      client_id: record.client_id || base?.client_id || '',
+      inbound_id: record.inbound_id,
+      inbound_tag: record.inbound_tag || base?.inbound_tag || '',
+      email: record.client_email || base?.email || '',
+      revenue_amount: Number(record.revenue_amount || 0),
+      revenue_currency: record.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
+      revenue_cycle: normalizeRevenueCycle(record.revenue_cycle),
+    }
+  }
+  return assignmentBilling(record, agents)
 }
 
 export function assignmentFormFromAssignment(record: CustomerAssignment, agents: DashboardAgentView[]): AssignmentFormState {
-  const billing = assignmentBilling(record, agents)
+  const billing = effectiveAssignmentBilling(record, agents)
   return {
     agent_id: record.agent_id,
-    client_key: record.client_email ? `client:${record.inbound_id}::${record.client_email}` : `node:${record.inbound_id}::`,
+    client_key: record.client_email ? `client:${record.inbound_id}::${record.client_id || record.client_email}` : `node:${record.inbound_id}::`,
     inbound_id: record.inbound_id,
     inbound_tag: record.inbound_tag || '',
+    client_id: record.client_id || '',
     client_email: record.client_email || '',
     public_client_name: record.public_client_name || '',
+    price_mode: record.price_mode === 'override' ? 'override' : 'inherit',
     traffic_multiplier: Number(billing?.traffic_multiplier || 1),
     revenue_amount: Number(billing?.revenue_amount || 0),
     revenue_currency: billing?.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
@@ -722,15 +745,18 @@ export function assignmentFormFromAssignment(record: CustomerAssignment, agents:
 export function assignmentFormFromDraft(draft: CustomerAssignmentDraft, agents: DashboardAgentView[]): AssignmentFormState {
   const inboundTag = draft.inbound_tag || ''
   const clientEmail = draft.client_email || ''
-  const billing = clientBilling(draft.agent_id, draft.inbound_id, inboundTag, clientEmail, agents)
+  const clientID = draft.client_id || ''
+  const billing = clientBilling(draft.agent_id, draft.inbound_id, inboundTag, clientEmail, agents, clientID)
   const publicClientName = draft.public_client_name || defaultPublicNameFromDraft(draft, agents)
   return {
     agent_id: draft.agent_id,
-    client_key: clientEmail ? `client:${draft.inbound_id}::${clientEmail}` : `node:${draft.inbound_id}::`,
+    client_key: clientEmail ? `client:${draft.inbound_id}::${clientID || clientEmail}` : `node:${draft.inbound_id}::`,
     inbound_id: draft.inbound_id,
     inbound_tag: inboundTag,
+    client_id: clientID,
     client_email: clientEmail,
     public_client_name: publicClientName,
+    price_mode: draft.price_mode === 'override' ? 'override' : 'inherit',
     traffic_multiplier: Number(draft.traffic_multiplier ?? billing?.traffic_multiplier ?? 1),
     revenue_amount: Number(draft.revenue_amount ?? billing?.revenue_amount ?? 0),
     revenue_currency: draft.revenue_currency === 'USDT' ? 'USDT' : billing?.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
@@ -754,6 +780,9 @@ export function findMatchingAssignment(customers: CustomerAdminView[], draft: Cu
       if (assignment.agent_id !== draft.agent_id) {
         continue
       }
+      if (draft.client_id && assignment.client_id === draft.client_id) {
+        return { customer, assignment }
+      }
       if (billingKey(assignment.inbound_id, assignment.inbound_tag || '', assignment.client_email || '') === exactKey) {
         return { customer, assignment }
       }
@@ -765,8 +794,12 @@ export function findMatchingAssignment(customers: CustomerAdminView[], draft: Cu
   return null
 }
 
-export function clientBilling(agentID: string, inboundID: number, inboundTag: string, email: string, agents: DashboardAgentView[]): XUIClientBillingConfig | undefined {
+export function clientBilling(agentID: string, inboundID: number, inboundTag: string, email: string, agents: DashboardAgentView[], clientID = ''): XUIClientBillingConfig | undefined {
   const agent = agents.find((item) => item.agent_id === agentID)
+  if (clientID) {
+    const byID = (agent?.renewal?.client_billings || []).find((billing) => billing.client_id === clientID)
+    if (byID) return byID
+  }
   const exactKey = billingKey(inboundID, inboundTag, email)
   const emailKey = email ? billingEmailKey(inboundID, email) : ''
   return (agent?.renewal?.client_billings || []).find((billing) => {
@@ -775,6 +808,44 @@ export function clientBilling(agentID: string, inboundID: number, inboundTag: st
     }
     return Boolean(emailKey && billingEmailKey(Number(billing.inbound_id || 0), billing.email || '') === emailKey)
   })
+}
+
+export type AssignmentBindingStatus = 'matched' | 'legacy' | 'mismatch' | 'missing'
+
+export interface AssignmentBindingDiagnostic {
+  status: AssignmentBindingStatus
+  label: string
+  current?: FinanceClientView
+}
+
+export function assignmentBindingDiagnostic(record: CustomerAssignment, agents: DashboardAgentView[]): AssignmentBindingDiagnostic {
+  const agent = agents.find((item) => item.agent_id === record.agent_id)
+  const clients = agent?.finance_clients || []
+  const current = record.client_id
+    ? clients.find((client) => client.client_id === record.client_id)
+    : undefined
+  if (current) {
+    return { status: 'matched', label: '已匹配', current }
+  }
+  const legacy = clients.find((client) =>
+    client.inbound_id === record.inbound_id &&
+    (!record.client_email || String(client.email || '').trim().toLowerCase() === record.client_email.trim().toLowerCase()),
+  )
+  if (legacy) {
+    return { status: record.client_id ? 'mismatch' : 'legacy', label: record.client_id ? 'ID 不匹配' : '旧数据匹配', current: legacy }
+  }
+  const suspicious = clients.find((client) =>
+    client.inbound_id === record.inbound_id &&
+    [client.comment, client.email].some((value) => value && [record.client_email, record.public_client_name].includes(value)),
+  )
+  if (suspicious) {
+    return { status: 'mismatch', label: '疑似备注误绑', current: suspicious }
+  }
+  const inbound = clients.find((client) => client.inbound_id === record.inbound_id)
+  if (!record.client_email && inbound) {
+    return { status: record.client_id ? 'mismatch' : 'legacy', label: record.client_id ? 'ID 不匹配' : '节点级旧数据', current: inbound }
+  }
+  return { status: 'missing', label: '未找到客户端' }
 }
 
 export function billingFormPatch(billing?: XUIClientBillingConfig): Pick<AssignmentFormState, 'traffic_multiplier' | 'revenue_amount' | 'revenue_currency' | 'revenue_cycle'> {

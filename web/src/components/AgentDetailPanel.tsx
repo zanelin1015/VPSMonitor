@@ -282,7 +282,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const [remoteCommand, setRemoteCommand] = useState('')
   const [remoteShell, setRemoteShell] = useState('bash')
   const [remoteTimeout, setRemoteTimeout] = useState(120)
-  const xuiClientActionKey = (record: XUIClientView) => [record.inbound_id, record.inbound_tag || '', record.email || '', record.auth_uuid || record.auth_password || ''].join(':')
+  const xuiClientActionKey = (record: XUIClientView) => [record.inbound_id, record.inbound_tag || '', record.client_id || record.auth_uuid || record.auth_password || '', record.email || ''].join(':')
   const [clientTrafficLimitDrafts, setClientTrafficLimitDrafts] = useState<Record<string, number>>({})
   const [commandOutputAction, setCommandOutputAction] = useState<XUIAction | null>(null)
   const [terminalOpen, setTerminalOpen] = useState(false)

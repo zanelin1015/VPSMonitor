@@ -22,6 +22,7 @@ export interface CustomerAssignmentManagerCardProps {
   overviewLoading: boolean
   agentOptions: Array<{ value: string; label: string }>
   frontProxyOptions: Array<{ value: number; label: string }>
+  inheritedPriceLabel?: string
   clientTreeData: TreeSelectProps['treeData']
   visibleAssignmentColumns: ColumnsType<CustomerAssignment>
   onReset: () => void
@@ -41,6 +42,7 @@ export function CustomerAssignmentManagerCard(props: CustomerAssignmentManagerCa
     overviewLoading,
     agentOptions,
     frontProxyOptions,
+    inheritedPriceLabel,
     clientTreeData,
     visibleAssignmentColumns,
     onReset,
@@ -91,19 +93,15 @@ export function CustomerAssignmentManagerCard(props: CustomerAssignmentManagerCa
           <Input value={assignmentForm.public_client_name} onChange={(event) => setAssignmentForm((current) => ({ ...current, public_client_name: event.target.value }))} />
         </Col>
         {canViewFinance ? <Col xs={12} md={4}>
-          <Text type="secondary">流量倍率</Text>
-          <InputNumber
+          <Text type="secondary">价格模式</Text>
+          <Select
             style={{ width: '100%' }}
-            min={0.1}
-            max={100}
-            precision={2}
-            step={0.1}
-            addonAfter="倍"
-            value={assignmentForm.traffic_multiplier}
-            onChange={(value) => setAssignmentForm((current) => ({ ...current, traffic_multiplier: Number(value || 1) }))}
+            value={assignmentForm.price_mode}
+            options={[{ value: 'inherit', label: '继承节点默认价' }, { value: 'override', label: '用户覆盖价' }]}
+            onChange={(value) => setAssignmentForm((current) => ({ ...current, price_mode: value as 'inherit' | 'override' }))}
           />
         </Col> : null}
-        {canViewFinance ? <Col xs={24} md={4}>
+        {canViewFinance && assignmentForm.price_mode === 'override' ? <Col xs={24} md={4}>
           <Text type="secondary">费用</Text>
           <InputNumber
             style={{ width: '100%' }}
@@ -113,7 +111,7 @@ export function CustomerAssignmentManagerCard(props: CustomerAssignmentManagerCa
             onChange={(value) => setAssignmentForm((current) => ({ ...current, revenue_amount: Number(value || 0) }))}
           />
         </Col> : null}
-        {canViewFinance ? <Col xs={12} md={2}>
+        {canViewFinance && assignmentForm.price_mode === 'override' ? <Col xs={12} md={2}>
           <Text type="secondary">币种</Text>
           <Select
             style={{ width: '100%' }}
@@ -122,7 +120,7 @@ export function CustomerAssignmentManagerCard(props: CustomerAssignmentManagerCa
             onChange={(value) => setAssignmentForm((current) => ({ ...current, revenue_currency: value as 'CNY' | 'USDT' }))}
           />
         </Col> : null}
-        {canViewFinance ? <Col xs={12} md={2}>
+        {canViewFinance && assignmentForm.price_mode === 'override' ? <Col xs={12} md={2}>
           <Text type="secondary">周期</Text>
           <Select
             style={{ width: '100%' }}
@@ -135,6 +133,10 @@ export function CustomerAssignmentManagerCard(props: CustomerAssignmentManagerCa
             ]}
             onChange={(value) => setAssignmentForm((current) => ({ ...current, revenue_cycle: value as 'month' | 'quarter' | 'semiannual' | 'year' }))}
           />
+        </Col> : null}
+        {canViewFinance && assignmentForm.price_mode === 'inherit' ? <Col xs={24} md={16}>
+          <Text type="secondary">费用</Text>
+          <div><Text type="secondary">当前授权继承 Client 页面中的节点默认售价{inheritedPriceLabel ? `（${inheritedPriceLabel}）` : ''}；如需单独定价，请切换为“用户覆盖价”。</Text></div>
         </Col> : null}
         <Col xs={24} md={8}>
           <Text type="secondary">分配状态</Text>

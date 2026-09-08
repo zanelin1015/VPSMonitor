@@ -35,6 +35,7 @@ export function normalizeClientBillings(items: XUIClientBillingConfig[]): XUICli
     const billingCycle = normalizeClientExpireCycle(item.revenue_cycle || item.expire_cycle)
     const startTime = Math.max(0, Number(item.start_time || 0))
     const billing: XUIClientBillingConfig = {
+      client_id: item.client_id || '',
       inbound_id: Number(item.inbound_id || 0),
       inbound_tag: item.inbound_tag || '',
       email: item.email || '',
@@ -49,7 +50,7 @@ export function normalizeClientBillings(items: XUIClientBillingConfig[]): XUICli
       expire_cycle: billingCycle,
       expire_auto_renew: startTime > 0,
     }
-    const key = clientBillingKey(billing)
+    const key = billing.client_id ? `id:${billing.client_id}` : clientBillingKey(billing)
     if (seen.has(key)) {
       continue
     }
@@ -59,16 +60,17 @@ export function normalizeClientBillings(items: XUIClientBillingConfig[]): XUICli
   return normalized
 }
 
-export function clientBillingKey(value: Pick<XUIClientBillingConfig, 'inbound_id' | 'inbound_tag' | 'email'>): string {
+export function clientBillingKey(value: Pick<XUIClientBillingConfig, 'inbound_id' | 'inbound_tag' | 'email'> & { client_id?: string }): string {
   return `${Number(value.inbound_id || 0)}\u0000${value.inbound_tag || ''}\u0000${value.email || ''}`
 }
 
 export function billingKeyForClient(client: XUIClientView): string {
-  return clientBillingKey({ inbound_id: client.inbound_id, inbound_tag: client.inbound_tag, email: client.email })
+  return client.client_id ? `id:${client.client_id}` : clientBillingKey({ inbound_id: client.inbound_id, inbound_tag: client.inbound_tag, email: client.email })
 }
 
 export function defaultClientBilling(client: XUIClientView): XUIClientBillingConfig {
   return {
+    client_id: client.client_id || '',
     inbound_id: client.inbound_id,
     inbound_tag: client.inbound_tag || '',
     email: client.email || '',
@@ -96,7 +98,11 @@ export function scaleClientTraffic(value: number, multiplier?: number): number {
 }
 
 export function findClientBilling(items: XUIClientBillingConfig[] | undefined, client: XUIClientView): XUIClientBillingConfig | undefined {
-  const key = billingKeyForClient(client)
+  if (client.client_id) {
+    const byID = (items || []).find((item) => item.client_id === client.client_id)
+    if (byID) return byID
+  }
+  const key = clientBillingKey({ inbound_id: client.inbound_id, inbound_tag: client.inbound_tag, email: client.email })
   return (items || []).find((item) => clientBillingKey(item) === key)
 }
 
@@ -104,7 +110,13 @@ export function upsertClientBilling(items: XUIClientBillingConfig[], client: XUI
   const next = normalizeClientBillings(items)
   const normalized = normalizeClientBillings([{ ...defaultClientBilling(client), ...billing }])[0]
   const key = billingKeyForClient(client)
-  const index = next.findIndex((item) => clientBillingKey(item) === key)
+  let index = client.client_id
+    ? next.findIndex((item) => item.client_id === client.client_id)
+    : next.findIndex((item) => clientBillingKey(item) === key)
+  if (index < 0) {
+    const legacyKey = clientBillingKey({ inbound_id: client.inbound_id, inbound_tag: client.inbound_tag, email: client.email })
+    index = next.findIndex((item) => clientBillingKey(item) === legacyKey)
+  }
   if (index >= 0) {
     next[index] = normalized
     return next

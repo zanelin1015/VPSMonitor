@@ -177,9 +177,14 @@ func (s *SQLiteStore) init() error {
 			agent_id TEXT NOT NULL,
 			inbound_id INTEGER NOT NULL DEFAULT 0,
 			inbound_tag TEXT NOT NULL DEFAULT '',
+			client_id TEXT NOT NULL DEFAULT '',
 			client_email TEXT NOT NULL DEFAULT '',
 			public_client_name TEXT NOT NULL DEFAULT '',
 			customer_remark TEXT NOT NULL DEFAULT '',
+			price_mode TEXT NOT NULL DEFAULT 'inherit',
+			revenue_amount REAL,
+			revenue_currency TEXT NOT NULL DEFAULT 'CNY',
+			revenue_cycle TEXT NOT NULL DEFAULT 'month',
 			enabled INTEGER NOT NULL DEFAULT 1,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL,
@@ -434,6 +439,20 @@ func (s *SQLiteStore) init() error {
 	if err := s.ensureColumn("area_manager_accounts", "outbound_create_enabled", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	for _, column := range []struct {
+		name       string
+		definition string
+	}{
+		{name: "client_id", definition: "TEXT NOT NULL DEFAULT ''"},
+		{name: "price_mode", definition: "TEXT NOT NULL DEFAULT 'inherit'"},
+		{name: "revenue_amount", definition: "REAL"},
+		{name: "revenue_currency", definition: "TEXT NOT NULL DEFAULT 'CNY'"},
+		{name: "revenue_cycle", definition: "TEXT NOT NULL DEFAULT 'month'"},
+	} {
+		if err := s.ensureColumn("customer_assignments", column.name, column.definition); err != nil {
+			return err
+		}
+	}
 	if err := s.ensureColumn("xui_actions", "created_by_role", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
@@ -477,6 +496,7 @@ func (s *SQLiteStore) init() error {
 		`CREATE INDEX IF NOT EXISTS idx_customer_sessions_expires_at ON customer_sessions(expires_at);`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_assignments_customer ON customer_assignments(customer_id, enabled, id);`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_assignments_agent ON customer_assignments(agent_id, inbound_id, client_email);`,
+		`CREATE INDEX IF NOT EXISTS idx_customer_assignments_client_id ON customer_assignments(agent_id, client_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_xui_actions_agent_status_id ON xui_actions(agent_id, status, id);`,
 		`CREATE INDEX IF NOT EXISTS idx_xui_actions_agent_actor_id ON xui_actions(agent_id, created_by_role, created_by_account_id, id DESC);`,
 		`CREATE INDEX IF NOT EXISTS idx_config_audit_agent_id ON config_audit_logs(agent_id, id DESC);`,

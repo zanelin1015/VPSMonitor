@@ -60,6 +60,7 @@ export interface MonthlyFinanceRevenueDetail {
   nodeLabel: string
   nodeDetail: string
   clientEmail: string
+  clientID?: string
   clientLabel: string
   clientRemark: string
   amount: number
@@ -67,7 +68,7 @@ export interface MonthlyFinanceRevenueDetail {
   cycle: VPSRenewalConfig['cost_cycle']
   monthlyAmount: number | null
   payment: MonthlyFinancePaymentInfo | null
-  source: 'client' | 'billing' | 'area_account'
+  source: 'client' | 'billing' | 'customer_override' | 'area_account'
 }
 
 export type ExcludedRevenueReason = 'client_disabled' | 'node_disabled' | 'client_not_found' | 'client_state_unavailable' | 'duplicate_billing' | 'ambiguous_client' | 'outside_billing_period'
@@ -216,14 +217,14 @@ function analyzeMonthlyFinanceRevenue(
   const included: MonthlyFinanceRevenueDetail[] = []
   const excluded: MonthlyFinanceExcludedRevenueDetail[] = []
   const seenBillingKeys = new Set<string>()
+  const handledOverrideAssignmentIDs = new Set<number>()
 
   for (const agent of agents) {
     for (const billing of agent.renewal?.client_billings || []) {
       const normalized = normalizeRevenueBilling(billing)
-      if (normalized.revenue_amount <= 0) {
-        continue
-      }
-      const exactKey = revenueClientKey(agent.agent_id, normalized.inbound_id, normalized.inbound_tag, normalized.email)
+      const exactKey = normalized.client_id
+        ? `${agent.agent_id}\u0000client:${normalizeRevenueIdentity(normalized.client_id)}`
+        : revenueClientKey(agent.agent_id, normalized.inbound_id, normalized.inbound_tag, normalized.email)
       if (seenBillingKeys.has(exactKey)) {
         excluded.push(buildExcludedRevenueDetailRow(agent, normalized, undefined, 'duplicate_billing', targetCurrency, exchangeRates))
         continue
@@ -264,14 +265,90 @@ function analyzeMonthlyFinanceRevenue(
         nodeLabel: state.inboundRemark,
         nodeDetail: state.nodeDetail,
         clientEmail: state.email || normalized.email,
+        clientID: state.clientID || normalized.client_id,
         clientRemark: state.comment,
         source: 'client',
         targetCurrency,
         exchangeRates,
       })
+      const overrides = customerOverrideAssignmentsForRevenueRow(row, customers)
+      if (overrides.length) {
+        for (const { customer, assignment } of overrides) {
+          handledOverrideAssignmentIDs.add(assignment.id)
+          const overrideBilling: NormalizedRevenueBilling = {
+            ...normalized,
+            revenue_amount: Math.max(0, Number(assignment.revenue_amount || 0)),
+            revenue_currency: assignment.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
+            revenue_cycle: normalizeBillingCycleValue(assignment.revenue_cycle),
+          }
+          const overrideRow = buildRevenueDetailRow({
+            agent,
+            billing: overrideBilling,
+            key: `customer:${customer.id}:${assignment.id}`,
+            inboundTag: state.inboundTag || normalized.inbound_tag,
+            inboundID: state.inboundID || normalized.inbound_id,
+            nodeLabel: state.inboundRemark,
+            nodeDetail: state.nodeDetail,
+            clientEmail: state.email || normalized.email,
+            clientID: state.clientID || normalized.client_id,
+            clientRemark: [customer.display_name || customer.username, state.comment].filter(Boolean).join(' / '),
+            source: 'customer_override',
+            targetCurrency,
+            exchangeRates,
+          })
+          if (shouldCountNodeRevenueRow(overrideRow, customers, areaManagers)) {
+            included.push(overrideRow)
+          }
+        }
+        continue
+      }
+      if (normalized.revenue_amount <= 0) {
+        continue
+      }
       if (shouldCountNodeRevenueRow(row, customers, areaManagers)) {
         included.push(row)
       }
+    }
+  }
+  for (const { customer, assignment } of customerOverrideAssignments(customers)) {
+    if (handledOverrideAssignmentIDs.has(assignment.id)) {
+      continue
+    }
+    const agent = agents.find((item) => item.agent_id === assignment.agent_id)
+    if (!agent || !states.availableAgentIDs.has(agent.agent_id)) {
+      continue
+    }
+    const billing = normalizeRevenueBilling({
+      client_id: assignment.client_id || '',
+      inbound_id: assignment.inbound_id,
+      inbound_tag: assignment.inbound_tag || '',
+      email: assignment.client_email || '',
+      revenue_amount: Number(assignment.revenue_amount || 0),
+      revenue_currency: assignment.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
+      revenue_cycle: normalizeBillingCycleValue(assignment.revenue_cycle),
+    })
+    const matches = lookupFinanceClientStates(states.byKey, agent.agent_id, billing)
+    if (matches.length !== 1 || !matches[0].nodeEnabled || !matches[0].enabled) {
+      continue
+    }
+    const state = matches[0]
+    const row = buildRevenueDetailRow({
+      agent,
+      billing,
+      key: `customer:${customer.id}:${assignment.id}`,
+      inboundTag: state.inboundTag || billing.inbound_tag,
+      inboundID: state.inboundID || billing.inbound_id,
+      nodeLabel: state.inboundRemark,
+      nodeDetail: state.nodeDetail,
+      clientEmail: state.email || billing.email,
+      clientID: state.clientID || billing.client_id,
+      clientRemark: [customer.display_name || customer.username, state.comment].filter(Boolean).join(' / '),
+      source: 'customer_override',
+      targetCurrency,
+      exchangeRates,
+    })
+    if (shouldCountNodeRevenueRow(row, customers, areaManagers)) {
+      included.push(row)
     }
   }
   for (const manager of areaManagers) {
@@ -313,12 +390,27 @@ function shouldCountNodeRevenueRow(row: MonthlyFinanceRevenueDetail, customers: 
   return matchedCustomers.some((customer) => !billedAreaManagerIDs.has(Number(customer.owner_id || 0)))
 }
 
+function customerOverrideAssignments(customers: CustomerAdminView[]): Array<{ customer: CustomerAdminView; assignment: NonNullable<CustomerAdminView['assignments']>[number] }> {
+  return customers.flatMap((customer) => (customer.enabled ? (customer.assignments || [])
+    .filter((assignment) => assignment.enabled && assignment.price_mode === 'override' && assignment.revenue_amount !== undefined && assignment.revenue_amount !== null)
+    .map((assignment) => ({ customer, assignment })) : []))
+}
+
+function customerOverrideAssignmentsForRevenueRow(row: MonthlyFinanceRevenueDetail, customers: CustomerAdminView[]): Array<{ customer: CustomerAdminView; assignment: NonNullable<CustomerAdminView['assignments']>[number] }> {
+  return customerOverrideAssignments(customers).filter(({ assignment }) => financeAssignmentMatchesRevenueRow(assignment, row))
+}
+
 export function financeAssignmentMatchesRevenueRow(
-  assignment: { agent_id: string; inbound_id: number; inbound_tag?: string; client_email?: string },
+  assignment: { agent_id: string; inbound_id: number; inbound_tag?: string; client_id?: string; client_email?: string },
   row: MonthlyFinanceRevenueDetail,
 ): boolean {
   if (assignment.agent_id !== row.agentID) {
     return false
+  }
+  const assignmentClientID = normalizeRevenueIdentity(assignment.client_id)
+  const rowClientID = normalizeRevenueIdentity(row.clientID)
+  if (assignmentClientID && rowClientID) {
+    return assignmentClientID === rowClientID
   }
   const assignmentEmail = normalizeRevenueIdentity(assignment.client_email)
   const rowEmail = normalizeRevenueIdentity(row.clientEmail)
@@ -346,10 +438,11 @@ function monthlyConvertedAmount(amount: number, currency: CurrencyCode, cycle: V
 
 type NormalizedRevenueBilling = Required<Pick<
   XUIClientBillingConfig,
-  'inbound_id' | 'inbound_tag' | 'email' | 'revenue_amount' | 'revenue_currency' | 'revenue_cycle' | 'start_time' | 'expire_time'
+  'client_id' | 'inbound_id' | 'inbound_tag' | 'email' | 'revenue_amount' | 'revenue_currency' | 'revenue_cycle' | 'start_time' | 'expire_time'
 >>
 
 type FinanceClientStateRef = {
+  clientID: string
   inboundID: number
   inboundTag: string
   inboundRemark: string
@@ -362,6 +455,7 @@ type FinanceClientStateRef = {
 
 function normalizeRevenueBilling(billing: XUIClientBillingConfig): NormalizedRevenueBilling {
   return {
+    client_id: billing.client_id || '',
     inbound_id: Number(billing.inbound_id || 0),
     inbound_tag: billing.inbound_tag || '',
     email: billing.email || '',
@@ -411,6 +505,7 @@ function buildFinanceClientStateIndex(agents: AgentListItem[], clientChains: Cli
     availableAgentIDs.add(agent.agent_id)
     for (const client of agent.finance_clients || []) {
       addFinanceClientState(byKey, agent.agent_id, {
+        clientID: client.client_id || '',
         inboundID: Number(client.inbound_id || 0),
         inboundTag: client.inbound_tag || '',
         inboundRemark: client.inbound_remark || '',
@@ -436,6 +531,7 @@ function buildFinanceClientStateIndex(agents: AgentListItem[], clientChains: Cli
     }
     const inboundStep = rootInboundStep(chain)
     addFinanceClientState(byKey, chain.root_agent_id, {
+      clientID: '',
       inboundID: Number(chain.root_inbound_id || parseClientChainInboundID(chain.key)),
       inboundTag: chain.root_inbound_tag || '',
       inboundRemark: inboundStep?.label || '',
@@ -450,7 +546,7 @@ function buildFinanceClientStateIndex(agents: AgentListItem[], clientChains: Cli
 }
 
 function addFinanceClientState(index: Map<string, FinanceClientStateRef[]>, agentID: string, state: FinanceClientStateRef) {
-  for (const key of revenueClientLookupKeys(agentID, state.inboundID, state.inboundTag, state.email)) {
+  for (const key of revenueClientLookupKeys(agentID, state.inboundID, state.inboundTag, state.email, state.clientID)) {
     const rows = index.get(key) || []
     if (!rows.includes(state)) {
       rows.push(state)
@@ -465,7 +561,7 @@ function lookupFinanceClientStates(
   billing: NormalizedRevenueBilling,
 ): FinanceClientStateRef[] {
   const matches = new Set<FinanceClientStateRef>()
-  for (const key of revenueClientLookupKeys(agentID, billing.inbound_id, billing.inbound_tag, billing.email)) {
+  for (const key of revenueClientLookupKeys(agentID, billing.inbound_id, billing.inbound_tag, billing.email, billing.client_id)) {
     for (const state of index.get(key) || []) {
       matches.add(state)
     }
@@ -507,6 +603,7 @@ function buildRevenueDetailRow(options: {
   nodeLabel?: string
   nodeDetail?: string
   clientEmail: string
+  clientID?: string
   clientRemark: string
   source: MonthlyFinanceRevenueDetail['source']
   targetCurrency: CurrencyCode
@@ -526,6 +623,7 @@ function buildRevenueDetailRow(options: {
     nodeLabel: options.nodeLabel || options.inboundTag || options.billing?.inbound_tag || '',
     nodeDetail: options.nodeDetail || '',
     clientEmail,
+    clientID: options.clientID || options.billing?.client_id || '',
     clientLabel: clientEmail || clientRemark || 'anonymous-client',
     clientRemark,
     amount,
@@ -573,8 +671,11 @@ function revenueClientKey(agentID: string, inboundID: number, inboundTag: string
   return `${agentID}\u0000${inboundIdentity}\u0000${normalizeRevenueIdentity(email)}`
 }
 
-function revenueClientLookupKeys(agentID: string, inboundID: number, inboundTag: string, email: string): string[] {
+function revenueClientLookupKeys(agentID: string, inboundID: number, inboundTag: string, email: string, clientID = ''): string[] {
   const keys = [revenueClientKey(agentID, inboundID, inboundTag, email)]
+  if (clientID) {
+    keys.unshift(`${agentID}\u0000client:${normalizeRevenueIdentity(clientID)}`)
+  }
   if (inboundID > 0 && normalizeRevenueIdentity(inboundTag)) {
     keys.push(revenueClientKey(agentID, 0, inboundTag, email))
   }

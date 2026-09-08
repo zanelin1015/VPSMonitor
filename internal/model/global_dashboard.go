@@ -56,6 +56,7 @@ type DashboardAgentView struct {
 }
 
 type FinanceClientView struct {
+	ClientID      string `json:"client_id,omitempty"`
 	InboundID     int    `json:"inbound_id"`
 	InboundTag    string `json:"inbound_tag,omitempty"`
 	InboundRemark string `json:"inbound_remark,omitempty"`

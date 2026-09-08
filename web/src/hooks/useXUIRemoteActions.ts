@@ -103,7 +103,7 @@ export function useXUIRemoteActions(input: {
             inbound_tag: targetInboundTag,
             protocol: record.protocol || '',
             email: record.email || '',
-            client_id: record.auth_uuid || record.auth_password || '',
+            client_id: record.client_id || record.auth_uuid || record.auth_password || '',
             restart: false,
           },
         }),
@@ -144,7 +144,7 @@ export function useXUIRemoteActions(input: {
             inbound_id: targetInboundID,
             inbound_tag: targetInboundTag,
             email: record.email || '',
-            client_id: record.auth_uuid || record.auth_password || '',
+            client_id: record.client_id || record.auth_uuid || record.auth_password || '',
             enabled,
             restart: false,
           },
@@ -188,6 +188,7 @@ export function useXUIRemoteActions(input: {
             inbound_id: targetInboundID,
             inbound_tag: targetInboundTag,
             email: record.email,
+            client_id: record.client_id || record.auth_uuid || record.auth_password || '',
             total_bytes: totalBytes,
           },
         }),
@@ -253,5 +254,5 @@ export function useXUIRemoteActions(input: {
 }
 
 function xuiClientActionKey(record: XUIClientView): string {
-  return [record.inbound_id, record.inbound_tag || '', record.email || '', record.auth_uuid || record.auth_password || ''].join(':')
+  return [record.inbound_id, record.inbound_tag || '', record.client_id || record.auth_uuid || record.auth_password || '', record.email || ''].join(':')
 }

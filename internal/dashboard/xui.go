@@ -257,6 +257,7 @@ func normalizeClients(inbounds []inboundRecord, rules []routeRule, defaultOutbou
 			}
 
 			clients = append(clients, model.XUIClientView{
+				ClientID:      cfg.authUUID,
 				InboundID:     inbound.view.ID,
 				InboundTag:    inbound.view.Tag,
 				InboundRemark: inbound.view.Remark,

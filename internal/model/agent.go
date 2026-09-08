@@ -70,6 +70,7 @@ type VPSRenewalConfig struct {
 }
 
 type XUIClientBillingConfig struct {
+	ClientID          string  `json:"client_id,omitempty"`
 	InboundID         int     `json:"inbound_id,omitempty"`
 	InboundTag        string  `json:"inbound_tag,omitempty"`
 	Email             string  `json:"email,omitempty"`

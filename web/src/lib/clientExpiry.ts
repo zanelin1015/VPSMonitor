@@ -111,6 +111,10 @@ function appendExpiryRow(
 }
 
 function findClientBilling(billings: XUIClientBillingConfig[], client: FinanceClientView): XUIClientBillingConfig | undefined {
+  if (client.client_id) {
+    const byID = billings.find((billing) => billing.client_id === client.client_id)
+    if (byID) return byID
+  }
   const exactKey = clientIdentityKey(client.inbound_id, client.inbound_tag, client.email)
   const exact = billings.find((billing) => clientIdentityKey(billing.inbound_id, billing.inbound_tag, billing.email) === exactKey)
   if (exact) {

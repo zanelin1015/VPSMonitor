@@ -311,6 +311,7 @@ func (s *SQLiteStore) applyXUIClientDeleteConfig(agentID string, payload map[str
 	}
 	inboundID := int(numberFromPayload(payload["inbound_id"]))
 	inboundTag := stringFromPayload(payload["inbound_tag"])
+	clientID := stringFromPayload(payload["client_id"])
 	email := stringFromPayload(payload["email"])
 	if email == "" {
 		return nil
@@ -318,7 +319,7 @@ func (s *SQLiteStore) applyXUIClientDeleteConfig(agentID string, payload map[str
 	next := record.Config.Renewal.ClientBillings[:0]
 	removed := false
 	for _, billing := range record.Config.Renewal.ClientBillings {
-		if billing.InboundID == inboundID && billing.InboundTag == inboundTag && billing.Email == email {
+		if (clientID != "" && billing.ClientID == clientID) || (clientID == "" && billing.InboundID == inboundID && billing.InboundTag == inboundTag && billing.Email == email) {
 			removed = true
 			continue
 		}
@@ -342,6 +343,7 @@ func (s *SQLiteStore) applyXUIClientExpiryConfig(agentID string, payload map[str
 	}
 	inboundID := int(numberFromPayload(payload["inbound_id"]))
 	inboundTag, _ := payload["inbound_tag"].(string)
+	clientID := stringFromPayload(payload["client_id"])
 	email, _ := payload["email"].(string)
 	expiryTime := numberFromPayload(payload["expiry_time"])
 	if email == "" || expiryTime <= 0 {
@@ -350,7 +352,7 @@ func (s *SQLiteStore) applyXUIClientExpiryConfig(agentID string, payload map[str
 	foundBilling := false
 	for index := range record.Config.Renewal.ClientBillings {
 		billing := &record.Config.Renewal.ClientBillings[index]
-		if billing.InboundID == inboundID && billing.InboundTag == inboundTag && billing.Email == email {
+		if (clientID != "" && billing.ClientID == clientID) || (clientID == "" && billing.InboundID == inboundID && billing.InboundTag == inboundTag && billing.Email == email) {
 			if startTime := numberFromPayload(payload["start_time"]); startTime > 0 {
 				billing.StartTime = startTime
 			}
@@ -367,6 +369,7 @@ func (s *SQLiteStore) applyXUIClientExpiryConfig(agentID string, payload map[str
 	}
 	if !foundBilling {
 		record.Config.Renewal.ClientBillings = append(record.Config.Renewal.ClientBillings, model.XUIClientBillingConfig{
+			ClientID:        clientID,
 			InboundID:       inboundID,
 			InboundTag:      inboundTag,
 			Email:           email,

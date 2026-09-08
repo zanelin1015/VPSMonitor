@@ -410,9 +410,10 @@ func normalizeClientBillings(items []model.XUIClientBillingConfig) []model.XUICl
 	normalized := make([]model.XUIClientBillingConfig, 0, len(items))
 	seen := make(map[string]struct{}, len(items))
 	for _, item := range items {
+		item.ClientID = strings.TrimSpace(item.ClientID)
 		item.InboundTag = strings.TrimSpace(item.InboundTag)
 		item.Email = strings.TrimSpace(item.Email)
-		if item.InboundID <= 0 && item.InboundTag == "" && item.Email == "" {
+		if item.InboundID <= 0 && item.InboundTag == "" && item.Email == "" && item.ClientID == "" {
 			continue
 		}
 		if item.RevenueAmount < 0 {
@@ -452,6 +453,9 @@ func normalizeClientBillings(items []model.XUIClientBillingConfig) []model.XUICl
 			item.ExpireTime = calculateClientBillingExpireTime(item.StartTime, item.RevenueCycle, time.Now())
 		}
 		key := fmt.Sprintf("%d\x00%s\x00%s", item.InboundID, item.InboundTag, item.Email)
+		if item.ClientID != "" {
+			key = "id:\x00" + item.ClientID
+		}
 		if _, ok := seen[key]; ok {
 			continue
 		}

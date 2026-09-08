@@ -75,6 +75,9 @@ func alertKeyPart(value string) string {
 func findOverviewClient(clients []model.XUIClientView, billing model.XUIClientBillingConfig) *model.XUIClientView {
 	for index := range clients {
 		client := &clients[index]
+		if billing.ClientID != "" && client.ClientID == billing.ClientID {
+			return client
+		}
 		if client.InboundID == billing.InboundID && client.InboundTag == billing.InboundTag && client.Email == billing.Email {
 			return client
 		}

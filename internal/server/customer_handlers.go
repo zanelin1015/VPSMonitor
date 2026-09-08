@@ -429,9 +429,13 @@ func buildCustomerClientMap(snapshots []model.AgentSnapshot, agents []model.Agen
 		templateImportURLs := customerTemplateImportURLs(snapshot)
 		for _, client := range overview.Clients {
 			key := customerAssignmentKey(snapshot.AgentID, client.InboundID, client.Email)
-			result[key] = customerClientRef{
+			ref := customerClientRef{
 				Client:            client,
 				TemplateImportURL: templateImportURLs[key],
+			}
+			result[key] = ref
+			if client.ClientID != "" {
+				result[customerAssignmentClientKey(snapshot.AgentID, client.InboundID, client.ClientID)] = ref
 			}
 		}
 	}
@@ -451,6 +455,9 @@ func customerTemplateImportURLs(snapshot model.AgentSnapshot) map[string]string 
 			continue
 		}
 		result[customerAssignmentKey(snapshot.AgentID, client.InboundID, client.Email)] = client.ImportURL
+		if client.ClientID != "" {
+			result[customerAssignmentClientKey(snapshot.AgentID, client.InboundID, client.ClientID)] = client.ImportURL
+		}
 	}
 	return result
 }
@@ -477,7 +484,13 @@ func buildCustomerLinkView(
 	chain, chainFound := findCustomerChain(assignment, chainMap)
 	trafficMultiplier := 1.0
 	var clientRef customerClientRef
-	clientRef, clientFound := clientMap[customerAssignmentKey(assignment.AgentID, assignment.InboundID, assignment.ClientEmail)]
+	clientRef, clientFound := customerClientRef{}, false
+	if assignment.ClientID != "" {
+		clientRef, clientFound = clientMap[customerAssignmentClientKey(assignment.AgentID, assignment.InboundID, assignment.ClientID)]
+	}
+	if !clientFound {
+		clientRef, clientFound = clientMap[customerAssignmentKey(assignment.AgentID, assignment.InboundID, assignment.ClientEmail)]
+	}
 	if !clientFound && chainFound {
 		clientRef, clientFound = clientMap[customerAssignmentKey(chain.RootAgentID, chain.RootInboundID, chain.RootClientEmail)]
 	}
@@ -883,15 +896,36 @@ func customerBillingForAssignment(assignment model.CustomerAssignment, agentMap 
 	}
 	exactKey := customerBillingKey(assignment.InboundID, assignment.InboundTag, assignment.ClientEmail)
 	emailKey := customerBillingEmailKey(assignment.InboundID, assignment.ClientEmail)
+	base := model.XUIClientBillingConfig{
+		ClientID:          assignment.ClientID,
+		InboundID:         assignment.InboundID,
+		InboundTag:        assignment.InboundTag,
+		Email:             assignment.ClientEmail,
+		TrafficMultiplier: 1,
+	}
+	found := false
 	for _, billing := range agent.Renewal.ClientBillings {
+		if assignment.ClientID != "" && billing.ClientID == assignment.ClientID {
+			base, found = billing, true
+			break
+		}
 		if customerBillingKey(billing.InboundID, billing.InboundTag, billing.Email) == exactKey {
-			return billing, true
+			base, found = billing, true
+			break
 		}
 		if emailKey != "" && customerBillingEmailKey(billing.InboundID, billing.Email) == emailKey {
-			return billing, true
+			base, found = billing, true
+			break
 		}
 	}
-	return model.XUIClientBillingConfig{}, false
+	if assignment.PriceMode == "override" && assignment.RevenueAmount != nil {
+		base.RevenueAmount = max(*assignment.RevenueAmount, 0)
+		base.RevenueCurrency = firstNonEmptyString(assignment.RevenueCurrency, "CNY")
+		base.RevenueCycle = firstNonEmptyString(assignment.RevenueCycle, "month")
+		base.ExpireCycle = base.RevenueCycle
+		return base, true
+	}
+	return base, found
 }
 
 func customerRelayNames(chain model.ClientChainView, rootAgentID string, agentMap map[string]model.DashboardAgentView) []string {
@@ -1013,6 +1047,10 @@ func customerLinkSummary(entryName string, relays []string, countryCode, country
 
 func customerAssignmentKey(agentID string, inboundID int, email string) string {
 	return fmt.Sprintf("%s::%d::%s", agentID, inboundID, strings.TrimSpace(email))
+}
+
+func customerAssignmentClientKey(agentID string, inboundID int, clientID string) string {
+	return fmt.Sprintf("%s::%d::id:%s", agentID, inboundID, strings.TrimSpace(clientID))
 }
 
 func (a *App) requireCustomer(w http.ResponseWriter, r *http.Request) (model.CustomerUser, string, bool) {

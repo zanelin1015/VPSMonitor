@@ -534,8 +534,8 @@ func (s *SQLiteStore) listCustomerAssignments(customerID int64, enabledOnly bool
 		return nil, nil
 	}
 	query := `
-		SELECT id, customer_id, agent_id, inbound_id, inbound_tag, client_email, public_client_name,
-		       customer_remark, enabled, created_at, updated_at
+		SELECT id, customer_id, agent_id, inbound_id, inbound_tag, client_id, client_email, public_client_name,
+		       customer_remark, price_mode, revenue_amount, revenue_currency, revenue_cycle, enabled, created_at, updated_at
 		FROM customer_assignments
 		WHERE customer_id = ?`
 	args := []any{customerID}
@@ -576,10 +576,10 @@ func (s *SQLiteStore) CreateCustomerAssignment(customerID int64, req model.Custo
 	now := time.Now().UTC()
 	result, err := s.db.Exec(`
 		INSERT INTO customer_assignments (
-			customer_id, agent_id, inbound_id, inbound_tag, client_email, public_client_name,
-			customer_remark, enabled, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, ?)
-	`, customerID, normalized.AgentID, normalized.InboundID, normalized.InboundTag, normalized.ClientEmail, normalized.PublicClientName, boolInt(*normalized.Enabled), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
+			customer_id, agent_id, inbound_id, inbound_tag, client_id, client_email, public_client_name,
+			customer_remark, price_mode, revenue_amount, revenue_currency, revenue_cycle, enabled, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?)
+	`, customerID, normalized.AgentID, normalized.InboundID, normalized.InboundTag, normalized.ClientID, normalized.ClientEmail, normalized.PublicClientName, normalized.PriceMode, normalized.RevenueAmount, normalized.RevenueCurrency, normalized.RevenueCycle, boolInt(*normalized.Enabled), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
 	if err != nil {
 		return model.CustomerAssignment{}, fmt.Errorf("create customer assignment: %w", err)
 	}
@@ -630,9 +630,11 @@ func (s *SQLiteStore) UpdateCustomerAssignment(customerID, assignmentID int64, r
 	now := time.Now().UTC()
 	_, err = s.db.Exec(`
 		UPDATE customer_assignments
-		SET agent_id = ?, inbound_id = ?, inbound_tag = ?, client_email = ?, public_client_name = ?, enabled = ?, updated_at = ?
+		SET agent_id = ?, inbound_id = ?, inbound_tag = ?, client_id = ?, client_email = ?, public_client_name = ?,
+		    price_mode = ?, revenue_amount = ?, revenue_currency = ?, revenue_cycle = ?, enabled = ?, updated_at = ?
 		WHERE id = ? AND customer_id = ?
-	`, normalized.AgentID, normalized.InboundID, normalized.InboundTag, normalized.ClientEmail, normalized.PublicClientName, boolInt(*normalized.Enabled), now.Format(time.RFC3339Nano), assignmentID, customerID)
+	`, normalized.AgentID, normalized.InboundID, normalized.InboundTag, normalized.ClientID, normalized.ClientEmail, normalized.PublicClientName,
+		normalized.PriceMode, normalized.RevenueAmount, normalized.RevenueCurrency, normalized.RevenueCycle, boolInt(*normalized.Enabled), now.Format(time.RFC3339Nano), assignmentID, customerID)
 	if err != nil {
 		return model.CustomerAssignment{}, fmt.Errorf("update customer assignment: %w", err)
 	}
@@ -664,8 +666,8 @@ func (s *SQLiteStore) DeleteCustomerAssignment(customerID, assignmentID int64) e
 
 func (s *SQLiteStore) GetCustomerAssignment(customerID, assignmentID int64) (model.CustomerAssignment, bool, error) {
 	row := s.db.QueryRow(`
-		SELECT id, customer_id, agent_id, inbound_id, inbound_tag, client_email, public_client_name,
-		       customer_remark, enabled, created_at, updated_at
+		SELECT id, customer_id, agent_id, inbound_id, inbound_tag, client_id, client_email, public_client_name,
+		       customer_remark, price_mode, revenue_amount, revenue_currency, revenue_cycle, enabled, created_at, updated_at
 		FROM customer_assignments
 		WHERE id = ? AND customer_id = ?
 	`, assignmentID, customerID)
@@ -765,8 +767,36 @@ func normalizeCustomerAccountRequest(req model.CustomerAccountRequest, creating 
 func (s *SQLiteStore) normalizeCustomerAssignmentRequest(req model.CustomerAssignmentRequest, creating bool) (model.CustomerAssignmentRequest, error) {
 	req.AgentID = strings.TrimSpace(req.AgentID)
 	req.InboundTag = strings.TrimSpace(req.InboundTag)
+	req.ClientID = strings.TrimSpace(req.ClientID)
 	req.ClientEmail = strings.TrimSpace(req.ClientEmail)
 	req.PublicClientName = strings.TrimSpace(req.PublicClientName)
+	req.PriceMode = strings.ToLower(strings.TrimSpace(req.PriceMode))
+	if req.PriceMode != "override" {
+		req.PriceMode = "inherit"
+		req.RevenueAmount = nil
+		req.RevenueCurrency = "CNY"
+		req.RevenueCycle = "month"
+	} else {
+		if req.RevenueAmount == nil {
+			return req, fmt.Errorf("revenue_amount is required when price_mode is override")
+		}
+		req.RevenueCurrency = strings.ToUpper(strings.TrimSpace(req.RevenueCurrency))
+		if req.RevenueCurrency != "USDT" {
+			req.RevenueCurrency = "CNY"
+		}
+		switch strings.ToLower(strings.TrimSpace(req.RevenueCycle)) {
+		case "quarter":
+			req.RevenueCycle = "quarter"
+		case "semiannual", "halfyear", "half-year", "half_year", "half_yearly":
+			req.RevenueCycle = "semiannual"
+		case "year":
+			req.RevenueCycle = "year"
+		default:
+			req.RevenueCycle = "month"
+		}
+		amount := max(*req.RevenueAmount, 0)
+		req.RevenueAmount = &amount
+	}
 	if req.AgentID == "" {
 		return req, fmt.Errorf("agent_id is required")
 	}
@@ -822,6 +852,7 @@ func normalizeCustomerOwnerType(ownerType string) string {
 func scanCustomerAssignment(scanner rowScanner) (model.CustomerAssignment, error) {
 	var (
 		item          model.CustomerAssignment
+		revenueAmount *float64
 		enabled       int
 		createdAtText string
 		updatedAtText string
@@ -832,9 +863,14 @@ func scanCustomerAssignment(scanner rowScanner) (model.CustomerAssignment, error
 		&item.AgentID,
 		&item.InboundID,
 		&item.InboundTag,
+		&item.ClientID,
 		&item.ClientEmail,
 		&item.PublicClientName,
 		&item.Remark,
+		&item.PriceMode,
+		&revenueAmount,
+		&item.RevenueCurrency,
+		&item.RevenueCycle,
 		&enabled,
 		&createdAtText,
 		&updatedAtText,
@@ -842,6 +878,11 @@ func scanCustomerAssignment(scanner rowScanner) (model.CustomerAssignment, error
 		return model.CustomerAssignment{}, err
 	}
 	item.Enabled = enabled != 0
+	if strings.TrimSpace(item.PriceMode) != "override" {
+		item.PriceMode = "inherit"
+	} else {
+		item.RevenueAmount = revenueAmount
+	}
 	item.CreatedAt = parseTime(createdAtText)
 	item.UpdatedAt = parseTime(updatedAtText)
 	return item, nil

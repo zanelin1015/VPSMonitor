@@ -322,6 +322,58 @@ func TestSQLiteStoreAreaManagersIncludeOwnedCustomersAndAssignments(t *testing.T
 	}
 }
 
+func TestCustomerAssignmentStoresStableClientBindingAndPriceOverride(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	if _, err := store.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk-01", AgentName: "HK 01"}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	customer, err := store.CreateCustomer(model.CustomerAccountRequest{Username: "alice", Password: "password123"})
+	if err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
+	enabled := true
+	amount := 630.0
+	assignment, err := store.CreateCustomerAssignment(customer.ID, model.CustomerAssignmentRequest{
+		AgentID:          "hk-01",
+		InboundID:        20001,
+		InboundTag:       "in-20001-tcp",
+		ClientID:         "5c76e126-7a02-4db1-9c08-8edecb7a90d2",
+		ClientEmail:      "actual-client-email",
+		PublicClientName: "HK 优化线路",
+		PriceMode:        "override",
+		RevenueAmount:    &amount,
+		RevenueCurrency:  "CNY",
+		RevenueCycle:     "quarter",
+		Enabled:          &enabled,
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomerAssignment: %v", err)
+	}
+	if assignment.ClientID == "" || assignment.PriceMode != "override" || assignment.RevenueAmount == nil || *assignment.RevenueAmount != amount || assignment.RevenueCycle != "quarter" {
+		t.Fatalf("unexpected persisted override: %#v", assignment)
+	}
+	updated, err := store.UpdateCustomerAssignment(customer.ID, assignment.ID, model.CustomerAssignmentRequest{
+		AgentID:          assignment.AgentID,
+		InboundID:        assignment.InboundID,
+		InboundTag:       assignment.InboundTag,
+		ClientID:         assignment.ClientID,
+		ClientEmail:      assignment.ClientEmail,
+		PublicClientName: assignment.PublicClientName,
+		PriceMode:        "inherit",
+		Enabled:          &enabled,
+	})
+	if err != nil {
+		t.Fatalf("UpdateCustomerAssignment: %v", err)
+	}
+	if updated.PriceMode != "inherit" || updated.RevenueAmount != nil {
+		t.Fatalf("inherit assignment should not persist an override: %#v", updated)
+	}
+}
+
 func TestSQLiteStoreAreaManagerOutboundGrantsAndCreatePermission(t *testing.T) {
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
 	if err != nil {

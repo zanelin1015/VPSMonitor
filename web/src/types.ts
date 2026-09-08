@@ -65,6 +65,7 @@ export interface AgentReplacementResult {
 }
 
 export interface FinanceClientView {
+  client_id?: string
   inbound_id: number
   inbound_tag?: string
   inbound_remark?: string
@@ -109,6 +110,7 @@ export interface VPSRenewalConfig {
 }
 
 export interface XUIClientBillingConfig {
+  client_id?: string
   inbound_id?: number
   inbound_tag?: string
   email?: string
@@ -371,7 +373,12 @@ export interface CustomerAssignment {
   agent_id: string
   inbound_id: number
   inbound_tag?: string
+  client_id?: string
   client_email?: string
+  price_mode?: 'inherit' | 'override' | string
+  revenue_amount?: number
+  revenue_currency?: 'CNY' | 'USDT' | string
+  revenue_cycle?: 'month' | 'quarter' | 'semiannual' | 'year' | string
   public_client_name?: string
   remark?: string
   enabled: boolean
@@ -427,7 +434,9 @@ export interface CustomerAssignmentDraft {
   agent_id: string
   inbound_id: number
   inbound_tag?: string
+  client_id?: string
   client_email?: string
+  price_mode?: 'inherit' | 'override'
   public_client_name?: string
   traffic_multiplier?: number
   revenue_amount?: number
@@ -444,6 +453,35 @@ export interface CustomerAdminView extends CustomerUser {
 export interface CustomerSubscriptionURLResponse {
   clash_subscription_url: string
   mihomo_subscription_url: string
+}
+
+export interface CustomerBillingDiagnostic {
+  assignment_id: number
+  customer_id: number
+  customer_name?: string
+  agent_id: string
+  inbound_id: number
+  inbound_tag?: string
+  client_id?: string
+  client_email?: string
+  status: 'matched' | 'legacy' | 'mismatch' | 'missing' | string
+  message: string
+  current_client_id?: string
+  current_client_email?: string
+  current_client_name?: string
+  can_rebind: boolean
+  price_mode?: 'inherit' | 'override' | string
+  revenue_amount?: number
+  revenue_currency?: string
+  revenue_cycle?: string
+}
+
+export interface CustomerBillingReconciliationResponse {
+  items: CustomerBillingDiagnostic[]
+  matched: number
+  legacy: number
+  mismatch: number
+  missing: number
 }
 
 export interface AreaManagerAdminView {
@@ -748,6 +786,7 @@ export interface XUINodeView {
 }
 
 export interface XUIClientView {
+  client_id?: string
   inbound_id: number
   inbound_tag?: string
   inbound_remark?: string
