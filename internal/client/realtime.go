@@ -69,21 +69,8 @@ func (a *App) runRealtimeMetricsSession(ctx context.Context, interval time.Durat
 
 	conn, resp, err := dialer.DialContext(ctx, endpoint, header)
 	if err != nil {
-		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
-			if resp.Body != nil {
-				_ = resp.Body.Close()
-			}
-			fallbackEndpoint, fallbackErr := endpointWithAgentToken(endpoint, token)
-			if fallbackErr == nil {
-				conn, resp, err = dialer.DialContext(ctx, fallbackEndpoint, nil)
-				if err == nil {
-					goto connected
-				}
-			}
-		}
 		return fmt.Errorf("connect realtime metrics ws: %s", formatWebSocketDialError(err, resp))
 	}
-connected:
 	defer conn.Close()
 	sessionCtx, cancelSession := context.WithCancel(ctx)
 	defer cancelSession()
@@ -118,20 +105,24 @@ connected:
 		for {
 			select {
 			case message := <-xuiCollectRequests:
+				a.operationMu.Lock()
 				xuiConfigMu.RLock()
 				cfg := xuiConfig
 				xuiConfigMu.RUnlock()
 				if !cfg.Enabled {
+					a.operationMu.Unlock()
 					continue
 				}
 				xuiClient, clientErr := a.xuiClientForAction(cfg, message.XUIAuth)
 				message.XUIAuth = nil
 				if clientErr != nil {
+					a.operationMu.Unlock()
 					continue
 				}
 				collectCtx, collectCancel := context.WithTimeout(sessionCtx, a.requestTimeout)
 				clients, collectErr := xuiClient.CollectClientTraffic(collectCtx)
 				collectCancel()
+				a.operationMu.Unlock()
 				if collectErr != nil {
 					continue
 				}
@@ -272,6 +263,8 @@ func (a *App) handleExecuteXUIControl(ctx context.Context, message model.AgentCo
 	if message.ActionID <= 0 || message.Kind == "" {
 		return
 	}
+	a.operationMu.Lock()
+	defer a.operationMu.Unlock()
 	action := model.XUIAction{
 		ID:      message.ActionID,
 		AgentID: a.config.AgentID,
@@ -307,6 +300,8 @@ func (a *App) handleRestartXUIControl(ctx context.Context, message model.AgentCo
 	if message.ActionID <= 0 {
 		return
 	}
+	a.operationMu.Lock()
+	defer a.operationMu.Unlock()
 	actionCtx, actionCancel := context.WithTimeout(ctx, 60*time.Second)
 	output, err := restartXUIService(actionCtx, message.Payload)
 	actionCancel()
@@ -353,17 +348,6 @@ func (a *App) websocketEndpoint(path string) (string, error) {
 	base.RawQuery = ""
 	base.Fragment = ""
 	return base.String(), nil
-}
-
-func endpointWithAgentToken(endpoint string, token string) (string, error) {
-	parsed, err := url.Parse(endpoint)
-	if err != nil {
-		return "", err
-	}
-	values := parsed.Query()
-	values.Set("agent_token", token)
-	parsed.RawQuery = values.Encode()
-	return parsed.String(), nil
 }
 
 func formatWebSocketDialError(err error, resp *http.Response) string {

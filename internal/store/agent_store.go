@@ -1,8 +1,10 @@
 package store
 
 import (
+	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -11,6 +13,8 @@ import (
 	"bridge-core/internal/config"
 	"bridge-core/internal/model"
 )
+
+var ErrAgentRegistrationUnauthorized = errors.New("existing agent registration requires its agent token")
 
 func (s *SQLiteStore) SeedAgents(agents []config.ServerAgentAuth) error {
 	for _, agent := range agents {
@@ -55,6 +59,17 @@ func (s *SQLiteStore) SeedAgents(agents []config.ServerAgentAuth) error {
 }
 
 func (s *SQLiteStore) RegisterAgent(req model.AgentRegisterRequest) (model.AgentRegisterResponse, error) {
+	return s.registerAgent(req, "", false)
+}
+
+// RegisterAgentWithToken registers a new agent or refreshes an existing one.
+// Existing agent identities must prove possession of their per-agent token so
+// that a shared bootstrap token cannot be used to take over another agent ID.
+func (s *SQLiteStore) RegisterAgentWithToken(req model.AgentRegisterRequest, presentedAgentToken string) (model.AgentRegisterResponse, error) {
+	return s.registerAgent(req, presentedAgentToken, true)
+}
+
+func (s *SQLiteStore) registerAgent(req model.AgentRegisterRequest, presentedAgentToken string, enforceExistingToken bool) (model.AgentRegisterResponse, error) {
 	if req.AgentID == "" {
 		return model.AgentRegisterResponse{}, fmt.Errorf("agent_id is required")
 	}
@@ -66,15 +81,14 @@ func (s *SQLiteStore) RegisterAgent(req model.AgentRegisterRequest) (model.Agent
 	if err != nil {
 		return model.AgentRegisterResponse{}, fmt.Errorf("begin transaction: %w", err)
 	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
+	defer tx.Rollback()
 
 	record, found, err := s.loadAgentTx(tx, req.AgentID)
 	if err != nil {
 		return model.AgentRegisterResponse{}, err
+	}
+	if found && enforceExistingToken && record.AgentToken != "" && subtle.ConstantTimeCompare([]byte(record.AgentToken), []byte(presentedAgentToken)) != 1 {
+		return model.AgentRegisterResponse{}, ErrAgentRegistrationUnauthorized
 	}
 
 	if !found {
@@ -366,7 +380,7 @@ func (s *SQLiteStore) ValidateAgentToken(agentID, token string) bool {
 	if err != nil {
 		return false
 	}
-	return storedToken != "" && storedToken == token
+	return storedToken != "" && subtle.ConstantTimeCompare([]byte(storedToken), []byte(token)) == 1
 }
 
 func (s *SQLiteStore) DeleteAgent(agentID string) error {

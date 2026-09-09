@@ -70,6 +70,9 @@
 ### `server.json`
 
 - `listen_addr`: 服务监听地址
+- `tls_cert_file`、`tls_key_file`: 直接由 bridge-server 提供 HTTPS 时的证书和私钥路径；必须同时配置
+- `trusted_proxy_cidrs`: TLS 由反向代理终止时，允许传递 `X-Forwarded-Proto: https` 的代理 IP/CIDR 列表
+- `allow_insecure_http`: 仅本地开发时可显式设为 `true`；生产环境必须保持 `false`
 - `data_dir`: 运行数据目录
 - `database_path`: SQLite 文件路径，不写则默认 `data_dir/bridge.db`
 - `credential_key_path`: x-ui 托管密码加密密钥文件，不写则默认 `data_dir/credential.key`
@@ -85,6 +88,10 @@
 ```json
 {
   "listen_addr": ":8090",
+  "tls_cert_file": "/etc/letsencrypt/live/panel.example.com/fullchain.pem",
+  "tls_key_file": "/etc/letsencrypt/live/panel.example.com/privkey.pem",
+  "allow_insecure_http": false,
+  "trusted_proxy_cidrs": [],
   "data_dir": "./data",
   "database_path": "./data/bridge.db",
   "credential_key_path": "./data/credential.key",
@@ -98,6 +105,8 @@
 ```
 
 管理员账号会写入 SQLite，密码只保存 PBKDF2-SHA256 哈希。x-ui 托管密码会使用 `credential_key_path` 中的本地密钥加密后再写入 SQLite；Web 控制台和 client 拉取配置时仍返回解密后的明文，便于查看和实际登录 x-ui。首次启动后可以在 Web 控制台里修改用户名和密码，之后不用再改 `server.json`。
+
+生产环境必须使用 HTTPS：要么同时设置 `tls_cert_file` 和 `tls_key_file`，要么仅将服务暴露给受信任的 HTTPS 反向代理，并在 `trusted_proxy_cidrs` 填入该代理的 IP/CIDR。未满足其中一种配置时，服务端拒绝启动；`allow_insecure_http: true` 仅用于本地开发。client 的 `server_url` 应使用 `https://`，并保持 `server_skip_tls_verify: false`。
 
 ### `client.json`
 

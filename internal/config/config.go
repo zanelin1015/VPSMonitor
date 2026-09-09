@@ -18,10 +18,14 @@ import (
 
 type ServerConfig struct {
 	ListenAddr             string            `json:"listen_addr"`
+	TLSCertFile            string            `json:"tls_cert_file"`
+	TLSKeyFile             string            `json:"tls_key_file"`
+	AllowInsecureHTTP      bool              `json:"allow_insecure_http"`
 	DataDir                string            `json:"data_dir"`
 	DatabasePath           string            `json:"database_path"`
 	CredentialKeyPath      string            `json:"credential_key_path"`
 	RegistrationToken      string            `json:"registration_token"`
+	TrustedProxyCIDRs      []string          `json:"trusted_proxy_cidrs"`
 	AdminUsername          string            `json:"admin_username"`
 	AdminPassword          string            `json:"admin_password"`
 	AdminToken             string            `json:"admin_token"`
@@ -38,6 +42,7 @@ type ServerAgentAuth struct {
 }
 
 type ClientConfig struct {
+	ConfigPath            string   `json:"-"`
 	AgentID               string   `json:"agent_id"`
 	AgentIDGenerated      bool     `json:"-"`
 	AgentName             string   `json:"agent_name"`
@@ -116,6 +121,19 @@ func LoadServerConfig(path string) (ServerConfig, error) {
 	if cfg.SnapshotRetentionCount == 0 {
 		cfg.SnapshotRetentionCount = 5000
 	}
+	hasTLSCert := strings.TrimSpace(cfg.TLSCertFile) != ""
+	hasTLSKey := strings.TrimSpace(cfg.TLSKeyFile) != ""
+	if hasTLSCert != hasTLSKey {
+		return cfg, fmt.Errorf("tls_cert_file and tls_key_file must be configured together")
+	}
+	if !hasTLSCert && !cfg.AllowInsecureHTTP && len(cfg.TrustedProxyCIDRs) == 0 {
+		return cfg, fmt.Errorf("TLS is required: configure tls_cert_file/tls_key_file, configure trusted_proxy_cidrs for a TLS reverse proxy, or explicitly set allow_insecure_http for local development")
+	}
+	for _, agent := range cfg.Agents {
+		if agent.ID != "" && !IsValidAgentID(agent.ID) {
+			return cfg, fmt.Errorf("agents entry %q has an invalid id", agent.ID)
+		}
+	}
 	return cfg, nil
 }
 
@@ -124,6 +142,7 @@ func LoadClientConfig(path string) (ClientConfig, time.Duration, error) {
 	if err := loadJSON(path, &cfg); err != nil {
 		return cfg, 0, err
 	}
+	cfg.ConfigPath = path
 	if cfg.RequestTimeoutSeconds <= 0 {
 		cfg.RequestTimeoutSeconds = 15
 	}
@@ -134,6 +153,9 @@ func LoadClientConfig(path string) (ClientConfig, time.Duration, error) {
 			cfg.AgentID = defaultClientAgentID()
 			cfg.AgentIDGenerated = true
 		}
+	}
+	if !IsValidAgentID(cfg.AgentID) {
+		return cfg, 0, fmt.Errorf("agent_id must be 1-80 characters using only letters, digits, dots, underscores, or hyphens")
 	}
 	if cfg.PollInterval == "" {
 		cfg.PollInterval = "30s"
@@ -166,6 +188,32 @@ func PersistClientAgentIDIfMissing(path string, agentID string) error {
 		return nil
 	}
 	payload["agent_id"] = agentID
+	return persistClientConfigPayload(path, payload)
+}
+
+// PersistClientRegistration stores the issued per-agent token and removes the
+// shared bootstrap token after the first successful registration.
+func PersistClientRegistration(path string, agentID string, agentToken string) error {
+	agentToken = strings.TrimSpace(agentToken)
+	if strings.TrimSpace(path) == "" || strings.TrimSpace(agentID) == "" || agentToken == "" {
+		return fmt.Errorf("config path, agent_id, and agent_token are required")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+	var payload map[string]any
+	raw := strings.TrimPrefix(string(data), "\ufeff")
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return fmt.Errorf("unmarshal %s: %w", path, err)
+	}
+	payload["agent_id"] = agentID
+	payload["agent_token"] = agentToken
+	payload["registration_token"] = ""
+	return persistClientConfigPayload(path, payload)
+}
+
+func persistClientConfigPayload(path string, payload map[string]any) error {
 	updated, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal %s: %w", path, err)
@@ -173,10 +221,35 @@ func PersistClientAgentIDIfMissing(path string, agentID string) error {
 	updated = append(updated, '\n')
 	mode := os.FileMode(0o600)
 	if info, statErr := os.Stat(path); statErr == nil {
-		mode = info.Mode().Perm()
+		mode = info.Mode().Perm() & 0o600
 	}
-	if err := os.WriteFile(path, updated, mode); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
+	if mode == 0 {
+		mode = 0o600
+	}
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create temporary config: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(mode); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("set temporary config permissions: %w", err)
+	}
+	if _, err := tmp.Write(updated); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write temporary config: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("sync temporary config: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temporary config: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("replace config: %w", err)
 	}
 	return nil
 }
@@ -213,6 +286,22 @@ func sanitizeClientAgentID(value string) string {
 	}
 	value = strings.Trim(builder.String(), "-")
 	return trimClientAgentID(value)
+}
+
+// IsValidAgentID reports whether an ID can be safely embedded in the
+// server's path-based agent routes. It accepts identifier forms used by
+// existing deployments, including uppercase letters and dots.
+func IsValidAgentID(value string) bool {
+	if len(value) == 0 || len(value) > 80 {
+		return false
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func trimClientAgentID(value string) string {

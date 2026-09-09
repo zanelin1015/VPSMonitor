@@ -162,6 +162,7 @@ func retryHAProxyRuntimeQuery(err error) bool {
 		errors.Is(err, syscall.ECONNREFUSED) ||
 		errors.Is(err, syscall.ECONNRESET) ||
 		errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, syscall.ENOTCONN) ||
 		errors.Is(err, io.EOF) ||
 		errors.Is(err, io.ErrUnexpectedEOF) ||
 		errors.Is(err, errHAProxyRuntimeEmptyResponse) ||

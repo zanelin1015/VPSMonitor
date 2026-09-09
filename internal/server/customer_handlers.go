@@ -88,21 +88,29 @@ func (a *App) handleCustomerLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode customer login request: %v", err))
 		return
 	}
+	ipKey, accountKey := a.loginAttemptKeys(r, "customer", req.Username)
+	if !a.loginLimiter.allowed(ipKey, accountKey) {
+		w.Header().Set("Retry-After", "60")
+		writeError(w, http.StatusTooManyRequests, "too many login attempts")
+		return
+	}
 	user, ok, err := a.store.AuthenticateCustomer(req.Username, req.Password)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if !ok {
+		a.loginLimiter.failure(ipKey, accountKey)
 		writeError(w, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
+	a.loginLimiter.success(accountKey)
 	token, session, err := a.store.CreateCustomerSession(user.ID, customerSessionTTL)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	setCustomerSessionCookie(w, r, token, session.ExpiresAt)
+	a.setCustomerSessionCookie(w, r, token, session.ExpiresAt)
 	writeJSON(w, http.StatusOK, model.CustomerLoginResponse{User: user})
 }
 
@@ -110,7 +118,7 @@ func (a *App) handleCustomerLogout(w http.ResponseWriter, r *http.Request) {
 	if token := readCustomerSessionToken(r); token != "" {
 		_ = a.store.DeleteCustomerSession(token)
 	}
-	clearCustomerSessionCookie(w, r)
+	a.clearCustomerSessionCookie(w, r)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "logged_out"})
 }
 
@@ -1091,7 +1099,7 @@ func readCustomerSessionToken(r *http.Request) string {
 	return cookie.Value
 }
 
-func setCustomerSessionCookie(w http.ResponseWriter, r *http.Request, token string, expiresAt time.Time) {
+func (a *App) setCustomerSessionCookie(w http.ResponseWriter, r *http.Request, token string, expiresAt time.Time) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     customerSessionCookieName,
 		Value:    token,
@@ -1100,11 +1108,11 @@ func setCustomerSessionCookie(w http.ResponseWriter, r *http.Request, token stri
 		MaxAge:   int(time.Until(expiresAt).Seconds()),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   isSecureRequest(r),
+		Secure:   a.isSecureRequest(r),
 	})
 }
 
-func clearCustomerSessionCookie(w http.ResponseWriter, r *http.Request) {
+func (a *App) clearCustomerSessionCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     customerSessionCookieName,
 		Value:    "",
@@ -1113,6 +1121,6 @@ func clearCustomerSessionCookie(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   -1,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   isSecureRequest(r),
+		Secure:   a.isSecureRequest(r),
 	})
 }

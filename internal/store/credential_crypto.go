@@ -65,10 +65,49 @@ func loadOrCreateCredentialKey(path string) ([]byte, error) {
 		return nil, fmt.Errorf("create credential key dir: %w", err)
 	}
 	data := []byte(base64.RawStdEncoding.EncodeToString(key) + "\n")
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return nil, fmt.Errorf("write credential key %s: %w", path, err)
+	created, err := createCredentialKey(path, data)
+	if err != nil {
+		return nil, err
+	}
+	if !created {
+		return loadOrCreateCredentialKey(path)
 	}
 	return key, nil
+}
+
+// createCredentialKey publishes a fully synced key only if the target does
+// not already exist. This prevents concurrent server starts from replacing a
+// key that may already protect stored credentials.
+func createCredentialKey(path string, data []byte) (bool, error) {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return false, fmt.Errorf("create temporary credential key: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return false, fmt.Errorf("set credential key permissions: %w", err)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return false, fmt.Errorf("write temporary credential key: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return false, fmt.Errorf("sync temporary credential key: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return false, fmt.Errorf("close temporary credential key: %w", err)
+	}
+	if err := os.Link(tmpPath, path); err != nil {
+		if os.IsExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("publish credential key %s: %w", path, err)
+	}
+	return true, nil
 }
 
 func (c *CredentialCipher) EncryptString(value string) (string, error) {

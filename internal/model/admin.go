@@ -307,6 +307,8 @@ type UpdateLatestInfo struct {
 	Assets                     []string            `json:"assets,omitempty"`
 	ServerAssets               []string            `json:"server_assets,omitempty"`
 	ClientAssets               []string            `json:"client_assets,omitempty"`
+	ServerAssetDigests         map[string]string   `json:"server_asset_digests,omitempty"`
+	ClientAssetDigests         map[string]string   `json:"client_asset_digests,omitempty"`
 	AgentStatus                []UpdateAgentStatus `json:"agent_status,omitempty"`
 	XUIAgentStatus             []UpdateAgentStatus `json:"xui_agent_status,omitempty"`
 	FetchedAt                  time.Time           `json:"fetched_at"`

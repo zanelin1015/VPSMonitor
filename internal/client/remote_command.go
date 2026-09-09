@@ -1,7 +1,6 @@
 package client
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -58,10 +57,10 @@ func executeRemoteCommandWithOptions(ctx context.Context, payload map[string]any
 
 	cmd := exec.Command(name, args...)
 	prepareCommandProcessGroup(cmd)
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	stdout := newTailBuffer(maxRemoteCommandOutputLength)
+	stderr := newTailBuffer(maxRemoteCommandOutputLength)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	done := make(chan error, 1)
 	go func() {
 		done <- cmd.Run()
@@ -95,8 +94,8 @@ func executeRemoteCommandWithOptions(ctx context.Context, payload map[string]any
 		"timeout_seconds": timeoutSeconds,
 		"duration":        duration.String(),
 		"exit_code":       exitCode,
-		"stdout":          truncateRemoteCommandOutput(stdout.String()),
-		"stderr":          truncateRemoteCommandOutput(stderr.String()),
+		"stdout":          stdout.String(),
+		"stderr":          stderr.String(),
 	}
 	if current, userErr := user.Current(); userErr == nil {
 		result["run_as"] = current.Username
@@ -164,4 +163,38 @@ func truncateRemoteCommandOutput(value string) string {
 		return value
 	}
 	return value[len(value)-maxRemoteCommandOutputLength:]
+}
+
+type tailBuffer struct {
+	data  []byte
+	limit int
+}
+
+func newTailBuffer(limit int) *tailBuffer {
+	if limit < 0 {
+		limit = 0
+	}
+	return &tailBuffer{data: make([]byte, 0, limit), limit: limit}
+}
+
+func (b *tailBuffer) Write(p []byte) (int, error) {
+	written := len(p)
+	if b.limit == 0 || len(p) == 0 {
+		return written, nil
+	}
+	if len(p) >= b.limit {
+		b.data = append(b.data[:0], p[len(p)-b.limit:]...)
+		return written, nil
+	}
+	overflow := len(b.data) + len(p) - b.limit
+	if overflow > 0 {
+		copy(b.data, b.data[overflow:])
+		b.data = b.data[:len(b.data)-overflow]
+	}
+	b.data = append(b.data, p...)
+	return written, nil
+}
+
+func (b *tailBuffer) String() string {
+	return string(b.data)
 }

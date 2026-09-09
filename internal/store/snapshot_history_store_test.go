@@ -241,6 +241,30 @@ func TestSQLiteStoreReadsLegacyAndCompactTrafficHistory(t *testing.T) {
 	}
 }
 
+func TestSQLiteStoreDailyTrafficUsageHandlesCounterReset(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	base := time.Date(2026, 7, 22, 0, 0, 0, 0, time.UTC)
+	for index, sent := range []uint64{100, 150, 20, 50} {
+		if err := store.SaveSnapshot(model.AgentSnapshot{
+			AgentID: "reset-01", AgentName: "Reset 01", ReportedAt: base.Add(time.Duration(index) * time.Hour),
+			Summary: model.VPSSummary{NetTrafficSent: sent, NetTrafficRecv: sent / 2},
+		}); err != nil {
+			t.Fatalf("SaveSnapshot(%d): %v", index, err)
+		}
+	}
+	usage, err := store.ListDailyTrafficUsage(base)
+	if err != nil {
+		t.Fatalf("ListDailyTrafficUsage: %v", err)
+	}
+	if len(usage) != 1 || usage[0].Upload != 100 || usage[0].Download != 50 {
+		t.Fatalf("counter reset was not accumulated correctly: %#v", usage)
+	}
+}
+
 func TestSQLiteStoreMigratesLegacySnapshotHistoryColumns(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "bridge.db")
 	db, err := sql.Open("sqlite", dbPath)

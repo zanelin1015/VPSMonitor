@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -510,7 +509,7 @@ func (c *XUIClient) doJSON(req *http.Request, target any) error {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readPanelResponse(resp.Body)
 	if err != nil {
 		return fmt.Errorf("read response: %w", err)
 	}

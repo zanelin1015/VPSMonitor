@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -85,8 +86,9 @@ func TestHandleRegisterDoesNotSeedDefaultXUIBootstrap(t *testing.T) {
 	}
 
 	app := &App{
-		config: config.ServerConfig{RegistrationToken: "reg-token"},
-		store:  sqliteStore,
+		config:         config.ServerConfig{RegistrationToken: "reg-token"},
+		store:          sqliteStore,
+		trustedProxies: []netip.Prefix{netip.MustParsePrefix("192.0.2.0/24")},
 	}
 	body, err := json.Marshal(model.AgentRegisterRequest{AgentID: "agent-1", AgentName: "Agent 1"})
 	if err != nil {
@@ -116,6 +118,30 @@ func TestHandleRegisterDoesNotSeedDefaultXUIBootstrap(t *testing.T) {
 	}
 }
 
+func TestHandleRegisterRejectsRouteUnsafeAgentID(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+	app := &App{config: config.ServerConfig{RegistrationToken: "reg-token"}, store: sqliteStore}
+	body, err := json.Marshal(model.AgentRegisterRequest{AgentID: "node/one"})
+	if err != nil {
+		t.Fatalf("Marshal register body: %v", err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/agents/register", bytes.NewReader(body))
+	request.Header.Set("X-Registration-Token", "reg-token")
+	response := httptest.NewRecorder()
+
+	app.handleRegister(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid id to be rejected, got status=%d body=%q", response.Code, response.Body.String())
+	}
+	if _, found, err := sqliteStore.GetAgent("node/one"); err != nil || found {
+		t.Fatalf("unsafe agent must not be created: found=%v err=%v", found, err)
+	}
+}
+
 func TestHandleRegisterStoresServerObservedIP(t *testing.T) {
 	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
 	if err != nil {
@@ -124,8 +150,9 @@ func TestHandleRegisterStoresServerObservedIP(t *testing.T) {
 	defer sqliteStore.Close()
 
 	app := &App{
-		config: config.ServerConfig{RegistrationToken: "reg-token"},
-		store:  sqliteStore,
+		config:         config.ServerConfig{RegistrationToken: "reg-token"},
+		store:          sqliteStore,
+		trustedProxies: []netip.Prefix{netip.MustParsePrefix("192.0.2.0/24")},
 	}
 	body, err := json.Marshal(model.AgentRegisterRequest{
 		AgentID:    "observed-agent",
@@ -217,7 +244,7 @@ func TestHandleHeartbeatUsesServerReceiveTime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
-	app := &App{store: sqliteStore}
+	app := &App{store: sqliteStore, trustedProxies: []netip.Prefix{netip.MustParsePrefix("192.0.2.0/24")}}
 
 	clientTime := time.Now().UTC().Add(-30 * time.Minute)
 	body, err := json.Marshal(model.AgentSnapshot{
@@ -269,7 +296,7 @@ func TestHandleHeartbeatOverridesClientObservedIP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
-	app := &App{store: sqliteStore}
+	app := &App{store: sqliteStore, trustedProxies: []netip.Prefix{netip.MustParsePrefix("192.0.2.0/24")}}
 	body, err := json.Marshal(model.AgentSnapshot{
 		AgentID:   "ip-agent",
 		AgentName: "IP Agent",

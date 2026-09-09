@@ -10,6 +10,8 @@ import (
 	"bridge-core/internal/model"
 )
 
+const XUIActionExecutionLease = 15 * time.Minute
+
 func (s *SQLiteStore) CreateXUIAction(agentID string, req model.XUIActionRequest) (model.XUIAction, error) {
 	return s.CreateXUIActionWithActor(agentID, req, model.XUIActionActor{})
 }
@@ -149,10 +151,11 @@ func (s *SQLiteStore) ClaimPendingXUIActions(agentID string, limit int) ([]model
 		return nil, fmt.Errorf("begin x-ui action claim: %w", err)
 	}
 	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
+		_ = tx.Rollback()
 	}()
+	if _, err = expireStaleXUIActionsTx(tx, agentID, XUIActionExecutionLease); err != nil {
+		return nil, err
+	}
 
 	rows, err := tx.Query(`
 		SELECT id
@@ -222,6 +225,49 @@ func (s *SQLiteStore) ClaimPendingXUIActions(agentID string, limit int) ([]model
 	return actions, nil
 }
 
+// ExpireStaleXUIActions closes abandoned running actions without retrying them.
+// Some action kinds are not idempotent, so an automatic replay could be more
+// damaging than surfacing a failed action for an operator to retry explicitly.
+func (s *SQLiteStore) ExpireStaleXUIActions(agentID string, maxAge time.Duration) (int64, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("begin stale x-ui action expiry: %w", err)
+	}
+	defer tx.Rollback()
+	affected, err := expireStaleXUIActionsTx(tx, agentID, maxAge)
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit stale x-ui action expiry: %w", err)
+	}
+	return affected, nil
+}
+
+func expireStaleXUIActionsTx(tx *sql.Tx, agentID string, maxAge time.Duration) (int64, error) {
+	if maxAge <= 0 {
+		maxAge = XUIActionExecutionLease
+	}
+	now := time.Now().UTC()
+	cutoff := now.Add(-maxAge).Format(time.RFC3339Nano)
+	result, err := tx.Exec(`
+		UPDATE xui_actions
+		SET status = ?, error = ?, updated_at = ?, completed_at = ?
+		WHERE agent_id = ? AND status = ?
+		  AND ((claimed_at <> '' AND claimed_at < ?) OR (claimed_at = '' AND updated_at < ?))
+	`, model.XUIActionStatusFailed, "execution lease expired; retry manually if appropriate",
+		now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), agentID,
+		model.XUIActionStatusRunning, cutoff, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("expire stale x-ui actions: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("read stale x-ui action expiry count: %w", err)
+	}
+	return affected, nil
+}
+
 func (s *SQLiteStore) MarkXUIActionRunning(agentID string, id int64) (model.XUIAction, error) {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	if _, err := s.db.Exec(`
@@ -239,6 +285,46 @@ func (s *SQLiteStore) MarkXUIActionRunning(agentID string, id int64) (model.XUIA
 		return model.XUIAction{}, fmt.Errorf("x-ui action not found")
 	}
 	return action, nil
+}
+
+// ClaimXUIAction atomically transitions one pending action to running. It is
+// used by realtime dispatch so a pending action cannot be sent twice when a
+// poll and a WebSocket reconnect overlap.
+func (s *SQLiteStore) ClaimXUIAction(agentID string, id int64) (model.XUIAction, bool, error) {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	result, err := s.db.Exec(`
+		UPDATE xui_actions
+		SET status = ?, updated_at = ?, claimed_at = ?
+		WHERE agent_id = ? AND id = ? AND status = ?
+	`, model.XUIActionStatusRunning, now, now, agentID, id, model.XUIActionStatusPending)
+	if err != nil {
+		return model.XUIAction{}, false, fmt.Errorf("claim x-ui action: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return model.XUIAction{}, false, fmt.Errorf("read x-ui action claim count: %w", err)
+	}
+	action, found, err := s.GetXUIAction(agentID, id)
+	if err != nil {
+		return model.XUIAction{}, false, err
+	}
+	if !found {
+		return model.XUIAction{}, false, fmt.Errorf("x-ui action not found")
+	}
+	return action, affected > 0, nil
+}
+
+// ReleaseXUIAction returns a realtime action to pending when delivery fails.
+func (s *SQLiteStore) ReleaseXUIAction(agentID string, id int64) error {
+	_, err := s.db.Exec(`
+		UPDATE xui_actions
+		SET status = ?, updated_at = ?, claimed_at = ''
+		WHERE agent_id = ? AND id = ? AND status = ?
+	`, model.XUIActionStatusPending, time.Now().UTC().Format(time.RFC3339Nano), agentID, id, model.XUIActionStatusRunning)
+	if err != nil {
+		return fmt.Errorf("release x-ui action: %w", err)
+	}
+	return nil
 }
 
 func (s *SQLiteStore) CompleteXUIAction(agentID string, id int64, req model.XUIActionResultRequest) (model.XUIAction, error) {
@@ -260,29 +346,16 @@ func (s *SQLiteStore) CompleteXUIAction(agentID string, id int64, req model.XUIA
 	if err != nil {
 		return model.XUIAction{}, fmt.Errorf("marshal x-ui action result: %w", err)
 	}
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	result, err := s.db.Exec(`
-		UPDATE xui_actions
-		SET status = ?, result_json = ?, error = ?, updated_at = ?, completed_at = ?
-		WHERE agent_id = ? AND id = ?
-	`, status, string(resultJSON), req.Error, now, now, agentID, id)
-	if err != nil {
-		return model.XUIAction{}, fmt.Errorf("complete x-ui action: %w", err)
-	}
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return model.XUIAction{}, fmt.Errorf("read x-ui action completion count: %w", err)
-	}
-	if affected == 0 {
-		return model.XUIAction{}, fmt.Errorf("x-ui action not found")
-	}
 	action, found, err := s.GetXUIAction(agentID, id)
 	if err != nil {
 		return model.XUIAction{}, err
 	}
-	if !found {
-		return model.XUIAction{}, fmt.Errorf("completed x-ui action not found")
+	if !found || (action.Status != model.XUIActionStatusPending && action.Status != model.XUIActionStatusRunning) {
+		return model.XUIAction{}, fmt.Errorf("x-ui action is not executable or not found")
 	}
+	// Apply billing changes before publishing a successful action result. If the
+	// configuration write fails, leaving the action executable makes the agent's
+	// result retryable instead of reporting success for an incomplete operation.
 	if status == model.XUIActionStatusSucceeded && action.Kind == model.XUIActionUpdateClientExpiry && shouldPersistXUIClientExpiry(action.Payload) {
 		if err := s.applyXUIClientExpiryConfig(agentID, action.Payload); err != nil {
 			return model.XUIAction{}, err
@@ -292,6 +365,29 @@ func (s *SQLiteStore) CompleteXUIAction(agentID string, id int64, req model.XUIA
 		if err := s.applyXUIClientDeleteConfig(agentID, action.Payload); err != nil {
 			return model.XUIAction{}, err
 		}
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	result, err := s.db.Exec(`
+		UPDATE xui_actions
+		SET status = ?, result_json = ?, error = ?, updated_at = ?, completed_at = ?
+		WHERE agent_id = ? AND id = ? AND status IN (?, ?)
+	`, status, string(resultJSON), req.Error, now, now, agentID, id, model.XUIActionStatusPending, model.XUIActionStatusRunning)
+	if err != nil {
+		return model.XUIAction{}, fmt.Errorf("complete x-ui action: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return model.XUIAction{}, fmt.Errorf("read x-ui action completion count: %w", err)
+	}
+	if affected == 0 {
+		return model.XUIAction{}, fmt.Errorf("x-ui action is not executable or not found")
+	}
+	action, found, err = s.GetXUIAction(agentID, id)
+	if err != nil {
+		return model.XUIAction{}, err
+	}
+	if !found {
+		return model.XUIAction{}, fmt.Errorf("completed x-ui action not found")
 	}
 	return action, nil
 }

@@ -1,55 +1,69 @@
 package client
 
 import (
+	"os/exec"
 	"strings"
 	"testing"
 
 	"bridge-core/internal/model"
 )
 
-func TestOpenWrtInstallerURL(t *testing.T) {
-	tests := map[string]string{
-		"https://example.com/install.sh":          "https://example.com/install-openwrt.sh",
-		"https://example.com/install.sh?v=1":      "https://example.com/install-openwrt.sh?v=1",
-		"https://example.com/custom-installer.sh": "https://example.com/custom-installer.sh",
-	}
-	for input, want := range tests {
-		if got := openWrtInstallerURL(input); got != want {
-			t.Fatalf("openWrtInstallerURL(%q) = %q, want %q", input, got, want)
-		}
-	}
-}
-
-func TestBuildUnixSelfUpdateCommandUnlinksInstallerBeforeExecution(t *testing.T) {
+func TestBuildUnixSelfUpdateCommandUsesVerifiedPackageWithoutRemoteScript(t *testing.T) {
 	tests := []struct {
-		name     string
-		openWrt  bool
-		executor string
+		name    string
+		openWrt bool
 	}{
-		{name: "linux", executor: "bash -s -- client <&3"},
-		{name: "openwrt", openWrt: true, executor: "sh -s -- client <&3"},
+		{name: "linux"},
+		{name: "openwrt", openWrt: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			command := buildUnixSelfUpdateCommand("https://example.com/install.sh", "v1.2.3", "owner/repo", "VPSMonitor", "/opt/vpsmonitor/client", "vpsmonitor-client", false, "v2.9.4", "", false, test.openWrt)
-			removeIndex := strings.Index(command, `rm -f "$tmp"`)
-			executeIndex := strings.Index(command, test.executor)
-			if removeIndex < 0 || executeIndex < 0 || removeIndex > executeIndex {
-				t.Fatalf("expected installer to be unlinked before execution, got %q", command)
+			command := buildUnixSelfUpdateCommand("https://example.com/client.tar.gz", "/opt/vpsmonitor/client", "vpsmonitor-client", strings.Repeat("a", 64), test.openWrt)
+			for _, forbidden := range []string{"install.sh", "raw.githubusercontent.com", "bash -s -- client", "sh -s -- client"} {
+				if strings.Contains(command, forbidden) {
+					t.Fatalf("unexpected remote installer execution %q in %q", forbidden, command)
+				}
 			}
-			if !strings.Contains(command, `exec 3<"$tmp"`) {
-				t.Fatalf("expected installer to remain available through a file descriptor, got %q", command)
+			if !strings.Contains(command, "sha256sum") || !strings.Contains(command, "client package SHA-256 mismatch") {
+				t.Fatalf("expected verified package flow, got %q", command)
+			}
+			if output, err := exec.Command("sh", "-n", "-c", command).CombinedOutput(); err != nil {
+				t.Fatalf("generated shell update command is invalid: %v\n%s", err, output)
 			}
 		})
 	}
 }
 
-func TestBuildWindowsSelfUpdateCommandRemovesInstaller(t *testing.T) {
-	command := buildWindowsSelfUpdateCommand("https://example.com/install.ps1", "v1.2.3", "owner/repo", "VPSMonitor", `C:\VPSMonitor`, "VPSMonitorClient")
-	for _, expected := range []string{"[guid]::NewGuid()", "try {", "finally {", "Remove-Item -Force -ErrorAction SilentlyContinue $scriptPath"} {
+func TestBuildWindowsSelfUpdateCommandUsesVerifiedPackageWithoutRemoteScript(t *testing.T) {
+	command := buildWindowsSelfUpdateCommand("https://example.com/client.zip", `C:\VPSMonitor`, "VPSMonitorClient", strings.Repeat("b", 64))
+	for _, expected := range []string{"[guid]::NewGuid()", "Get-FileHash -Algorithm SHA256", "Expand-Archive", "Remove-Item -Recurse -Force"} {
 		if !strings.Contains(command, expected) {
 			t.Fatalf("expected command to contain %q, got %q", expected, command)
 		}
+	}
+	for _, forbidden := range []string{"install.ps1", "raw.githubusercontent.com", "-File $scriptPath"} {
+		if strings.Contains(command, forbidden) {
+			t.Fatalf("unexpected remote installer execution %q in %q", forbidden, command)
+		}
+	}
+}
+
+func TestVerifiedUpdatePackageRequiresOfficialPinnedRelease(t *testing.T) {
+	url, err := verifiedUpdatePackageURL("zanelin1015/VPSMonitor", "v0.3.24", "VPSMonitor-client-linux-amd64.tar.gz")
+	if err != nil || url != "https://github.com/zanelin1015/VPSMonitor/releases/download/v0.3.24/VPSMonitor-client-linux-amd64.tar.gz" {
+		t.Fatalf("verifiedUpdatePackageURL() = %q, %v", url, err)
+	}
+	if _, err := verifiedUpdatePackageURL("other/repo", "v0.3.24", "VPSMonitor-client-linux-amd64.tar.gz"); err == nil {
+		t.Fatal("custom repository must be rejected")
+	}
+	if _, err := verifiedUpdatePackageURL("zanelin1015/VPSMonitor", "main", "VPSMonitor-client-linux-amd64.tar.gz"); err == nil {
+		t.Fatal("mutable branch must be rejected")
+	}
+	if _, err := requiredUpdatePackageSHA256(strings.Repeat("a", 64)); err != nil {
+		t.Fatalf("valid digest rejected: %v", err)
+	}
+	if _, err := requiredUpdatePackageSHA256("not-a-digest"); err == nil {
+		t.Fatal("invalid digest must be rejected")
 	}
 }
 

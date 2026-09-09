@@ -109,6 +109,27 @@ download_file() {
   fi
 }
 
+verify_package_sha256() {
+  local package_path="$1"
+  local expected="${VPSMONITOR_PACKAGE_SHA256:-}"
+  [[ -n "$expected" ]] || return 0
+  expected="$(printf '%s' "$expected" | tr '[:upper:]' '[:lower:]')"
+  [[ "$expected" =~ ^[0-9a-f]{64}$ ]] || die "VPSMONITOR_PACKAGE_SHA256 must be a 64-character SHA-256 digest."
+
+  local actual=""
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "$package_path" | awk '{print $1}')"
+  elif command -v shasum >/dev/null 2>&1; then
+    actual="$(shasum -a 256 "$package_path" | awk '{print $1}')"
+  elif command -v openssl >/dev/null 2>&1; then
+    actual="$(openssl dgst -sha256 "$package_path" | awk '{print $NF}')"
+  else
+    die "A SHA-256 utility (sha256sum, shasum, or openssl) is required for verified updates."
+  fi
+  actual="$(printf '%s' "$actual" | tr '[:upper:]' '[:lower:]')"
+  [[ "$actual" == "$expected" ]] || die "Downloaded package SHA-256 does not match the verified release digest."
+}
+
 realm_binary() {
   local candidate
   if candidate="$(command -v realm 2>/dev/null)" && [[ -x "$candidate" ]]; then
@@ -476,6 +497,7 @@ fetch_bundle() {
     echo "  $url" >&2
     rm -f "$package_path"
     if download_file "$url" "$package_path"; then
+      verify_package_sha256 "$package_path"
       downloaded="true"
       break
     fi
@@ -503,6 +525,9 @@ write_server_config() {
   local admin_password="$7"
   local retention_days="$8"
   local retention_count="$9"
+  local tls_cert_file="${10}"
+  local tls_key_file="${11}"
+  local allow_insecure_http="${12}"
 
   mkdir -p "$(dirname "$config_path")" "$data_dir"
   (
@@ -510,6 +535,9 @@ write_server_config() {
     cat >"$config_path" <<EOF
 {
   "listen_addr": "$(json_escape "$listen_addr")",
+  "tls_cert_file": "$(json_escape "$tls_cert_file")",
+  "tls_key_file": "$(json_escape "$tls_key_file")",
+  "allow_insecure_http": $(json_bool "$allow_insecure_http"),
   "data_dir": "$(json_escape "$data_dir")",
   "database_path": "$(json_escape "$data_dir/bridge.db")",
   "credential_key_path": "$(json_escape "$data_dir/credential.key")",
@@ -524,6 +552,18 @@ EOF
   )
   chmod 600 "$config_path"
   mkdir -p "$install_dir"
+}
+
+configure_server_transport() {
+  prompt_default tls_cert_file "TLS certificate file (leave empty only for local HTTP)" "$tls_cert_file"
+  prompt_default tls_key_file "TLS private-key file (leave empty only for local HTTP)" "$tls_key_file"
+  if [[ -n "$tls_cert_file" || -n "$tls_key_file" ]]; then
+    [[ -n "$tls_cert_file" && -n "$tls_key_file" ]] || die "TLS certificate and private-key paths must be configured together."
+    allow_insecure_http="false"
+    return
+  fi
+  prompt_default allow_insecure_http "Allow insecure HTTP for local development only? y/N" "$allow_insecure_http"
+  is_truthy "$allow_insecure_http" || die "TLS is required. Configure certificate paths, use a trusted reverse proxy, or explicitly allow local HTTP."
 }
 
 write_client_config() {
@@ -686,6 +726,9 @@ install_server() {
   local admin_password=""
   local retention_days="30"
   local retention_count="5000"
+  local tls_cert_file="${VPSMONITOR_TLS_CERT_FILE:-}"
+  local tls_key_file="${VPSMONITOR_TLS_KEY_FILE:-}"
+  local allow_insecure_http="${VPSMONITOR_ALLOW_INSECURE_HTTP:-false}"
 
   if [[ -f "$config_path" ]]; then
     warn "Existing server config found: $config_path"
@@ -696,12 +739,13 @@ install_server() {
       listen_addr="$(normalize_listen_addr "$listen_addr")"
       prompt_default data_dir "Server data directory" "$data_dir"
       data_dir="$(absolute_path "$data_dir")"
+      configure_server_transport
       prompt_default registration_token "Client registration token" "$registration_token"
       prompt_default admin_username "Initial admin username" "$admin_username"
       prompt_secret_or_random admin_password "Initial admin password"
       prompt_default retention_days "Snapshot retention days" "$retention_days"
       prompt_default retention_count "Snapshot retention count per agent" "$retention_count"
-      write_server_config "$config_path" "$install_dir" "$listen_addr" "$data_dir" "$registration_token" "$admin_username" "$admin_password" "$retention_days" "$retention_count"
+      write_server_config "$config_path" "$install_dir" "$listen_addr" "$data_dir" "$registration_token" "$admin_username" "$admin_password" "$retention_days" "$retention_count" "$tls_cert_file" "$tls_key_file" "$allow_insecure_http"
     fi
   else
     info "Server config"
@@ -709,12 +753,13 @@ install_server() {
     listen_addr="$(normalize_listen_addr "$listen_addr")"
     prompt_default data_dir "Server data directory" "$data_dir"
     data_dir="$(absolute_path "$data_dir")"
+    configure_server_transport
     prompt_default registration_token "Client registration token" "$registration_token"
     prompt_default admin_username "Initial admin username" "$admin_username"
     prompt_secret_or_random admin_password "Initial admin password"
     prompt_default retention_days "Snapshot retention days" "$retention_days"
     prompt_default retention_count "Snapshot retention count per agent" "$retention_count"
-    write_server_config "$config_path" "$install_dir" "$listen_addr" "$data_dir" "$registration_token" "$admin_username" "$admin_password" "$retention_days" "$retention_count"
+    write_server_config "$config_path" "$install_dir" "$listen_addr" "$data_dir" "$registration_token" "$admin_username" "$admin_password" "$retention_days" "$retention_count" "$tls_cert_file" "$tls_key_file" "$allow_insecure_http"
   fi
 
   mkdir -p "$install_dir"
@@ -735,7 +780,11 @@ install_server() {
   local port
   port="$(listen_port "$listen_addr")"
   if [[ -n "$port" ]]; then
-    echo "  Console: http://SERVER_IP:$port/"
+    if is_truthy "$allow_insecure_http"; then
+      echo "  Console: http://SERVER_IP:$port/"
+    else
+      echo "  Console: https://SERVER_HOSTNAME:$port/"
+    fi
   fi
   if [[ -n "$admin_password" ]]; then
     echo
@@ -754,7 +803,7 @@ install_client() {
   prompt_default install_dir "Install directory for bridge-client" "$install_dir"
   install_dir="$(absolute_path "$install_dir")"
   local config_path="$install_dir/config/client.json"
-  local server_url="${VPSMONITOR_SERVER_URL:-http://SERVER_IP:8090}"
+  local server_url="${VPSMONITOR_SERVER_URL:-https://SERVER_HOSTNAME}"
   local agent_id="${VPSMONITOR_AGENT_ID:-}"
   local existing_agent_id=""
   local registration_token="${VPSMONITOR_REGISTRATION_TOKEN:-}"

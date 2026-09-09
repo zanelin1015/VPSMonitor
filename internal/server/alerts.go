@@ -83,36 +83,47 @@ func (s *alertService) runAlertSweep() {
 func (s *alertService) runDailyNotifications() {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
-	var lastRunDate string
+	var lastDailyAlertDate string
+	var lastTrafficReportDate string
 	for range ticker.C {
 		now := time.Now().In(beijingTimeLocation)
-		if now.Hour() != 9 || now.Minute() != 0 {
-			continue
-		}
 		runDate := now.Format("2006-01-02")
-		if lastRunDate == runDate {
-			continue
-		}
 
 		// Non-urgent alerts are deliberately evaluated only in the daily window.
 		// Customer support messages use their own immediate path, while Client
 		// offline alerts continue to be handled by the frequent alert sweep.
-		s.EvaluateAllDaily()
-		lastRunDate = runDate
+		if now.Hour() == 9 && now.Minute() == 0 && lastDailyAlertDate != runDate {
+			s.EvaluateAllDaily()
+			lastDailyAlertDate = runDate
+		}
 
 		settings := s.scheduledTaskSettings()
 		if !settings.DailyTrafficReport.Enabled {
 			continue
 		}
+		hour, minute := parseTaskTimeOfDay(settings.DailyTrafficReport.TimeOfDay, 9, 0)
+		if now.Hour() != hour || now.Minute() != minute || lastTrafficReportDate == runDate {
+			continue
+		}
+		lastTrafficReportDate = runDate
 		days := settings.DailyTrafficReport.IntervalDays
 		if days <= 0 {
 			days = 1
 		}
-		if days > 1 && now.Day()%days != 0 {
+		if !dailyTrafficReportDue(now, days) {
 			continue
 		}
 		s.SendDailyTrafficReport(now.AddDate(0, 0, -1))
 	}
+}
+
+func dailyTrafficReportDue(now time.Time, intervalDays int) bool {
+	if intervalDays <= 1 {
+		return true
+	}
+	year, month, day := now.Date()
+	dayOrdinal := time.Date(year, month, day, 0, 0, 0, 0, time.UTC).Unix() / int64((24*time.Hour)/time.Second)
+	return dayOrdinal%int64(intervalDays) == 0
 }
 
 func (s *alertService) scheduledTaskSettings() model.ScheduledTaskSettings {

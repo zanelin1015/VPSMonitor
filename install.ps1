@@ -72,6 +72,14 @@ function Get-PackageUrl([string]$Arch) {
   return "https://github.com/$Repo/releases/download/$Version/$packageName"
 }
 
+function Assert-PackageSHA256([string]$Path) {
+  $expected = if ($env:VPSMONITOR_PACKAGE_SHA256) { $env:VPSMONITOR_PACKAGE_SHA256.Trim().ToLowerInvariant() } else { "" }
+  if ([string]::IsNullOrWhiteSpace($expected)) { return }
+  if ($expected -notmatch '^[0-9a-f]{64}$') { throw "VPSMONITOR_PACKAGE_SHA256 must be a 64-character SHA-256 digest." }
+  $actual = (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLowerInvariant()
+  if ($actual -ne $expected) { throw "Downloaded package SHA-256 does not match the verified release digest." }
+}
+
 function Convert-AgentID([string]$Value) {
   $normalized = ($Value.Trim().ToLowerInvariant() -replace "[^a-z0-9._-]", "-") -replace "-{2,}", "-"
   $normalized = $normalized.Trim("-")
@@ -221,7 +229,7 @@ Write-Host "  Arch: windows/$Arch"
 Write-Host "  Install: $InstallDir"
 Write-Host "  Service: $ServiceName"
 
-$ServerUrl = if ($env:VPSMONITOR_SERVER_URL) { $env:VPSMONITOR_SERVER_URL } else { "http://SERVER_IP:8090" }
+$ServerUrl = if ($env:VPSMONITOR_SERVER_URL) { $env:VPSMONITOR_SERVER_URL } else { "https://SERVER_HOSTNAME" }
 $AgentID = if ($env:VPSMONITOR_AGENT_ID) { Convert-AgentID $env:VPSMONITOR_AGENT_ID } else { "" }
 $ExistingAgentID = Read-ExistingAgentID $ConfigPath
 if ([string]::IsNullOrWhiteSpace($AgentID) -and -not [string]::IsNullOrWhiteSpace($ExistingAgentID)) { $AgentID = Convert-AgentID $ExistingAgentID }
@@ -254,6 +262,7 @@ try {
   $ZipPath = Join-Path $TempDir "client.zip"
   Write-Info "Downloading $PackageUrl"
   Invoke-WebRequest -Uri $PackageUrl -OutFile $ZipPath -UseBasicParsing
+  Assert-PackageSHA256 $ZipPath
   Expand-Archive -Path $ZipPath -DestinationPath $TempDir -Force
   $DownloadedBinary = Get-ChildItem -Path $TempDir -Filter "bridge-client.exe" -Recurse | Select-Object -First 1
   if (-not $DownloadedBinary) { throw "bridge-client.exe was not found in package." }

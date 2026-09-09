@@ -1,9 +1,13 @@
 {
   "listen_addr": ":8090",
+  "tls_cert_file": "/etc/letsencrypt/live/your-server-hostname/fullchain.pem",
+  "tls_key_file": "/etc/letsencrypt/live/your-server-hostname/privkey.pem",
+  "allow_insecure_http": false,
   "data_dir": "./data",
   "database_path": "./data/bridge.db",
   "credential_key_path": "./data/credential.key",
   "registration_token": "replace-with-registration-token",
+  "trusted_proxy_cidrs": [],
   "admin_username": "admin",
   "admin_password": "replace-with-admin-password",
   "snapshot_retention_days": 30,

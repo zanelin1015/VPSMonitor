@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -13,9 +14,11 @@ import (
 	"strings"
 	"time"
 
+	"bridge-core/internal/config"
 	"bridge-core/internal/dashboard"
 	"bridge-core/internal/model"
 	"bridge-core/internal/realmconfig"
+	"bridge-core/internal/store"
 )
 
 func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
@@ -33,8 +36,8 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode register request: %v", err))
 		return
 	}
-	if req.AgentID == "" {
-		writeError(w, http.StatusBadRequest, "agent_id is required")
+	if !config.IsValidAgentID(req.AgentID) {
+		writeError(w, http.StatusBadRequest, "agent_id must be 1-80 characters using only letters, digits, dots, underscores, or hyphens")
 		return
 	}
 	if req.AgentName == "" {
@@ -47,7 +50,7 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 	// Network identity is server-observed; never trust an address supplied by the agent.
 	req.PublicIPv4 = ""
 	req.PublicIPv6 = ""
-	observedIP := requestObservedIP(r)
+	observedIP := a.requestObservedIP(r)
 	if isUsableObservedIP(observedIP) {
 		if net.ParseIP(observedIP).To4() != nil {
 			req.PublicIPv4 = observedIP
@@ -57,8 +60,12 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	a.applyDefaultXUIBootstrap(&req)
 
-	result, err := a.store.RegisterAgent(req)
+	result, err := a.store.RegisterAgentWithToken(req, r.Header.Get("X-Agent-Token"))
 	if err != nil {
+		if errors.Is(err, store.ErrAgentRegistrationUnauthorized) {
+			writeError(w, http.StatusUnauthorized, "existing agent registration requires a valid agent token")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -1170,6 +1177,8 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 			status := http.StatusInternalServerError
 			if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "invalid") {
 				status = http.StatusBadRequest
+			} else if strings.Contains(err.Error(), "not executable") {
+				status = http.StatusConflict
 			}
 			writeError(w, status, err.Error())
 			return
@@ -1454,8 +1463,6 @@ func realtimeXUIActionAllowed(kind string) bool {
 func (a *App) dispatchXUIActionRealtime(agentID string, action model.XUIAction) (model.XUIAction, bool) {
 	control := model.AgentControlMessage{
 		ActionID: action.ID,
-		Payload:  action.Payload,
-		XUIAuth:  a.xuiActionAuth(agentID, action.Kind),
 	}
 	switch {
 	case action.Kind == model.XUIActionRestartXUI:
@@ -1466,12 +1473,18 @@ func (a *App) dispatchXUIActionRealtime(agentID string, action model.XUIAction) 
 	default:
 		return action, false
 	}
-	if !a.realtime.sendAgentControl(agentID, control) {
+	running, claimed, err := a.store.ClaimXUIAction(agentID, action.ID)
+	if err != nil || !claimed {
 		return action, false
 	}
-	running, err := a.store.MarkXUIActionRunning(agentID, action.ID)
-	if err != nil {
-		return action, true
+	action = running
+	control.Payload = action.Payload
+	control.XUIAuth = a.xuiActionAuth(agentID, action.Kind)
+	if !a.realtime.sendAgentControl(agentID, control) {
+		if releaseErr := a.store.ReleaseXUIAction(agentID, action.ID); releaseErr != nil {
+			log.Printf("release undelivered x-ui action %d failed: %v", action.ID, releaseErr)
+		}
+		return action, false
 	}
 	return running, true
 }
@@ -1537,6 +1550,9 @@ func xuiActionUsesPanelAuth(kind string) bool {
 }
 
 func (a *App) dispatchPendingXUIActionsRealtime(agentID string) {
+	if _, err := a.store.ExpireStaleXUIActions(agentID, store.XUIActionExecutionLease); err != nil {
+		log.Printf("expire stale x-ui actions for %s: %v", agentID, err)
+	}
 	actions, err := a.store.ListXUIActions(agentID, 100)
 	if err != nil {
 		return
@@ -1576,7 +1592,7 @@ func (a *App) handleHeartbeat(w http.ResponseWriter, r *http.Request, agentID st
 	// Older clients may still report an IP obtained through their own proxy.
 	snapshot.Summary.ObservedIP = ""
 	snapshot.Summary.ServerSeenIP = ""
-	if serverSeenIP := requestObservedIP(r); isUsableObservedIP(serverSeenIP) {
+	if serverSeenIP := a.requestObservedIP(r); isUsableObservedIP(serverSeenIP) {
 		snapshot.Summary.ObservedIP = serverSeenIP
 		snapshot.Summary.ServerSeenIP = serverSeenIP
 	}

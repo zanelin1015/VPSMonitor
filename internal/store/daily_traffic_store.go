@@ -14,44 +14,12 @@ func (s *SQLiteStore) ListDailyTrafficUsage(day time.Time) ([]model.DailyTraffic
 	start := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
 	end := start.AddDate(0, 0, 1)
 	rows, err := s.db.Query(`
-		WITH agent_ids AS (
-			SELECT DISTINCT agent_id
-			FROM snapshots
-			WHERE reported_at >= ? AND reported_at < ?
-		), boundaries AS (
-			SELECT
-				agent_id,
-				(
-					SELECT id
-					FROM snapshots AS first_snapshot
-					WHERE first_snapshot.agent_id = agent_ids.agent_id
-					  AND first_snapshot.reported_at >= ? AND first_snapshot.reported_at < ?
-					ORDER BY first_snapshot.reported_at ASC, first_snapshot.id ASC
-					LIMIT 1
-				) AS first_id,
-				(
-					SELECT id
-					FROM snapshots AS last_snapshot
-					WHERE last_snapshot.agent_id = agent_ids.agent_id
-					  AND last_snapshot.reported_at >= ? AND last_snapshot.reported_at < ?
-					ORDER BY last_snapshot.reported_at DESC, last_snapshot.id DESC
-					LIMIT 1
-				) AS last_id
-			FROM agent_ids
-		)
 		SELECT
-			snapshot.agent_id,
-			snapshot.agent_name,
-			snapshot.net_traffic_sent,
-			snapshot.net_traffic_recv,
-			snapshot.history_version,
-			snapshot.snapshot_json
-		FROM boundaries
-		JOIN snapshots AS snapshot ON snapshot.id = boundaries.first_id OR snapshot.id = boundaries.last_id
-		ORDER BY snapshot.agent_id ASC, snapshot.reported_at ASC, snapshot.id ASC
+			agent_id, agent_name, net_traffic_sent, net_traffic_recv, history_version, snapshot_json
+		FROM snapshots
+		WHERE reported_at >= ? AND reported_at < ?
+		ORDER BY agent_id ASC, reported_at ASC, id ASC
 	`,
-		start.UTC().Format(time.RFC3339Nano), end.UTC().Format(time.RFC3339Nano),
-		start.UTC().Format(time.RFC3339Nano), end.UTC().Format(time.RFC3339Nano),
 		start.UTC().Format(time.RFC3339Nano), end.UTC().Format(time.RFC3339Nano),
 	)
 	if err != nil {
@@ -60,8 +28,9 @@ func (s *SQLiteStore) ListDailyTrafficUsage(day time.Time) ([]model.DailyTraffic
 	defer rows.Close()
 
 	type pair struct {
-		first trafficHistoryPoint
-		last  trafficHistoryPoint
+		last     trafficHistoryPoint
+		upload   uint64
+		download uint64
 	}
 	byAgent := map[string]*pair{}
 	for rows.Next() {
@@ -82,9 +51,11 @@ func (s *SQLiteStore) ListDailyTrafficUsage(day time.Time) ([]model.DailyTraffic
 		}
 		current := byAgent[point.agentID]
 		if current == nil {
-			byAgent[point.agentID] = &pair{first: point, last: point}
+			byAgent[point.agentID] = &pair{last: point}
 			continue
 		}
+		current.upload += trafficDelta(current.last.sent, point.sent)
+		current.download += trafficDelta(current.last.received, point.received)
 		current.last = point
 	}
 	if err := rows.Err(); err != nil {
@@ -93,14 +64,12 @@ func (s *SQLiteStore) ListDailyTrafficUsage(day time.Time) ([]model.DailyTraffic
 
 	items := make([]model.DailyTrafficUsage, 0, len(byAgent))
 	for agentID, item := range byAgent {
-		upload := trafficDelta(item.first.sent, item.last.sent)
-		download := trafficDelta(item.first.received, item.last.received)
 		items = append(items, model.DailyTrafficUsage{
 			AgentID:   agentID,
 			AgentName: item.last.agentName,
-			Upload:    upload,
-			Download:  download,
-			Total:     upload + download,
+			Upload:    item.upload,
+			Download:  item.download,
+			Total:     item.upload + item.download,
 		})
 	}
 	sort.Slice(items, func(i, j int) bool {

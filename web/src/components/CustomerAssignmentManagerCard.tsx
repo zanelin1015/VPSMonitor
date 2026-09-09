@@ -172,7 +172,7 @@ export function CustomerAssignmentManagerCard(props: CustomerAssignmentManagerCa
         columns={visibleAssignmentColumns}
         dataSource={selectedCustomer?.assignments || []}
         pagination={{ pageSize: 8, hideOnSinglePage: true }}
-        scroll={{ x: 1260 }}
+        scroll={{ x: 1400 }}
         locale={{ emptyText: <Empty description="暂无授权链路" /> }}
       />
     </Card>

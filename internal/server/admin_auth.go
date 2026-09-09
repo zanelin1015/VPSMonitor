@@ -17,21 +17,29 @@ func (a *App) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode login request: %v", err))
 		return
 	}
+	ipKey, accountKey := a.loginAttemptKeys(r, "admin", req.Username)
+	if !a.loginLimiter.allowed(ipKey, accountKey) {
+		w.Header().Set("Retry-After", "60")
+		writeError(w, http.StatusTooManyRequests, "too many login attempts")
+		return
+	}
 	user, ok, err := a.store.AuthenticateAdmin(req.Username, req.Password)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if !ok {
+		a.loginLimiter.failure(ipKey, accountKey)
 		writeError(w, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
+	a.loginLimiter.success(accountKey)
 	token, session, err := a.store.CreateAdminSession(user, adminSessionTTL)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	setAdminSessionCookie(w, r, token, session.ExpiresAt)
+	a.setAdminSessionCookie(w, r, token, session.ExpiresAt)
 	writeJSON(w, http.StatusOK, model.AdminLoginResponse{User: user, System: serverSystemInfo()})
 }
 
@@ -39,7 +47,7 @@ func (a *App) handleAdminLogout(w http.ResponseWriter, r *http.Request) {
 	if token := readAdminSessionToken(r); token != "" {
 		_ = a.store.DeleteAdminSession(token)
 	}
-	clearAdminSessionCookie(w, r)
+	a.clearAdminSessionCookie(w, r)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "logged_out"})
 }
 
@@ -208,7 +216,7 @@ func readAdminSessionToken(r *http.Request) string {
 	return cookie.Value
 }
 
-func setAdminSessionCookie(w http.ResponseWriter, r *http.Request, token string, expiresAt time.Time) {
+func (a *App) setAdminSessionCookie(w http.ResponseWriter, r *http.Request, token string, expiresAt time.Time) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     adminSessionCookieName,
 		Value:    token,
@@ -217,11 +225,11 @@ func setAdminSessionCookie(w http.ResponseWriter, r *http.Request, token string,
 		MaxAge:   int(time.Until(expiresAt).Seconds()),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   isSecureRequest(r),
+		Secure:   a.isSecureRequest(r),
 	})
 }
 
-func clearAdminSessionCookie(w http.ResponseWriter, r *http.Request) {
+func (a *App) clearAdminSessionCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     adminSessionCookieName,
 		Value:    "",
@@ -230,10 +238,22 @@ func clearAdminSessionCookie(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   -1,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   isSecureRequest(r),
+		Secure:   a.isSecureRequest(r),
 	})
 }
 
-func isSecureRequest(r *http.Request) bool {
-	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+func (a *App) isSecureRequest(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") && a.isTrustedProxy(directRequestIP(r.RemoteAddr))
+}
+
+func (a *App) loginAttemptKeys(r *http.Request, scope string, username string) (string, string) {
+	ip := a.requestObservedIP(r)
+	if ip == "" {
+		ip = "unknown"
+	}
+	account := strings.ToLower(strings.TrimSpace(username))
+	return scope + ":ip:" + ip, scope + ":account:" + account
 }

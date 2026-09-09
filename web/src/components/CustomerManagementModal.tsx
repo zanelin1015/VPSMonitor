@@ -411,8 +411,9 @@ export function CustomerManagementModal(props: {
     {
       title: '授权链路名称',
       dataIndex: 'public_client_name',
-      width: 180,
-      render: (value?: string) => <Text strong>{value || '-'}</Text>,
+      width: 240,
+      fixed: 'left',
+      render: (value?: string) => <Text strong style={{ wordBreak: 'break-word' }}>{value || '-'}</Text>,
     },
     {
       title: 'Client / 节点 / 客户端',
@@ -461,9 +462,10 @@ export function CustomerManagementModal(props: {
     {
       title: '操作',
       key: 'actions',
-      width: 220,
+      width: 240,
+      fixed: 'right',
       render: (_, record) => (
-        <Space size={6}>
+        <Space size={6} wrap={false}>
           {onOpenAssignment ? (
             <Button size="small" icon={<ExportOutlined />} onClick={() => onOpenAssignment(record)}>
               跳转

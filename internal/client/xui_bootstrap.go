@@ -26,29 +26,9 @@ func (a *App) ensureXUIBootstrap(ctx context.Context, cfg config.XUIConfig) erro
 }
 
 func install3XUI(ctx context.Context, cfg config.XUIConfig) error {
-	if !commandExists("bash") || !commandExists("curl") {
-		return fmt.Errorf("bash and curl are required to install 3x-ui")
-	}
-	installURL := strings.TrimSpace(cfg.InstallScriptURL)
-	if installURL == "" {
-		installURL = "https://raw.githubusercontent.com/MHSanaei/3x-ui/master/install.sh"
-	}
-	command := fmt.Sprintf(`set -e
-TMP="$(mktemp /tmp/3x-ui-install.XXXXXX.sh)"
-cleanup() { rm -f "$TMP"; }
-trap cleanup EXIT
-curl -fsSL %q -o "$TMP"
-# The official installer may ask whether to customize settings; use defaults first,
-# skip installer SSL setup for unattended installs, then VPSMonitor applies the
-# configured username/password/port/path below.
-printf 'n\n4\n' | bash "$TMP"
-`, installURL)
-	_, err := executeRemoteCommandWithOptions(ctx, map[string]any{
-		"command":         command,
-		"shell":           "bash",
-		"timeout_seconds": 900,
-	}, remoteCommandOptions{DefaultTimeoutSeconds: 900, MaxTimeoutSeconds: 1800})
-	return err
+	_ = ctx
+	_ = cfg
+	return fmt.Errorf("unattended 3x-ui installation is disabled because the upstream installer does not provide a verifiable package digest")
 }
 
 func configure3XUI(ctx context.Context, cfg config.XUIConfig) error {

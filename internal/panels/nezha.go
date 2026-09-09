@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -141,7 +140,7 @@ func (c *NezhaClient) doJSON(req *http.Request, target any) error {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readPanelResponse(resp.Body)
 	if err != nil {
 		return fmt.Errorf("read response: %w", err)
 	}

@@ -7,12 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -35,6 +35,9 @@ type App struct {
 	xuiClient              *panels.XUIClient
 	xuiClientKey           string
 	runOnceMu              sync.Mutex
+	operationMu            sync.Mutex
+	configLoadMu           sync.Mutex
+	registrationPersisted  bool
 	networkPolicySignature string
 	xuiBootstrapSignature  string
 	realmForwardSignature  string
@@ -42,6 +45,8 @@ type App struct {
 	accessLogState         accessLogTailState
 	capabilities           model.AgentCapabilities
 }
+
+const maxServerAPIResponseBytes = 16 << 20
 
 func New(cfg config.ClientConfig) (*App, error) {
 	timeout := time.Duration(cfg.RequestTimeoutSeconds) * time.Second
@@ -52,11 +57,28 @@ func New(cfg config.ClientConfig) (*App, error) {
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: cfg.ServerSkipTLSVerify},
 			},
+			CheckRedirect: rejectCrossOriginServerRedirect,
 		},
 		requestTimeout: timeout,
 		agentToken:     cfg.AgentToken,
 		capabilities:   detectAgentCapabilities(osCommandRunner{}),
 	}, nil
+}
+
+// rejectCrossOriginServerRedirect prevents agent credentials in custom
+// headers from being forwarded to a destination other than the configured
+// server. Same-host HTTP-to-HTTPS redirects remain supported.
+func rejectCrossOriginServerRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) == 0 || via[0].URL == nil || req == nil || req.URL == nil {
+		return http.ErrUseLastResponse
+	}
+	if !strings.EqualFold(req.URL.Hostname(), via[0].URL.Hostname()) {
+		return http.ErrUseLastResponse
+	}
+	if len(via) >= 3 {
+		return http.ErrUseLastResponse
+	}
+	return nil
 }
 
 func (a *App) RunOnce(ctx context.Context) error {
@@ -71,6 +93,9 @@ func (a *App) RunOnce(ctx context.Context) error {
 }
 
 func (a *App) runOnceWithConfig(ctx context.Context, effectiveConfig model.ManagedAgentConfig) error {
+	a.operationMu.Lock()
+	defer a.operationMu.Unlock()
+
 	effectiveConfig = normalizeManagedConfig(effectiveConfig, a.config.AgentID, a.config.AgentName)
 	effectiveConfig = enforceExclusiveForwardingMode(effectiveConfig)
 	effectiveConfig.Entry = mergeLocalRealmConfigIntoEntry(effectiveConfig.Entry)
@@ -126,7 +151,9 @@ func (a *App) executePendingXUIActions(ctx context.Context, effectiveConfig mode
 		action.XUIAuth = nil
 		result := a.executeXUIAction(ctx, effectiveConfig, xuiClient, xuiErr, action)
 		resultCtx, resultCancel := context.WithTimeout(ctx, a.requestTimeout)
-		_ = a.reportXUIActionResult(resultCtx, action.ID, result)
+		if reportErr := a.reportXUIActionResult(resultCtx, action.ID, result); reportErr != nil {
+			log.Printf("report polled x-ui action %d result failed: %v", action.ID, reportErr)
+		}
 		resultCancel()
 	}
 }
@@ -223,14 +250,31 @@ func (a *App) startSelfUpdate(payload map[string]any) (map[string]any, error) {
 		return nil, fmt.Errorf("update target arch mismatch: target=%s current=%s", targetArch, runtime.GOARCH)
 	}
 	installDir := filepath.Dir(exe)
-	version := payloadString(payload, "version", "latest")
+	version := payloadString(payload, "version", "")
 	repo := payloadString(payload, "repo", "zanelin1015/VPSMonitor")
 	packagePrefix := payloadString(payload, "package_prefix", "VPSMonitor")
+	if !isSafeUpdateRepository(repo) || !isSafeUpdateReleaseTag(version) {
+		return nil, fmt.Errorf("update requires a verified repository and release tag")
+	}
+	if packagePrefix != officialClientUpdatePackagePrefix {
+		return nil, fmt.Errorf("update requires the official package prefix %s", officialClientUpdatePackagePrefix)
+	}
+	packageSHA256, err := requiredUpdatePackageSHA256(payloadString(payload, "package_sha256", ""))
+	if err != nil {
+		return nil, err
+	}
+	packageName, err := clientUpdatePackageName(packagePrefix)
+	if err != nil {
+		return nil, err
+	}
+	packageURL, err := verifiedUpdatePackageURL(repo, version, packageName)
+	if err != nil {
+		return nil, err
+	}
 
 	if runtime.GOOS == "windows" {
-		scriptURL := payloadString(payload, "ps_script_url", "https://raw.githubusercontent.com/"+repo+"/main/install.ps1")
 		serviceName := payloadString(payload, "service_name", "VPSMonitorClient")
-		command := buildWindowsSelfUpdateCommand(scriptURL, version, repo, packagePrefix, installDir, serviceName)
+		command := buildWindowsSelfUpdateCommand(packageURL, installDir, serviceName, packageSHA256)
 		cmd := exec.Command("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-Command", command)
 		if err := cmd.Start(); err != nil {
 			return nil, fmt.Errorf("start windows update: %w", err)
@@ -238,25 +282,16 @@ func (a *App) startSelfUpdate(payload map[string]any) (map[string]any, error) {
 		return map[string]any{"status": "started", "install_dir": installDir, "service_name": serviceName}, nil
 	}
 
-	scriptURL := payloadString(payload, "script_url", "https://raw.githubusercontent.com/"+repo+"/main/install.sh")
 	serviceName := payloadString(payload, "service_name", "vpsmonitor-client")
-	realmAutoInstall := payloadBool(payload, "realm_auto_install", false)
-	realmVersion := payloadString(payload, "realm_version", "v2.9.4")
-	realmDownloadBaseURL := payloadString(payload, "realm_download_base_url", "")
-	haProxyAutoInstall := payloadBool(payload, "haproxy_auto_install", false)
-	if haProxyAutoInstall {
-		realmAutoInstall = false
-	}
 	if isOpenWrtLike() {
-		openWrtScriptURL := payloadString(payload, "openwrt_script_url", openWrtInstallerURL(scriptURL))
-		command := buildUnixSelfUpdateCommand(openWrtScriptURL, version, repo, packagePrefix, installDir, serviceName, realmAutoInstall, realmVersion, realmDownloadBaseURL, haProxyAutoInstall, true)
+		command := buildUnixSelfUpdateCommand(packageURL, installDir, serviceName, packageSHA256, true)
 		cmd := exec.Command("sh", "-c", command)
 		if err := cmd.Start(); err != nil {
 			return nil, fmt.Errorf("start OpenWrt update: %w", err)
 		}
 		return map[string]any{"status": "started", "install_dir": installDir, "service_name": serviceName, "service_manager": "procd"}, nil
 	}
-	command := buildUnixSelfUpdateCommand(scriptURL, version, repo, packagePrefix, installDir, serviceName, realmAutoInstall, realmVersion, realmDownloadBaseURL, haProxyAutoInstall, false)
+	command := buildUnixSelfUpdateCommand(packageURL, installDir, serviceName, packageSHA256, false)
 	cmd := exec.Command("sh", "-c", command)
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start linux update: %w", err)
@@ -264,35 +299,159 @@ func (a *App) startSelfUpdate(payload map[string]any) (map[string]any, error) {
 	return map[string]any{"status": "started", "install_dir": installDir, "service_name": serviceName}, nil
 }
 
-func buildWindowsSelfUpdateCommand(scriptURL, version, repo, packagePrefix, installDir, serviceName string) string {
-	return fmt.Sprintf(`Start-Sleep -Seconds 2; $env:VPSMONITOR_ASSUME_YES='true'; $env:VPSMONITOR_VERSION=%q; $env:VPSMONITOR_REPO=%q; $env:VPSMONITOR_PACKAGE_PREFIX=%q; $env:VPSMONITOR_CLIENT_DIR=%q; $env:VPSMONITOR_CLIENT_SERVICE=%q; $scriptPath=Join-Path $env:TEMP ('vpsmonitor-install-' + [guid]::NewGuid().ToString('N') + '.ps1'); try { iwr -UseBasicParsing %q -OutFile $scriptPath; powershell -NoProfile -ExecutionPolicy Bypass -File $scriptPath client *> "$env:TEMP\vpsmonitor-client-update.log" } finally { Remove-Item -Force -ErrorAction SilentlyContinue $scriptPath }`, version, repo, packagePrefix, installDir, serviceName, scriptURL)
+func buildWindowsSelfUpdateCommand(packageURL, installDir, serviceName, packageSHA256 string) string {
+	return fmt.Sprintf(`Start-Sleep -Seconds 2
+$packageUrl = %q
+$expectedHash = %q
+$installDir = %q
+$serviceName = %q
+$tempDir = Join-Path $env:TEMP ('vpsmonitor-update-' + [guid]::NewGuid().ToString('N'))
+try {
+  New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
+  $packagePath = Join-Path $tempDir 'client.zip'
+  Invoke-WebRequest -Uri $packageUrl -OutFile $packagePath -UseBasicParsing
+  $actualHash = (Get-FileHash -Algorithm SHA256 -Path $packagePath).Hash.ToLowerInvariant()
+  if ($actualHash -ne $expectedHash) { throw 'Downloaded client package SHA-256 does not match the verified release digest.' }
+  Expand-Archive -Path $packagePath -DestinationPath $tempDir -Force
+  $newBinary = Get-ChildItem -Path $tempDir -Filter 'bridge-client.exe' -Recurse | Select-Object -First 1
+  if (-not $newBinary) { throw 'bridge-client.exe was not found in the verified package.' }
+  $existingService = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+  if ($existingService) {
+    Stop-Service -Name $serviceName -Force -ErrorAction Stop
+    for ($i = 0; $i -lt 40; $i++) {
+      if ((Get-Service -Name $serviceName -ErrorAction SilentlyContinue).Status -eq 'Stopped') { break }
+      Start-Sleep -Milliseconds 500
+    }
+  }
+  New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+  Copy-Item -Path $newBinary.FullName -Destination (Join-Path $installDir 'bridge-client.exe') -Force
+  if ($existingService) { Start-Service -Name $serviceName -ErrorAction Stop }
+}
+finally {
+  Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $tempDir
+}`, packageURL, packageSHA256, installDir, serviceName)
 }
 
-func buildUnixSelfUpdateCommand(scriptURL, version, repo, packagePrefix, installDir, serviceName string, realmAutoInstall bool, realmVersion, realmDownloadBaseURL string, haProxyAutoInstall, openWrt bool) string {
-	downloadCommand := fmt.Sprintf(`(curl -fsSL %[1]q -o "$tmp" || wget -O "$tmp" %[1]q)`, scriptURL)
-	installerShell := "bash"
+func buildUnixSelfUpdateCommand(packageURL, installDir, serviceName, packageSHA256 string, openWrt bool) string {
+	restartCommand := `if command -v systemctl >/dev/null 2>&1; then systemctl restart "$service_name";
+elif command -v rc-service >/dev/null 2>&1; then rc-service "$service_name" restart;
+else echo "no supported service manager found" >&2; exit 1; fi`
 	if openWrt {
-		downloadCommand = fmt.Sprintf(`if command -v uclient-fetch >/dev/null 2>&1; then uclient-fetch -O "$tmp" %[1]q; elif command -v wget >/dev/null 2>&1; then wget -O "$tmp" %[1]q; else curl -fL %[1]q -o "$tmp"; fi`, scriptURL)
-		installerShell = "sh"
+		restartCommand = `service="/etc/init.d/$service_name"
+[ -x "$service" ] || { echo "OpenWrt service was not found: $service" >&2; exit 1; }
+"$service" restart || "$service" start`
 	}
-	return fmt.Sprintf(`(sleep 2; { tmp=""; trap 'if [ -n "$tmp" ]; then rm -f "$tmp"; fi' EXIT; tmp_base="${VPSMONITOR_TMP_DIR:-/var/tmp}"; tmp="$(mktemp "$tmp_base/vpsmonitor-install.XXXXXX.sh" 2>/dev/null || mktemp /tmp/vpsmonitor-install.XXXXXX.sh)" || exit 1; %[1]s && exec 3<"$tmp" && rm -f "$tmp" && tmp="" && env VPSMONITOR_ASSUME_YES=true VPSMONITOR_VERSION=%[2]q VPSMONITOR_REPO=%[3]q VPSMONITOR_PACKAGE_PREFIX=%[4]q VPSMONITOR_CLIENT_DIR=%[5]q VPSMONITOR_CLIENT_SERVICE=%[6]q VPSMONITOR_REALM_AUTO_INSTALL=%[7]q VPSMONITOR_REALM_VERSION=%[8]q VPSMONITOR_REALM_DOWNLOAD_BASE_URL=%[9]q VPSMONITOR_HAPROXY_AUTO_INSTALL=%[10]q %[11]s -s -- client <&3; } >>/tmp/vpsmonitor-client-update.log 2>&1) >/dev/null 2>&1 &`, downloadCommand, version, repo, packagePrefix, installDir, serviceName, strconv.FormatBool(realmAutoInstall), realmVersion, realmDownloadBaseURL, strconv.FormatBool(haProxyAutoInstall), installerShell)
+	return fmt.Sprintf(`(sleep 2; {
+set -eu
+tmp="$(mktemp -d "${VPSMONITOR_TMP_DIR:-/var/tmp}/vpsmonitor-client-update.XXXXXX" 2>/dev/null || mktemp -d /tmp/vpsmonitor-client-update.XXXXXX)"
+trap 'rm -rf "$tmp"' EXIT
+package="$tmp/package.tar.gz"
+if command -v curl >/dev/null 2>&1; then
+  curl -fsSL %[1]q -o "$package"
+elif command -v uclient-fetch >/dev/null 2>&1; then
+  uclient-fetch -O "$package" %[1]q
+elif command -v wget >/dev/null 2>&1; then
+  wget -O "$package" %[1]q
+else
+  echo "curl, uclient-fetch, or wget is required for the client update" >&2; exit 127
+fi
+expected=%[2]q
+if command -v sha256sum >/dev/null 2>&1; then actual="$(sha256sum "$package" | awk '{print $1}')";
+elif command -v shasum >/dev/null 2>&1; then actual="$(shasum -a 256 "$package" | awk '{print $1}')";
+elif command -v openssl >/dev/null 2>&1; then actual="$(openssl dgst -sha256 "$package" | awk '{print $NF}')";
+else echo "a SHA-256 utility is required for verified updates" >&2; exit 127; fi
+[ "$(printf '%%s' "$actual" | tr '[:upper:]' '[:lower:]')" = "$expected" ] || { echo "client package SHA-256 mismatch" >&2; exit 1; }
+tar -xzf "$package" -C "$tmp"
+binary="$(find "$tmp" -type f -name bridge-client | head -n 1)"
+[ -n "$binary" ] || { echo "bridge-client not found in verified package" >&2; exit 1; }
+install_dir=%[3]q
+mkdir -p "$install_dir"
+cp "$binary" "$install_dir/.bridge-client.new"
+chmod 0755 "$install_dir/.bridge-client.new"
+mv -f "$install_dir/.bridge-client.new" "$install_dir/bridge-client"
+service_name=%[4]q
+%[5]s
+} >>/tmp/vpsmonitor-client-update.log 2>&1) >/dev/null 2>&1 &`, packageURL, packageSHA256, installDir, serviceName, restartCommand)
 }
 
-func openWrtInstallerURL(scriptURL string) string {
-	scriptURL = strings.TrimSpace(scriptURL)
-	if scriptURL == "" {
-		return scriptURL
+const officialClientUpdateRepository = "zanelin1015/VPSMonitor"
+const officialClientUpdatePackagePrefix = "VPSMonitor"
+
+func isSafeUpdateRepository(repo string) bool { return repo == officialClientUpdateRepository }
+
+func isSafeUpdateReleaseTag(tag string) bool {
+	if tag == "" || len(tag) > 100 || !strings.HasPrefix(tag, "v") {
+		return false
 	}
-	base := scriptURL
-	suffix := ""
-	if index := strings.IndexAny(base, "?#"); index >= 0 {
-		suffix = base[index:]
-		base = base[:index]
+	if _, ok := parseSemver3(strings.TrimPrefix(tag, "v")); !ok {
+		return false
 	}
-	if strings.HasSuffix(base, "/install.sh") {
-		return strings.TrimSuffix(base, "/install.sh") + "/install-openwrt.sh" + suffix
+	return isSafeUpdateIdentifier(tag)
+}
+
+func isSafeUpdateIdentifier(value string) bool {
+	if value == "" || len(value) > 100 {
+		return false
 	}
-	return scriptURL
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '-' || char == '_' || char == '.' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func verifiedUpdatePackageURL(repo, tag, packageName string) (string, error) {
+	if !isSafeUpdateRepository(repo) || !isSafeUpdateReleaseTag(tag) || !isSafeUpdatePackageName(packageName) {
+		return "", fmt.Errorf("invalid verified update source")
+	}
+	return "https://github.com/" + repo + "/releases/download/" + tag + "/" + packageName, nil
+}
+
+func clientUpdatePackageName(packagePrefix string) (string, error) {
+	arch := runtime.GOARCH
+	switch runtime.GOOS {
+	case "windows":
+		if arch != "amd64" && arch != "arm64" {
+			return "", fmt.Errorf("client update is unsupported on windows/%s", arch)
+		}
+		return packagePrefix + "-client-windows-" + arch + ".zip", nil
+	case "linux":
+		if arch != "amd64" && arch != "arm64" && arch != "arm" {
+			return "", fmt.Errorf("client update is unsupported on linux/%s", arch)
+		}
+		return packagePrefix + "-client-linux-" + arch + ".tar.gz", nil
+	default:
+		return "", fmt.Errorf("client update is unsupported on %s/%s", runtime.GOOS, arch)
+	}
+}
+
+func isSafeUpdatePackageName(value string) bool {
+	if value == "" || len(value) > 200 || strings.Contains(value, "/") {
+		return false
+	}
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '-' || char == '_' || char == '.' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func requiredUpdatePackageSHA256(value string) (string, error) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if len(value) != 64 {
+		return "", fmt.Errorf("update is missing a SHA-256 package digest")
+	}
+	for _, char := range value {
+		if (char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') {
+			continue
+		}
+		return "", fmt.Errorf("update has an invalid SHA-256 package digest")
+	}
+	return value, nil
 }
 
 func payloadString(payload map[string]any, key string, fallback string) string {
@@ -311,13 +470,14 @@ func payloadBool(payload map[string]any, key string, fallback bool) bool {
 
 func (a *App) collect(ctx context.Context, effectiveConfig model.ManagedAgentConfig) model.AgentSnapshot {
 	snapshot := model.AgentSnapshot{
-		AgentID:       a.config.AgentID,
-		AgentName:     firstNonEmpty(effectiveConfig.AgentName, a.config.AgentName, a.config.AgentID),
-		Version:       version.Version,
-		OS:            runtime.GOOS,
-		Arch:          runtime.GOARCH,
-		SystemVersion: currentSystemVersion(),
-		ReportedAt:    time.Now().UTC(),
+		AgentID:            a.config.AgentID,
+		AgentName:          firstNonEmpty(effectiveConfig.AgentName, a.config.AgentName, a.config.AgentID),
+		Version:            version.Version,
+		VerifiedSelfUpdate: true,
+		OS:                 runtime.GOOS,
+		Arch:               runtime.GOARCH,
+		SystemVersion:      currentSystemVersion(),
+		ReportedAt:         time.Now().UTC(),
 		Summary: model.VPSSummary{
 			Hostname: currentHostname(),
 		},
@@ -409,25 +569,43 @@ func xuiClientCacheKey(cfg config.XUIConfig) string {
 }
 
 func (a *App) loadEffectiveConfig(ctx context.Context) (model.ManagedAgentConfig, error) {
-	if a.config.RegistrationToken != "" {
-		registerCtx, cancel := context.WithTimeout(ctx, a.requestTimeout)
-		defer cancel()
+	// Serialize bootstrap so concurrent polling and realtime requests cannot
+	// register the same identity before its issued token is available.
+	a.configLoadMu.Lock()
+	defer a.configLoadMu.Unlock()
 
+	token := firstNonEmpty(a.currentAgentToken(), a.config.AgentToken)
+	var registered *model.AgentRegisterResponse
+	if token == "" && a.config.RegistrationToken != "" {
+		registerCtx, cancel := context.WithTimeout(ctx, a.requestTimeout)
 		response, err := a.register(registerCtx)
+		cancel()
 		if err != nil {
 			return model.ManagedAgentConfig{}, err
 		}
+		if response.AgentID != a.config.AgentID || strings.TrimSpace(response.AgentToken) == "" {
+			return model.ManagedAgentConfig{}, fmt.Errorf("invalid registration credentials returned by server")
+		}
+		token = response.AgentToken
 		a.setAgentToken(response.AgentToken)
-		return normalizeManagedConfig(response.Config, response.AgentID, response.AgentName), nil
+		registered = &response
+	}
+	if token == "" {
+		return model.ManagedAgentConfig{}, fmt.Errorf("registration_token or agent_token is required")
 	}
 
-	if firstNonEmpty(a.currentAgentToken(), a.config.AgentToken) != "" {
-		configCtx, cancel := context.WithTimeout(ctx, a.requestTimeout)
-		defer cancel()
-		return a.fetchManagedConfig(configCtx)
+	if !a.registrationPersisted && a.config.RegistrationToken != "" && a.config.ConfigPath != "" {
+		if err := config.PersistClientRegistration(a.config.ConfigPath, a.config.AgentID, token); err != nil {
+			return model.ManagedAgentConfig{}, fmt.Errorf("persist registration credentials: %w", err)
+		}
+		a.registrationPersisted = true
 	}
-
-	return model.ManagedAgentConfig{}, fmt.Errorf("registration_token or agent_token is required")
+	if registered != nil {
+		return normalizeManagedConfig(registered.Config, registered.AgentID, registered.AgentName), nil
+	}
+	configCtx, cancel := context.WithTimeout(ctx, a.requestTimeout)
+	defer cancel()
+	return a.fetchManagedConfig(configCtx)
 }
 
 func normalizeManagedConfig(cfg model.ManagedAgentConfig, fallbackAgentID string, fallbackAgentName string) model.ManagedAgentConfig {
@@ -468,6 +646,9 @@ func (a *App) register(ctx context.Context) (model.AgentRegisterResponse, error)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Registration-Token", a.config.RegistrationToken)
+	if token := firstNonEmpty(a.currentAgentToken(), a.config.AgentToken); token != "" {
+		req.Header.Set("X-Agent-Token", token)
+	}
 
 	var response model.AgentRegisterResponse
 	if err := a.doJSON(req, &response); err != nil {
@@ -557,7 +738,7 @@ func (a *App) doJSON(req *http.Request, target any) error {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readServerAPIResponse(resp.Body)
 	if err != nil {
 		return fmt.Errorf("read response: %w", err)
 	}
@@ -568,6 +749,17 @@ func (a *App) doJSON(req *http.Request, target any) error {
 		return fmt.Errorf("decode response: %w", err)
 	}
 	return nil
+}
+
+func readServerAPIResponse(body io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(body, maxServerAPIResponseBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxServerAPIResponseBytes {
+		return nil, fmt.Errorf("server API response exceeds %d bytes", maxServerAPIResponseBytes)
+	}
+	return data, nil
 }
 
 func buildSummary(snapshot model.AgentSnapshot) model.VPSSummary {

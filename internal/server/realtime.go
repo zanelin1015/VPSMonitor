@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -549,9 +550,6 @@ func (a *App) handleAgentMetricsWS(w http.ResponseWriter, r *http.Request, agent
 		return
 	}
 	token := r.Header.Get("X-Agent-Token")
-	if token == "" {
-		token = r.URL.Query().Get("agent_token")
-	}
 	if !a.isAuthorized(agentID, token) {
 		writeError(w, http.StatusUnauthorized, "invalid agent token")
 		return
@@ -563,7 +561,7 @@ func (a *App) handleAgentMetricsWS(w http.ResponseWriter, r *http.Request, agent
 	}
 	defer conn.Close()
 	conn.SetReadLimit(32 * 1024)
-	serverSeenIP := requestObservedIP(r)
+	serverSeenIP := a.requestObservedIP(r)
 	controlSession := a.realtime.registerAgentControl(agentID)
 	defer a.realtime.unregisterAgentControl(agentID, controlSession)
 	a.dispatchPendingXUIActionsRealtime(agentID)
@@ -651,30 +649,52 @@ func queryInt(r *http.Request, key string, fallback int) int {
 	return value
 }
 
-func requestObservedIP(r *http.Request) string {
-	for _, header := range []string{"CF-Connecting-IP", "X-Real-IP", "X-Forwarded-For"} {
-		value := r.Header.Get(header)
-		if value == "" {
-			continue
-		}
-		for _, part := range strings.Split(value, ",") {
-			candidate := strings.TrimSpace(part)
-			if ip := net.ParseIP(candidate); ip != nil {
-				return ip.String()
-			}
+func (a *App) requestObservedIP(r *http.Request) string {
+	directIP := directRequestIP(r.RemoteAddr)
+	if !a.isTrustedProxy(directIP) {
+		return directIP
+	}
+	for _, header := range []string{"CF-Connecting-IP", "X-Real-IP"} {
+		if ip := net.ParseIP(strings.TrimSpace(r.Header.Get(header))); ip != nil {
+			return ip.String()
 		}
 	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	parts := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
+	for index := len(parts) - 1; index >= 0; index-- {
+		candidate := strings.TrimSpace(parts[index])
+		if ip := net.ParseIP(candidate); ip != nil && !a.isTrustedProxy(ip.String()) {
+			return ip.String()
+		}
+	}
+	return directIP
+}
+
+func directRequestIP(remoteAddr string) string {
+	host, _, err := net.SplitHostPort(remoteAddr)
 	if err == nil {
 		if ip := net.ParseIP(host); ip != nil {
 			return ip.String()
 		}
 		return host
 	}
-	if ip := net.ParseIP(r.RemoteAddr); ip != nil {
+	if ip := net.ParseIP(remoteAddr); ip != nil {
 		return ip.String()
 	}
-	return r.RemoteAddr
+	return remoteAddr
+}
+
+func (a *App) isTrustedProxy(value string) bool {
+	addr, err := netip.ParseAddr(strings.TrimSpace(value))
+	if err != nil {
+		return false
+	}
+	addr = addr.Unmap()
+	for _, prefix := range a.trustedProxies {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }
 
 func isUsableObservedIP(value string) bool {

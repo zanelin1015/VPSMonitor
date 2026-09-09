@@ -78,6 +78,24 @@ download_file() {
   die "curl, uclient-fetch, or wget is required to download packages."
 }
 
+verify_package_sha256() {
+  package_path="$1"
+  expected="${VPSMONITOR_PACKAGE_SHA256:-}"
+  [ -n "$expected" ] || return 0
+  expected="$(printf '%s' "$expected" | tr '[:upper:]' '[:lower:]')"
+  [ "${#expected}" -eq 64 ] || die "VPSMONITOR_PACKAGE_SHA256 must be a 64-character SHA-256 digest."
+  case "$expected" in *[!0-9a-f]*) die "VPSMONITOR_PACKAGE_SHA256 must be a 64-character SHA-256 digest." ;; esac
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "$package_path" | awk '{print $1}')"
+  elif command -v openssl >/dev/null 2>&1; then
+    actual="$(openssl dgst -sha256 "$package_path" | awk '{print $NF}')"
+  else
+    die "sha256sum or openssl is required for verified updates."
+  fi
+  actual="$(printf '%s' "$actual" | tr '[:upper:]' '[:lower:]')"
+  [ "$actual" = "$expected" ] || die "Downloaded package SHA-256 does not match the verified release digest."
+}
+
 realm_binary() {
   candidate="$(command -v realm 2>/dev/null || true)"
   if [ -n "$candidate" ] && [ -x "$candidate" ]; then
@@ -274,6 +292,7 @@ fetch_bundle() {
     info "Downloading bridge-client package: $url" >&2
     rm -f "$package_path"
     if download_file "$url" "$package_path"; then
+      verify_package_sha256 "$package_path"
       printf '%s\n' "$url" >"$tmp_dir/downloaded-url"
       break
     fi
@@ -348,7 +367,7 @@ install_client() {
   arch="$1"
   install_dir="$(absolute_path "${VPSMONITOR_CLIENT_DIR:-$prefix/client}")"
   config_path="$install_dir/config/client.json"
-  server_url="${VPSMONITOR_SERVER_URL:-http://SERVER_IP:8090}"
+  server_url="${VPSMONITOR_SERVER_URL:-https://SERVER_HOSTNAME}"
   registration_token="${VPSMONITOR_REGISTRATION_TOKEN:-}"
   skip_tls_verify="${VPSMONITOR_SERVER_SKIP_TLS_VERIFY:-false}"
   poll_interval="${VPSMONITOR_POLL_INTERVAL:-30s}"

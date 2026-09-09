@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +16,11 @@ import (
 	"time"
 
 	"bridge-core/internal/model"
+)
+
+const (
+	officialVPSMonitorRepository = "zanelin1015/VPSMonitor"
+	officialVPSMonitorPrefix     = "VPSMonitor"
 )
 
 func (a *App) handleAdminUpdates(w http.ResponseWriter, r *http.Request, parts []string) {
@@ -110,6 +116,8 @@ func cloneUpdateLatestInfo(info *model.UpdateLatestInfo) *model.UpdateLatestInfo
 	cloned.Assets = cloneStringSlice(info.Assets)
 	cloned.ServerAssets = cloneStringSlice(info.ServerAssets)
 	cloned.ClientAssets = cloneStringSlice(info.ClientAssets)
+	cloned.ServerAssetDigests = cloneStringMap(info.ServerAssetDigests)
+	cloned.ClientAssetDigests = cloneStringMap(info.ClientAssetDigests)
 	cloned.AgentStatus = append([]model.UpdateAgentStatus(nil), info.AgentStatus...)
 	cloned.XUIAgentStatus = append([]model.UpdateAgentStatus(nil), info.XUIAgentStatus...)
 	if info.CacheExpiresAt != nil {
@@ -123,33 +131,211 @@ func cloneUpdateLatestInfo(info *model.UpdateLatestInfo) *model.UpdateLatestInfo
 	return &cloned
 }
 
+func cloneStringMap(items map[string]string) map[string]string {
+	if len(items) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(items))
+	for key, value := range items {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+// Custom installer URLs bypass the release asset digest obtained from GitHub's
+// release API. Refuse them in automated updates so an admin action cannot
+// silently turn into an unchecked remote-script execution path.
+func rejectCustomUpdateScripts(req model.UpdateRequest) error {
+	if strings.TrimSpace(req.ScriptURL) != "" || strings.TrimSpace(req.PSScriptURL) != "" {
+		return fmt.Errorf("custom installer URLs are not allowed for automated updates")
+	}
+	return nil
+}
+
+func officialUpdateRepository(value string) (string, error) {
+	value = firstNonEmptyString(value, officialVPSMonitorRepository)
+	if value != officialVPSMonitorRepository {
+		return "", fmt.Errorf("automated updates only support the official repository %s", officialVPSMonitorRepository)
+	}
+	return value, nil
+}
+
+func officialUpdatePackagePrefix(value string) (string, error) {
+	value = firstNonEmptyString(value, officialVPSMonitorPrefix)
+	if value != officialVPSMonitorPrefix {
+		return "", fmt.Errorf("automated updates only support package prefix %s", officialVPSMonitorPrefix)
+	}
+	return value, nil
+}
+
+func selectedReleaseTag(requested, latestTag, latestVersion string) (string, error) {
+	latestTag = strings.TrimSpace(latestTag)
+	latestVersion = normalizeVersion(latestVersion)
+	if latestTag == "" || latestVersion == "" || !isSafeReleaseTag(latestTag) {
+		return "", fmt.Errorf("latest release has no safe semantic-version tag")
+	}
+	if requested = strings.TrimSpace(requested); requested != "" && normalizeVersion(requested) != latestVersion {
+		return "", fmt.Errorf("only the verified latest release %s can be installed automatically", latestTag)
+	}
+	return latestTag, nil
+}
+
+func verifiedReleaseAssetURL(repo, tag, assetName string) (string, error) {
+	if !isSafeGitHubRepository(repo) || !isSafeReleaseTag(tag) || !isSafeReleaseAssetName(assetName) {
+		return "", fmt.Errorf("invalid verified update source")
+	}
+	return "https://github.com/" + repo + "/releases/download/" + tag + "/" + assetName, nil
+}
+
+func isSafeGitHubRepository(repo string) bool {
+	parts := strings.Split(strings.Trim(repo, "/"), "/")
+	if len(parts) != 2 {
+		return false
+	}
+	return isSafeGitHubIdentifier(parts[0]) && isSafeGitHubIdentifier(parts[1])
+}
+
+func isSafeGitHubIdentifier(value string) bool {
+	if value == "" || len(value) > 100 {
+		return false
+	}
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '-' || char == '_' || char == '.' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func isSafeReleaseTag(tag string) bool {
+	if tag == "" || len(tag) > 100 {
+		return false
+	}
+	version := strings.TrimPrefix(tag, "v")
+	if _, ok := parseSemverParts(version); !ok {
+		return false
+	}
+	for _, char := range tag {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '-' || char == '_' || char == '.' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func isSafeReleaseAssetName(value string) bool {
+	if value == "" || len(value) > 200 || strings.Contains(value, "/") {
+		return false
+	}
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '-' || char == '_' || char == '.' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func requiredReleaseAssetDigest(digests map[string]string, assetName string) (string, error) {
+	digest := normalizeReleaseAssetDigest(digests[assetName])
+	if digest == "" {
+		return "", fmt.Errorf("release asset %s is missing a SHA-256 digest; refusing unchecked update", assetName)
+	}
+	return digest, nil
+}
+
+func normalizeReleaseAssetDigest(value string) string {
+	value = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(value)), "sha256:")
+	if len(value) != 64 {
+		return ""
+	}
+	if _, err := hex.DecodeString(value); err != nil {
+		return ""
+	}
+	return value
+}
+
 func (a *App) startServerUpdate(req model.UpdateRequest) (*model.UpdateLatestInfo, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return nil, fmt.Errorf("resolve server executable: %w", err)
 	}
 	installDir := filepath.Dir(exe)
-	repo := firstNonEmptyString(req.Repo, "zanelin1015/VPSMonitor")
-	packagePrefix := firstNonEmptyString(req.PackagePrefix, "VPSMonitor")
+	repo, err := officialUpdateRepository(req.Repo)
+	if err != nil {
+		return nil, err
+	}
+	packagePrefix, err := officialUpdatePackagePrefix(req.PackagePrefix)
+	if err != nil {
+		return nil, err
+	}
+	if err := rejectCustomUpdateScripts(req); err != nil {
+		return nil, err
+	}
 	latest, err := a.fetchUpdateLatestInfo(repo, packagePrefix)
 	if err != nil {
 		return nil, err
 	}
-	version := firstNonEmptyString(req.Version, latest.LatestServerTag, latest.LatestServerVersion, latest.LatestTag, latest.LatestVersion)
+	version, err := selectedReleaseTag(req.Version, latest.LatestServerTag, latest.LatestServerVersion)
+	if err != nil {
+		return latest, err
+	}
 	if !isVersionNewer(version, latest.CurrentServerVersion) {
 		return latest, fmt.Errorf("server is already up to date: current %s, latest %s", latest.CurrentServerVersion, firstNonEmptyString(latest.LatestServerVersion, latest.LatestVersion))
 	}
-	scriptURL := firstNonEmptyString(req.ScriptURL, "https://raw.githubusercontent.com/"+repo+"/main/install.sh")
+	packageName, packageOK := updateServerPackageName(packagePrefix, runtime.GOOS, runtime.GOARCH)
+	if !packageOK {
+		return latest, fmt.Errorf("server update is unsupported on %s/%s", runtime.GOOS, runtime.GOARCH)
+	}
+	packageSHA256, err := requiredReleaseAssetDigest(latest.ServerAssetDigests, packageName)
+	if err != nil {
+		return latest, err
+	}
+	packageURL, err := verifiedReleaseAssetURL(repo, version, packageName)
+	if err != nil {
+		return latest, err
+	}
 	serviceName := firstNonEmptyString(req.ServiceName, "vpsmonitor-server")
-	command := buildServerSelfUpdateCommand(scriptURL, version, repo, packagePrefix, installDir, serviceName)
+	command := buildServerSelfUpdateCommand(packageURL, installDir, serviceName, packageSHA256)
 	if err := exec.Command("sh", "-c", command).Start(); err != nil {
 		return latest, err
 	}
 	return latest, nil
 }
 
-func buildServerSelfUpdateCommand(scriptURL, version, repo, packagePrefix, installDir, serviceName string) string {
-	return fmt.Sprintf(`(sleep 2; { tmp=""; trap 'if [ -n "$tmp" ]; then rm -f "$tmp"; fi' EXIT; tmp_base="${VPSMONITOR_TMP_DIR:-/var/tmp}"; tmp="$(mktemp "$tmp_base/vpsmonitor-server-install.XXXXXX.sh" 2>/dev/null || mktemp /tmp/vpsmonitor-server-install.XXXXXX.sh)" || exit 1; (curl -fsSL %[1]q -o "$tmp" || wget -O "$tmp" %[1]q) && exec 3<"$tmp" && rm -f "$tmp" && tmp="" && env VPSMONITOR_ASSUME_YES=true VPSMONITOR_VERSION=%[2]q VPSMONITOR_REPO=%[3]q VPSMONITOR_PACKAGE_PREFIX=%[4]q VPSMONITOR_SERVER_DIR=%[5]q VPSMONITOR_SERVER_SERVICE=%[6]q bash -s -- server <&3; } >>/tmp/vpsmonitor-server-update.log 2>&1) >/dev/null 2>&1 &`, scriptURL, version, repo, packagePrefix, installDir, serviceName)
+func buildServerSelfUpdateCommand(packageURL, installDir, serviceName, packageSHA256 string) string {
+	return fmt.Sprintf(`(sleep 2; {
+set -eu
+tmp="$(mktemp -d "${VPSMONITOR_TMP_DIR:-/var/tmp}/vpsmonitor-server-update.XXXXXX" 2>/dev/null || mktemp -d /tmp/vpsmonitor-server-update.XXXXXX)"
+trap 'rm -rf "$tmp"' EXIT
+package="$tmp/package.tar.gz"
+if command -v curl >/dev/null 2>&1; then
+  curl -fsSL %[1]q -o "$package"
+elif command -v wget >/dev/null 2>&1; then
+  wget -O "$package" %[1]q
+else
+  echo "curl or wget is required for the server update" >&2; exit 127
+fi
+expected=%[2]q
+if command -v sha256sum >/dev/null 2>&1; then actual="$(sha256sum "$package" | awk '{print $1}')";
+elif command -v shasum >/dev/null 2>&1; then actual="$(shasum -a 256 "$package" | awk '{print $1}')";
+else echo "sha256sum or shasum is required for verified updates" >&2; exit 127; fi
+[ "$(printf '%%s' "$actual" | tr '[:upper:]' '[:lower:]')" = "$expected" ] || { echo "server package SHA-256 mismatch" >&2; exit 1; }
+tar -xzf "$package" -C "$tmp"
+binary="$(find "$tmp" -type f -name bridge-server | head -n 1)"
+[ -n "$binary" ] || { echo "bridge-server not found in verified package" >&2; exit 1; }
+install_dir=%[3]q
+mkdir -p "$install_dir"
+cp "$binary" "$install_dir/.bridge-server.new"
+chmod 0755 "$install_dir/.bridge-server.new"
+mv -f "$install_dir/.bridge-server.new" "$install_dir/bridge-server"
+service_name=%[4]q
+if command -v systemctl >/dev/null 2>&1; then systemctl restart "$service_name";
+elif command -v rc-service >/dev/null 2>&1; then rc-service "$service_name" restart;
+else echo "no supported service manager found" >&2; exit 1; fi
+} >>/tmp/vpsmonitor-server-update.log 2>&1) >/dev/null 2>&1 &`, packageURL, packageSHA256, installDir, serviceName)
 }
 
 func (a *App) createClientUpdateActions(req model.UpdateRequest) (model.UpdateResponse, error) {
@@ -163,19 +349,33 @@ func (a *App) createClientUpdateActions(req model.UpdateRequest) (model.UpdateRe
 			selected[id] = struct{}{}
 		}
 	}
-	repo := firstNonEmptyString(req.Repo, "zanelin1015/VPSMonitor")
-	packagePrefix := firstNonEmptyString(req.PackagePrefix, "VPSMonitor")
+	repo, err := officialUpdateRepository(req.Repo)
+	if err != nil {
+		return model.UpdateResponse{}, err
+	}
+	packagePrefix, err := officialUpdatePackagePrefix(req.PackagePrefix)
+	if err != nil {
+		return model.UpdateResponse{}, err
+	}
+	if err := rejectCustomUpdateScripts(req); err != nil {
+		return model.UpdateResponse{}, err
+	}
 	latest, err := a.fetchUpdateLatestInfo(repo, packagePrefix)
 	if err != nil {
 		return model.UpdateResponse{}, err
 	}
-	version := firstNonEmptyString(req.Version, latest.LatestClientTag, latest.LatestClientVersion, latest.LatestTag, latest.LatestVersion)
-	scriptURL := firstNonEmptyString(req.ScriptURL, "https://raw.githubusercontent.com/"+repo+"/main/install.sh")
-	psScriptURL := firstNonEmptyString(req.PSScriptURL, "https://raw.githubusercontent.com/"+repo+"/main/install.ps1")
+	version, err := selectedReleaseTag(req.Version, latest.LatestClientTag, latest.LatestClientVersion)
+	if err != nil {
+		return model.UpdateResponse{}, err
+	}
 	serviceName := firstNonEmptyString(req.ServiceName, "")
 	installSettings, _, err := a.store.GetClientInstallSettings()
 	if err != nil {
 		return model.UpdateResponse{}, err
+	}
+	latestSnapshots := make(map[string]model.AgentSnapshot)
+	for _, snapshot := range a.store.ListLatest() {
+		latestSnapshots[snapshot.AgentID] = snapshot
 	}
 	count := 0
 	skipped := 0
@@ -192,12 +392,21 @@ func (a *App) createClientUpdateActions(req model.UpdateRequest) (model.UpdateRe
 			skipped++
 			continue
 		}
+		if !supportsVerifiedAutomaticUpdate(latestSnapshots[agent.AgentID]) {
+			status.Reason = "client requires a one-time manual upgrade before verified automatic updates are available"
+			statuses[len(statuses)-1] = status
+			skipped++
+			continue
+		}
+		packageSHA256, digestErr := requiredReleaseAssetDigest(latest.ClientAssetDigests, status.PackageName)
+		if digestErr != nil {
+			return model.UpdateResponse{}, digestErr
+		}
 		payload := map[string]any{
 			"version":                 version,
 			"repo":                    repo,
 			"package_prefix":          packagePrefix,
-			"script_url":              scriptURL,
-			"ps_script_url":           psScriptURL,
+			"package_sha256":          packageSHA256,
 			"target_os":               status.OS,
 			"target_arch":             status.Arch,
 			"realm_auto_install":      installSettings.RealmAutoInstall,
@@ -222,6 +431,10 @@ func (a *App) createClientUpdateActions(req model.UpdateRequest) (model.UpdateRe
 		Latest:      latest,
 		AgentStatus: statuses,
 	}, nil
+}
+
+func supportsVerifiedAutomaticUpdate(snapshot model.AgentSnapshot) bool {
+	return snapshot.VerifiedSelfUpdate
 }
 
 func (a *App) fetchUpdateLatestInfo(repo string, packagePrefix string) (*model.UpdateLatestInfo, error) {
@@ -253,10 +466,15 @@ func (a *App) fetchUpdateLatestInfo(repo string, packagePrefix string) (*model.U
 		TagName string `json:"tag_name"`
 		Name    string `json:"name"`
 		Assets  []struct {
-			Name string `json:"name"`
+			Name   string `json:"name"`
+			Digest string `json:"digest"`
 		} `json:"assets"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+	body, err := readExternalJSONResponse(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read releases: %w", err)
+	}
+	if err := json.Unmarshal(body, &releases); err != nil {
 		return nil, fmt.Errorf("decode releases: %w", err)
 	}
 	var latest releaseUpdateInfo
@@ -270,12 +488,17 @@ func (a *App) fetchUpdateLatestInfo(repo string, packagePrefix string) (*model.U
 			continue
 		}
 		assets := make([]string, 0, len(release.Assets))
+		digests := make(map[string]string, len(release.Assets))
 		for _, asset := range release.Assets {
-			if strings.TrimSpace(asset.Name) != "" {
-				assets = append(assets, asset.Name)
+			name := strings.TrimSpace(asset.Name)
+			if name != "" {
+				assets = append(assets, name)
+				if digest := normalizeReleaseAssetDigest(asset.Digest); digest != "" {
+					digests[name] = digest
+				}
 			}
 		}
-		candidate := releaseUpdateInfo{Tag: tag, Version: version, Assets: assets}
+		candidate := releaseUpdateInfo{Tag: tag, Version: version, Assets: assets, AssetDigests: digests}
 		if latest.Version == "" || isVersionNewer(version, latest.Version) {
 			latest = candidate
 		}
@@ -289,12 +512,17 @@ func (a *App) fetchUpdateLatestInfo(repo string, packagePrefix string) (*model.U
 	if latest.Version == "" && len(releases) > 0 {
 		release := releases[0]
 		assets := make([]string, 0, len(release.Assets))
+		digests := make(map[string]string, len(release.Assets))
 		for _, asset := range release.Assets {
-			if strings.TrimSpace(asset.Name) != "" {
-				assets = append(assets, asset.Name)
+			name := strings.TrimSpace(asset.Name)
+			if name != "" {
+				assets = append(assets, name)
+				if digest := normalizeReleaseAssetDigest(asset.Digest); digest != "" {
+					digests[name] = digest
+				}
 			}
 		}
-		latest = releaseUpdateInfo{Tag: firstNonEmptyString(release.TagName, release.Name), Version: normalizeVersion(firstNonEmptyString(release.TagName, release.Name)), Assets: assets}
+		latest = releaseUpdateInfo{Tag: firstNonEmptyString(release.TagName, release.Name), Version: normalizeVersion(firstNonEmptyString(release.TagName, release.Name)), Assets: assets, AssetDigests: digests}
 	}
 	if latest.Version == "" {
 		return nil, fmt.Errorf("latest release has no version tag")
@@ -324,6 +552,8 @@ func (a *App) fetchUpdateLatestInfo(repo string, packagePrefix string) (*model.U
 		Assets:                latest.Assets,
 		ServerAssets:          serverLatest.Assets,
 		ClientAssets:          clientLatest.Assets,
+		ServerAssetDigests:    cloneStringMap(serverLatest.AssetDigests),
+		ClientAssetDigests:    cloneStringMap(clientLatest.AssetDigests),
 		FetchedAt:             time.Now().UTC(),
 		Authenticated:         githubToken() != "",
 	}
@@ -348,53 +578,9 @@ func (a *App) fetchUpdateLatestInfo(repo string, packagePrefix string) (*model.U
 }
 
 func (a *App) create3XUIUpdateActions(req model.UpdateRequest) (model.UpdateResponse, error) {
-	agents, err := a.store.ListAgents()
-	if err != nil {
-		return model.UpdateResponse{}, err
-	}
-	selected := map[string]struct{}{}
-	for _, id := range req.AgentIDs {
-		if id = strings.TrimSpace(id); id != "" {
-			selected[id] = struct{}{}
-		}
-	}
-	latest, err := fetchLatest3XUIRelease()
-	if err != nil && !req.Force {
-		return model.UpdateResponse{}, err
-	}
-	targetVersion := firstNonEmptyString(req.Version, latest.Version)
-	statuses := a.build3XUIUpdateStatuses(agents, targetVersion)
-	count := 0
-	skipped := 0
-	for _, status := range statuses {
-		if len(selected) > 0 {
-			if _, ok := selected[status.AgentID]; !ok {
-				continue
-			}
-		}
-		if !shouldCreate3XUIUpdateAction(status, req.Force) {
-			skipped++
-			continue
-		}
-		payload := map[string]any{
-			"timeout_seconds": 900,
-			"target_version":  targetVersion,
-			"target_tag":      latest.Tag,
-			"force":           req.Force,
-		}
-		action, err := a.store.CreateXUIAction(status.AgentID, model.XUIActionRequest{Kind: model.XUIActionUpdate3XUI, Payload: payload})
-		if err != nil {
-			return model.UpdateResponse{}, err
-		}
-		a.dispatchXUIActionRealtime(status.AgentID, action)
-		count++
-	}
-	return model.UpdateResponse{
-		Status:      "3x-ui update tasks created",
-		Count:       count,
-		Skipped:     skipped,
-		AgentStatus: statuses,
-	}, nil
+	_ = a
+	_ = req
+	return model.UpdateResponse{}, fmt.Errorf("automatic 3x-ui updates are disabled because the upstream updater does not publish a verifiable package digest")
 }
 
 func shouldCreate3XUIUpdateAction(status model.UpdateAgentStatus, force bool) bool {
@@ -518,7 +704,11 @@ func fetchLatestSemverRelease(repo string) (releaseUpdateInfo, error) {
 			Name string `json:"name"`
 		} `json:"assets"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+	body, err := readExternalJSONResponse(resp.Body)
+	if err != nil {
+		return releaseUpdateInfo{}, fmt.Errorf("read releases: %w", err)
+	}
+	if err := json.Unmarshal(body, &releases); err != nil {
 		return releaseUpdateInfo{}, fmt.Errorf("decode releases: %w", err)
 	}
 	var latest releaseUpdateInfo
@@ -608,9 +798,10 @@ func applyGitHubRateLimit(info *model.UpdateLatestInfo, resp *http.Response) {
 }
 
 type releaseUpdateInfo struct {
-	Tag     string
-	Version string
-	Assets  []string
+	Tag          string
+	Version      string
+	Assets       []string
+	AssetDigests map[string]string
 }
 
 func buildUpdateAgentStatus(agent model.AgentRecord, latestVersion string, packagePrefix string, assets []string) model.UpdateAgentStatus {

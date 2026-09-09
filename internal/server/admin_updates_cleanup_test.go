@@ -1,21 +1,25 @@
 package server
 
 import (
+	"os/exec"
 	"strings"
 	"testing"
 )
 
-func TestBuildServerSelfUpdateCommandUnlinksInstallerBeforeExecution(t *testing.T) {
-	command := buildServerSelfUpdateCommand("https://example.com/install.sh", "v1.2.3", "owner/repo", "VPSMonitor", "/opt/vpsmonitor/server", "vpsmonitor-server")
-	removeIndex := strings.Index(command, `rm -f "$tmp"`)
-	executeIndex := strings.Index(command, `bash -s -- server <&3`)
-	if removeIndex < 0 || executeIndex < 0 || removeIndex > executeIndex {
-		t.Fatalf("expected installer to be unlinked before execution, got %q", command)
-	}
-	if !strings.Contains(command, `exec 3<"$tmp"`) {
-		t.Fatalf("expected installer to remain available through a file descriptor, got %q", command)
-	}
+func TestBuildServerSelfUpdateCommandUsesVerifiedPackageWithoutRemoteScript(t *testing.T) {
+	command := buildServerSelfUpdateCommand("https://example.com/server.tar.gz", "/opt/vpsmonitor/server", "vpsmonitor-server", strings.Repeat("a", 64))
 	if !strings.Contains(command, `${VPSMONITOR_TMP_DIR:-/var/tmp}`) {
 		t.Fatalf("expected /var/tmp-oriented temporary storage with override support, got %q", command)
+	}
+	for _, forbidden := range []string{"install.sh", "raw.githubusercontent.com", "bash -s -- server"} {
+		if strings.Contains(command, forbidden) {
+			t.Fatalf("unexpected remote installer execution %q in %q", forbidden, command)
+		}
+	}
+	if !strings.Contains(command, "sha256sum") || !strings.Contains(command, "server package SHA-256 mismatch") {
+		t.Fatalf("expected verified package flow, got %q", command)
+	}
+	if output, err := exec.Command("sh", "-n", "-c", command).CombinedOutput(); err != nil {
+		t.Fatalf("generated shell update command is invalid: %v\n%s", err, output)
 	}
 }

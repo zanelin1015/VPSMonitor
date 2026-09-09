@@ -50,18 +50,74 @@ func (s *SQLiteStore) listCustomers(ownerType string, ownerID int64) ([]model.Cu
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate customers: %w", err)
 	}
+	customerIDs := make([]int64, 0, len(customers))
+	for _, customer := range customers {
+		customerIDs = append(customerIDs, customer.ID)
+	}
+	assignmentsByCustomer, err := s.listCustomerAssignmentsForCustomers(customerIDs)
+	if err != nil {
+		return nil, err
+	}
+	frontProxiesByCustomer, err := s.ListFrontProxyNodesForGrantees(model.FrontProxyGranteeCustomer, customerIDs)
+	if err != nil {
+		return nil, err
+	}
 	for i := range customers {
-		assignments, err := s.ListCustomerAssignments(customers[i].ID)
-		if err != nil {
-			return nil, err
-		}
-		customers[i].Assignments = assignments
-		customers[i].FrontProxies, err = s.ListFrontProxyNodeViewsForGrantee(model.FrontProxyGranteeCustomer, customers[i].ID)
-		if err != nil {
-			return nil, err
-		}
+		customers[i].Assignments = assignmentsByCustomer[customers[i].ID]
+		customers[i].FrontProxies = frontProxyNodeViews(frontProxiesByCustomer[customers[i].ID])
 	}
 	return customers, nil
+}
+
+func (s *SQLiteStore) listCustomerAssignmentsForCustomers(customerIDs []int64) (map[int64][]model.CustomerAssignment, error) {
+	result := make(map[int64][]model.CustomerAssignment)
+	ids := uniquePositiveInt64s(customerIDs)
+	if len(ids) == 0 {
+		return result, nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, 0, len(ids))
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	rows, err := s.db.Query(fmt.Sprintf(`
+		SELECT id, customer_id, agent_id, inbound_id, inbound_tag, client_id, client_email, public_client_name,
+		       customer_remark, price_mode, revenue_amount, revenue_currency, revenue_cycle, enabled, created_at, updated_at
+		FROM customer_assignments
+		WHERE customer_id IN (%s)
+		ORDER BY customer_id ASC, created_at DESC, id DESC
+	`, placeholders), args...)
+	if err != nil {
+		return nil, fmt.Errorf("list customer assignments: %w", err)
+	}
+	defer rows.Close()
+	var all []model.CustomerAssignment
+	for rows.Next() {
+		item, scanErr := scanCustomerAssignment(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("scan customer assignment: %w", scanErr)
+		}
+		result[item.CustomerID] = append(result[item.CustomerID], item)
+		all = append(all, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate customer assignments: %w", err)
+	}
+	assignmentIDs := make([]int64, 0, len(all))
+	for _, item := range all {
+		assignmentIDs = append(assignmentIDs, item.ID)
+	}
+	frontProxies, err := s.ListFrontProxyNodesForAssignments(assignmentIDs)
+	if err != nil {
+		return nil, err
+	}
+	for customerID, assignments := range result {
+		for index := range assignments {
+			assignments[index].FrontProxies = frontProxyNodeViews(frontProxies[assignments[index].ID])
+		}
+		result[customerID] = assignments
+	}
+	return result, nil
 }
 
 func (s *SQLiteStore) GetCustomer(id int64) (model.CustomerAdminView, bool, error) {
@@ -276,7 +332,7 @@ func (s *SQLiteStore) UpdateCustomer(id int64, req model.CustomerAccountRequest)
 	}
 	displayName := strings.TrimSpace(req.DisplayName)
 	if displayName == "" {
-		displayName = username
+		displayName = firstNonEmpty(currentDisplay, username)
 	}
 	enabled := currentEnabled != 0
 	if req.Enabled != nil {

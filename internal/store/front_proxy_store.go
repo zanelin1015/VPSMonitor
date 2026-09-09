@@ -182,6 +182,48 @@ func (s *SQLiteStore) ListFrontProxyNodeViewsForGrantee(granteeType string, gran
 	return frontProxyNodeViews(nodes), nil
 }
 
+func (s *SQLiteStore) ListFrontProxyNodesForGrantees(granteeType string, granteeIDs []int64) (map[int64][]model.FrontProxyNode, error) {
+	result := make(map[int64][]model.FrontProxyNode)
+	granteeIDs = uniquePositiveInt64s(granteeIDs)
+	if strings.TrimSpace(granteeType) == "" || len(granteeIDs) == 0 {
+		return result, nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(granteeIDs)), ",")
+	args := make([]any, 0, len(granteeIDs)+1)
+	args = append(args, granteeType)
+	for _, id := range granteeIDs {
+		args = append(args, id)
+	}
+	rows, err := s.db.Query(fmt.Sprintf(`
+		SELECT g.grantee_id, n.id, n.name, n.protocol, n.share_url, n.enabled, n.remark, n.created_at, n.updated_at
+		FROM front_proxy_nodes n
+		INNER JOIN front_proxy_grants g ON g.node_id = n.id
+		WHERE g.grantee_type = ? AND g.grantee_id IN (%s) AND n.enabled = 1
+		ORDER BY g.grantee_id ASC, n.name COLLATE NOCASE ASC, n.id ASC
+	`, placeholders), args...)
+	if err != nil {
+		return nil, fmt.Errorf("list front proxy nodes for grantees: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var granteeID int64
+		var item model.FrontProxyNode
+		var enabled int
+		var createdAtText, updatedAtText string
+		if err := rows.Scan(&granteeID, &item.ID, &item.Name, &item.Protocol, &item.ShareURL, &enabled, &item.Remark, &createdAtText, &updatedAtText); err != nil {
+			return nil, fmt.Errorf("scan grantee front proxy: %w", err)
+		}
+		item.Enabled = enabled != 0
+		item.CreatedAt = parseTime(createdAtText)
+		item.UpdatedAt = parseTime(updatedAtText)
+		result[granteeID] = append(result[granteeID], item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate grantee front proxies: %w", err)
+	}
+	return result, nil
+}
+
 func (s *SQLiteStore) ReplaceCustomerAssignmentFrontProxyNodes(assignmentID int64, nodeIDs []int64, actorType string, actorID int64) error {
 	if assignmentID <= 0 {
 		return fmt.Errorf("invalid assignment id")

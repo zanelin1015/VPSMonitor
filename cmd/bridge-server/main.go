@@ -1,10 +1,12 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"bridge-core/internal/config"
 	"bridge-core/internal/server"
@@ -32,7 +34,26 @@ func main() {
 	}
 
 	log.Printf("bridge server listening on %s", cfg.ListenAddr)
-	if err := http.ListenAndServe(cfg.ListenAddr, app.Handler()); err != nil {
-		log.Fatalf("bridge server stopped: %v", err)
+	httpServer := &http.Server{
+		Addr:              cfg.ListenAddr,
+		Handler:           app.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
+	var serveErr error
+	if cfg.TLSCertFile != "" && cfg.TLSKeyFile != "" {
+		log.Printf("bridge server TLS enabled with certificate %s", cfg.TLSCertFile)
+		serveErr = httpServer.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile)
+	} else {
+		if cfg.AllowInsecureHTTP {
+			log.Printf("WARNING: bridge server is serving HTTP only because allow_insecure_http is enabled; use this only for local development")
+		} else {
+			log.Printf("bridge server expects TLS to be terminated by a configured trusted reverse proxy")
+		}
+		serveErr = httpServer.ListenAndServe()
+	}
+	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+		log.Fatalf("bridge server stopped: %v", serveErr)
 	}
 }

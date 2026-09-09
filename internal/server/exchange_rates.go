@@ -99,7 +99,11 @@ func fetchExchangeRates(client *http.Client, source exchangeRatesSource) (model.
 		Date  string             `json:"date"`
 		Rates map[string]float64 `json:"rates"`
 	}
-	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+	body, err := readExternalJSONResponse(response.Body)
+	if err != nil {
+		return model.ExchangeRatesResponse{}, fmt.Errorf("读取汇率响应失败: %w", err)
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
 		return model.ExchangeRatesResponse{}, fmt.Errorf("解析汇率响应失败: %w", err)
 	}
 

@@ -1,10 +1,17 @@
 package client
 
 import (
+	"context"
 	"testing"
 
 	"bridge-core/internal/config"
 )
+
+func TestInstall3XUIRejectsUnverifiedUpstreamInstaller(t *testing.T) {
+	if err := install3XUI(context.Background(), config.XUIConfig{AutoInstall: true}); err == nil {
+		t.Fatal("expected unattended 3x-ui installer to be rejected")
+	}
+}
 
 func TestNormalizeXUIBootstrapPath(t *testing.T) {
 	tests := map[string]string{

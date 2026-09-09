@@ -6,20 +6,21 @@ import (
 )
 
 type AgentSnapshot struct {
-	AgentID       string                 `json:"agent_id"`
-	AgentName     string                 `json:"agent_name,omitempty"`
-	Version       string                 `json:"version,omitempty"`
-	OS            string                 `json:"os,omitempty"`
-	Arch          string                 `json:"arch,omitempty"`
-	SystemVersion string                 `json:"system_version,omitempty"`
-	ReportedAt    time.Time              `json:"reported_at"`
-	Summary       VPSSummary             `json:"summary"`
-	XUI           *XUISnapshot           `json:"xui,omitempty"`
-	Realm         *RealmSnapshot         `json:"realm,omitempty"`
-	HAProxy       *HAProxySnapshot       `json:"haproxy,omitempty"`
-	NetworkPolicy *NetworkPolicySnapshot `json:"network_policy,omitempty"`
-	Nezha         *NezhaSnapshot         `json:"nezha,omitempty"`
-	Logs          []AgentLogEntry        `json:"logs,omitempty"`
+	AgentID            string                 `json:"agent_id"`
+	AgentName          string                 `json:"agent_name,omitempty"`
+	Version            string                 `json:"version,omitempty"`
+	VerifiedSelfUpdate bool                   `json:"verified_self_update,omitempty"`
+	OS                 string                 `json:"os,omitempty"`
+	Arch               string                 `json:"arch,omitempty"`
+	SystemVersion      string                 `json:"system_version,omitempty"`
+	ReportedAt         time.Time              `json:"reported_at"`
+	Summary            VPSSummary             `json:"summary"`
+	XUI                *XUISnapshot           `json:"xui,omitempty"`
+	Realm              *RealmSnapshot         `json:"realm,omitempty"`
+	HAProxy            *HAProxySnapshot       `json:"haproxy,omitempty"`
+	NetworkPolicy      *NetworkPolicySnapshot `json:"network_policy,omitempty"`
+	Nezha              *NezhaSnapshot         `json:"nezha,omitempty"`
+	Logs               []AgentLogEntry        `json:"logs,omitempty"`
 }
 
 type AgentLogEntry struct {
