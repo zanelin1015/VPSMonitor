@@ -60,7 +60,13 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	a.applyDefaultXUIBootstrap(&req)
 
-	result, err := a.store.RegisterAgentWithToken(req, r.Header.Get("X-Agent-Token"))
+	presentedAgentToken := strings.TrimSpace(r.Header.Get("X-Agent-Token"))
+	// Pre-0.3.25 clients do not know how to send the issued per-agent token.
+	// The shared registration token was already authenticated above; keep this
+	// compatibility path version-gated until those clients are upgraded. New
+	// clients without an agent token may still create a new identity, but can
+	// never refresh an existing one through the bootstrap token.
+	result, err := a.store.RegisterAgentWithTokenOrLegacyBootstrap(req, presentedAgentToken, !requiresPerAgentRegistrationToken(req.Version))
 	if err != nil {
 		if errors.Is(err, store.ErrAgentRegistrationUnauthorized) {
 			writeError(w, http.StatusUnauthorized, "existing agent registration requires a valid agent token")
@@ -77,6 +83,17 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 	a.clearCustomerOverviewCache()
 	go a.refreshTopologyLookupCacheFromRegister(req, observedIP)
 	writeJSON(w, http.StatusOK, result)
+}
+
+// requiresPerAgentRegistrationToken identifies clients that understand the
+// per-agent registration token protocol introduced in 0.3.25. Unknown
+// versions remain on the legacy path so older development builds can recover.
+func requiresPerAgentRegistrationToken(version string) bool {
+	normalized := normalizeVersion(version)
+	if _, ok := parseSemver(normalized); !ok {
+		return false
+	}
+	return !isVersionNewer("0.3.25", normalized)
 }
 
 func (a *App) applyDefaultXUIBootstrap(req *model.AgentRegisterRequest) {

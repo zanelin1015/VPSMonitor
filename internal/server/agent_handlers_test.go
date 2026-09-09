@@ -118,6 +118,80 @@ func TestHandleRegisterDoesNotSeedDefaultXUIBootstrap(t *testing.T) {
 	}
 }
 
+func TestHandleRegisterAllowsPre025ClientLegacyBootstrap(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+	initial, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "legacy-agent", Hostname: "old-host"})
+	if err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	app := &App{config: config.ServerConfig{RegistrationToken: "reg-token"}, store: sqliteStore}
+	body, err := json.Marshal(model.AgentRegisterRequest{AgentID: "legacy-agent", Version: "0.3.24", Hostname: "new-host"})
+	if err != nil {
+		t.Fatalf("Marshal register request: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/register", bytes.NewReader(body))
+	req.Header.Set("X-Registration-Token", "reg-token")
+	rec := httptest.NewRecorder()
+	app.handleRegister(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("legacy registration status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var response model.AgentRegisterResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.AgentToken != initial.AgentToken {
+		t.Fatalf("legacy registration changed agent token")
+	}
+}
+
+func TestHandleRegisterRequiresTokenForCurrentClient(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "current-agent"}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	app := &App{config: config.ServerConfig{RegistrationToken: "reg-token"}, store: sqliteStore}
+	body, err := json.Marshal(model.AgentRegisterRequest{AgentID: "current-agent", Version: "0.3.25"})
+	if err != nil {
+		t.Fatalf("Marshal register request: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/register", bytes.NewReader(body))
+	req.Header.Set("X-Registration-Token", "reg-token")
+	rec := httptest.NewRecorder()
+	app.handleRegister(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("current registration status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleRegisterAllowsCurrentClientToCreateNewIdentity(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+	app := &App{config: config.ServerConfig{RegistrationToken: "reg-token"}, store: sqliteStore}
+	body, err := json.Marshal(model.AgentRegisterRequest{AgentID: "new-current-agent", Version: "0.3.25"})
+	if err != nil {
+		t.Fatalf("Marshal register request: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/register", bytes.NewReader(body))
+	req.Header.Set("X-Registration-Token", "reg-token")
+	rec := httptest.NewRecorder()
+	app.handleRegister(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("new current registration status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestHandleRegisterRejectsRouteUnsafeAgentID(t *testing.T) {
 	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
 	if err != nil {

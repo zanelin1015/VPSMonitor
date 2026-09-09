@@ -38,3 +38,23 @@ func TestRegisterAgentWithTokenProtectsExistingIdentity(t *testing.T) {
 		t.Fatalf("authenticated refresh did not update the agent: found=%v err=%v", found, err)
 	}
 }
+
+func TestRegisterAgentWithLegacyBootstrapRefreshesExistingIdentity(t *testing.T) {
+	s, err := NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	initial, err := s.RegisterAgent(model.AgentRegisterRequest{AgentID: "legacy", Hostname: "original-host"})
+	if err != nil || initial.AgentToken == "" {
+		t.Fatalf("initial registration: err=%v", err)
+	}
+	response, err := s.RegisterAgentWithLegacyBootstrap(model.AgentRegisterRequest{AgentID: "legacy", Hostname: "legacy-host"})
+	if err != nil || response.AgentToken != initial.AgentToken {
+		t.Fatalf("legacy refresh: err=%v token_changed=%t", err, response.AgentToken != initial.AgentToken)
+	}
+	record, found, err := s.GetAgent("legacy")
+	if err != nil || !found || record.Hostname != "legacy-host" {
+		t.Fatalf("legacy refresh did not update the agent: found=%v err=%v", found, err)
+	}
+}

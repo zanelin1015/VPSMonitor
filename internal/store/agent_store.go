@@ -59,17 +59,31 @@ func (s *SQLiteStore) SeedAgents(agents []config.ServerAgentAuth) error {
 }
 
 func (s *SQLiteStore) RegisterAgent(req model.AgentRegisterRequest) (model.AgentRegisterResponse, error) {
-	return s.registerAgent(req, "", false)
+	return s.registerAgent(req, "", false, false)
 }
 
 // RegisterAgentWithToken registers a new agent or refreshes an existing one.
 // Existing agent identities must prove possession of their per-agent token so
 // that a shared bootstrap token cannot be used to take over another agent ID.
 func (s *SQLiteStore) RegisterAgentWithToken(req model.AgentRegisterRequest, presentedAgentToken string) (model.AgentRegisterResponse, error) {
-	return s.registerAgent(req, presentedAgentToken, true)
+	return s.RegisterAgentWithTokenOrLegacyBootstrap(req, presentedAgentToken, false)
 }
 
-func (s *SQLiteStore) registerAgent(req model.AgentRegisterRequest, presentedAgentToken string, enforceExistingToken bool) (model.AgentRegisterResponse, error) {
+// RegisterAgentWithLegacyBootstrap refreshes an existing identity through the
+// shared bootstrap token. It is only for pre-0.3.25 clients that cannot send
+// their issued per-agent token; newer callers must use RegisterAgentWithToken.
+func (s *SQLiteStore) RegisterAgentWithLegacyBootstrap(req model.AgentRegisterRequest) (model.AgentRegisterResponse, error) {
+	return s.RegisterAgentWithTokenOrLegacyBootstrap(req, "", true)
+}
+
+// RegisterAgentWithTokenOrLegacyBootstrap registers a new agent without a
+// per-agent token, or refreshes an existing legacy agent when explicitly
+// allowed by the caller. Existing agents otherwise require their token.
+func (s *SQLiteStore) RegisterAgentWithTokenOrLegacyBootstrap(req model.AgentRegisterRequest, presentedAgentToken string, allowLegacyBootstrap bool) (model.AgentRegisterResponse, error) {
+	return s.registerAgent(req, presentedAgentToken, true, allowLegacyBootstrap)
+}
+
+func (s *SQLiteStore) registerAgent(req model.AgentRegisterRequest, presentedAgentToken string, enforceExistingToken bool, allowLegacyBootstrap bool) (model.AgentRegisterResponse, error) {
 	if req.AgentID == "" {
 		return model.AgentRegisterResponse{}, fmt.Errorf("agent_id is required")
 	}
@@ -87,7 +101,7 @@ func (s *SQLiteStore) registerAgent(req model.AgentRegisterRequest, presentedAge
 	if err != nil {
 		return model.AgentRegisterResponse{}, err
 	}
-	if found && enforceExistingToken && record.AgentToken != "" && subtle.ConstantTimeCompare([]byte(record.AgentToken), []byte(presentedAgentToken)) != 1 {
+	if found && enforceExistingToken && !allowLegacyBootstrap && record.AgentToken != "" && subtle.ConstantTimeCompare([]byte(record.AgentToken), []byte(presentedAgentToken)) != 1 {
 		return model.AgentRegisterResponse{}, ErrAgentRegistrationUnauthorized
 	}
 
