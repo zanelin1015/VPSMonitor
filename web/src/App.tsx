@@ -1599,6 +1599,8 @@ export default function App() {
     setActiveAdminPage('assets')
     setAgentHealthFilter('all')
     setTopologyVisible(false)
+    setSelectedTag('')
+    setClientSearch('')
     setSelectedAgentId('')
     setActiveTabKey('overview')
     setSelectedOutboundTag('')
@@ -2060,7 +2062,6 @@ export default function App() {
                 onRefreshXUIActions={() => void loadXUIActions()}
                 onCopyRealmConfig={(targetAgentID) => void copyRealmConfigToAgent(targetAgentID, selectedAgentId)}
                 onRenewalChange={(patch) => updateManagedConfig((current) => ({ ...current, renewal: { ...current.renewal, ...patch } }))}
-                onReturnHome={returnHome}
                 onSaveClientBilling={(record) => void saveClientBilling(record)}
                 onSaveManagedConfigSection={(section) => void saveManagedConfigSection(section)}
                 onSavePrimaryDomain={savePrimaryDomain}

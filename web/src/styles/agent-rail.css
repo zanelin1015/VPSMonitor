@@ -1019,6 +1019,19 @@
   line-height: 1.45;
 }
 
+.client-billing-controls {
+  display: flex;
+  min-width: max-content;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.client-billing-controls > .ant-space {
+  flex: 0 0 auto;
+}
+
 .client-traffic-cell span + span {
   color: var(--muted);
 }

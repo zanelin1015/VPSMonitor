@@ -155,7 +155,6 @@ export interface AgentDetailPanelProps {
   onRefreshXUIActions: () => void
   onCopyRealmConfig: (targetAgentID: string) => void
   onRenewalChange: (patch: Partial<VPSRenewalConfig>) => void
-  onReturnHome: () => void
   onSaveClientBilling: (record: XUIClientView) => void
   onSaveManagedConfigSection: (section: ConfigSectionKey, draftOverride?: ManagedAgentConfig) => void
   onSavePrimaryDomain: (value: string) => void
@@ -267,7 +266,6 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onRefreshXUIActions,
     onCopyRealmConfig,
     onRenewalChange,
-    onReturnHome,
     onSaveClientBilling,
     onSaveManagedConfigSection,
     onSavePrimaryDomain,
@@ -613,14 +611,14 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     {
       title: '收费',
       key: 'billing',
-      width: 430,
+      width: 560,
       render: (_, record) => {
         const billing = findClientBilling(managedConfig?.renewal?.client_billings, record) || defaultClientBilling(record)
         const revenueCycle = normalizeBillingCycle(billing.revenue_cycle || billing.expire_cycle)
         const effectiveStart = effectiveClientBillingStartTime(billing, record.expiry_time || 0)
         const saving = clientBillingSavingKey === billingKeyForClient(record)
         return (
-          <Space wrap size={[6, 6]}>
+          <div className="client-billing-controls">
             <InputNumber
               size="small"
               min={0}
@@ -672,17 +670,17 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
                 })
               }}
             />
-            <Button size="small" type="primary" disabled={!canManageConfig} loading={saving} onClick={() => onSaveClientBilling(record)}>
+            <Button size="small" type="primary" style={{ width: 64 }} disabled={!canManageConfig} loading={saving} onClick={() => onSaveClientBilling(record)}>
               保存
             </Button>
-          </Space>
+          </div>
         )
       },
     },
     {
       title: '开始 / 到期',
       key: 'expiry',
-      width: 360,
+      width: 410,
       render: (_, record) => {
         const billing = findClientBilling(managedConfig?.renewal?.client_billings, record) || defaultClientBilling(record)
         const effectiveStart = effectiveClientBillingStartTime(billing, record.expiry_time || 0)
@@ -693,7 +691,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
           <Space direction="vertical" size={6} className="client-expiry-cell">
             <Text type="secondary">x-ui 当前：{formatExpiryTime(record.expiry_time)}</Text>
             <Text type="secondary">当前周期到期：{formatExpiryTime(effectiveExpiry)}</Text>
-            <Space wrap size={[6, 6]}>
+            <Space wrap={false} size={[6, 6]}>
               <Input
                 size="small"
                 type="date"
@@ -703,7 +701,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
                 onChange={(event) => onUpdateClientBillingDraft(record, clientBillingPatchFromStart(dateInputToStartMillis(event.target.value), billingCycle))}
               />
               <Tag color="blue">按收费周期：{billingCycleLabel(billingCycle)}</Tag>
-              <Button size="small" type="primary" disabled={!canManageConfig} loading={saving} onClick={() => onSaveClientBilling(record)}>
+              <Button size="small" type="primary" style={{ width: 64 }} disabled={!canManageConfig} loading={saving} onClick={() => onSaveClientBilling(record)}>
                 保存
               </Button>
             </Space>
@@ -1541,7 +1539,6 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
             <Title level={4}>{selectedAgent.agent_name || selectedAgent.agent_id}</Title>
           </div>
           <Space wrap>
-            <Button onClick={onReturnHome}>返回首页</Button>
             {canShowXUIControls && selectedAgent.summary.last_collection_err ? (
               <Tag color="orange" style={{ cursor: 'pointer' }} onClick={onOpenLogs}>x-ui 异常</Tag>
             ) : null}
