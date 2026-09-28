@@ -8,6 +8,7 @@ import type { CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft } f
 import { REVENUE_CURRENCIES } from '../lib/currency'
 import type { AssignmentFormState } from './CustomerManagementHelpers'
 import { emptyAssignmentForm } from './CustomerManagementHelpers'
+import { AdminHelpHint } from './AdminHelpHint'
 
 const { Text, Title } = Typography
 
@@ -136,7 +137,7 @@ export function CustomerAssignmentManagerCard(props: CustomerAssignmentManagerCa
         </Col> : null}
         {canViewFinance && assignmentForm.price_mode === 'inherit' ? <Col xs={24} md={16}>
           <Text type="secondary">费用</Text>
-          <div><Text type="secondary">当前授权继承 Client 页面中的节点默认售价{inheritedPriceLabel ? `（${inheritedPriceLabel}）` : ''}；如需单独定价，请切换为“用户覆盖价”。</Text></div>
+          <div><AdminHelpHint title={`当前授权继承 Client 页面中的节点默认售价${inheritedPriceLabel ? `（${inheritedPriceLabel}）` : ''}；如需单独定价，请切换为“用户覆盖价”。`} /></div>
         </Col> : null}
         <Col xs={24} md={8}>
           <Text type="secondary">分配状态</Text>

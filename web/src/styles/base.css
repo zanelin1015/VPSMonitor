@@ -426,6 +426,17 @@ body {
   line-height: 1.4;
 }
 
+.admin-help-icon {
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.admin-help-icon:hover,
+.admin-help-icon:focus {
+  color: var(--primary);
+}
+
 .admin-oa-main > .workspace-grid {
   flex: 1 1 auto;
 }
@@ -590,6 +601,7 @@ body {
 }
 
 .admin-oa-topbar .hero-actions-column {
+  width: 100%;
   min-width: 0;
 }
 

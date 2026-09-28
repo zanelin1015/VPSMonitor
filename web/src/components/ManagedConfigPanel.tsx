@@ -6,6 +6,7 @@ import type { AgentEntryConfig, AgentEntryMapping, AgentListItem, ConfigAuditLog
 import { DEFAULT_COST_CURRENCY, type CurrencyCode } from '../lib/currency'
 import { bytesToGB, gbToBytes } from '../lib/traffic'
 import type { ConfigSectionKey } from '../lib/appHelpers'
+import { AdminHelpHint } from './AdminHelpHint'
 import { formatDateTime, formatRenewalHint, summarizeConfigAudit } from '../lib/appHelpers'
 import { HAProxyConfigSection } from './HAProxyConfigSection'
 
@@ -321,7 +322,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
               />
               <Button onClick={onCreateTag} loading={tagSaving}>创建标签</Button>
             </Space.Compact>
-            <Text type="secondary">标签先创建再多选；保存 Client 信息后会应用到当前 Client。</Text>
+            <AdminHelpHint title="标签先创建再多选；保存 Client 信息后会应用到当前 Client。" />
           </Col>
         </Row>
       </Card>
@@ -572,7 +573,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
               placeholder="每行一个入口域名/IP，例如 att.kynbbz.top 或 1.2.3.4"
               onChange={(event) => onEntryAddressesTextChange(event.target.value)}
             />
-            <Text type="secondary">这些地址会加入该 Client 的可匹配入口；映射可以进一步指定端口转换。</Text>
+            <AdminHelpHint title="这些地址会加入该 Client 的可匹配入口；映射可以进一步指定端口转换。" />
           </Col>
         </Row>
         <Space direction="vertical" size="small" className="entry-mapping-list">

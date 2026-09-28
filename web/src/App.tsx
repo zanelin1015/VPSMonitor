@@ -341,6 +341,7 @@ export default function App() {
     openAgentHealthFilter,
     openCustomerAssignment,
     openCustomerAuthorization,
+    openFinancePage,
     openTopologyPanel,
     returnHome,
     selectDashboardTag,
@@ -365,7 +366,6 @@ export default function App() {
     setCustomerAssignmentDraft,
   })
   const topologyScopeLabel = selectedAgentId ? selectedAgent?.agent_name || selectedAgentId : selectedTag ? `${selectedTag} 标签` : '全部 Client'
-  const heroTitle = 'ZaneLin'
   const normalizedPath = window.location.pathname.replace(/\/+$/, '') || '/'
   const customerMode = normalizedPath === '/customer'
   const publicSiteMode = normalizedPath === '/site' || normalizedPath === '/official' || new URLSearchParams(window.location.search).get('page') === 'site'
@@ -467,7 +467,7 @@ export default function App() {
     if (!adminUser || canManageSystem) {
       return
     }
-    if (activeAdminPage === 'settings' || activeAdminPage === 'schedules' || activeAdminPage === 'access-logs') {
+    if (activeAdminPage === 'settings' || activeAdminPage === 'schedules' || activeAdminPage === 'access-logs' || activeAdminPage === 'finance') {
       setActiveAdminPage('dashboard')
     }
     if (['config', 'logs', 'certificates'].includes(activeTabKey)) {
@@ -1632,7 +1632,6 @@ export default function App() {
     agentsLoading,
     themeMode,
     effectiveMode,
-    heroTitle,
     serverVersionLabel,
     onOpenAccount: openAccountModal,
     onOpenClientInstall: () => void openClientInstallModal(),
@@ -1645,6 +1644,7 @@ export default function App() {
     onLogout: () => void logout(),
     onOpenWorkbench: returnHome,
     onOpenAssets: openAssetsPage,
+    onOpenFinance: openFinancePage,
     onOpenTopology: openTopologyPanel,
     onOpenAccessLogs: openAccessLogsPage,
     onOpenSchedules: openSchedulesPage,
@@ -1805,6 +1805,30 @@ export default function App() {
               onChange={(value) => setScheduledTasks(normalizeScheduledTaskSettings(value))}
             />
           </main>
+        ) : activeAdminPage === 'finance' ? (
+          <main className="admin-content-page">
+            <OverviewSummaryCard
+              dashboardView={dashboardView}
+              scopedAgentCount={scopedAgentCount}
+              scopedNodeCount={scopedNodeCount}
+              onlineAgentCount={onlineAgentCount}
+              offlineAgentCount={offlineAgentCount}
+              xuiErrorAgentCount={xuiErrorAgentCount}
+              scopedNetwork={scopedNetwork}
+              costCurrency={costCurrency}
+              currencyOptions={currencyOptions}
+              monthlyFinance={monthlyFinance}
+              financeAgents={filteredAgents}
+              financeChains={filteredChains}
+              financeCustomers={financeCustomers}
+              financeAreaManagers={scopedFinanceAreaManagers}
+              exchangeRates={exchangeRates}
+              selectedTag={selectedTag}
+              financePage
+              restrictedView={isAreaManagerAccount}
+              onCostCurrencyChange={setCostCurrency}
+            />
+          </main>
         ) : showWorkbenchDashboard ? (
           <main className="admin-content-page admin-workbench-page">
             <AdminWorkbenchDashboard
@@ -1838,8 +1862,6 @@ export default function App() {
             financeAreaManagers={scopedFinanceAreaManagers}
             exchangeRates={exchangeRates}
             selectedTag={selectedTag}
-            currentAgentLabel={selectedAgent?.agent_name || selectedAgent?.agent_id || ''}
-            currentIPv4={selectedSummary.public_ipv4 || ''}
             compact={centerPanelOpen}
             restrictedView={isAreaManagerAccount}
             onCostCurrencyChange={setCostCurrency}
@@ -1992,6 +2014,7 @@ export default function App() {
                 agentDeleteLoading={agentDeleteLoading}
                 agentReplaceLoading={agentReplaceLoading}
                 replacementAgents={agents.filter((agent) => agent.agent_id !== selectedAgentId)}
+                onBackToList={openAssetsPage}
                 onActiveTabChange={setActiveTabKey}
                 onClientSearchChange={setClientSearch}
                 onCopyImportURL={(client) => void copyImportURL(client)}

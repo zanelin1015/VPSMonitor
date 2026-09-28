@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Alert, AutoComplete, Badge, Button, Card, Empty, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, Tag, Tooltip, Typography } from 'antd'
 import type { TabsProps } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { ReloadOutlined, SaveOutlined, SettingOutlined, SwapOutlined } from '@ant-design/icons'
+import { ArrowLeftOutlined, ReloadOutlined, SaveOutlined, SettingOutlined, SwapOutlined } from '@ant-design/icons'
 
 import type {
   AgentEntryConfig,
@@ -23,6 +23,7 @@ import type {
   XUIOverview,
   XUIRoutingRuleView,
 } from '../types'
+import { AdminHelpHint } from './AdminHelpHint'
 import type { ConfigSectionKey } from '../lib/appHelpers'
 import type { CurrencyCode } from '../lib/currency'
 import { REVENUE_CURRENCIES } from '../lib/currency'
@@ -116,6 +117,7 @@ export interface AgentDetailPanelProps {
   agentDeleteLoading: boolean
   agentReplaceLoading: boolean
   replacementAgents: DashboardAgentView[]
+  onBackToList: () => void
   canOpenXUI: boolean
   canManageConfig: boolean
   restrictedView?: boolean
@@ -227,6 +229,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     agentDeleteLoading,
     agentReplaceLoading,
     replacementAgents,
+    onBackToList,
     canOpenXUI,
     canManageConfig,
     restrictedView = false,
@@ -1476,7 +1479,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
           {agentLogsError ? <Alert type="error" showIcon message={agentLogsError} /> : null}
           <Space wrap>
             <Button icon={<ReloadOutlined />} disabled={!selectedAgentId} loading={agentLogsLoading} onClick={onOpenLogs}>刷新日志</Button>
-            <Text type="secondary">当前显示 client 最近一次上报附带的异常日志</Text>
+            <AdminHelpHint title="当前显示 client 最近一次上报附带的异常日志" />
           </Space>
           <Table
             rowKey={(record, index) => `${record.time}-${record.source || 'log'}-${index}`}
@@ -1542,7 +1545,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
             {canShowXUIControls && selectedAgent.summary.last_collection_err ? (
               <Tag color="orange" style={{ cursor: 'pointer' }} onClick={onOpenLogs}>x-ui 异常</Tag>
             ) : null}
-            {!restrictedView ? <Button onClick={onOpenLogs}>查看日志</Button> : null}
+            <Button icon={<ArrowLeftOutlined />} onClick={onBackToList}>返回 Client 列表</Button>
             {canShowXUIControls ? <Button disabled={!canOpenXUI} onClick={onOpenXUI}>打开 x-ui 面板</Button> : null}
             {!restrictedView ? <Button icon={<ReloadOutlined />} loading={currentAgentLoading} onClick={onRefreshCurrentAgent}>立即获取 Client 信息</Button> : null}
             {!restrictedView ? <Button danger onClick={openRealtimeTerminal}>实时 TTY</Button> : null}

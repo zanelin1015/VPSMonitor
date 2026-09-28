@@ -5,6 +5,7 @@ import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SaveOutline
 
 import type { FrontProxyNode } from '../types'
 import { fetchJSON, formatDateTime } from '../lib/appHelpers'
+import { AdminHelpHint } from './AdminHelpHint'
 
 const { Text, Title } = Typography
 
@@ -181,7 +182,7 @@ export function FrontProxyManagementPage(props: { canManageNodes?: boolean }) {
         <div className="customer-admin-card-head">
           <div>
             <Title level={4}>{canManageNodes ? '第三方前置代理' : '已授权前置代理'}</Title>
-            <Text type="secondary">{canManageNodes ? '导入 SS / VLESS / VMess / Trojan / HTTP 等分享链接，授权后可作为客户订阅的前置代理组。' : '以下为管理员已授权给当前区域账号、且处于启用状态的前置代理，可在用户和链路授权中选择使用。'}</Text>
+            <AdminHelpHint title={canManageNodes ? '导入 SS / VLESS / VMess / Trojan / HTTP 等分享链接，授权后可作为客户订阅的前置代理组。' : '以下为管理员已授权给当前区域账号、且处于启用状态的前置代理，可在用户和链路授权中选择使用。'} />
           </div>
           <Space>
             <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadFrontProxies()}>刷新</Button>

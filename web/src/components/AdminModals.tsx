@@ -28,6 +28,7 @@ import type {
 } from '../lib/appHelpers'
 import { XUI_ACTION_KINDS, clientInstallCommandByKind, defaultTelegramBotForm } from '../lib/appHelpers'
 import { ClientInstallCommandBox } from './ClientInstallCommandBox'
+import { AdminHelpHint } from './AdminHelpHint'
 import { TelegramBotPanel } from './TelegramBotPanel'
 import { renderAddClientActionForm, renderOutboundActionForm, renderRoutingActionForm } from './XUIActionForms'
 
@@ -470,7 +471,7 @@ export function FrontendSettingsPanel(props: {
       <div className="admin-content-title">
         <div>
           <Typography.Title level={3}>系统设置</Typography.Title>
-          <Text type="secondary">配置管理员后台自定义样式；用户账号样式仍在用户看板里单独配置。</Text>
+          <AdminHelpHint title="配置管理员后台自定义样式；用户账号样式仍在用户看板里单独配置。" />
         </div>
         <Button type="primary" loading={saving} onClick={onSave}>保存并应用</Button>
       </div>
@@ -479,7 +480,7 @@ export function FrontendSettingsPanel(props: {
           <div className="admin-settings-section-heading">
             <div>
               <Typography.Title level={4}>客户公告</Typography.Title>
-              <Text type="secondary">启用后展示在 Customer 看板顶部，可用于更新 TG、WhatsApp 等联系方式。</Text>
+              <AdminHelpHint title="启用后展示在 Customer 看板顶部，可用于更新 TG、WhatsApp 等联系方式。" />
             </div>
             <Button
               icon={<PlusOutlined />}
@@ -609,7 +610,7 @@ export function ScheduledTasksPanel(props: {
       <div className="admin-content-title">
         <div>
           <Typography.Title level={3}>定时任务</Typography.Title>
-          <Text type="secondary">管理 Server 后台任务的执行时间和频率；Client 到期同步任务已取消。</Text>
+          <AdminHelpHint title="管理 Server 后台任务的执行时间和频率；Client 到期同步任务已取消。" />
         </div>
         <Button type="primary" loading={saving} onClick={onSave}>保存任务配置</Button>
       </div>
@@ -626,7 +627,7 @@ export function ScheduledTasksPanel(props: {
               <div className="admin-content-title compact">
                 <div>
                   <Typography.Title level={4}>告警扫描</Typography.Title>
-                  <Text type="secondary">用于即时发现 Client 离线；其他告警每天北京时间 09:00 统一扫描推送。</Text>
+                  <AdminHelpHint title="用于即时发现 Client 离线；其他告警每天北京时间 09:00 统一扫描推送。" />
                 </div>
                 <Switch checked={settings.alert_sweep.enabled} onChange={(checked) => updateAlertSweep({ enabled: checked })} />
               </div>
@@ -649,7 +650,7 @@ export function ScheduledTasksPanel(props: {
               <div className="admin-content-title compact">
                 <div>
                   <Typography.Title level={4}>每日流量日报</Typography.Title>
-                  <Text type="secondary">统计前一天流量，并在每天北京时间 09:00 推送到已启用的 Telegram Bot。</Text>
+                  <AdminHelpHint title="统计前一天流量，并在每天北京时间 09:00 推送到已启用的 Telegram Bot。" />
                 </div>
                 <Switch checked={settings.daily_traffic_report.enabled} onChange={(checked) => updateDailyReport({ enabled: checked })} />
               </div>
@@ -934,7 +935,7 @@ export function SystemUpdateModal(props: {
           <Button type="primary" disabled={!serverUpdateAvailable} loading={loading} onClick={onUpdateServer}>升级当前 Server</Button>
           <Button disabled={clientUpdateCount <= 0} loading={loading} onClick={onUpdateClients}>下发升级到可升级 Client</Button>
         </Space>
-        <Text type="secondary">Client 升级前会确认系统和架构，避免向不匹配的系统下发安装包。</Text>
+        <AdminHelpHint title="Client 升级前会确认系统和架构，避免向不匹配的系统下发安装包。" />
         </Space>
       </Spin>
     </Modal>

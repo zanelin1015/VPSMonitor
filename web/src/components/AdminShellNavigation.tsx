@@ -5,6 +5,7 @@ import {
   CloudServerOutlined,
   DashboardOutlined,
   DeploymentUnitOutlined,
+  DollarOutlined,
   FileSearchOutlined,
   MessageOutlined,
   ReloadOutlined,
@@ -17,7 +18,7 @@ import { PersonalCenterDropdown } from './AdminModals'
 import type { AdminPageKey } from '../lib/adminRoute'
 import type { ThemeMode } from '../theme'
 
-const { Paragraph, Text, Title } = Typography
+const { Text } = Typography
 
 export interface AdminShellNavigationProps {
   adminUser: AdminUser
@@ -32,7 +33,6 @@ export interface AdminShellNavigationProps {
   agentsLoading: boolean
   themeMode: ThemeMode
   effectiveMode: ThemeMode
-  heroTitle: string
   serverVersionLabel: string
   onOpenAccount: () => void
   onOpenClientInstall: () => void
@@ -45,6 +45,7 @@ export interface AdminShellNavigationProps {
   onLogout: () => void
   onOpenWorkbench: () => void
   onOpenAssets: () => void
+  onOpenFinance: () => void
   onOpenTopology: () => void
   onOpenAccessLogs: () => void
   onOpenSchedules: () => void
@@ -77,6 +78,7 @@ export function AdminShellNavigation(props: AdminShellNavigationProps) {
     onLogout,
     onOpenWorkbench,
     onOpenAssets,
+    onOpenFinance,
     onOpenTopology,
     onOpenAccessLogs,
     onOpenSchedules,
@@ -120,6 +122,10 @@ export function AdminShellNavigation(props: AdminShellNavigationProps) {
             <CloudServerOutlined />
             <span>资产</span>
           </button>
+          {canManageSystem ? <button type="button" className={activeAdminPage === 'finance' ? 'active' : ''} onClick={onOpenFinance}>
+            <DollarOutlined />
+            <span>财务</span>
+          </button> : null}
           <button type="button" className={activeAdminPage === 'dashboard' && topologyVisible ? 'active' : ''} onClick={onOpenTopology}>
             <ApartmentOutlined />
             <span>拓扑</span>
@@ -183,6 +189,11 @@ export function AdminShellNavigation(props: AdminShellNavigationProps) {
             <span>Client 资产</span>
             <small>节点列表</small>
           </button>
+          {canManageSystem ? <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'finance' ? ' active' : ''}`} onClick={onOpenFinance}>
+            <DollarOutlined />
+            <span>财务总览</span>
+            <small>收入与成本</small>
+          </button> : null}
           <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'dashboard' && topologyVisible ? ' active' : ''}`} onClick={onOpenTopology}>
             <ApartmentOutlined />
             <span>拓扑图</span>
@@ -237,12 +248,8 @@ export function AdminShellTopbar(props: AdminShellNavigationProps) {
     adminUser,
     systemInfo,
     canManageSystem,
-    isAreaManagerAccount,
-    agentsLoading,
     themeMode,
     effectiveMode,
-    heroTitle,
-    serverVersionLabel,
     onOpenAccount,
     onOpenClientInstall,
     onOpenTelegram,
@@ -250,25 +257,12 @@ export function AdminShellTopbar(props: AdminShellNavigationProps) {
     onOpenFrontendSettings,
     onOpenUpdates,
     onLogout,
-    onRefreshAgents,
     onThemeModeChange,
   } = props
 
   return (
     <header className="hero-panel admin-oa-topbar">
-      <div className="admin-oa-titlebar">
-        <div className="eyebrow">{serverVersionLabel} / 工作台</div>
-        <Title level={1}>{heroTitle}</Title>
-        <Paragraph className="hero-copy">
-          {isAreaManagerAccount
-            ? '管理已授权 Client、用户账号、区域标签与可见拓扑链路。'
-            : '统一管理 Client、x-ui 托管配置、用户账号、财务月览与跨 Client 拓扑联动。'}
-        </Paragraph>
-      </div>
       <div className="hero-actions hero-actions-column">
-        <Button icon={<ReloadOutlined />} loading={agentsLoading} onClick={onRefreshAgents}>刷新</Button>
-        {canManageSystem ? <Button icon={<DeploymentUnitOutlined />} onClick={onOpenClientInstall}>安装 Client</Button> : null}
-        <Button icon={<TeamOutlined />} onClick={onOpenCustomers}>用户</Button>
         <PersonalCenterDropdown
           adminUser={adminUser}
           systemInfo={systemInfo}

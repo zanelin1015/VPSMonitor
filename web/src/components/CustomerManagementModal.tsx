@@ -6,6 +6,7 @@ import { CopyOutlined, DeleteOutlined, EditOutlined, ExportOutlined, PlusOutline
 import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, CustomerAssignmentSourceView, CustomerBillingDiagnostic, CustomerBillingReconciliationResponse, CustomerSubscriptionURLResponse, DashboardAgentView, FrontProxyNode, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
 import { fetchJSON, formatDateTime } from '../lib/appHelpers'
 import { CustomerAssignmentManagerCard } from './CustomerAssignmentManagerCard'
+import { AdminHelpHint } from './AdminHelpHint'
 import {
   DEFAULT_ACCOUNT_PASSWORD,
   type AreaBatchAssignmentFormState,
@@ -1540,7 +1541,7 @@ export function CustomerManagementModal(props: {
         <div className="customer-admin-card-head">
           <div>
             <Title level={5}>批量授权入口 / 出口</Title>
-            <Text type="secondary">Realm / HAProxy 入口与 x-ui 出口节点可分别选择；HAProxy 主备会自动映射到校验一致的最终节点。</Text>
+            <AdminHelpHint title="Realm / HAProxy 入口与 x-ui 出口节点可分别选择；HAProxy 主备会自动映射到校验一致的最终节点。" />
           </div>
           <Button
             type="primary"
@@ -1649,7 +1650,7 @@ export function CustomerManagementModal(props: {
       <div className="customer-admin-card-head">
         <div>
           <Title level={5}>用户列表</Title>
-          <Text type="secondary">普通账号以列表方式管理；编辑用户、查看链路和管理链路均通过弹窗完成。</Text>
+          <AdminHelpHint title="普通账号以列表方式管理；编辑用户、查看链路和管理链路均通过弹窗完成。" />
         </div>
         <Space>
           <Button icon={<ReloadOutlined />} onClick={() => void loadCustomers()}>刷新用户</Button>

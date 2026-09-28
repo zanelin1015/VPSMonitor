@@ -158,6 +158,19 @@ export function createAppNavigationHandlers(options: AppNavigationHandlersOption
       scrollIntoViewById('agent-detail-panel', { behavior: 'smooth', block: 'start' })
     },
 
+    openFinancePage() {
+      setActiveAdminPage('finance')
+      setAgentHealthFilter('all')
+      setTopologyVisible(false)
+      setSelectedTag('')
+      setClientSearch('')
+      setSelectedAgentId('')
+      setActiveTabKey('overview')
+      setSelectedOutboundTag('')
+      setSelectedRuleIndex(null)
+      setSelectedNodeAnchor('')
+    },
+
     openAgentHealthFilter(filter: Exclude<AgentHealthFilter, 'all'>) {
       setActiveAdminPage('assets')
       setTopologyVisible(false)

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Card, Empty, Tag, Typography } from 'antd'
-import { ApartmentOutlined } from '@ant-design/icons'
 import { Line } from '@ant-design/plots'
 import type { LineConfig } from '@ant-design/plots'
 
@@ -166,7 +165,6 @@ export function AdminWorkbenchDashboard(props: {
           note={monthlyFinance.available ? `收入 ${formatMoney(monthlyFinance.revenueTotal, costCurrency)}` : monthlyFinance.error || '财务数据加载中'}
           tone={monthlyFinance.available && monthlyFinance.profitTotal >= 0 ? 'profit' : 'bad'}
         /> : null}
-        <Button size="small" onClick={onOpenTopology} icon={<ApartmentOutlined />}>拓扑</Button>
       </div>
 
       <div className="admin-workbench-grid">

@@ -1,6 +1,6 @@
 import { normalizeAgentHealthFilter, type AgentHealthFilter } from './agentHealth'
 
-export type AdminPageKey = 'dashboard' | 'assets' | 'customers' | 'front-proxies' | 'support' | 'access-logs' | 'settings' | 'schedules'
+export type AdminPageKey = 'dashboard' | 'assets' | 'finance' | 'customers' | 'front-proxies' | 'support' | 'access-logs' | 'settings' | 'schedules'
 
 export interface AdminRouteState {
   page: AdminPageKey
@@ -21,7 +21,7 @@ export function parseAdminRouteState(canManageSystem: boolean, canViewFrontProxi
   const rawPage = (params.get('page') || pageFromAdminPath(path)).toLowerCase()
   const topology = rawPage === 'topology' || params.get('topology') === '1'
   let page: AdminPageKey = topology ? 'dashboard' : normalizeAdminPage(rawPage)
-  if ((page === 'settings' || page === 'schedules' || page === 'access-logs') && !canManageSystem) {
+  if ((page === 'settings' || page === 'schedules' || page === 'access-logs' || page === 'finance') && !canManageSystem) {
     page = 'dashboard'
   }
   if (page === 'front-proxies' && !canViewFrontProxies) {
@@ -92,6 +92,7 @@ export function buildAdminRouteURL(route: AdminRouteState): string {
 function normalizeAdminPage(value: string): AdminPageKey {
   switch (value) {
     case 'assets':
+    case 'finance':
     case 'customers':
     case 'front-proxies':
     case 'support':
@@ -108,6 +109,8 @@ function pageFromAdminPath(path: string): string {
   switch (path) {
     case '/admin/assets':
       return 'assets'
+    case '/admin/finance':
+      return 'finance'
     case '/admin/customers':
       return 'customers'
     case '/admin/front-proxies':

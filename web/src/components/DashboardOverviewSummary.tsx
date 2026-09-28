@@ -5,7 +5,7 @@ import type { ColumnsType, TablePaginationConfig } from 'antd/es/table'
 import type { AreaManagerAdminView, ClientChainView, CustomerAdminView, DashboardAgentView, GlobalDashboardView } from '../types'
 import type { CurrencyCode, ExchangeRatesState, MonthlyFinanceCostDetail, MonthlyFinanceExcludedRevenueDetail, MonthlyFinancePaymentInfo, MonthlyFinanceRevenueDetail, MonthlyFinanceSummary } from '../lib/currency'
 import { buildMonthlyFinanceCostDetails, buildMonthlyFinanceExcludedRevenueDetails, buildMonthlyFinanceRevenueDetails, financeAssignmentMatchesRevenueRow, formatMoney } from '../lib/currency'
-import { fetchJSON, formatDateTime } from '../lib/appHelpers'
+import { fetchJSON } from '../lib/appHelpers'
 import { type AgentNetworkSummary, formatBytes, formatSpeed } from '../lib/traffic'
 
 const { Text } = Typography
@@ -44,9 +44,8 @@ export function OverviewSummaryCard(props: {
   financeAreaManagers: AreaManagerAdminView[]
   exchangeRates: ExchangeRatesState
   selectedTag: string
-  currentAgentLabel: string
-  currentIPv4: string
   compact?: boolean
+  financePage?: boolean
   restrictedView?: boolean
   onCostCurrencyChange: (currency: CurrencyCode) => void
 }) {
@@ -67,13 +66,12 @@ export function OverviewSummaryCard(props: {
     financeAreaManagers,
     exchangeRates,
     selectedTag,
-    currentAgentLabel,
-    currentIPv4,
     compact,
+    financePage = false,
     restrictedView = false,
     onCostCurrencyChange,
   } = props
-  const [financeDetailOpen, setFinanceDetailOpen] = useState(false)
+  const [financeDetailOpen, setFinanceDetailOpen] = useState(financePage)
   const [customerRows, setCustomerRows] = useState<CustomerAdminView[]>([])
   const [customerRowsLoading, setCustomerRowsLoading] = useState(false)
   const effectiveCustomerRows = financeCustomers.length ? financeCustomers : customerRows
@@ -306,7 +304,7 @@ export function OverviewSummaryCard(props: {
     <Card className={`surface-card summary-card${compact ? ' compact-summary-card' : ''}`} bordered={false}>
       {dashboardView ? (
         <>
-          <div className="overview-stat-grid">
+          {!financePage ? <div className="overview-stat-grid">
             <section className="overview-stat-card overview-stat-blue">
               <div className="overview-stat-title">服务器总数</div>
               <div className="overview-stat-value">
@@ -381,20 +379,12 @@ export function OverviewSummaryCard(props: {
               {monthlyFinance.error && monthlyFinance.available ? <div className="overview-stat-foot">财务账号数据未刷新：{monthlyFinance.error}</div> : null}
               {exchangeRates.error ? <div className="overview-stat-foot">汇率提示：{exchangeRates.error}</div> : null}
             </section> : null}
-          </div>
-          <div className="overview-summary-strip">
-            <span>已匹配链路 · {dashboardView.totals.link_count}</span>
-            <span>前端客户端链路 · {dashboardView.totals.chain_count}</span>
-            <span>标签视图 · {selectedTag || '全部'}</span>
-            <span>计算时间 · {formatDateTime(dashboardView.generated_at)}</span>
-            <span>当前详情节点 · {currentAgentLabel || '-'}</span>
-            {!restrictedView ? <span>当前节点 IPv4 · {currentIPv4 || '-'}</span> : null}
-          </div>
-          {!restrictedView && financeDetailOpen && monthlyFinance.available ? (
+          </div> : null}
+          {!restrictedView && (financeDetailOpen || financePage) && monthlyFinance.available ? (
             <div className="finance-detail-panel">
               <div className="finance-detail-head">
                 <Text strong>财务月览明细</Text>
-                <Button size="small" onClick={() => setFinanceDetailOpen(false)}>收起</Button>
+                {!financePage ? <Button size="small" onClick={() => setFinanceDetailOpen(false)}>收起</Button> : null}
               </div>
               <div className="finance-detail-summary">
                 <div>
