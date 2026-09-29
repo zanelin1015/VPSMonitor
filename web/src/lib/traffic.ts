@@ -1,5 +1,4 @@
-import type { AgentListItem, VPSRenewalConfig, VPSSummary, XUIClientView } from '../types'
-import { agentCountryCode } from './appHelpersAgent'
+import type { AgentListItem, ClientChainView, VPSRenewalConfig, VPSSummary, XUIClientView } from '../types'
 
 export interface TrafficMeterStatus {
   label: string
@@ -122,42 +121,67 @@ export function summarizeAgentNetwork(agents: AgentListItem[]): AgentNetworkSumm
   )
 }
 
-export function summarizeWorkbenchNetwork(agents: AgentListItem[]): AgentNetworkSummary {
-  const summary = summarizeAgentNetwork(agents)
-  const entrySpeed = agents.filter(isCNLineEntryAgent).reduce(
-    (speed, agent) => ({
-      up: speed.up + Number(agent.summary.net_io_up || 0),
-      down: speed.down + Number(agent.summary.net_io_down || 0),
-    }),
-    { up: 0, down: 0 },
-  )
-  return { ...summary, ...entrySpeed }
-}
-
-export function isCNLineEntryAgent(agent: AgentListItem): boolean {
-  if (agent.line_entry === true) {
-    return true
-  }
-  if (agentCountryCode(agent) !== 'CN') {
-    return false
+/**
+ * Summarize host metrics without adding the same traffic again for every hop
+ * in a known Client chain. Host-level counters cannot attribute bytes to an
+ * individual flow, so a connected chain component uses the largest observed
+ * value for each direction as a conservative one-flow estimate.
+ */
+export function summarizeDeduplicatedNetwork(agents: AgentListItem[], chains: ClientChainView[]): AgentNetworkSummary {
+  if (!chains.length) {
+    return summarizeAgentNetwork(agents)
   }
 
-  const realm = agent.entry?.port_forwarding
-  const haproxy = agent.entry?.haproxy
-  return (
-    hasEnabledForwardingRules(realm?.enabled, realm?.rules) ||
-    hasEnabledForwardingRules(haproxy?.enabled, haproxy?.rules) ||
-    (agent.tags || []).some(isDomesticEntryTag)
-  )
-}
+  const agentsByID = new Map(agents.map((agent) => [agent.agent_id, agent]))
+  const parent = new Map<string, string>()
+  const find = (agentID: string): string => {
+    const current = parent.get(agentID)
+    if (!current || current === agentID) {
+      parent.set(agentID, agentID)
+      return agentID
+    }
+    const root = find(current)
+    parent.set(agentID, root)
+    return root
+  }
+  const union = (left: string, right: string) => {
+    const leftRoot = find(left)
+    const rightRoot = find(right)
+    if (leftRoot !== rightRoot) {
+      parent.set(rightRoot, leftRoot)
+    }
+  }
 
-function hasEnabledForwardingRules(enabled: boolean | undefined, rules: Array<{ enabled?: boolean }> | undefined): boolean {
-  return Boolean(enabled && rules?.some((rule) => rule.enabled !== false))
-}
+  for (const chain of chains) {
+    const chainAgents = [...new Set([
+      chain.root_agent_id,
+      ...(chain.steps || []).map((step) => step.agent_id),
+    ].filter((agentID) => agentsByID.has(agentID)))]
+    if (chainAgents.length < 2) {
+      continue
+    }
+    for (const agentID of chainAgents.slice(1)) {
+      union(chainAgents[0], agentID)
+    }
+  }
 
-function isDomesticEntryTag(tag: string): boolean {
-  const normalized = tag.trim().toLowerCase().replace(/[\s_-]+/g, '')
-  return normalized.includes('国内入口') || normalized === 'cn入口' || normalized === 'cnentry'
+  const components = new Map<string, AgentListItem[]>()
+  for (const agent of agents) {
+    const componentID = parent.has(agent.agent_id) ? find(agent.agent_id) : agent.agent_id
+    const component = components.get(componentID) || []
+    component.push(agent)
+    components.set(componentID, component)
+  }
+
+  return [...components.values()].reduce<AgentNetworkSummary>((summary, component) => {
+    const values = component.map((agent) => summarizeAgentNetwork([agent]))
+    summary.used += Math.max(...values.map((value) => value.used))
+    summary.sent += Math.max(...values.map((value) => value.sent))
+    summary.recv += Math.max(...values.map((value) => value.recv))
+    summary.up += Math.max(...values.map((value) => value.up))
+    summary.down += Math.max(...values.map((value) => value.down))
+    return summary
+  }, { used: 0, sent: 0, recv: 0, up: 0, down: 0 })
 }
 
 export function gbToBytes(value: number): number {

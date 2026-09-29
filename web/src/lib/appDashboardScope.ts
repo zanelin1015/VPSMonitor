@@ -14,7 +14,7 @@ import {
   mergeDashboardTagOptions,
   topologyMatchesSelectedTag,
 } from './appHelpers'
-import { summarizeAgentNetwork, summarizeWorkbenchNetwork } from './traffic'
+import { summarizeDeduplicatedNetwork } from './traffic'
 
 type DashboardScopeInput = {
   agents: DashboardAgentView[]
@@ -70,9 +70,9 @@ export function buildDashboardScope(input: DashboardScopeInput) {
   const onlineAgentCount = filteredAgents.filter(isAgentRunning).length
   const offlineAgentCount = Math.max(scopedAgentCount - onlineAgentCount, 0)
   const xuiErrorAgentCount = filteredAgents.filter((agent) => Boolean(agent.summary.last_collection_err)).length
-  const scopedNetwork = summarizeAgentNetwork(filteredAgents)
   const filteredTagLinks = (dashboardView?.links || []).filter((link) => topologyMatchesSelectedTag(link, selectedTag))
   const filteredChains = (dashboardView?.client_chains || []).filter((chain) => chainMatchesSelectedTag(chain, selectedTag))
+  const scopedNetwork = summarizeDeduplicatedNetwork(filteredAgents, filteredChains)
   const scopedFinanceAreaManagers = scopeAreaManagersToAgents(financeAreaManagers, filteredAgents, Boolean(selectedTag))
   const monthlyFinance = canManageSystem && financeAccountsLoaded
     ? {
@@ -91,7 +91,7 @@ export function buildDashboardScope(input: DashboardScopeInput) {
         missingRevenueCount: 0,
         excludedRevenueCount: 0,
       }
-  const workbenchNetwork = summarizeWorkbenchNetwork(agents)
+  const workbenchNetwork = summarizeDeduplicatedNetwork(agents, dashboardView?.client_chains || [])
   const workbenchMonthlyFinance = canManageSystem && financeAccountsLoaded
     ? {
         ...summarizeMonthlyFinance(agents, dashboardView?.client_chains || [], costCurrency, exchangeRates, financeCustomers, financeAreaManagers),

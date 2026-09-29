@@ -229,7 +229,7 @@ func (a *App) dashboardViewForAdmin(user model.AdminUser) (model.GlobalDashboard
 	snapshots = a.filterSnapshotsForAdmin(user, snapshots)
 
 	view := dashboard.BuildGlobalDashboardWithOptions(agents, snapshots, dashboard.GlobalDashboardOptions{
-		IncludeTopology:    false,
+		IncludeTopology:    true,
 		IncludeGeo:         true,
 		AllowNetworkLookup: false,
 		ResolverData:       a.dashboardTopologyResolverData(),

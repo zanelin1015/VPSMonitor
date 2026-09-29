@@ -11,7 +11,7 @@ try {
     source.replace("'./appHelpersAgent'", "'./appHelpersAgent.mjs'"),
   )
 
-  const { isCNLineEntryAgent, summarizeWorkbenchNetwork } = await import(`file://${join(dir, 'traffic.mjs')}`)
+  const { summarizeAgentNetwork, summarizeDeduplicatedNetwork } = await import(`file://${join(dir, 'traffic.mjs')}`)
   const agents = [
     agent('gz-primary', '广州-阿里云', 'CN', 100, 200, { haproxy: forwardingConfig() }),
     agent('gz-backup', '广州-阿里云-备用-1', 'CN', 10, 20, { haproxy: forwardingConfig() }),
@@ -20,42 +20,69 @@ try {
     agent('istore', 'iStoreOS', 'CN', 5_000, 6_000),
   ]
 
-  assert.equal(isCNLineEntryAgent(agents[0]), true, 'CN HAProxy entry should be included')
-  assert.equal(isCNLineEntryAgent(agents[1]), true, 'CN backup entry should be included')
-  assert.equal(isCNLineEntryAgent(agents[2]), false, 'overseas Realm relay should not duplicate entry speed')
-  assert.equal(isCNLineEntryAgent(agents[4]), false, 'ordinary CN device without forwarding should be excluded')
-
-  const summary = summarizeWorkbenchNetwork(agents)
-  assert.equal(summary.up, 110, 'workbench upload only sums CN line entries')
-  assert.equal(summary.down, 220, 'workbench download only sums CN line entries')
+  const summary = summarizeAgentNetwork(agents)
+  assert.equal(summary.up, 9_110, 'without topology, all host speeds remain visible')
+  assert.equal(summary.down, 12_220, 'without topology, all host speeds remain visible')
   assert.equal(summary.sent, 50, 'period upload remains global')
   assert.equal(summary.recv, 100, 'period download remains global')
   assert.equal(summary.used, 150, 'period total remains global')
 
-  const taggedEntry = agent('tagged', 'CN tagged entry', 'CN', 7, 8, undefined, ['国内入口'])
-  assert.equal(isCNLineEntryAgent(taggedEntry), true, 'explicit domestic-entry tag should be supported')
-  assert.equal(
-    isCNLineEntryAgent(agent('gz-realm', '广州 Realm', 'CN', 7, 8, { port_forwarding: forwardingConfig() })),
-    true,
-    'CN Realm entry should be included',
-  )
-  assert.equal(
-    isCNLineEntryAgent(agent('disabled-entry', '广州停用入口', 'CN', 7, 8, { haproxy: { enabled: true, rules: [{ enabled: false }] } })),
-    false,
-    'disabled forwarding rules should not mark a Client as an active entry',
-  )
+  const deduplicated = summarizeDeduplicatedNetwork(agents, [
+    {
+      key: 'gz-primary:1',
+      root_agent_id: 'gz-primary',
+      root_inbound_id: 1,
+      root_client_enabled: true,
+      root_inbound_enabled: true,
+      matched_link_count: 1,
+      steps: [
+        { step_type: 'client', agent_id: 'gz-primary', label: 'entry' },
+        { step_type: 'match', agent_id: 'hk-relay', label: 'relay' },
+      ],
+    },
+  ])
+  assert.equal(deduplicated.up, 9_010, 'linked hosts use the largest upload sample once')
+  assert.equal(deduplicated.down, 12_020, 'linked hosts use the largest download sample once')
+  assert.equal(deduplicated.sent, 40, 'linked hosts use the largest period upload once')
+  assert.equal(deduplicated.recv, 80, 'linked hosts use the largest period download once')
+  assert.equal(deduplicated.used, 120, 'linked hosts use the largest period total once')
 
-  const sanitizedAreaEntry = agent('area-gz-entry', '广州-阿里云', '', 30, 40)
-  delete sanitizedAreaEntry.geo
-  sanitizedAreaEntry.line_entry = true
-  assert.equal(
-    isCNLineEntryAgent(sanitizedAreaEntry),
-    true,
-    'server-derived entry marker should survive area-manager redaction',
-  )
-  const areaSummary = summarizeWorkbenchNetwork([sanitizedAreaEntry])
-  assert.equal(areaSummary.up, 30, 'redacted area-manager entry upload should be included')
-  assert.equal(areaSummary.down, 40, 'redacted area-manager entry download should be included')
+  const multiHop = summarizeDeduplicatedNetwork(agents, [
+    {
+      key: 'gz-primary:1',
+      root_agent_id: 'gz-primary',
+      root_inbound_id: 1,
+      root_client_enabled: true,
+      root_inbound_enabled: true,
+      matched_link_count: 2,
+      steps: [
+        { step_type: 'client', agent_id: 'gz-primary', label: 'entry' },
+        { step_type: 'match', agent_id: 'hk-relay', label: 'relay' },
+        { step_type: 'match', agent_id: 'us-exit', label: 'exit' },
+      ],
+    },
+  ])
+  assert.equal(multiHop.up, 8_010, 'multi-hop chain is counted as one connected component')
+  assert.equal(multiHop.down, 10_020, 'multi-hop chain is counted as one connected component')
+
+  const mixedTraffic = summarizeDeduplicatedNetwork([
+    agent('entry', 'entry', 'CN', 100, 200),
+    agent('relay', 'relay', 'HK', 150, 250),
+    agent('independent', 'independent', 'US', 40, 60),
+  ], [{
+    key: 'entry:1',
+    root_agent_id: 'entry',
+    root_inbound_id: 1,
+    root_client_enabled: true,
+    root_inbound_enabled: true,
+    matched_link_count: 1,
+    steps: [
+      { step_type: 'client', agent_id: 'entry', label: 'entry' },
+      { step_type: 'match', agent_id: 'relay', label: 'relay' },
+    ],
+  }])
+  assert.equal(mixedTraffic.up, 190, 'independent traffic remains additive beside a chain')
+  assert.equal(mixedTraffic.down, 310, 'independent traffic remains additive beside a chain')
 
   console.log('dashboard network tests passed')
 } finally {
