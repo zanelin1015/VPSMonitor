@@ -70,6 +70,7 @@ export function useAdminSystemTools(setAdminUser: (user: AdminUser | null) => vo
   const [clientInstallCommandKind, setClientInstallCommandKind] = useState<ClientInstallCommandKind>('linux')
   const [frontendSettingsModalOpen, setFrontendSettingsModalOpen] = useState(false)
   const [frontendSettingsLoading, setFrontendSettingsLoading] = useState(false)
+  const [frontendSettingsLoaded, setFrontendSettingsLoaded] = useState(false)
   const [frontendSettingsSaving, setFrontendSettingsSaving] = useState(false)
   const [frontendSettingsForm, setFrontendSettingsForm] = useState<FrontendSettingsForm>(() => defaultFrontendSettingsForm())
   const [scheduledTasksLoading, setScheduledTasksLoading] = useState(false)
@@ -141,9 +142,11 @@ export function useAdminSystemTools(setAdminUser: (user: AdminUser | null) => vo
       setFrontendSettingsModalOpen(true)
     }
     setFrontendSettingsLoading(true)
+    setFrontendSettingsLoaded(false)
     try {
       const data = await fetchJSON<FrontendSettings>('/api/v1/admin/frontend-settings')
       setFrontendSettingsForm(normalizeFrontendSettingsForm(data))
+      setFrontendSettingsLoaded(true)
     } catch (error) {
       handleUnauthorized(error)
       message.error(error instanceof Error ? error.message : '加载前端样式设置失败')
@@ -153,6 +156,10 @@ export function useAdminSystemTools(setAdminUser: (user: AdminUser | null) => vo
   }
 
   async function saveFrontendSettings() {
+    if (!frontendSettingsLoaded || frontendSettingsLoading) {
+      message.warning('公告配置尚未加载完成，请刷新后再保存')
+      return
+    }
     setFrontendSettingsSaving(true)
     try {
       const data = await fetchJSON<FrontendSettings>('/api/v1/admin/frontend-settings', {
@@ -400,6 +407,7 @@ export function useAdminSystemTools(setAdminUser: (user: AdminUser | null) => vo
     editingTelegramBotId,
     frontendSettingsForm,
     frontendSettingsLoading,
+    frontendSettingsLoaded,
     frontendSettingsModalOpen,
     frontendSettingsSaving,
     scheduledTasks,

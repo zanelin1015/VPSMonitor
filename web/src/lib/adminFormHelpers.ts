@@ -1,4 +1,4 @@
-import type { ClientInstallInfo, CustomerAnnouncement, FrontendSettings } from '../types'
+import type { ClientInstallInfo, CustomerAnnouncement, CustomerAnnouncementHistory, FrontendSettings } from '../types'
 
 export type ClientInstallCommandKind = 'linux' | 'openwrt' | 'windows-powershell' | 'windows-cmd'
 
@@ -31,6 +31,7 @@ export interface ClientInstallCommandForm {
 export interface FrontendSettingsForm {
   custom_code: string
   announcements: CustomerAnnouncement[]
+  announcement_history: CustomerAnnouncementHistory[]
 }
 
 export function defaultTelegramBotForm(): TelegramBotForm {
@@ -86,7 +87,7 @@ export function normalizeClientInstallCommandForm(info: ClientInstallInfo): Clie
 }
 
 export function defaultFrontendSettingsForm(): FrontendSettingsForm {
-  return { custom_code: '', announcements: [] }
+  return { custom_code: '', announcements: [], announcement_history: [] }
 }
 
 export function normalizeFrontendSettingsForm(settings: FrontendSettings): FrontendSettingsForm {
@@ -98,6 +99,7 @@ export function normalizeFrontendSettingsForm(settings: FrontendSettings): Front
       starts_at: announcementDateTimeInputValue(item.starts_at),
       ends_at: announcementDateTimeInputValue(item.ends_at),
     })),
+    announcement_history: settings.announcement_history || [],
   }
 }
 

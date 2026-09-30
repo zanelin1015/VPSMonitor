@@ -180,7 +180,7 @@ export function FrontProxyManagementPage(props: { canManageNodes?: boolean }) {
     <main className="admin-content-page">
       <Card className="customer-admin-card" bordered={false}>
         <div className="customer-admin-card-head">
-          <div>
+          <div className="admin-help-title-group">
             <Title level={4}>{canManageNodes ? '第三方前置代理' : '已授权前置代理'}</Title>
             <AdminHelpHint title={canManageNodes ? '导入 SS / VLESS / VMess / Trojan / HTTP 等分享链接，授权后可作为客户订阅的前置代理组。' : '以下为管理员已授权给当前区域账号、且处于启用状态的前置代理，可在用户和链路授权中选择使用。'} />
           </div>

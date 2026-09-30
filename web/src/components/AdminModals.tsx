@@ -563,6 +563,30 @@ export function FrontendSettingsPanel(props: {
               </Row>
             </Card>
           ))}
+          {form.announcement_history.length > 0 ? (
+            <Card
+              size="small"
+              className="admin-announcement-history"
+              title={`公告历史（${form.announcement_history.length}）`}
+            >
+              {[...form.announcement_history].reverse().map((item) => (
+                <div key={item.id} className="admin-announcement-history-item">
+                  <div className="admin-announcement-history-meta">
+                    <Tag color={announcementHistoryActionColor(item.action)}>
+                      {announcementHistoryActionLabel(item.action)}
+                    </Tag>
+                    <Typography.Text strong>{item.title.trim() || '无标题公告'}</Typography.Text>
+                    <Typography.Text type="secondary">
+                      {formatAnnouncementHistoryTime(item.recorded_at)}
+                    </Typography.Text>
+                  </div>
+                  {item.content?.trim() ? (
+                    <p className="admin-announcement-history-content">{item.content}</p>
+                  ) : null}
+                </div>
+              ))}
+            </Card>
+          ) : null}
           <Divider />
           <div>
             <Text strong>管理员后台自定义代码（样式和脚本）</Text>
@@ -591,6 +615,35 @@ function newCustomerAnnouncement(): FrontendSettingsForm['announcements'][number
     starts_at: '',
     ends_at: '',
   }
+}
+
+function announcementHistoryActionLabel(action: string): string {
+  switch (action) {
+    case 'created':
+      return '新增'
+    case 'removed':
+      return '删除'
+    case 'updated':
+    default:
+      return '更新'
+  }
+}
+
+function announcementHistoryActionColor(action: string): string {
+  switch (action) {
+    case 'created':
+      return 'success'
+    case 'removed':
+      return 'error'
+    case 'updated':
+    default:
+      return 'processing'
+  }
+}
+
+function formatAnnouncementHistoryTime(value: string): string {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 
 export function ScheduledTasksPanel(props: {

@@ -1539,7 +1539,7 @@ export function CustomerManagementModal(props: {
       />
       <Card size="small" style={{ marginTop: 14 }} bordered={false}>
         <div className="customer-admin-card-head">
-          <div>
+          <div className="admin-help-title-group">
             <Title level={5}>批量授权入口 / 出口</Title>
             <AdminHelpHint title="Realm / HAProxy 入口与 x-ui 出口节点可分别选择；HAProxy 主备会自动映射到校验一致的最终节点。" />
           </div>
@@ -1648,7 +1648,7 @@ export function CustomerManagementModal(props: {
   const customersPanel = (
     <Card className="customer-admin-card" bordered={false}>
       <div className="customer-admin-card-head">
-        <div>
+        <div className="admin-help-title-group">
           <Title level={5}>用户列表</Title>
           <AdminHelpHint title="普通账号以列表方式管理；编辑用户、查看链路和管理链路均通过弹窗完成。" />
         </div>

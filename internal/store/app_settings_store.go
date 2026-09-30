@@ -20,6 +20,7 @@ const (
 	scheduledTasksKey        = "scheduled_tasks"
 	outboundLinkLibraryKey   = "outbound_link_library"
 	topologyLookupCacheKey   = "topology_lookup_cache"
+	maxAnnouncementHistory   = 500
 )
 
 func (s *SQLiteStore) GetClientInstallSettings() (model.ClientInstallSettingsRequest, bool, error) {
@@ -221,8 +222,14 @@ func (s *SQLiteStore) SaveTagSettings(tags []string) ([]string, error) {
 }
 
 func (s *SQLiteStore) GetFrontendSettings() (model.FrontendSettings, bool, error) {
-	var raw string
-	err := s.db.QueryRow(`SELECT value_json FROM app_settings WHERE key = ?`, frontendSettingsKey).Scan(&raw)
+	return getFrontendSettings(s.db)
+}
+
+func getFrontendSettings(db interface {
+	QueryRow(string, ...any) *sql.Row
+}) (model.FrontendSettings, bool, error) {
+	var raw, updatedAt string
+	err := db.QueryRow(`SELECT value_json, updated_at FROM app_settings WHERE key = ?`, frontendSettingsKey).Scan(&raw, &updatedAt)
 	if err == sql.ErrNoRows {
 		return model.FrontendSettings{}, false, nil
 	}
@@ -234,25 +241,169 @@ func (s *SQLiteStore) GetFrontendSettings() (model.FrontendSettings, bool, error
 		return model.FrontendSettings{}, false, fmt.Errorf("decode frontend settings: %w", err)
 	}
 	settings.Announcements = normalizeCustomerAnnouncements(settings.Announcements, false)
+	settings.AnnouncementHistory = normalizeCustomerAnnouncementHistory(settings.AnnouncementHistory)
+	recordedAt, err := time.Parse(time.RFC3339Nano, updatedAt)
+	if err != nil {
+		recordedAt = time.Unix(0, 0).UTC()
+	}
+	settings.AnnouncementHistory = seedAnnouncementHistory(settings.AnnouncementHistory, settings.Announcements, recordedAt)
 	return settings, true, nil
 }
 
 func (s *SQLiteStore) SaveFrontendSettings(settings model.FrontendSettings) (model.FrontendSettings, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return model.FrontendSettings{}, fmt.Errorf("begin frontend settings: %w", err)
+	}
+	defer tx.Rollback()
+	previous, found, err := getFrontendSettings(tx)
+	if err != nil {
+		return model.FrontendSettings{}, err
+	}
+	// Older clients may save only custom_code. Omission must not erase notices;
+	// an explicit empty array is required to remove all current announcements.
+	if found && settings.Announcements == nil {
+		settings.Announcements = previous.Announcements
+	}
 	settings.Announcements = normalizeCustomerAnnouncements(settings.Announcements, true)
+	now := time.Now().UTC()
+	// The database owns the history. Ignore any history supplied by the caller
+	// so saving from an old or stale browser cannot erase earlier records.
+	settings.AnnouncementHistory = mergeAnnouncementHistory(previous.AnnouncementHistory, previous.Announcements, settings.Announcements, now)
 	data, err := json.Marshal(settings)
 	if err != nil {
 		return model.FrontendSettings{}, fmt.Errorf("encode frontend settings: %w", err)
 	}
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	_, err = s.db.Exec(`
+	_, err = tx.Exec(`
 		INSERT INTO app_settings (key, value_json, updated_at)
 		VALUES (?, ?, ?)
 		ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
-	`, frontendSettingsKey, string(data), now)
+	`, frontendSettingsKey, string(data), now.Format(time.RFC3339Nano))
 	if err != nil {
 		return model.FrontendSettings{}, fmt.Errorf("save frontend settings: %w", err)
 	}
+	if err := tx.Commit(); err != nil {
+		return model.FrontendSettings{}, fmt.Errorf("commit frontend settings: %w", err)
+	}
 	return settings, nil
+}
+
+func normalizeCustomerAnnouncementHistory(items []model.CustomerAnnouncementHistory) []model.CustomerAnnouncementHistory {
+	if len(items) == 0 {
+		return nil
+	}
+	normalized := make([]model.CustomerAnnouncementHistory, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		item.ID = strings.TrimSpace(item.ID)
+		item.AnnouncementID = strings.TrimSpace(item.AnnouncementID)
+		if item.ID == "" || item.AnnouncementID == "" {
+			continue
+		}
+		if _, exists := seen[item.ID]; exists {
+			continue
+		}
+		seen[item.ID] = struct{}{}
+		item.Action = normalizeAnnouncementHistoryAction(item.Action)
+		item.Title = strings.TrimSpace(item.Title)
+		item.Content = strings.TrimSpace(item.Content)
+		item.LinkLabel = strings.TrimSpace(item.LinkLabel)
+		item.LinkURL = strings.TrimSpace(item.LinkURL)
+		item.StartsAt = normalizeAnnouncementTime(item.StartsAt)
+		item.EndsAt = normalizeAnnouncementTime(item.EndsAt)
+		item.RecordedAt = normalizeAnnouncementTime(item.RecordedAt)
+		if item.RecordedAt == "" {
+			item.RecordedAt = time.Unix(0, 0).UTC().Format(time.RFC3339)
+		}
+		switch strings.ToLower(strings.TrimSpace(item.Level)) {
+		case "success", "warning", "error":
+			item.Level = strings.ToLower(strings.TrimSpace(item.Level))
+		default:
+			item.Level = "info"
+		}
+		normalized = append(normalized, item)
+	}
+	if len(normalized) > maxAnnouncementHistory {
+		normalized = normalized[len(normalized)-maxAnnouncementHistory:]
+	}
+	return normalized
+}
+
+func normalizeAnnouncementHistoryAction(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "created", "updated", "removed":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return "updated"
+	}
+}
+
+func mergeAnnouncementHistory(history []model.CustomerAnnouncementHistory, previous, current []model.CustomerAnnouncement, recordedAt time.Time) []model.CustomerAnnouncementHistory {
+	currentByID := make(map[string]model.CustomerAnnouncement, len(current))
+	for _, item := range current {
+		currentByID[item.ID] = item
+	}
+	previousByID := make(map[string]model.CustomerAnnouncement, len(previous))
+	for _, item := range previous {
+		previousByID[item.ID] = item
+		currentItem, exists := currentByID[item.ID]
+		switch {
+		case !exists:
+			history = appendAnnouncementHistory(history, item, "removed", recordedAt)
+		case !sameCustomerAnnouncement(item, currentItem):
+			history = appendAnnouncementHistory(history, currentItem, "updated", recordedAt)
+		}
+	}
+	for _, item := range current {
+		if _, exists := previousByID[item.ID]; !exists {
+			history = appendAnnouncementHistory(history, item, "created", recordedAt)
+		}
+	}
+	return normalizeCustomerAnnouncementHistory(history)
+}
+
+func seedAnnouncementHistory(history []model.CustomerAnnouncementHistory, current []model.CustomerAnnouncement, recordedAt time.Time) []model.CustomerAnnouncementHistory {
+	for _, item := range current {
+		if !hasAnnouncementHistorySnapshot(history, item) {
+			history = appendAnnouncementHistory(history, item, "created", recordedAt)
+		}
+	}
+	return normalizeCustomerAnnouncementHistory(history)
+}
+
+func hasAnnouncementHistorySnapshot(history []model.CustomerAnnouncementHistory, item model.CustomerAnnouncement) bool {
+	for _, existing := range history {
+		if existing.AnnouncementID == item.ID && sameAnnouncementHistorySnapshot(existing, item) {
+			return true
+		}
+	}
+	return false
+}
+
+func appendAnnouncementHistory(history []model.CustomerAnnouncementHistory, item model.CustomerAnnouncement, action string, recordedAt time.Time) []model.CustomerAnnouncementHistory {
+	history = append(history, model.CustomerAnnouncementHistory{
+		ID:             fmt.Sprintf("%s-%s-%d", item.ID, action, recordedAt.UnixNano()),
+		AnnouncementID: item.ID,
+		Action:         normalizeAnnouncementHistoryAction(action),
+		Enabled:        item.Enabled,
+		Level:          item.Level,
+		Title:          item.Title,
+		Content:        item.Content,
+		LinkLabel:      item.LinkLabel,
+		LinkURL:        item.LinkURL,
+		StartsAt:       item.StartsAt,
+		EndsAt:         item.EndsAt,
+		RecordedAt:     recordedAt.UTC().Format(time.RFC3339Nano),
+	})
+	return history
+}
+
+func sameCustomerAnnouncement(left, right model.CustomerAnnouncement) bool {
+	return left.ID == right.ID && left.Enabled == right.Enabled && left.Level == right.Level && left.Title == right.Title && left.Content == right.Content && left.LinkLabel == right.LinkLabel && left.LinkURL == right.LinkURL && left.StartsAt == right.StartsAt && left.EndsAt == right.EndsAt
+}
+
+func sameAnnouncementHistorySnapshot(history model.CustomerAnnouncementHistory, item model.CustomerAnnouncement) bool {
+	return history.Enabled == item.Enabled && history.Level == item.Level && history.Title == item.Title && history.Content == item.Content && history.LinkLabel == item.LinkLabel && history.LinkURL == item.LinkURL && history.StartsAt == item.StartsAt && history.EndsAt == item.EndsAt
 }
 
 func normalizeCustomerAnnouncements(items []model.CustomerAnnouncement, generateID bool) []model.CustomerAnnouncement {

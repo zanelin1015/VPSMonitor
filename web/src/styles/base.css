@@ -484,11 +484,38 @@ body {
 
 .admin-content-title > div:first-child,
 .admin-settings-section-heading > div:first-child {
-	display: inline-flex;
-	align-items: center;
-	min-width: 0;
-	gap: 6px;
-	white-space: nowrap;
+  display: inline-flex;
+  flex: 0 1 auto;
+  flex-wrap: nowrap;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.admin-content-title > div:first-child > .ant-typography,
+.admin-settings-section-heading > div:first-child > .ant-typography {
+  display: inline-block;
+  flex: 0 0 auto;
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
+.admin-help-title-group {
+  display: inline-flex;
+  flex: 0 1 auto;
+  flex-wrap: nowrap;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.admin-help-title-group > .ant-typography {
+  display: inline-block;
+  flex: 0 0 auto;
+  margin: 0;
+  white-space: nowrap;
 }
 
 .frontend-settings-page,
@@ -521,6 +548,39 @@ body {
 .admin-announcement-editor .ant-col > .ant-typography {
   display: block;
   margin-bottom: 6px;
+}
+
+.admin-help-icon {
+  display: inline-block;
+  flex: 0 0 auto;
+  vertical-align: middle;
+}
+
+.admin-announcement-history .ant-card-body {
+  padding: 0 16px;
+}
+
+.admin-announcement-history-item {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-announcement-history-item:last-child {
+  border-bottom: 0;
+}
+
+.admin-announcement-history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.admin-announcement-history-content {
+  margin: 0;
+  color: var(--muted);
+  white-space: pre-wrap;
 }
 
 .admin-oa-shell.topology-open-shell .hero-panel h1.ant-typography {

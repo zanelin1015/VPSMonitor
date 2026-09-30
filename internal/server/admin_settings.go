@@ -25,6 +25,9 @@ func (a *App) handlePublicFrontendSettings(w http.ResponseWriter, r *http.Reques
 	// Customer announcements are only exposed through the authenticated
 	// customer overview endpoint.
 	settings.Announcements = nil
+	// Announcement history is an admin-only audit trail and must not be
+	// exposed through the public settings endpoint either.
+	settings.AnnouncementHistory = nil
 	writeJSON(w, http.StatusOK, settings)
 }
 

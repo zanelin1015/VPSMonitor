@@ -695,6 +695,7 @@ export interface AreaAgentTagsResponse {
 export interface FrontendSettings {
   custom_code: string
   announcements?: CustomerAnnouncement[]
+  announcement_history?: CustomerAnnouncementHistory[]
 }
 
 export type CustomerAnnouncementLevel = 'info' | 'success' | 'warning' | 'error'
@@ -709,6 +710,13 @@ export interface CustomerAnnouncement {
   link_url?: string
   starts_at?: string
   ends_at?: string
+}
+
+export interface CustomerAnnouncementHistory extends CustomerAnnouncement {
+  id: string
+  announcement_id: string
+  action: string
+  recorded_at: string
 }
 
 export interface ScheduledTaskSettings {

@@ -225,8 +225,9 @@ type AreaAgentTagsResponse struct {
 }
 
 type FrontendSettings struct {
-	CustomCode    string                 `json:"custom_code"`
-	Announcements []CustomerAnnouncement `json:"announcements,omitempty"`
+	CustomCode          string                        `json:"custom_code"`
+	Announcements       []CustomerAnnouncement        `json:"announcements,omitempty"`
+	AnnouncementHistory []CustomerAnnouncementHistory `json:"announcement_history,omitempty"`
 }
 
 type CustomerAnnouncement struct {
@@ -239,6 +240,21 @@ type CustomerAnnouncement struct {
 	LinkURL   string `json:"link_url,omitempty"`
 	StartsAt  string `json:"starts_at,omitempty"`
 	EndsAt    string `json:"ends_at,omitempty"`
+}
+
+type CustomerAnnouncementHistory struct {
+	ID             string `json:"id"`
+	AnnouncementID string `json:"announcement_id"`
+	Action         string `json:"action"`
+	Enabled        bool   `json:"enabled"`
+	Level          string `json:"level,omitempty"`
+	Title          string `json:"title"`
+	Content        string `json:"content,omitempty"`
+	LinkLabel      string `json:"link_label,omitempty"`
+	LinkURL        string `json:"link_url,omitempty"`
+	StartsAt       string `json:"starts_at,omitempty"`
+	EndsAt         string `json:"ends_at,omitempty"`
+	RecordedAt     string `json:"recorded_at"`
 }
 
 type ScheduledTaskSettings struct {

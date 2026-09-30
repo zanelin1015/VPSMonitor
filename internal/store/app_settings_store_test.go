@@ -49,4 +49,38 @@ func TestFrontendSettingsPersistCustomerAnnouncements(t *testing.T) {
 	if !found || len(loaded.Announcements) != 1 || loaded.Announcements[0].ID != announcement.ID {
 		t.Fatalf("unexpected loaded frontend settings: %#v", loaded)
 	}
+	if len(loaded.AnnouncementHistory) == 0 {
+		t.Fatalf("expected announcement history to be seeded for the current announcement")
+	}
+	legacySave, err := store.SaveFrontendSettings(model.FrontendSettings{CustomCode: "legacy client"})
+	if err != nil {
+		t.Fatalf("SaveFrontendSettings without announcements: %v", err)
+	}
+	if len(legacySave.Announcements) != 1 || legacySave.Announcements[0].ID != announcement.ID {
+		t.Fatalf("omitted announcements should be preserved: %#v", legacySave.Announcements)
+	}
+
+	if _, err := store.SaveFrontendSettings(model.FrontendSettings{
+		CustomCode:    "<style>body { color: red; }</style>",
+		Announcements: []model.CustomerAnnouncement{},
+	}); err != nil {
+		t.Fatalf("SaveFrontendSettings after removal: %v", err)
+	}
+	removed, found, err := store.GetFrontendSettings()
+	if err != nil {
+		t.Fatalf("GetFrontendSettings after removal: %v", err)
+	}
+	if !found || len(removed.Announcements) != 0 {
+		t.Fatalf("expected announcements to be removed, got %#v", removed.Announcements)
+	}
+	var hasRemoved bool
+	for _, item := range removed.AnnouncementHistory {
+		if item.AnnouncementID == announcement.ID && item.Action == "removed" {
+			hasRemoved = true
+			break
+		}
+	}
+	if !hasRemoved {
+		t.Fatalf("expected removed announcement to remain in history: %#v", removed.AnnouncementHistory)
+	}
 }

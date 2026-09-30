@@ -482,6 +482,12 @@ export default function App() {
   }, [activeAdminPage, adminUser, canManageSystem])
 
   useEffect(() => {
+    if (adminUser && canManageSystem && activeAdminPage === 'settings') {
+      void openFrontendSettingsModal(false)
+    }
+  }, [activeAdminPage, adminUser, canManageSystem])
+
+  useEffect(() => {
     if (adminUser && canManageSystem && activeAdminPage === 'access-logs') {
       void loadAccessLogs()
     }
