@@ -1524,19 +1524,21 @@ export function CustomerManagementModal(props: {
   const areaManagersPanel = canManageAreaManagers ? (
     <Card className="customer-admin-card" bordered={false}>
       <div className="customer-admin-card-head">
-        <Title level={5}>区域管理账号</Title>
+        <div className="admin-help-title-group">
+          <Title level={5}>区域管理账号</Title>
+          <AdminHelpHint title={(
+            <>
+              <strong>区域账号权限</strong>
+              <br />
+              区域账号只能查看被分配的 Client，能下发 x-ui 转发规则，并且只能管理自己创建的普通用户；Admin 可见全部用户与区域账号。展开区域账号可直接查看其下属用户与链路。
+            </>
+          )} />
+        </div>
         <Space>
           <Button size="small" icon={<ReloadOutlined />} onClick={() => void loadAreaManagers()}>刷新区域账号</Button>
           <Button size="small" type="primary" icon={<PlusOutlined />} onClick={openAreaManagerCreateModal}>新增区域账号</Button>
         </Space>
       </div>
-      <Alert
-        style={{ marginBottom: 12 }}
-        type="info"
-        showIcon
-        message="区域账号权限"
-        description="区域账号只能查看被分配的 Client，能下发 x-ui 转发规则，并且只能管理自己创建的普通用户；Admin 可见全部用户与区域账号。展开区域账号可直接查看其下属用户与链路。"
-      />
       <Card size="small" style={{ marginTop: 14 }} bordered={false}>
         <div className="customer-admin-card-head">
           <div className="admin-help-title-group">
@@ -1822,14 +1824,20 @@ export function CustomerManagementModal(props: {
   const content = (
     <Spin spinning={loading || areaManagersLoading}>
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-        <Alert
-          type="info"
-          showIcon
-          message="授权使用规则与停用机制"
-          description="建议仅给已授权用户开放链路，可用于独享或多人共享场景；禁止滥发、攻击、诈骗、爬虫滥用、扫描爆破等行为。出现异常时，可先停用用户账号或单条授权链路；如需彻底切断连接，再到对应 Client 的 x-ui 客户端列表中删除或停用该 client。"
-        />
         <Tabs
           className="customer-admin-tabs"
+          tabBarExtraContent={(
+            <span className="admin-help-title-group">
+              <Text type="secondary">授权说明</Text>
+              <AdminHelpHint title={(
+                <>
+                  <strong>授权使用规则与停用机制</strong>
+                  <br />
+                  建议仅给已授权用户开放链路，可用于独享或多人共享场景；禁止滥发、攻击、诈骗、爬虫滥用、扫描爆破等行为。出现异常时，可先停用用户账号或单条授权链路；如需彻底切断连接，再到对应 Client 的 x-ui 客户端列表中删除或停用该 client。
+                </>
+              )} />
+            </span>
+          )}
           activeKey={activeManagementTab}
           items={managementTabs}
           onChange={(key) => setActiveManagementTab(key as ManagementTabKey)}
