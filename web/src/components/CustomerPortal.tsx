@@ -89,13 +89,16 @@ export function CustomerPortal() {
       lastAnnouncementSetRef.current = ''
       return
     }
-    const firstUnreadIndex = announcements.findIndex((item) => !readAnnouncementIDs.includes(item.id))
+    // The server response is already available in this render; the effect
+    // that copies its read IDs into local state runs after this render.
+    const readIDs = new Set([...readAnnouncementIDs, ...(overview?.read_announcement_ids || [])])
+    const firstUnreadIndex = announcements.findIndex((item) => !readIDs.has(item.id))
     if (firstUnreadIndex >= 0 && setKey !== lastAnnouncementSetRef.current) {
       lastAnnouncementSetRef.current = setKey
       setAnnouncementIndex(firstUnreadIndex)
       setAnnouncementModalOpen(true)
     }
-  }, [overview?.announcements, readAnnouncementIDs])
+  }, [overview?.announcements, overview?.read_announcement_ids, readAnnouncementIDs])
 
   const exitCountryCount = useMemo(() => {
     const values = new Set<string>()

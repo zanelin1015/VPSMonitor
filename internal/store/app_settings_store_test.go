@@ -2,6 +2,7 @@ package store
 
 import (
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"bridge-core/internal/model"
@@ -82,5 +83,47 @@ func TestFrontendSettingsPersistCustomerAnnouncements(t *testing.T) {
 	}
 	if !hasRemoved {
 		t.Fatalf("expected removed announcement to remain in history: %#v", removed.AnnouncementHistory)
+	}
+	if len(removed.AnnouncementHistory) != 2 || removed.AnnouncementHistory[0].Action != "created" {
+		t.Fatalf("saving without a history payload must retain the creation record: %#v", removed.AnnouncementHistory)
+	}
+}
+
+func TestAnnouncementHistoryKeepsRevisionsAcrossReopen(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "bridge.db")
+	s, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	item := model.CustomerAnnouncement{ID: "notice", Enabled: true, Title: "Original"}
+	for _, title := range []string{"Original", "Updated", "Original"} {
+		item.Title = title
+		if _, err := s.SaveFrontendSettings(model.FrontendSettings{
+			Announcements: []model.CustomerAnnouncement{item},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before, _, err := s.GetFrontendSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before.AnnouncementHistory) != 3 || before.AnnouncementHistory[1].Title != "Updated" || before.AnnouncementHistory[2].Action != "updated" {
+		t.Fatalf("each revision, including reverting content, needs a history entry: %#v", before.AnnouncementHistory)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, _, err := s.GetFrontendSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before, after) {
+		t.Fatalf("announcement history changed after reopening: before=%#v after=%#v", before, after)
 	}
 }

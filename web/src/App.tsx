@@ -1620,8 +1620,11 @@ export default function App() {
   }
   const openSupportPage = () => setActiveAdminPage('support')
   const openSettingsPage = () => {
+    if (activeAdminPage === 'settings') {
+      void openFrontendSettingsModal(false)
+      return
+    }
     setActiveAdminPage('settings')
-    void openFrontendSettingsModal(false)
   }
   const openAccessLogsPage = () => setActiveAdminPage('access-logs')
   const openSchedulesPage = () => setActiveAdminPage('schedules')
