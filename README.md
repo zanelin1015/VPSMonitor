@@ -1,186 +1,192 @@
-# Bridge Core
+# VPSMonitor
 
-`bridge-core` 是一个围绕 `3x-ui` 的中心编排层，不替代 `x-ui` 本身。
+VPSMonitor 是一套围绕 `x-ui / 3x-ui` 的 VPS 集中管理系统。它不替代每台机器上的 x-ui 面板，而是在其上提供统一的 Client 注册、监控、配置编排、链路拓扑、客户订阅和运维入口。
 
-- `bridge-server` 负责 client 注册、快照存储、x-ui 托管配置和 Web 控制台。
-- `bridge-client` 部署在每台 VPS 上，负责连接本机 x-ui，把状态和结构信息回传给 `bridge-server`。
+项目由两部分组成：
 
-当前中心的定位很明确：
+- `bridge-server`：中心服务、SQLite 数据库和内嵌 Web 管理台。
+- `bridge-client`：部署在每台 VPS 或 iStoreOS/OpenWrt 上，采集本机状态、连接本机 x-ui，并执行 Server 下发的任务。
 
-- 节点 / 入站仍然在各台 x-ui 面板里手动维护。
-- `bridge-server` 只负责观察、汇总，以及统一编排出站和转发规则。
-- 你可以把 client A 的节点客户端信息导入成 client B 的出站，再直接给 client B 下发路由规则。
+当前版本的默认数据文件是 `./data/bridge.db`，生产环境建议把 `data` 放在独立且可备份的持久化目录中。
 
-服务端默认使用 `SQLite`，数据库文件默认是 `./data/bridge.db`。
+## 能做什么
 
-## 当前架构
+管理端可以完成：
 
-- 一台 `server`
-- 多台 `client`
-- `client` 首次启动后自动向 `server` 注册
-- `server` 在数据库里保存 client 基本信息和最近快照
-- `server` 后台可修改每台 client 的 x-ui 托管配置
-- `client` 每次轮询前先拉取自己的托管配置，再按该配置采集和执行待处理操作
+- Client 自动注册、在线状态、CPU/内存/磁盘、网速和流量监控。
+- x-ui 节点、客户端、出站和路由规则查看与下发。
+- 从一台 Client 导入另一台 Client 的节点客户端，配置 Realm 中转或 HAProxy 主备转发。
+- 拓扑图和 Client 链路追踪；工作台和 Client 页面会对同一条转发链路去重，避免网速与流量重复累加。
+- Client 收费周期、流量上限、收入、成本和利润统计。
+- 客户账号、节点授权、Clash/Mihomo 订阅、前置代理组和在线客服。
+- 客户公告历史、按账号的已读状态和访问日志排查。
+- Server 和 Client 的 GitHub Release 检查、校验和升级。Client 可以在管理台中逐台选择升级。
 
-这意味着：
+节点和入站仍在对应的 x-ui 面板中维护。VPSMonitor 通过 x-ui API 读取和编排数据；需要新增入站时，从 Client 详情页打开对应的 x-ui 面板即可。
 
-- `server.json` 不需要手工写一堆 agents
-- `client.json` 只保留 bootstrap 配置
-- 真正长期生效的 x-ui 地址、账号、密码由 `server` 托管
+## 架构与注册流程
 
-## 当前能力
+```text
+bridge-client  -- HTTPS polling / realtime -->  bridge-server
+      |                                             |
+   本机 x-ui API                              SQLite + Web 管理台
+```
 
-- 自动注册 client
-- 自动生成并下发 `agent token`
-- 自动登录 x-ui
-- 通过 x-ui HTTP 接口抓取：
-  - `/panel/api/inbounds/list`
-  - `/panel/api/server/status`
-  - `/panel/api/server/getConfigJson`
-  - `/panel/xray/getOutboundsTraffic`
-- 服务端保存：
-  - agent 基本信息
-  - agent 最新快照
-  - agent 历史快照
-  - x-ui 托管配置
-  - x-ui 操作记录
-- Web 控制台支持：
-  - 查看节点、客户端、出站、路由规则
-  - 从客户端或节点追踪当前命中的出站规则
-  - 从其它 client 导入节点客户端信息为当前 client 的出站
-  - 为当前 client 下发出站新增和路由规则新增
-  - 一键跳转到对应 client 的 x-ui 面板手动维护节点
+Client 第一次启动时使用 Server 的共享 `registration_token` 注册，Server 返回该 Client 专属的 `agent_token`。Client 会把专属 Token 写回 `client.json`，后续请求使用专属 Token；共享注册 Token 只用于首次注册。
 
-## 目录
+Server 会保存 Client 基本信息、最近快照、历史快照、x-ui 托管配置、操作记录、访问日志和客户公告已读记录。x-ui 密码使用 `credential_key_path` 指定的本地密钥加密后写入 SQLite，数据库和密钥文件需要一起备份。
 
-- [cmd/bridge-server/main.go](cmd/bridge-server/main.go)
-- [cmd/bridge-client/main.go](cmd/bridge-client/main.go)
-- [cmd/bridge-devseed/main.go](cmd/bridge-devseed/main.go)
-- [cmd/bridge-devpanels/main.go](cmd/bridge-devpanels/main.go)
-- [internal/server/app.go](internal/server/app.go)
-- [internal/client/app.go](internal/client/app.go)
-- [internal/store/sqlite_store.go](internal/store/sqlite_store.go)
-- [internal/panels/xui.go](internal/panels/xui.go)
+## 生产环境安装
+
+安装器会自动识别 `linux/amd64`、`linux/arm64` 和 ARMv7，并按系统使用 systemd 或 OpenRC。Server、普通 Linux Client 和 iStoreOS/OpenWrt Client 使用不同的服务管理器。
+
+### 安装 Server
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zanelin1015/VPSMonitor/main/install.sh \
+  -o /tmp/vpsmonitor-install.sh
+chmod +x /tmp/vpsmonitor-install.sh
+sudo /tmp/vpsmonitor-install.sh server
+```
+
+安装器会依次询问监听地址、数据目录、TLS 证书和私钥、管理员账号密码以及 Client 注册 Token。默认安装目录是 `/opt/vpsmonitor/server`，服务名是 `vpsmonitor-server`。
+
+生产环境必须满足以下任一条件：
+
+- 直接在 `server.json` 同时配置 `tls_cert_file` 和 `tls_key_file`。
+- 使用 HTTPS 反向代理终止 TLS，并在 `trusted_proxy_cidrs` 中填写反向代理的 IP/CIDR。
+
+`allow_insecure_http` 只适合本机开发。不要为了绕过证书错误在生产 Client 上设置 `server_skip_tls_verify: true`。
+
+### 安装普通 Linux Client
+
+在目标 VPS 上执行，使用 Server 安装时生成的注册 Token：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zanelin1015/VPSMonitor/main/install.sh \
+  -o /tmp/vpsmonitor-install.sh
+chmod +x /tmp/vpsmonitor-install.sh
+
+sudo env \
+  VPSMONITOR_SERVER_URL="https://monitor.example.com" \
+  VPSMONITOR_REGISTRATION_TOKEN="替换为Server注册Token" \
+  VPSMONITOR_AGENT_ID="可选的Client_ID" \
+  /tmp/vpsmonitor-install.sh client
+```
+
+不设置 `VPSMONITOR_AGENT_ID` 时，安装器会根据主机名生成 Client ID。已有 `client.json` 的升级会保留原配置；需要重新写入连接参数时，再增加 `VPSMONITOR_FORCE_CONFIG=true`。
+
+升级到指定 Release 时设置版本即可：
+
+```bash
+sudo env VPSMONITOR_VERSION=v0.3.30 \
+  VPSMONITOR_SERVER_URL="https://monitor.example.com" \
+  VPSMONITOR_REGISTRATION_TOKEN="替换为Server注册Token" \
+  /tmp/vpsmonitor-install.sh client
+```
+
+### 安装 iStoreOS / OpenWrt Client
+
+在路由器 SSH 中使用 root 执行：
+
+```sh
+uclient-fetch -O /tmp/vpsmonitor-install-openwrt.sh \
+  https://raw.githubusercontent.com/zanelin1015/VPSMonitor/main/install-openwrt.sh
+chmod +x /tmp/vpsmonitor-install-openwrt.sh
+
+VPSMONITOR_SERVER_URL="https://monitor.example.com" \
+VPSMONITOR_REGISTRATION_TOKEN="替换为Server注册Token" \
+sh /tmp/vpsmonitor-install-openwrt.sh client
+```
+
+如果系统没有 `uclient-fetch`，安装器也会尝试 `wget` 或 `curl`。服务由 procd 管理，查看状态和日志：
+
+```sh
+/etc/init.d/vpsmonitor-client status
+logread -f -e vpsmonitor-client
+```
+
+### 安装 Windows Client
+
+在管理员 PowerShell 中执行：
+
+```powershell
+$env:VPSMONITOR_SERVER_URL = "https://monitor.example.com"
+$env:VPSMONITOR_REGISTRATION_TOKEN = "替换为Server注册Token"
+$script = Join-Path $env:TEMP "vpsmonitor-install.ps1"
+Invoke-WebRequest https://raw.githubusercontent.com/zanelin1015/VPSMonitor/main/install.ps1 -OutFile $script
+powershell -NoProfile -ExecutionPolicy Bypass -File $script client
+```
+
+Windows 服务默认名为 `VPSMonitorClient`。安装器会保留已有 `client.json`，日志可以从事件查看器或服务管理器查看。
 
 ## 配置
 
-- 服务端示例: [config/server.example.json](config/server.example.json)
-- 客户端示例: [config/client.example.json](config/client.example.json)
+示例文件：
 
-### `server.json`
+- [config/server.example.json](config/server.example.json)
+- [config/client.example.json](config/client.example.json)
 
-- `listen_addr`: 服务监听地址
-- `tls_cert_file`、`tls_key_file`: 直接由 bridge-server 提供 HTTPS 时的证书和私钥路径；必须同时配置
-- `trusted_proxy_cidrs`: TLS 由反向代理终止时，允许传递 `X-Forwarded-Proto: https` 的代理 IP/CIDR 列表
-- `allow_insecure_http`: 仅本地开发时可显式设为 `true`；生产环境必须保持 `false`
-- `data_dir`: 运行数据目录
-- `database_path`: SQLite 文件路径，不写则默认 `data_dir/bridge.db`
-- `credential_key_path`: x-ui 托管密码加密密钥文件，不写则默认 `data_dir/credential.key`
-- `registration_token`: client 首次注册时使用的口令
-- `admin_username`: 初始管理员用户名，仅在数据库还没有管理员账号时生效
-- `admin_password`: 初始管理员密码，仅在数据库还没有管理员账号时生效
-- `snapshot_retention_days`: 历史心跳快照按时间保留的天数，默认 30；设置为负数可关闭按时间清理
-- `snapshot_retention_count`: 每个 client 最多保留的历史心跳快照数，默认 5000；设置为负数可关闭按数量清理
-- `agents`: 兼容字段，统一模式下可以直接留空
+### Server 配置
 
-推荐示例：
+| 字段 | 作用 |
+| --- | --- |
+| `listen_addr` | HTTP 服务监听地址，例如 `:8090`。 |
+| `tls_cert_file` / `tls_key_file` | Server 直接提供 HTTPS 时的证书和私钥，必须同时配置。 |
+| `trusted_proxy_cidrs` | HTTPS 由反向代理终止时，允许传递 `X-Forwarded-Proto: https` 的代理网段。 |
+| `allow_insecure_http` | 仅本地开发时允许 HTTP；生产环境保持 `false`。 |
+| `data_dir` | 运行数据目录，默认 `./data`。 |
+| `database_path` | SQLite 路径，默认 `$data_dir/bridge.db`。 |
+| `credential_key_path` | x-ui 密码加密密钥，默认 `$data_dir/credential.key`。 |
+| `registration_token` | Client 首次注册使用的共享 Token。 |
+| `admin_username` / `admin_password` | 仅首次初始化管理员时使用，之后以数据库中的账号为准。 |
+| `snapshot_retention_days` | 历史快照按时间保留天数，默认 30。负数关闭时间清理。 |
+| `snapshot_retention_count` | 每个 Client 最多保留的历史快照数，默认 5000。负数关闭数量清理。 |
+
+Server 管理台地址通常是 `https://你的域名/`。Customer 入口是 `https://你的域名/customer`，公开站点入口是 `https://你的域名/site`（如果启用）。
+
+### Client 配置
 
 ```json
 {
-  "listen_addr": ":8090",
-  "tls_cert_file": "/etc/letsencrypt/live/panel.example.com/fullchain.pem",
-  "tls_key_file": "/etc/letsencrypt/live/panel.example.com/privkey.pem",
-  "allow_insecure_http": false,
-  "trusted_proxy_cidrs": [],
-  "data_dir": "./data",
-  "database_path": "./data/bridge.db",
-  "credential_key_path": "./data/credential.key",
-  "registration_token": "replace-with-registration-token",
-  "admin_username": "admin",
-  "admin_password": "replace-with-admin-password",
-  "snapshot_retention_days": 30,
-  "snapshot_retention_count": 5000,
-  "agents": []
+  "agent_id": "可选，首次启动时自动生成",
+  "registration_token": "首次注册 Token",
+  "agent_token": "首次注册成功后由 Server 写入",
+  "server_url": "https://monitor.example.com",
+  "server_skip_tls_verify": false,
+  "poll_interval": "30s",
+  "request_timeout_seconds": 15
 }
 ```
 
-管理员账号会写入 SQLite，密码只保存 PBKDF2-SHA256 哈希。x-ui 托管密码会使用 `credential_key_path` 中的本地密钥加密后再写入 SQLite；Web 控制台和 client 拉取配置时仍返回解密后的明文，便于查看和实际登录 x-ui。首次启动后可以在 Web 控制台里修改用户名和密码，之后不用再改 `server.json`。
+Client 的 x-ui 地址、账号和密码不再写在本地 `client.json`。管理员在管理台的 Client 详情页进入“托管配置”维护；Client 会在下一次轮询时拉取配置。
 
-生产环境必须使用 HTTPS：要么同时设置 `tls_cert_file` 和 `tls_key_file`，要么仅将服务暴露给受信任的 HTTPS 反向代理，并在 `trusted_proxy_cidrs` 填入该代理的 IP/CIDR。未满足其中一种配置时，服务端拒绝启动；`allow_insecure_http: true` 仅用于本地开发。client 的 `server_url` 应使用 `https://`，并保持 `server_skip_tls_verify: false`。
+## 手动运行与本地开发
 
-### `client.json`
-
-- `registration_token`: 用来向 server 注册
-- `agent_token`: 兼容保留字段，统一注册模式下可以留空
-- `server_url`: 指向中心服务地址
-- `server_skip_tls_verify`: 是否跳过中心服务证书校验
-- `poll_interval`: client 轮询周期
-- `request_timeout_seconds`: 请求超时时间
-
-`client.json` 不再配置 `agent_id`、`agent_name`、标签、x-ui 地址、账号和密码。client 会用本机 hostname 自动生成初始 ID 注册；展示名、标签和 x-ui 信息都在 server 控制台里维护。client 每次启动/轮询时会先向 server 注册或拉取托管配置，然后按 server 下发的 x-ui 配置采集数据和执行操作。
-
-## 运行
-
-以下命令都在项目根目录执行。项目可以放在任意路径，不依赖固定的本机绝对目录。
-
-### 1. 启动服务端
+项目要求 Go 1.25+、Node.js 18+ 和 npm。以下命令在项目根目录执行：
 
 ```bash
 cp config/server.example.json config/server.json
+# 本地开发时可将 allow_insecure_http 设为 true
 go run ./cmd/bridge-server -config ./config/server.json
 ```
 
-启动后访问：
-
-```text
-http://127.0.0.1:8090/
-```
-
-### 2. 启动客户端
+默认访问 `http://127.0.0.1:8090/`。启动 Client 前，把 `config/client.example.json` 复制为 `config/client.json`，填入 Server 地址和注册 Token：
 
 ```bash
 cp config/client.example.json config/client.json
 go run ./cmd/bridge-client -config ./config/client.json -once
-```
-
-第一次 `-once` 会执行：
-
-1. 使用 `registration_token` 向 server 注册
-2. 拿到正式 `agent_token`
-3. 拿到该 agent 当前的托管配置
-4. 如果 server 已配置 x-ui，则登录 x-ui 抓取概览
-5. 上报快照
-
-确认注册成功后，再跑常驻：
-
-```bash
 go run ./cmd/bridge-client -config ./config/client.json
 ```
 
-### 3. 在后台修改托管配置
+`-once` 用于首次注册和排查连接；常驻运行会按 `poll_interval` 上报快照，并每 2 秒推送实时指标。查看版本：
 
-- 使用管理员账号登录
-- 左侧选择一台 client
-- 进入 `托管配置`
-- 修改 x-ui 地址、账号、密码
-- 保存
+```bash
+./bridge-server --version
+./bridge-client --version
+```
 
-保存后，这台 client 下一次轮询会自动生效。
-
-### 4. 出站和转发的工作方式
-
-- 如果要新增节点 / 入站：直接点击控制台里的 `打开 x-ui 面板`，去原始 x-ui 页面维护
-- 如果要做中转：在目标 client 上创建 `新增出站`
-- 在出站表单中选择来源 client 和来源客户端，自动导入为当前 client 的 outbound
-- 然后继续在当前 client 上创建 `新增转发 / 路由规则`
-
-## 本地调试
-
-### 方式一：直接注入演示数据
-
-适合调 `server`、前端页面、节点/客户端/出站/路由展示。
-
-先启动 `bridge-server`，然后执行：
+演示数据和 mock x-ui：
 
 ```bash
 go run ./cmd/bridge-devseed \
@@ -188,27 +194,11 @@ go run ./cmd/bridge-devseed \
   -registration-token preview-registration-token \
   -agent-id local-dev-01 \
   -agent-name "Local Dev VPS"
-```
 
-执行后刷新控制台，就能看到一台模拟 VPS，里面带有：
-
-- 入站节点
-- 节点下的客户端
-- 出站
-- 路由规则
-- 可用于“导入为出站”的示例客户端认证信息
-
-### 方式二：启动 mock x-ui 面板
-
-适合调 `bridge-client` 的真实采集链路，以及出站 / 路由下发链路。
-
-先启动 mock 面板：
-
-```bash
 go run ./cmd/bridge-devpanels -listen 127.0.0.1:19090
 ```
 
-然后在 Web 控制台选择该 client，进入 `托管配置`，把 x-ui 指向 mock 面板：
+然后在管理台的 Client“托管配置”中填写：
 
 ```json
 {
@@ -222,34 +212,44 @@ go run ./cmd/bridge-devpanels -listen 127.0.0.1:19090
 }
 ```
 
-保存后再跑一次 client：
+## Realm、HAProxy 和访问日志
+
+Linux 与 OpenWrt 安装器可以按需安装 Realm 或 HAProxy，二者不能同时自动安装。默认都关闭：
 
 ```bash
-go run ./cmd/bridge-client -config ./config/client.json -once
-```
-
-这会走完整链路：client 注册、拉托管配置、登录 mock x-ui、采集数据、上报 server。之后你也可以在控制台下发出站和路由规则，再观察 mock 面板内配置变化。
-
-## 打包
-
-Client 支持矩阵：
-
-| 系统 | 服务管理 | 架构 |
-| --- | --- | --- |
-| Debian / Ubuntu / CentOS | systemd | x86_64、ARM64、ARMv7 |
-| Alpine Linux | OpenRC | x86_64、ARM64、ARMv7 |
-| iStoreOS / OpenWrt | procd | x86_64、ARM64、ARMv7 |
-| Windows Server / Windows 10 Pro / Windows 11 | Windows Service | x86_64、ARM64 |
-
-普通 Linux 使用 `install.sh`，iStoreOS/OpenWrt 使用 `install-openwrt.sh`，Windows 使用 `install.ps1`。三种安装器都会自动识别架构，升级时保留现有 `client.json`。
-
-Linux 与 OpenWrt Client 可以选择同时安装 Realm，默认关闭。安装器会复用已有 Realm 二进制，不覆盖现有配置；Realm 转发服务在 Server 下发首条转发规则时创建并启动。管理员可以在“Client 安装命令”中开启安装、固定 Realm 版本或填写国内镜像目录。相关环境变量如下：
-
-```bash
-VPSMONITOR_REALM_AUTO_INSTALL=false
+VPSMONITOR_REALM_AUTO_INSTALL=true
 VPSMONITOR_REALM_VERSION=v2.9.4
 VPSMONITOR_REALM_DOWNLOAD_BASE_URL=https://mirror.example.com/realm/v2.9.4
+VPSMONITOR_HAPROXY_AUTO_INSTALL=false
 ```
+
+Realm 和 HAProxy 的规则由 Server 下发，Client 负责加载并上报运行状态。OpenWrt 不会自动修改 firewall4、SQM、Cake 或 qosify 规则。
+
+访问日志需要在对应 Client 的“托管配置”中启用 x-ui access log，并填写 Client 实际可读的日志路径；例如：
+
+```json
+{
+  "access_log_enabled": true,
+  "access_log_path": "/var/log/xray/access.log",
+  "access_log_retention_days": 7
+}
+```
+
+日志由 Client 读取后上传到 Server，管理员在“访问日志”页面按 Client、来源 IP 或目标过滤。日志文件不存在、权限不足或路径填写错误时，页面不会产生记录，应先查看 Client 服务日志。
+
+## 在线升级
+
+管理台“个人中心 → 在线升级”会从官方 GitHub Release 获取版本和 SHA-256 校验值：
+
+1. 先检查最新版本。
+2. Server 可以升级当前服务，完成后自动重启。
+3. Client 可以按系统和架构筛选，并逐台选择升级。
+
+升级会保留 Server 的 `server.json`、SQLite 数据库和 `data`，也会保留 Client 的 `client.json`。0.3.24 及更早的旧 Client 不支持专属 Agent Token，需要先在目标机器手动升级一次到 0.3.25 或更高版本，之后才能使用管理台的校验升级。
+
+发布新版本时，必须把 Server/Client 对应架构的安装包和 `checksums.txt` 一起上传到 GitHub Release；在线升级只接受官方仓库和带 SHA-256 的 Release 资产。
+
+## 打包与测试
 
 Linux/macOS：
 
@@ -258,37 +258,50 @@ chmod +x ./scripts/build.sh
 ./scripts/build.sh
 ```
 
-版本号保存在 `VERSION`。正常打包会自动把最后一位版本号加 1；如果要指定版本，可以这样执行：
+指定版本：
 
 ```bash
-VPSMONITOR_BUILD_VERSION=0.2.0 ./scripts/build.sh
+VPSMONITOR_BUILD_VERSION=0.3.31 ./scripts/build.sh
 ```
+
+脚本会先构建 `web` 前端、运行 `go test ./...`，然后输出：
+
+- `dist/VPSMonitor-server-linux-amd64.tar.gz`
+- `dist/VPSMonitor-server-linux-arm64.tar.gz`
+- `dist/VPSMonitor-server-linux-arm.tar.gz`（ARMv7）
+- `dist/VPSMonitor-server-windows-amd64.zip`
+- `dist/VPSMonitor-server-windows-arm64.zip`
+- 对应的五种 Client 安装包
 
 Windows PowerShell：
 
 ```powershell
+$env:VPSMONITOR_BUILD_VERSION = "0.3.31"
 ./scripts/build.ps1
 ```
 
-PowerShell 指定版本：
-
-```powershell
-$env:VPSMONITOR_BUILD_VERSION="0.2.0"; ./scripts/build.ps1
-```
-
-server / client 二进制都支持查看版本：
+前端单独构建和回归测试：
 
 ```bash
-./bridge-server --version
-./bridge-client --version
+cd web
+npm install
+npm run build
+npm run test:client-expiry
+npm run test:dashboard-network
+npm run test:finance
+cd ..
+go test ./...
 ```
 
-打包需要本机具备：
+## 目录
 
-- Go
-- Node.js 18+
-- npm
-
-脚本会先构建前端静态资源，再把页面嵌入 `bridge-server` 二进制，并输出 Linux `amd64/arm64/arm` 与 Windows `amd64/arm64` 的 Server、Client 安装包。OpenWrt 的 `arm` 包按 ARMv7 构建。
-
-OpenWrt/iStoreOS 默认启用监控、远程终端、Realm procd 管理和 X-UI API 操作。端口策略不会在 OpenWrt 上自动执行，以免覆盖 firewall4、SQM、Cake 或 qosify 的现有规则。
+- [cmd/bridge-server/main.go](cmd/bridge-server/main.go)：Server 入口。
+- [cmd/bridge-client/main.go](cmd/bridge-client/main.go)：Client 入口。
+- [internal/server](internal/server)：HTTP API、认证、管理台和 Customer API。
+- [internal/client](internal/client)：采集、x-ui、Realm、HAProxy、访问日志和升级逻辑。
+- [internal/store](internal/store)：SQLite 持久化。
+- [internal/dashboard](internal/dashboard)：工作台、拓扑和链路汇总。
+- [web/src](web/src)：React 管理台和 Customer 页面。
+- [install.sh](install.sh)：普通 Linux Server/Client 安装器。
+- [install-openwrt.sh](install-openwrt.sh)：iStoreOS/OpenWrt Client 安装器。
+- [install.ps1](install.ps1)：Windows Client 安装器。
