@@ -669,12 +669,6 @@ export function ScheduledTasksPanel(props: {
       </div>
       <Spin spinning={loading}>
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <Alert
-            type="info"
-            showIcon
-            message="已取消每天 00:00 的 Client 到期同步"
-            description="系统不会再通过午夜任务批量修改 x-ui 客户端到期时间。这里保留的是告警扫描和流量日报两个后台任务。"
-          />
           <Card bordered={false} className="config-section-card">
             <Space direction="vertical" size="middle" style={{ width: '100%' }}>
               <div className="admin-content-title compact">
