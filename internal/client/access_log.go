@@ -67,12 +67,18 @@ func (a *App) readAccessLogEntries(path string) ([]model.AccessLogEntry, error) 
 		return nil, fmt.Errorf("%s is a directory", path)
 	}
 	if a.accessLogState.path != path {
-		a.accessLogState = accessLogTailState{path: path, offset: stat.Size(), initialized: true}
-		return nil, nil
+		offset := stat.Size() - accessLogMaxReadBytes
+		if offset < 0 {
+			offset = 0
+		}
+		a.accessLogState = accessLogTailState{path: path, offset: offset, initialized: true}
 	}
 	if !a.accessLogState.initialized {
-		a.accessLogState = accessLogTailState{path: path, offset: stat.Size(), initialized: true}
-		return nil, nil
+		offset := stat.Size() - accessLogMaxReadBytes
+		if offset < 0 {
+			offset = 0
+		}
+		a.accessLogState = accessLogTailState{path: path, offset: offset, initialized: true}
 	}
 	if stat.Size() < a.accessLogState.offset {
 		a.accessLogState.offset = 0

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Card, Empty, Select, Space, Table, Tabs, Tag, Typography } from 'antd'
+import { EyeInvisibleOutlined, EyeOutlined } from '@ant-design/icons'
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table'
 
 import type { AreaManagerAdminView, ClientChainView, CustomerAdminView, DashboardAgentView, GlobalDashboardView } from '../types'
@@ -72,6 +73,13 @@ export function OverviewSummaryCard(props: {
     onCostCurrencyChange,
   } = props
   const [financeDetailOpen, setFinanceDetailOpen] = useState(financePage)
+  const [profitVisible, setProfitVisible] = useState(() => {
+    try {
+      return window.localStorage.getItem('bridge-core.profit-visible') !== 'false'
+    } catch {
+      return true
+    }
+  })
   const [customerRows, setCustomerRows] = useState<CustomerAdminView[]>([])
   const [customerRowsLoading, setCustomerRowsLoading] = useState(false)
   const effectiveCustomerRows = financeCustomers.length ? financeCustomers : customerRows
@@ -95,6 +103,18 @@ export function OverviewSummaryCard(props: {
     () => buildNodeRevenueRows(revenueRows),
     [revenueRows],
   )
+
+  const toggleProfitVisibility = () => {
+    setProfitVisible((visible) => {
+      const next = !visible
+      try {
+        window.localStorage.setItem('bridge-core.profit-visible', String(next))
+      } catch {
+        // Visibility preference is optional; the current page still toggles.
+      }
+      return next
+    })
+  }
 
   useEffect(() => {
     if (restrictedView || !financeDetailOpen || effectiveCustomerRows.length || customerRowsLoading) {
@@ -350,6 +370,19 @@ export function OverviewSummaryCard(props: {
             >
               <div className="overview-stat-title overview-cost-title">
                 <span>本月利润</span>
+                <Button
+                  type="text"
+                  size="small"
+                  className="overview-profit-visibility"
+                  aria-label={profitVisible ? '隐藏利润' : '显示利润'}
+                  title={profitVisible ? '隐藏利润' : '显示利润'}
+                  icon={profitVisible ? <EyeOutlined /> : <EyeInvisibleOutlined />}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    toggleProfitVisibility()
+                  }}
+                  onKeyDown={(event) => event.stopPropagation()}
+                />
                 <Select
                   className="overview-currency-select"
                   size="small"
@@ -361,7 +394,7 @@ export function OverviewSummaryCard(props: {
                   onChange={(value) => onCostCurrencyChange(value as CurrencyCode)}
                 />
               </div>
-              <div className="overview-cost-value">{monthlyFinance.available ? formatMoney(monthlyFinance.profitTotal, costCurrency) : '--'}</div>
+              <div className="overview-cost-value">{monthlyFinance.available ? (profitVisible ? formatMoney(monthlyFinance.profitTotal, costCurrency) : '••••••') : '--'}</div>
               <div className="overview-stat-foot">
                 {monthlyFinance.available
                   ? `营收 ${formatMoney(monthlyFinance.revenueTotal, costCurrency)} · 花销 ${formatMoney(monthlyFinance.costTotal, costCurrency)}`

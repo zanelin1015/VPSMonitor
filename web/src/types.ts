@@ -546,6 +546,7 @@ export interface CustomerOverviewResponse {
   clash_subscription_url?: string
   mihomo_subscription_url?: string
   announcements?: CustomerAnnouncement[]
+  read_announcement_ids?: string[]
   links: CustomerLinkView[]
 }
 

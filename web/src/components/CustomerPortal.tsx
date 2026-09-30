@@ -32,12 +32,35 @@ export function CustomerPortal() {
   const [qrLink, setQrLink] = useState<CustomerLinkView | null>(null)
   const [announcementModalOpen, setAnnouncementModalOpen] = useState(false)
   const [announcementIndex, setAnnouncementIndex] = useState(0)
+  const [readAnnouncementIDs, setReadAnnouncementIDs] = useState<string[]>([])
   const [editingRemarkID, setEditingRemarkID] = useState<number | null>(null)
   const [user, setUser] = useState<CustomerUser | null>(null)
   const [overview, setOverview] = useState<CustomerOverviewResponse | null>(null)
   const [loginForm, setLoginForm] = useState({ username: '', password: '' })
   const [remarkDrafts, setRemarkDrafts] = useState<Record<number, string>>({})
   const lastAnnouncementSetRef = useRef('')
+
+  useEffect(() => {
+    const username = user?.username || ''
+    if (!username) {
+      setReadAnnouncementIDs([])
+      return
+    }
+    try {
+      const stored = window.localStorage.getItem(customerAnnouncementReadKey(username))
+      const parsed = stored ? JSON.parse(stored) : []
+      setReadAnnouncementIDs(Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === 'string') : [])
+    } catch {
+      setReadAnnouncementIDs([])
+    }
+  }, [user?.username])
+
+  useEffect(() => {
+    const serverReadIDs = overview?.read_announcement_ids || []
+    if (serverReadIDs.length) {
+      setReadAnnouncementIDs((current) => Array.from(new Set([...current, ...serverReadIDs])))
+    }
+  }, [overview?.read_announcement_ids])
 
   useEffect(() => {
     document.title = 'ZaneLin Customer'
@@ -66,12 +89,13 @@ export function CustomerPortal() {
       lastAnnouncementSetRef.current = ''
       return
     }
-    if (setKey !== lastAnnouncementSetRef.current) {
+    const firstUnreadIndex = announcements.findIndex((item) => !readAnnouncementIDs.includes(item.id))
+    if (firstUnreadIndex >= 0 && setKey !== lastAnnouncementSetRef.current) {
       lastAnnouncementSetRef.current = setKey
-      setAnnouncementIndex(0)
+      setAnnouncementIndex(firstUnreadIndex)
       setAnnouncementModalOpen(true)
     }
-  }, [overview?.announcements])
+  }, [overview?.announcements, readAnnouncementIDs])
 
   const exitCountryCount = useMemo(() => {
     const values = new Set<string>()
@@ -129,6 +153,29 @@ export function CustomerPortal() {
     setAnnouncementModalOpen(false)
     setAnnouncementIndex(0)
     lastAnnouncementSetRef.current = ''
+  }
+
+  function confirmAnnouncementsRead() {
+    const announcements = overview?.announcements || []
+    const username = user?.username || ''
+    const ids = announcements.map((item) => item.id).filter(Boolean)
+    if (username && ids.length) {
+      const next = Array.from(new Set([...readAnnouncementIDs, ...ids]))
+      setReadAnnouncementIDs(next)
+      try {
+        window.localStorage.setItem(customerAnnouncementReadKey(username), JSON.stringify(next))
+      } catch {
+        // Remembering read state is optional; the current session still closes.
+      }
+      void fetchJSON('/api/v1/customer/announcements/read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ announcement_ids: ids }),
+      }).catch(() => {
+        // Keep the local state when the server acknowledgement is temporarily unavailable.
+      })
+    }
+    setAnnouncementModalOpen(false)
   }
 
   async function loadOverview() {
@@ -358,6 +405,10 @@ export function CustomerPortal() {
           message="授权使用规则"
           description="仅限已授权用户使用，可按独享或共享方式开放；禁止滥发、攻击、诈骗、爬虫滥用、扫描爆破等高风险行为。发现异常时，管理员可随时停用账号或授权链路，并停用对应 x-ui client。"
         />
+        <CustomerAnnouncementBar announcements={overview?.announcements || []} onOpen={(index) => {
+          setAnnouncementIndex(index)
+          setAnnouncementModalOpen(true)
+        }} />
 
         <div className="customer-board-layout">
           <aside className="customer-board-side">
@@ -504,6 +555,7 @@ export function CustomerPortal() {
         open={announcementModalOpen}
         onIndexChange={setAnnouncementIndex}
         onClose={() => setAnnouncementModalOpen(false)}
+        onConfirmRead={confirmAnnouncementsRead}
       />
 
       <CustomerSupportWidget />
@@ -655,8 +707,9 @@ function CustomerAnnouncementModal(props: {
   open: boolean
   onIndexChange: (index: number) => void
   onClose: () => void
+  onConfirmRead: () => void
 }) {
-  const { announcements, index, open, onIndexChange, onClose } = props
+  const { announcements, index, open, onIndexChange, onClose, onConfirmRead } = props
   const announcement = announcements[index]
   if (!announcement) return null
   const level = announcement.level || 'info'
@@ -680,7 +733,7 @@ function CustomerAnnouncementModal(props: {
         announcements.length > 1 ? <Text key="count" type="secondary" className="customer-announcement-count">{index + 1} / {announcements.length}</Text> : null,
         index > 0 ? <Button key="previous" onClick={() => onIndexChange(index - 1)}>上一条</Button> : null,
         !isLast ? <Button key="next" type="primary" onClick={() => onIndexChange(index + 1)}>下一条</Button> : null,
-        isLast ? <Button key="close" type="primary" onClick={onClose}>我知道了</Button> : null,
+        isLast ? <Button key="close" type="primary" onClick={onConfirmRead}>我知道了</Button> : null,
       ]}
     >
       {announcement.content ? <Paragraph className="customer-announcement-content">{announcement.content}</Paragraph> : null}
@@ -691,6 +744,28 @@ function CustomerAnnouncementModal(props: {
       ) : null}
     </Modal>
   )
+}
+
+function CustomerAnnouncementBar(props: {
+  announcements: NonNullable<CustomerOverviewResponse['announcements']>
+  onOpen: (index: number) => void
+}) {
+  if (!props.announcements.length) return null
+  return (
+    <Card size="small" className="customer-announcement-bar" title="公告栏">
+      <Space wrap>
+        {props.announcements.map((announcement, index) => (
+          <Button key={announcement.id} type="link" onClick={() => props.onOpen(index)}>
+            {announcement.title}
+          </Button>
+        ))}
+      </Space>
+    </Card>
+  )
+}
+
+function customerAnnouncementReadKey(username: string): string {
+  return `bridge-core.customer-announcements-read:${username}`
 }
 
 function customerAnnouncementIcon(level: string) {

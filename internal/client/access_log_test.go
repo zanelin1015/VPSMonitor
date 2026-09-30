@@ -1,6 +1,10 @@
 package client
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestParseXrayAccessLogLine(t *testing.T) {
 	line := "2026/06/22 12:34:56 1.2.3.4:12345 accepted tcp:example.com:443 [proxy] email: user@example.com"
@@ -40,5 +44,30 @@ func TestParseXrayAccessLogEntriesSkipsRejected(t *testing.T) {
 	data := []byte("2026/06/22 12:34:56 1.2.3.4:12345 rejected tcp:example.com:443 [blocked]\n")
 	if entries := parseXrayAccessLogEntries(data, 10); len(entries) != 0 {
 		t.Fatalf("expected rejected lines to be skipped, got %d", len(entries))
+	}
+}
+
+func TestReadAccessLogEntriesReadsExistingTailOnFirstUse(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "access.log")
+	line := "2026/06/22 12:34:56 1.2.3.4:12345 accepted tcp:example.com:443 [proxy] email: user@example.com\n"
+	if err := os.WriteFile(path, []byte(line), 0o600); err != nil {
+		t.Fatalf("write access log: %v", err)
+	}
+
+	app := &App{}
+	entries, err := app.readAccessLogEntries(path)
+	if err != nil {
+		t.Fatalf("read access log: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected existing log tail to be collected, got %d entries", len(entries))
+	}
+
+	entries, err = app.readAccessLogEntries(path)
+	if err != nil {
+		t.Fatalf("read unchanged access log: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected unchanged log not to be re-collected, got %d entries", len(entries))
 	}
 }

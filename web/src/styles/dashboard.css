@@ -1019,6 +1019,11 @@
   min-width: 92px;
 }
 
+.overview-profit-visibility {
+  margin-left: auto;
+  color: var(--muted);
+}
+
 .overview-currency-select .ant-select-selection-item {
   padding-inline-end: 18px;
 }

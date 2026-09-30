@@ -479,7 +479,16 @@ body {
 }
 
 .admin-content-title h3.ant-typography {
-  margin: 0 0 4px;
+	margin: 0;
+}
+
+.admin-content-title > div:first-child,
+.admin-settings-section-heading > div:first-child {
+	display: inline-flex;
+	align-items: center;
+	min-width: 0;
+	gap: 6px;
+	white-space: nowrap;
 }
 
 .frontend-settings-page,
@@ -500,7 +509,7 @@ body {
 }
 
 .admin-settings-section-heading h4.ant-typography {
-  margin: 0 0 4px;
+	margin: 0;
 }
 
 .admin-announcement-editor .ant-card-head-title {

@@ -368,7 +368,9 @@ function analyzeMonthlyFinanceRevenue(
   })
   return {
     included: sortRows(included.filter((row) => row.amount > 0)),
-    excluded: sortRows(excluded.filter((row) => row.amount > 0)),
+    // Orphaned billing rows are stale data rather than actionable finance
+    // exceptions, so keep them out of both the table and its count.
+    excluded: sortRows(excluded.filter((row) => row.amount > 0 && row.reason !== 'client_not_found')),
   }
 }
 

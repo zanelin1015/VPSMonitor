@@ -61,6 +61,12 @@ func (a *App) handleCustomer(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.handleCustomerOverview(w, r)
+	case "announcements/read":
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		a.handleCustomerAnnouncementRead(w, r)
 	case "style":
 		if r.Method != http.MethodPut {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -290,12 +296,34 @@ func (a *App) customerOverview(user model.CustomerUser) (model.CustomerOverviewR
 	if err != nil {
 		return model.CustomerOverviewResponse{}, err
 	}
+	readAnnouncementIDs, err := a.store.ListCustomerAnnouncementReads(user.ID)
+	if err != nil {
+		return model.CustomerOverviewResponse{}, err
+	}
 	return model.CustomerOverviewResponse{
 		User:          user,
 		GeneratedAt:   time.Now().UTC(),
 		Announcements: activeCustomerAnnouncements(frontendSettings.Announcements, time.Now().UTC()),
+		ReadAnnouncementIDs: readAnnouncementIDs,
 		Links:         links,
 	}, nil
+}
+
+func (a *App) handleCustomerAnnouncementRead(w http.ResponseWriter, r *http.Request) {
+	user, _, ok := a.requireCustomer(w, r)
+	if !ok {
+		return
+	}
+	var req model.CustomerAnnouncementReadRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode announcement read request: %v", err))
+		return
+	}
+	if err := a.store.MarkCustomerAnnouncementsRead(user.ID, req.AnnouncementIDs); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func customerLinkFrontProxies(items []model.FrontProxyNode) []model.CustomerLinkFrontProxy {

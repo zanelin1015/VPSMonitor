@@ -148,7 +148,12 @@ type CustomerOverviewResponse struct {
 	ClashSubscriptionURL  string                 `json:"clash_subscription_url,omitempty"`
 	MihomoSubscriptionURL string                 `json:"mihomo_subscription_url,omitempty"`
 	Announcements         []CustomerAnnouncement `json:"announcements,omitempty"`
+	ReadAnnouncementIDs   []string               `json:"read_announcement_ids,omitempty"`
 	Links                 []CustomerLinkView     `json:"links"`
+}
+
+type CustomerAnnouncementReadRequest struct {
+	AnnouncementIDs []string `json:"announcement_ids"`
 }
 
 type CustomerSubscriptionURLResponse struct {

@@ -113,11 +113,11 @@ try {
   const topologyStatus = summarizeMonthlyFinance([statusAgent], statusChains, 'USD', exchangeRates)
   approx(lightweightStatus.revenueTotal, 25, 'only enabled, exact client matches are counted')
   approx(topologyStatus.revenueTotal, 25, 'opening topology does not change finance totals')
-  assert.equal(lightweightStatus.excludedRevenueCount, 3, 'disabled clients, missing clients, and closed nodes are excluded')
+  assert.equal(lightweightStatus.excludedRevenueCount, 2, 'missing clients are hidden while actionable exclusions remain')
   assert.deepEqual(
     buildMonthlyFinanceExcludedRevenueDetails([statusAgent], [], 'USD', exchangeRates).map((row) => row.reason).sort(),
-    ['client_disabled', 'client_not_found', 'node_disabled'],
-    'excluded revenue explains stale clients, disabled clients, and closed nodes',
+    ['client_disabled', 'node_disabled'],
+    'excluded revenue keeps actionable disabled clients and closed nodes',
   )
   const activeRow = buildMonthlyFinanceRevenueDetails([statusAgent], [], 'USD', exchangeRates).find((row) => row.clientEmail === 'active')
   assert(activeRow?.payment?.date.endsWith('-15'), 'client payment date follows billing start day')

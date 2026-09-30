@@ -151,6 +151,15 @@ func (s *SQLiteStore) init() error {
 		);
 		`,
 		`
+		CREATE TABLE IF NOT EXISTS customer_announcement_reads (
+			customer_id INTEGER NOT NULL,
+			announcement_id TEXT NOT NULL,
+			read_at TEXT NOT NULL,
+			PRIMARY KEY(customer_id, announcement_id),
+			FOREIGN KEY(customer_id) REFERENCES customer_accounts(id) ON DELETE CASCADE
+		);
+		`,
+		`
 		CREATE TABLE IF NOT EXISTS agents (
 			agent_id TEXT PRIMARY KEY,
 			agent_name TEXT NOT NULL DEFAULT '',
