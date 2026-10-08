@@ -1064,15 +1064,27 @@
 }
 
 .client-billing-controls {
-  display: flex;
+  display: grid;
   min-width: max-content;
+  gap: 6px;
+}
+
+/* Compact editors raise their inputs on hover/focus; keep them below the pinned identity column. */
+.xui-client-table .ant-table-cell-fix-left {
+  z-index: 5;
+}
+
+.client-billing-price-row,
+.client-billing-cycle-row {
+  display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: nowrap;
   white-space: nowrap;
 }
 
-.client-billing-controls > .ant-space {
+.client-billing-price-row > *,
+.client-billing-cycle-row > * {
   flex: 0 0 auto;
 }
 

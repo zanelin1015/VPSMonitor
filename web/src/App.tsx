@@ -73,6 +73,8 @@ import { AdminAccessLogsPage } from './components/AdminAccessLogsPage'
 import { renderCNFlowPanel } from './components/DashboardTopologyPanels'
 import { AgentRail, AdminWorkbenchDashboard, OverviewSummaryCard } from './components/DashboardSidebar'
 import { LoginScreen } from './components/LoginScreen'
+import { AdminConsoleTheme } from './components/AdminConsoleTheme'
+import { isConsoleThemeRoute } from './lib/adminConsoleTheme'
 import { VisualEffects } from './components/VisualEffects'
 import { useAppTheme } from './theme'
 import {
@@ -140,12 +142,20 @@ function exchangeRateNotice(data: ExchangeRatesResponse): string {
 const AgentDetailPanel = lazy(() => import('./components/AgentDetailPanel').then((module) => ({ default: module.AgentDetailPanel })))
 const ConsoleModals = lazy(() => import('./components/ConsoleModals').then((module) => ({ default: module.ConsoleModals })))
 const CustomerManagementModal = lazy(() => import('./components/CustomerManagementModal').then((module) => ({ default: module.CustomerManagementModal })))
+const CustomerBatchAuthorizationModal = lazy(() => import('./components/CustomerBatchAuthorizationModal').then((module) => ({ default: module.CustomerBatchAuthorizationModal })))
 const FrontProxyManagementPage = lazy(() => import('./components/FrontProxyManagementPage').then((module) => ({ default: module.FrontProxyManagementPage })))
 const CustomerPortal = lazy(() => import('./components/CustomerPortal').then((module) => ({ default: module.CustomerPortal })))
 const AdminSupportPage = lazy(() => import('./components/AdminSupportPage').then((module) => ({ default: module.AdminSupportPage })))
 const PublicSite = lazy(() => import('./components/PublicSite').then((module) => ({ default: module.PublicSite })))
 
 export default function App() {
+  const pathname = appPathname()
+  return isConsoleThemeRoute(pathname, window.location.search)
+    ? <AdminConsoleTheme customer={pathname === '/customer'}><AppContent /></AdminConsoleTheme>
+    : <AppContent />
+}
+
+function AppContent() {
   const { message } = AntdApp.useApp()
   const { mode: themeMode, effectiveMode, setMode: setThemeMode } = useAppTheme()
   const {
@@ -204,6 +214,7 @@ export default function App() {
   const [configAuditsLoading, setConfigAuditsLoading] = useState(false)
   const [customerModalOpen, setCustomerModalOpen] = useState(false)
   const [customerAssignmentDraft, setCustomerAssignmentDraft] = useState<CustomerAssignmentDraft | null>(null)
+  const [customerAuthorizationDraft, setCustomerAuthorizationDraft] = useState<CustomerAssignmentDraft | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
   const [activeTabKey, setActiveTabKey] = useState('overview')
   const [topologyVisible, setTopologyVisibleState] = useState(false)
@@ -370,7 +381,7 @@ export default function App() {
     loadTopology,
     runTransition: startTransition,
     setCustomerModalOpen,
-    setCustomerAssignmentDraft,
+    setCustomerAuthorizationDraft,
   })
   const topologyScopeLabel = selectedAgentId ? selectedAgent?.agent_name || selectedAgentId : selectedTag ? `${selectedTag} 标签` : '全部 Client'
   const normalizedPath = appPathname()
@@ -1583,6 +1594,7 @@ export default function App() {
       <>
         <VisualEffects />
         <LoginScreen
+          consoleAppearance
           loginForm={loginForm}
           loginLoading={loginLoading}
           onChange={setLoginForm}
@@ -1679,6 +1691,14 @@ export default function App() {
 
         <section className="admin-oa-main">
           <AdminShellTopbar {...shellNavigationProps} />
+
+          {customerAuthorizationDraft ? <Suspense fallback={null}>
+            <CustomerBatchAuthorizationModal
+              draft={customerAuthorizationDraft}
+              onClose={() => setCustomerAuthorizationDraft(null)}
+              onConfigChanged={refreshAfterExternalConfigChange}
+            />
+          </Suspense> : null}
 
           {consoleModalOpen ? <Suspense fallback={null}>
           <ConsoleModals

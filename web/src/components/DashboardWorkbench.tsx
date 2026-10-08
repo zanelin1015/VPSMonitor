@@ -28,6 +28,8 @@ import {
 import { MiniProgress } from './MiniProgress'
 import { agentHealthCategory, type AgentHealthCategory } from '../lib/agentHealth'
 import { readFinanceVisibilityPreference, writeFinanceVisibilityPreference } from '../lib/financeVisibility'
+import { useAppTheme } from '../theme'
+import { consolePalette } from '../lib/adminConsoleTheme'
 
 const { Text } = Typography
 
@@ -370,6 +372,8 @@ function WorkbenchStatusDonut(props: { online: number; warning: number; offline:
 
 function WorkbenchSpeedTrend(props: { up: number; down: number }) {
   const { up, down } = props
+  const { effectiveMode } = useAppTheme()
+  const palette = consolePalette[effectiveMode]
   const animatedUp = useAnimatedNumber(up)
   const animatedDown = useAnimatedNumber(down)
   const [history, setHistory] = useState<SpeedHistoryPoint[]>(() => createInitialSpeedHistory(up, down))
@@ -388,6 +392,7 @@ function WorkbenchSpeedTrend(props: { up: number; down: number }) {
     ]
   })
   const chartConfig: LineConfig = {
+    theme: effectiveMode === 'dark' ? 'dark' : 'light',
     data: chartData,
     xField: 'time',
     yField: 'speed',
@@ -399,6 +404,7 @@ function WorkbenchSpeedTrend(props: { up: number; down: number }) {
       y: {
         domain: [0, axis.maxValue / axis.divisor],
         nice: false,
+        tickCount: 4,
       },
       color: {
         range: ['#0f9f8f', '#f97316'],
@@ -410,15 +416,16 @@ function WorkbenchSpeedTrend(props: { up: number; down: number }) {
         tick: false,
         labelAutoHide: true,
         labelAutoRotate: false,
-        labelFill: 'rgba(100, 116, 139, 0.82)',
+        labelFill: palette.secondary,
         labelFontSize: 10,
         line: true,
         lineStroke: 'rgba(148, 163, 184, 0.34)',
       },
       y: {
         title: false,
+        labelAutoHide: true,
         labelFormatter: (value: string | number) => formatChartAxisValue(Number(value), axis.unit),
-        labelFill: 'rgba(100, 116, 139, 0.82)',
+        labelFill: palette.secondary,
         labelFontSize: 10,
         grid: true,
         gridStroke: 'rgba(148, 163, 184, 0.18)',

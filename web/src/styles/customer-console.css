@@ -1,0 +1,91 @@
+/* Customer portal uses the same local design tokens as the internal console. */
+.customer-console-theme {
+  --text-main: var(--text);
+  --text-muted: var(--muted);
+  --card-border: var(--border);
+  --card-bg: var(--card);
+  --soft-shadow: var(--shadow);
+}
+
+.customer-console-theme .customer-page-shell { background: var(--bg); }
+.customer-console-theme .customer-page-shell .page-background { display: none; }
+.customer-console-theme .customer-shell { padding-top: 20px; }
+:root .customer-console-theme .customer-dashboard-header {
+  align-items: center;
+  padding: 22px 24px;
+  border-color: var(--border);
+  border-radius: 20px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  backdrop-filter: none;
+}
+.customer-console-theme .customer-dashboard-header h1 { margin: 6px 0 0; font-size: 30px; font-weight: 650; letter-spacing: -.6px; overflow-wrap: anywhere; }
+.customer-console-theme .eyebrow { color: var(--muted); font-size: 11px; font-weight: 500; }
+.customer-console-theme .customer-header-actions { justify-content: flex-end; }
+.customer-console-theme .customer-theme-select { width: 164px; }
+.customer-console-theme .customer-policy-alert { background: var(--green-soft); border-color: color-mix(in srgb, var(--primary) 20%, var(--border)); }
+.customer-console-theme .customer-board-layout { grid-template-columns: 224px minmax(0, 1fr); }
+.customer-console-theme .customer-board-side { top: 142px; min-width: 0; }
+.customer-console-theme .customer-board-profile .ant-btn { height: auto; min-height: 34px; padding: 6px 10px; white-space: normal; font-size: 12px; }
+.customer-console-theme .customer-board-profile h3 { font-weight: 650; overflow-wrap: anywhere; }
+.customer-console-theme .customer-board-score span { font-weight: 500; }
+.customer-console-theme .customer-stat-card .ant-statistic-content { font-weight: 650; letter-spacing: -.6px; }
+.customer-console-theme .customer-link-card { animation: console-enter .42s var(--console-ease) both; }
+.customer-console-theme .customer-link-head { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; }
+.customer-console-theme .customer-link-title-row h3.ant-typography { font-size: 20px; font-weight: 650; letter-spacing: -.35px; overflow-wrap: anywhere; white-space: normal; }
+.customer-console-theme .customer-link-summary { color: var(--muted); }
+.customer-console-theme .customer-link-exit-tags { grid-column: 2; grid-row: 1; min-width: 0; max-width: 260px; }
+.customer-console-theme .customer-link-meta-row { grid-column: 1 / -1; grid-row: 2; }
+.customer-console-theme .customer-link-meta-item { background: var(--surface); border-color: var(--border); color: var(--muted-strong); border-radius: 7px; font-weight: 500; font-size: 13px; white-space: normal; overflow-wrap: anywhere; }
+.customer-console-theme .customer-link-meta-expiry { color: var(--amber); }
+:root .customer-console-theme .customer-topology-canvas { min-width: 0; background: var(--surface); border-color: var(--border); border-radius: 16px; scrollbar-color: var(--border-strong) transparent; }
+:root .customer-console-theme .customer-topology-node { background: var(--card); border-color: var(--border); border-radius: 16px; box-shadow: var(--shadow); }
+.customer-console-theme .customer-topology-node::after { display: none; }
+.customer-console-theme .customer-topology-node-icon { background: var(--green-soft); color: var(--primary); border-radius: 7px; font-weight: 600; }
+.customer-console-theme .customer-topology-node-label { font-weight: 650; }
+:root .customer-console-theme :is(.customer-topology-node-relay, .customer-topology-node-exit) { background: var(--card-active); border-color: color-mix(in srgb, var(--primary) 28%, var(--border)); }
+.customer-console-theme .customer-topology-edge { background: color-mix(in srgb, var(--primary) 35%, var(--border)); }
+.customer-console-theme .customer-topology-edge::before,
+.customer-console-theme .customer-topology-edge::after { background: var(--primary); box-shadow: 0 0 0 4px var(--green-soft); }
+.customer-console-theme .customer-topology-edge span { border-color: var(--primary); }
+:root .customer-console-theme .customer-qr-inline { background: var(--surface); border-radius: 16px; }
+:root .customer-console-theme .customer-qr-button { width: min(168px, 100%); background: #fff; color: #55555a; border-radius: 12px; }
+.customer-console-theme .customer-qr-button:hover { border-color: var(--primary); }
+:root[data-console-theme='soft'] .customer-qr-modal .ant-space-item { max-width: 100%; }
+:root[data-console-theme='soft'] .customer-qr-frame { max-width: 100%; padding: 12px; background: #fff; border-radius: 12px; }
+:root[data-console-theme='soft'] .customer-qr-frame .ant-qrcode { max-width: 100%; height: auto !important; aspect-ratio: 1; }
+:root[data-console-theme='soft'] .customer-qr-frame .ant-qrcode canvas { max-width: 100%; height: auto !important; }
+.customer-console-theme .customer-support-panel { background: var(--card); border-color: var(--border); border-radius: 20px; box-shadow: var(--console-popover-shadow); backdrop-filter: none; }
+.customer-console-theme .customer-support-launcher { background: var(--primary); box-shadow: var(--console-popover-shadow); transition: box-shadow .24s, transform .24s; }
+.customer-console-theme .customer-support-launcher:hover { transform: translateY(-2px); }
+.customer-console-theme .customer-support-message p { border-radius: 12px; }
+.customer-console-theme .customer-support-message.mine p { background: var(--green-soft); color: var(--text); }
+.customer-console-theme .customer-support-status.online { background: var(--console-success); }
+:root.dark .customer-console-theme :is(.customer-support-launcher, .console-login-wordmark > span) { color: #171717; }
+.customer-console-theme .customer-announcement-title-info { color: var(--primary); }
+.customer-console-theme .customer-announcement-title-success { color: var(--console-success); }
+.customer-console-theme .customer-announcement-title-warning { color: var(--amber); }
+.customer-console-theme .customer-announcement-title-error { color: var(--red); }
+
+@media (max-width: 1100px) {
+  .customer-console-theme .customer-dashboard-header { gap: 16px; }
+  .customer-console-theme .customer-header-actions { max-width: 560px; }
+  .customer-console-theme .customer-link-head { grid-template-columns: minmax(0, 1fr); }
+  .customer-console-theme .customer-link-exit-tags { grid-column: 1; grid-row: 3; max-width: none; justify-self: start; }
+}
+@media (max-width: 760px) {
+  .customer-console-theme .customer-shell { padding-top: 0; }
+  :root .customer-console-theme .customer-dashboard-header { display: none; }
+  .customer-console-theme .customer-board-layout { grid-template-columns: minmax(0, 1fr); }
+  :root .customer-console-theme .customer-mobile-header { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; background: color-mix(in srgb, var(--card) 94%, transparent); box-shadow: none; }
+  .customer-console-theme .customer-mobile-header h2.ant-typography { font-weight: 650; white-space: normal; overflow-wrap: anywhere; }
+  .customer-console-theme .customer-mobile-actions { flex-wrap: wrap; gap: 6px; }
+  .customer-console-theme .customer-mobile-actions .customer-theme-select { flex: 1; min-width: 156px; }
+  :root .customer-console-theme .customer-mobile-summary > div { background: var(--card); backdrop-filter: none; }
+  .customer-console-theme .customer-mobile-summary span { font-weight: 500; }
+  .customer-console-theme .customer-mobile-summary strong { color: var(--primary); font-weight: 650; }
+  .customer-console-theme .customer-topology-scroll { overflow: hidden; }
+  .customer-console-theme .customer-topology-canvas { min-width: 0; }
+  .customer-console-theme .customer-qr-actions { display: flex; }
+  :root .customer-console-theme .customer-qr-button { width: 168px; }
+}

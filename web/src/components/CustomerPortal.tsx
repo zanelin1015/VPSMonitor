@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, App as AntdApp, Button, Card, Checkbox, Empty, Input, Modal, QRCode, Space, Spin, Statistic, Tag, Typography } from 'antd'
+import { Alert, App as AntdApp, Button, Card, Checkbox, Empty, Input, Modal, QRCode, Select, Space, Spin, Statistic, Tag, Typography } from 'antd'
 import { BgColorsOutlined, CheckCircleOutlined, CheckOutlined, CloseCircleOutlined, CloseOutlined, CopyOutlined, EditOutlined, InfoCircleOutlined, LockOutlined, LogoutOutlined, QrcodeOutlined, ReloadOutlined, WarningOutlined } from '@ant-design/icons'
 
 import type { CustomerAuthResponse, CustomerLinkStep, CustomerLinkView, CustomerOverviewResponse, CustomerUser } from '../types'
@@ -8,11 +8,18 @@ import { formatBytes } from '../lib/traffic'
 import { LoginScreen } from './LoginScreen'
 import { CustomerSupportWidget } from './CustomerSupportWidget'
 import { clearCustomFrontendCode } from './VisualEffects'
+import { useAppTheme, type ThemeMode } from '../theme'
 
 const { Paragraph, Text, Title } = Typography
 
 export function CustomerPortal() {
   const { message } = AntdApp.useApp()
+  const { mode, effectiveMode, setMode } = useAppTheme()
+  const themeOptions = [
+    { value: 'system', label: `跟随系统（${effectiveMode === 'dark' ? '暗黑' : '明亮'}）` },
+    { value: 'light', label: '明亮' },
+    { value: 'dark', label: '暗黑' },
+  ]
   const [sessionLoading, setSessionLoading] = useState(true)
   const [loginLoading, setLoginLoading] = useState(false)
   const [overviewLoading, setOverviewLoading] = useState(false)
@@ -339,8 +346,10 @@ export function CustomerPortal() {
   if (!user) {
     return (
       <LoginScreen
-        title="ZaneLin授权链路面板"
-        subtitle=""
+        consoleAppearance
+        audience="customer"
+        title="授权链路面板"
+        subtitle="使用授权账号登录，查看链路与订阅"
         loginForm={loginForm}
         loginLoading={loginLoading}
         onChange={setLoginForm}
@@ -361,14 +370,15 @@ export function CustomerPortal() {
             <Text type="secondary">{overview?.generated_at ? formatDateTime(overview.generated_at) : '等待数据同步'}</Text>
           </div>
           <div className="customer-mobile-actions">
-            <Button shape="circle" icon={<BgColorsOutlined />} onClick={() => {
+            <Button shape="circle" aria-label="页面样式" title="页面样式" icon={<BgColorsOutlined />} onClick={() => {
               setStyleDraft(user.style_code || '')
               setStyleModalOpen(true)
             }} />
-            <Button shape="circle" icon={<CopyOutlined />} title="复制 Clash/Mihomo 订阅" onClick={openClashSubscriptionModal} />
-            <Button shape="circle" icon={<LockOutlined />} onClick={openPasswordModal} />
-            <Button shape="circle" icon={<ReloadOutlined />} loading={overviewLoading} onClick={() => void loadOverview()} />
-            <Button shape="circle" icon={<LogoutOutlined />} onClick={() => void logout()} />
+            <Button shape="circle" aria-label="复制 Clash/Mihomo 订阅" icon={<CopyOutlined />} title="复制 Clash/Mihomo 订阅" onClick={openClashSubscriptionModal} />
+            <Button shape="circle" aria-label="修改密码" title="修改密码" icon={<LockOutlined />} onClick={openPasswordModal} />
+            <Button shape="circle" aria-label="刷新" title="刷新" icon={<ReloadOutlined />} loading={overviewLoading} onClick={() => void loadOverview()} />
+            <Button shape="circle" aria-label="退出" title="退出" icon={<LogoutOutlined />} onClick={() => void logout()} />
+            <Select className="customer-theme-select" aria-label="客户页面主题" value={mode} options={themeOptions} onChange={(value: ThemeMode) => setMode(value)} />
           </div>
         </header>
         <section className="customer-mobile-summary">
@@ -390,7 +400,8 @@ export function CustomerPortal() {
             <div className="eyebrow">授权访问 / 我的链路</div>
             <Title level={1}>{user.display_name || user.username}</Title>
           </div>
-          <Space wrap>
+          <Space wrap className="customer-header-actions">
+            <Select className="customer-theme-select" aria-label="客户页面主题" value={mode} options={themeOptions} onChange={(value: ThemeMode) => setMode(value)} />
             <Button icon={<BgColorsOutlined />} onClick={() => {
               setStyleDraft(user.style_code || '')
               setStyleModalOpen(true)
@@ -419,8 +430,8 @@ export function CustomerPortal() {
               <Text type="secondary">用户账号</Text>
               <Title level={3}>{user.display_name || user.username}</Title>
               <Tag color="blue">登录可见</Tag>
-              <Button block icon={<CopyOutlined />} onClick={openClashSubscriptionModal}>
-                复制 Clash/Mihomo 订阅
+              <Button block title="复制 Clash/Mihomo 订阅" icon={<CopyOutlined />} onClick={openClashSubscriptionModal}>
+                复制订阅
               </Button>
               <Text type="secondary">数据更新时间</Text>
               <Text>{overview?.generated_at ? formatDateTime(overview.generated_at) : '-'}</Text>
@@ -534,7 +545,7 @@ export function CustomerPortal() {
                     </div>
                     {effectiveImportURL ? (
                       <button type="button" className="customer-qr-button" onClick={() => setQrLink(link)}>
-                        <QRCode value={effectiveImportURL} bordered={false} size={132} />
+                        <QRCode value={effectiveImportURL} color="#171717" bgColor="#ffffff" bordered={false} size={132} />
                         <span>点击放大</span>
                       </button>
                     ) : (
@@ -657,7 +668,9 @@ export function CustomerPortal() {
       >
         {qrLink?.import_url ? (
           <Space direction="vertical" size="middle" style={{ width: '100%', alignItems: 'center' }}>
-            <QRCode value={customerLinkImportURL(qrLink, remarkDrafts[qrLink.assignment_id])} size={260} bordered={false} />
+            <div className="customer-qr-frame">
+              <QRCode value={customerLinkImportURL(qrLink, remarkDrafts[qrLink.assignment_id])} color="#171717" bgColor="#ffffff" size={260} bordered={false} />
+            </div>
             <Text type="secondary">导入名称：{customerLinkDisplayName(qrLink, remarkDrafts[qrLink.assignment_id])}</Text>
           </Space>
         ) : <Empty description="暂无二维码" />}

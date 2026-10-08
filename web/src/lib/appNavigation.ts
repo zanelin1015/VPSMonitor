@@ -31,7 +31,7 @@ interface AppNavigationHandlersOptions {
   loadTopology: TopologyLoader
   runTransition: TransitionRunner
   setCustomerModalOpen: Dispatch<SetStateAction<boolean>>
-  setCustomerAssignmentDraft: Dispatch<SetStateAction<CustomerAssignmentDraft | null>>
+  setCustomerAuthorizationDraft: Dispatch<SetStateAction<CustomerAssignmentDraft | null>>
 }
 
 function scrollIntoViewById(targetID: string, options: ScrollIntoViewOptions, delay = 80) {
@@ -79,7 +79,7 @@ export function createAppNavigationHandlers(options: AppNavigationHandlersOption
     loadTopology,
     runTransition,
     setCustomerModalOpen,
-    setCustomerAssignmentDraft,
+    setCustomerAuthorizationDraft,
   } = options
 
   return {
@@ -221,13 +221,7 @@ export function createAppNavigationHandlers(options: AppNavigationHandlersOption
     },
 
     openCustomerAuthorization(draft: CustomerAssignmentDraft) {
-      setCustomerModalOpen(false)
-      setTopologyVisible(false)
-      setSelectedOutboundTag('')
-      setSelectedRuleIndex(null)
-      setCustomerAssignmentDraft(draft)
-      setActiveAdminPage('customers')
-      scrollIntoViewById('customer-management-panel', { behavior: 'smooth', block: 'start' })
+      setCustomerAuthorizationDraft(draft)
     },
 
     jumpToOutbound(tag?: string) {

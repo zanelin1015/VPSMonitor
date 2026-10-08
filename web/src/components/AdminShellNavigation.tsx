@@ -261,9 +261,17 @@ export function AdminShellTopbar(props: AdminShellNavigationProps) {
     onLogout,
     onThemeModeChange,
   } = props
+  const pageTitles: Record<AdminPageKey, string> = {
+    dashboard: props.topologyVisible ? '链路拓扑' : '工作台', assets: 'Client 资产', finance: '财务总览',
+    customers: '用户管理', 'front-proxies': '前置代理', support: '在线客服',
+    'access-logs': '访问日志', settings: '客户公告', schedules: '定时任务',
+  }
 
   return (
     <header className="hero-panel admin-oa-topbar">
+      <div className="console-page-context">
+        <strong>{pageTitles[props.activeAdminPage]}</strong>
+      </div>
       <div className="hero-actions hero-actions-column">
         <PersonalCenterDropdown
           adminUser={adminUser}

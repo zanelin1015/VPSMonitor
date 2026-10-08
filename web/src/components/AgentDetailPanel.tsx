@@ -565,6 +565,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       title: '客户端',
       key: 'client',
       width: 260,
+      fixed: 'left',
       render: (_, record) => (
         <div>
           <Text strong>{record.email || '-'}</Text>
@@ -598,7 +599,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         const accountBasedProxy = isAccountBasedProxyClient(record)
         return (
           <Space wrap size={[6, 6]}>
-            <Tag color={record.enabled ? 'success' : 'default'}>{record.enabled ? '启用' : '停用'}</Tag>
+            <Tag color={record.enabled ? 'blue' : 'default'}>{record.enabled ? '启用' : '停用'}</Tag>
             {accountBasedProxy ? <Tag>节点账号</Tag> : (
               <>
                 <Tag color={isClientOnline(record.last_online, overview?.reported_at) ? 'processing' : 'default'}>
@@ -666,9 +667,9 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       },
     },
     {
-      title: '收费',
+      title: '配置信息',
       key: 'billing',
-      width: 560,
+      width: 380,
       render: (_, record) => {
         const billing = findClientBilling(managedConfig?.renewal?.client_billings, record) || defaultClientBilling(record)
         const revenueCycle = normalizeBillingCycle(billing.revenue_cycle || billing.expire_cycle)
@@ -676,60 +677,69 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         const saving = clientBillingSavingKey === billingKeyForClient(record)
         return (
           <div className="client-billing-controls">
-            <InputNumber
-              size="small"
-              min={0}
-              precision={2}
-              disabled={!canManageConfig}
-              style={{ width: 92 }}
-              value={billing.revenue_amount || 0}
-              onChange={(value) => onUpdateClientBillingDraft(record, { revenue_amount: Number(value || 0) })}
-            />
-            <Select
-              size="small"
-              style={{ width: 78 }}
-              disabled={!canManageConfig}
-              value={billing.revenue_currency || 'CNY'}
-              options={REVENUE_CURRENCIES.map((currency) => ({ value: currency, label: currency }))}
-              onChange={(value) => onUpdateClientBillingDraft(record, { revenue_currency: value as 'CNY' | 'USDT' })}
-            />
-            <Space size={4}>
-              <Text type="secondary">流量</Text>
+            <div className="client-billing-price-row">
+              <Text type="secondary">费用</Text>
               <InputNumber
+                aria-label="收费金额"
                 size="small"
-                min={0.1}
-                max={100}
+                min={0}
                 precision={2}
-                step={0.1}
                 disabled={!canManageConfig}
-                style={{ width: 76 }}
-                value={normalizeClientTrafficMultiplier(billing.traffic_multiplier)}
-                onChange={(value) => onUpdateClientBillingDraft(record, { traffic_multiplier: Number(value || 1) })}
+                style={{ width: 92 }}
+                value={billing.revenue_amount || 0}
+                onChange={(value) => onUpdateClientBillingDraft(record, { revenue_amount: Number(value || 0) })}
               />
-              <Text type="secondary">倍</Text>
-            </Space>
-            <Select
-              size="small"
-              style={{ width: 78 }}
-              disabled={!canManageConfig}
-              value={revenueCycle}
-              options={[
-                { value: 'month', label: '月' },
-                { value: 'quarter', label: '季' },
-                { value: 'semiannual', label: '半年' },
-                { value: 'year', label: '年' },
-              ]}
-              onChange={(value) => {
-                const nextCycle = value as 'month' | 'quarter' | 'semiannual' | 'year'
-                onUpdateClientBillingDraft(record, {
-                  revenue_cycle: nextCycle,
-                  ...clientBillingPatchFromStart(effectiveStart, nextCycle),
-                })
-              }}
-            />
-            <Button size="small" type="primary" style={{ width: 64 }} disabled={!canManageConfig} loading={saving} onClick={() => onSaveClientBilling(record)}>
-              保存
-            </Button>
+              <Select
+                aria-label="收费币种"
+                size="small"
+                style={{ width: 78 }}
+                disabled={!canManageConfig}
+                value={billing.revenue_currency || 'CNY'}
+                options={REVENUE_CURRENCIES.map((currency) => ({ value: currency, label: currency }))}
+                onChange={(value) => onUpdateClientBillingDraft(record, { revenue_currency: value as 'CNY' | 'USDT' })}
+              />
+            </div>
+            <div className="client-billing-cycle-row">
+              <Space size={4}>
+                <Text type="secondary">流量倍数</Text>
+                <InputNumber
+                  aria-label="流量倍数"
+                  size="small"
+                  min={0.1}
+                  max={100}
+                  precision={2}
+                  step={0.1}
+                  disabled={!canManageConfig}
+                  style={{ width: 76 }}
+                  value={normalizeClientTrafficMultiplier(billing.traffic_multiplier)}
+                  onChange={(value) => onUpdateClientBillingDraft(record, { traffic_multiplier: Number(value || 1) })}
+                />
+                <Text type="secondary">倍</Text>
+              </Space>
+              <Select
+                aria-label="收费周期"
+                size="small"
+                style={{ width: 78 }}
+                disabled={!canManageConfig}
+                value={revenueCycle}
+                options={[
+                  { value: 'month', label: '月' },
+                  { value: 'quarter', label: '季' },
+                  { value: 'semiannual', label: '半年' },
+                  { value: 'year', label: '年' },
+                ]}
+                onChange={(value) => {
+                  const nextCycle = value as 'month' | 'quarter' | 'semiannual' | 'year'
+                  onUpdateClientBillingDraft(record, {
+                    revenue_cycle: nextCycle,
+                    ...clientBillingPatchFromStart(effectiveStart, nextCycle),
+                  })
+                }}
+              />
+              <Button size="small" type="primary" style={{ width: 64 }} disabled={!canManageConfig} loading={saving} onClick={() => onSaveClientBilling(record)}>
+                保存
+              </Button>
+            </div>
           </div>
         )
       },
@@ -799,6 +809,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
             agent_id: selectedAgentId,
             inbound_id: record.inbound_id,
             inbound_tag: record.inbound_tag || '',
+            client_id: record.client_id || '',
             client_email: record.email || '',
             public_client_name: [selectedAgent.customer_display_name || selectedAgent.agent_name || selectedAgent.agent_id, record.email || record.comment || record.inbound_tag || `Inbound #${record.inbound_id}`].filter(Boolean).join(' - '),
           })}
@@ -954,7 +965,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       width: 120,
       render: (_, record) => (
         <Space wrap size={[6, 6]}>
-          <Tag color={record.enabled ? 'success' : 'default'}>{record.enabled ? '启用' : '停用'}</Tag>
+          <Tag color={record.enabled ? 'blue' : 'default'}>{record.enabled ? '启用' : '停用'}</Tag>
         </Space>
       ),
     },
@@ -1359,11 +1370,13 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
           <Input.Search allowClear style={{ minWidth: 280 }} placeholder="按邮箱、备注、节点标签筛选客户端" value={clientSearch} onChange={(event) => onClientSearchChange(event.target.value)} />
           <Table
+            className="xui-client-table"
             rowKey={(record) => `${record.realm_target_agent_id || ''}-${record.inbound_id}-${record.inbound_tag || ''}-${record.email || record.comment || record.sub_id || ''}`}
             columns={visibleClientColumns}
             dataSource={filteredClients}
             pagination={false}
-            scroll={{ x: restrictedView ? 900 : 1700 }}
+            tableLayout="fixed"
+            scroll={{ x: visibleClientColumns.reduce((width, column) => width + Number(column.width || 0), 0) }}
           />
         </Space>
       ) : (

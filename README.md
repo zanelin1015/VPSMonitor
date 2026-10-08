@@ -80,7 +80,7 @@ sudo env \
 升级到指定 Release 时设置版本即可：
 
 ```bash
-sudo env VPSMONITOR_VERSION=v0.3.33 \
+sudo env VPSMONITOR_VERSION=v0.3.34 \
   VPSMONITOR_SERVER_URL="https://monitor.example.com" \
   VPSMONITOR_REGISTRATION_TOKEN="替换为Server注册Token" \
   /tmp/vpsmonitor-install.sh client
@@ -183,6 +183,14 @@ go run ./cmd/bridge-client -config ./config/client.json -once
 go run ./cmd/bridge-client -config ./config/client.json
 ```
 
+只预览本地前端、读取线上 API 时，无需启动本地 Go Server。在 `web` 目录执行：
+
+```bash
+VPSMONITOR_API_TARGET='https://your-server-hostname/zanelin' npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
+```
+
+打开 `http://localhost:5173/`，使用线上账号登录。代理目标填 API 的部署前缀，不要带 `/monitor` 或页面查询参数；根路径部署则不带 `/zanelin`。开发代理会映射登录 Cookie 路径和实时连接 Origin，但保留 Cookie 安全属性及上游 TLS 校验。服务仅绑定回环地址，不要将此代理暴露到公网。页面中的保存、删除、重启等操作仍会修改线上数据。
+
 `-once` 用于首次注册和排查连接；常驻运行会按 `poll_interval` 上报快照，并每 2 秒推送实时指标。查看版本：
 
 ```bash
@@ -267,7 +275,7 @@ chmod +x ./scripts/build.sh
 指定版本：
 
 ```bash
-VPSMONITOR_BUILD_VERSION=0.3.33 ./scripts/build.sh
+VPSMONITOR_BUILD_VERSION=0.3.34 ./scripts/build.sh
 ```
 
 脚本会先构建 `web` 前端、运行 `go test ./...`，然后输出：
@@ -282,7 +290,7 @@ VPSMONITOR_BUILD_VERSION=0.3.33 ./scripts/build.sh
 Windows PowerShell：
 
 ```powershell
-$env:VPSMONITOR_BUILD_VERSION = "0.3.33"
+$env:VPSMONITOR_BUILD_VERSION = "0.3.34"
 ./scripts/build.ps1
 ```
 
