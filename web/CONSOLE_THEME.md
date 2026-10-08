@@ -1,8 +1,10 @@
 # Console and customer portal theme
 
 The console theme adapts the publicly observable design language of
-[NexKr](https://nexkr.sh/) (reviewed 2026-10-08): warm neutral surfaces,
+[NexKr](https://nexkr.sh/) (reviewed 2026-10-08): soft layered surfaces,
 blue-violet emphasis, soft panel corners and short eased transitions.
+The light palette uses the original console's near-white, cool backgrounds
+and a white sidebar status card instead of broad gray surfaces.
 It does not redistribute the site's stylesheet, fonts, scripts or artwork,
 and it has no runtime dependency on the reference website.
 
@@ -34,4 +36,4 @@ isolated visual fixtures must use a separate test server, never mutate live data
 Existing frontend regression scripts cover navigation, finance, expiry,
 network summaries, search and routing deletion.
 
-This change does not bump the application version or publish a release.
+Versioning and publication follow the project's normal release workflow.

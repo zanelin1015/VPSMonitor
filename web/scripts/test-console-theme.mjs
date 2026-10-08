@@ -45,6 +45,18 @@ for (const dark of [false, true]) {
 }
 
 const css = await readFile(new URL('../src/styles/console.css', import.meta.url), 'utf8')
+assert.equal(consolePalette.light.background, '#f7f8fa', 'light page backdrop stays near-white')
+assert.equal(consolePalette.light.surface, '#f8fafc', 'secondary surfaces retain a light cool tint')
+assert.equal(consolePalette.light.sunken, '#f1f5f9', 'filled controls avoid dark gray slabs')
+const lightCSS = css.slice(0, css.indexOf(':root.dark:'))
+assert.match(lightCSS, /--bg: #f7f8fa;/)
+assert.match(lightCSS, /--surface: #ffffff;/)
+assert.match(lightCSS, /--surface-soft: #f8fafc;/)
+assert.doesNotMatch(lightCSS, /#efefee|#f7f7f6|#e7e7e6/)
+assert.match(css, /:root:not\(\.dark\):where\(\[data-console-theme='soft'\]\) \.admin-console-theme \.admin-oa-sider-foot \{[^}]*background: var\(--card\)/, 'light sidebar footer stays white without changing dark mode')
+const darkCSS = css.slice(css.indexOf(':root.dark:'), css.indexOf('.admin-console-theme {'))
+assert.match(darkCSS, /--console-input: #121216;/)
+assert.match(darkCSS, /--page-overlay-strong: linear-gradient\(var\(--bg\), var\(--bg\)\);/, 'near-white light gradient cannot leak into dark mode')
 const provider = await readFile(new URL('../src/components/AdminConsoleTheme.tsx', import.meta.url), 'utf8')
 const login = await readFile(new URL('../src/components/LoginScreen.tsx', import.meta.url), 'utf8')
 const customer = await readFile(new URL('../src/components/CustomerPortal.tsx', import.meta.url), 'utf8')

@@ -80,7 +80,7 @@ sudo env \
 升级到指定 Release 时设置版本即可：
 
 ```bash
-sudo env VPSMONITOR_VERSION=v0.3.34 \
+sudo env VPSMONITOR_VERSION=v0.3.35 \
   VPSMONITOR_SERVER_URL="https://monitor.example.com" \
   VPSMONITOR_REGISTRATION_TOKEN="替换为Server注册Token" \
   /tmp/vpsmonitor-install.sh client
@@ -275,7 +275,7 @@ chmod +x ./scripts/build.sh
 指定版本：
 
 ```bash
-VPSMONITOR_BUILD_VERSION=0.3.34 ./scripts/build.sh
+VPSMONITOR_BUILD_VERSION=0.3.35 ./scripts/build.sh
 ```
 
 脚本会先构建 `web` 前端、运行 `go test ./...`，然后输出：
@@ -290,7 +290,7 @@ VPSMONITOR_BUILD_VERSION=0.3.34 ./scripts/build.sh
 Windows PowerShell：
 
 ```powershell
-$env:VPSMONITOR_BUILD_VERSION = "0.3.34"
+$env:VPSMONITOR_BUILD_VERSION = "0.3.35"
 ./scripts/build.ps1
 ```
 

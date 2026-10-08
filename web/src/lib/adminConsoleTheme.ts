@@ -4,9 +4,9 @@ import type { ThemeConfig } from 'antd'
 // No third-party stylesheet, font, script, or brand asset is loaded at runtime.
 export const consolePalette = {
   light: {
-    accent: '#3939fc', background: '#efefee', surface: '#f7f7f6', raised: '#ffffff',
-    sunken: '#e7e7e6', text: '#272727', secondary: '#55555a', muted: '#6c6c75',
-    border: '#dededd', success: '#178753', warning: '#b66d00', error: '#c93630',
+    accent: '#3939fc', background: '#f7f8fa', surface: '#f8fafc', raised: '#ffffff',
+    sunken: '#f1f5f9', text: '#272727', secondary: '#55555a', muted: '#6c6c75',
+    border: '#e5e7eb', success: '#178753', warning: '#b66d00', error: '#c93630',
   },
   dark: {
     accent: '#9090ff', background: '#0d0d0f', surface: '#16161a', raised: '#1e1e23',
