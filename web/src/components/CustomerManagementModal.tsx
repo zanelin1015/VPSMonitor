@@ -94,12 +94,15 @@ export function CustomerManagementModal(props: {
   const [loading, setLoading] = useState(false)
   const [areaManagersLoading, setAreaManagersLoading] = useState(false)
   const [savingCustomer, setSavingCustomer] = useState(false)
+  const [changingCustomerStatusIDs, setChangingCustomerStatusIDs] = useState<number[]>([])
+  const customerStatusPendingRef = useRef(new Set<number>())
   const [resettingCustomerID, setResettingCustomerID] = useState<number | null>(null)
   const [copyingSubscriptionCustomerID, setCopyingSubscriptionCustomerID] = useState<number | null>(null)
   const [savingAssignment, setSavingAssignment] = useState(false)
   const [savingAreaManager, setSavingAreaManager] = useState(false)
   const [resettingAreaManagerID, setResettingAreaManagerID] = useState<number | null>(null)
   const [savingAreaBatchAssignment, setSavingAreaBatchAssignment] = useState(false)
+  const [areaBatchModalOpen, setAreaBatchModalOpen] = useState(false)
   const [areaManagerModalOpen, setAreaManagerModalOpen] = useState(false)
   const [customerCreateModalOpen, setCustomerCreateModalOpen] = useState(false)
   const [customerEditModalOpen, setCustomerEditModalOpen] = useState(false)
@@ -424,7 +427,9 @@ export function CustomerManagementModal(props: {
     {
       title: '用户备注',
       dataIndex: 'remark',
+      width: 140,
       ellipsis: true,
+      onHeaderCell: () => ({ style: { whiteSpace: 'nowrap', textOverflow: 'clip' } }),
       render: (value?: string) => value || '-',
     },
     {
@@ -457,8 +462,8 @@ export function CustomerManagementModal(props: {
     {
       title: '状态',
       dataIndex: 'enabled',
-      width: 90,
-      render: (enabled: boolean) => <Tag color={enabled ? 'blue' : 'default'}>{enabled ? '启用' : '停用'}</Tag>,
+      width: 120,
+      render: (_, record) => renderCustomerStatusButton(record),
     },
     {
       title: '操作',
@@ -666,9 +671,9 @@ export function CustomerManagementModal(props: {
     {
       title: '状态',
       dataIndex: 'enabled',
-      width: 90,
+      width: 120,
       sorter: (left, right) => Number(left.enabled) - Number(right.enabled),
-      render: (enabled: boolean) => <Tag color={enabled ? 'blue' : 'default'}>{enabled ? '启用' : '停用'}</Tag>,
+      render: (_, record) => renderCustomerStatusButton(record),
     },
     {
       title: '创建时间',
@@ -707,6 +712,25 @@ export function CustomerManagementModal(props: {
   function timestampForSort(value?: string) {
     const timestamp = value ? Date.parse(value) : Number.NaN
     return Number.isFinite(timestamp) ? timestamp : 0
+  }
+
+  function renderCustomerStatusButton(record: CustomerAdminView) {
+    const nextStatusLabel = record.enabled ? '禁用' : '启用'
+    return (
+      <Button
+        size="small"
+        type={record.enabled ? 'primary' : 'default'}
+        ghost={record.enabled}
+        danger={!record.enabled}
+        style={{ minWidth: 72 }}
+        loading={changingCustomerStatusIDs.includes(record.id)}
+        title={`点击${nextStatusLabel}`}
+        aria-label={`${nextStatusLabel}用户 ${record.display_name || record.username}`}
+        onClick={() => void toggleCustomerStatus(record)}
+      >
+        {record.enabled ? '启用' : '禁用'}
+      </Button>
+    )
   }
 
   const areaAssignmentColumns: ColumnsType<AreaManagerAssignment> = [
@@ -908,6 +932,9 @@ export function CustomerManagementModal(props: {
   }
 
   async function batchAssignAreaManagerTargets() {
+    if (savingAreaBatchAssignment) {
+      return
+    }
     if (!areaBatchForm.manager_id) {
       message.warning('请选择区域账号')
       return
@@ -938,25 +965,26 @@ export function CustomerManagementModal(props: {
       const assignment = xuiOptionMap.get(key)
       return assignment ? [assignment] : []
     })
-    const inferredRealmTargetAssignments = await inferRealmTargetXUIAssignments(areaBatchForm.selected_realm_keys, areaBatchRealmOptions, xuiAssignments)
-    const assignments = dedupeAreaManagerAssignmentDrafts([
-      ...realmAssignments,
-      ...inferredRealmTargetAssignments,
-      ...xuiAssignments,
-    ])
-    if (!assignments.length) {
-      message.warning('没有可授权的选择项')
-      return
-    }
     setSavingAreaBatchAssignment(true)
     try {
+      const inferredRealmTargetAssignments = await inferRealmTargetXUIAssignments(areaBatchForm.selected_realm_keys, areaBatchRealmOptions, xuiAssignments)
+      const assignments = dedupeAreaManagerAssignmentDrafts([
+        ...realmAssignments,
+        ...inferredRealmTargetAssignments,
+        ...xuiAssignments,
+      ])
+      if (!assignments.length) {
+        message.warning('没有可授权的选择项')
+        return
+      }
       await fetchJSON<AreaManagerAssignment[]>(`/api/v1/admin/area-managers/${areaBatchForm.manager_id}/assignments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ assignments }),
       })
       message.success(`已批量授权 ${assignments.length} 条范围`)
-      setAreaBatchForm((current) => ({ ...current, selected_realm_keys: [], selected_xui_keys: [] }))
+      setAreaBatchModalOpen(false)
+      setAreaBatchForm(emptyAreaBatchAssignmentForm)
       await loadAreaManagers()
     } catch (error) {
       message.error(error instanceof Error ? error.message : '批量授权失败')
@@ -1005,6 +1033,19 @@ export function CustomerManagementModal(props: {
       password: DEFAULT_ACCOUNT_PASSWORD,
     })
     setAreaManagerModalOpen(true)
+  }
+
+  function openAreaBatchModal() {
+    setAreaBatchForm(emptyAreaBatchAssignmentForm)
+    setAreaBatchModalOpen(true)
+  }
+
+  function closeAreaBatchModal() {
+    if (savingAreaBatchAssignment) {
+      return
+    }
+    setAreaBatchModalOpen(false)
+    setAreaBatchForm(emptyAreaBatchAssignmentForm)
   }
 
   function closeAreaManagerModal() {
@@ -1091,6 +1132,33 @@ export function CustomerManagementModal(props: {
       message.error(error instanceof Error ? error.message : '创建用户失败')
     } finally {
       setSavingCustomer(false)
+    }
+  }
+
+  async function toggleCustomerStatus(record: CustomerAdminView) {
+    if (customerStatusPendingRef.current.has(record.id)) {
+      return
+    }
+    customerStatusPendingRef.current.add(record.id)
+    setChangingCustomerStatusIDs((current) => [...current, record.id])
+    try {
+      const updated = await fetchJSON<CustomerAdminView>(`/api/v1/admin/customers/${record.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: !record.enabled }),
+      })
+      setCustomers((current) => current.map((item) => item.id === updated.id ? updated : item))
+      setAreaManagers((current) => current.map((manager) => ({
+        ...manager,
+        customers: manager.customers?.map((item) => item.id === updated.id ? updated : item),
+      })))
+      setCustomerForm((current) => current.username === updated.username ? { ...current, enabled: updated.enabled } : current)
+      message.success(`用户已${updated.enabled ? '启用' : '禁用'}`)
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '切换用户状态失败')
+    } finally {
+      customerStatusPendingRef.current.delete(record.id)
+      setChangingCustomerStatusIDs((current) => current.filter((id) => id !== record.id))
     }
   }
 
@@ -1538,26 +1606,36 @@ export function CustomerManagementModal(props: {
         </div>
         <Space>
           <Button size="small" icon={<ReloadOutlined />} onClick={() => void loadAreaManagers()}>刷新区域账号</Button>
+          <Button size="small" icon={<PlusOutlined />} onClick={openAreaBatchModal}>新增授权</Button>
           <Button size="small" type="primary" icon={<PlusOutlined />} onClick={openAreaManagerCreateModal}>新增区域账号</Button>
         </Space>
       </div>
-      <Card size="small" style={{ marginTop: 14 }} bordered={false}>
-        <div className="customer-admin-card-head">
+      <Modal
+        title={(
           <div className="admin-help-title-group">
-            <Title level={5}>批量授权入口 / 出口</Title>
+            <span>新增授权 · 批量授权入口 / 出口</span>
             <AdminHelpHint title="Realm / HAProxy 入口与 x-ui 出口节点可分别选择；HAProxy 主备会自动映射到校验一致的最终节点。" />
           </div>
-          <Button
-            type="primary"
-            icon={<SaveOutlined />}
-            loading={savingAreaBatchAssignment}
-            onClick={() => void batchAssignAreaManagerTargets()}
-          >
-            批量授权
-          </Button>
-        </div>
+        )}
+        open={areaBatchModalOpen}
+        onCancel={closeAreaBatchModal}
+        maskClosable={!savingAreaBatchAssignment}
+        keyboard={!savingAreaBatchAssignment}
+        closable={!savingAreaBatchAssignment}
+        width={1000}
+        styles={{ body: { maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' } }}
+        destroyOnClose
+        footer={(
+          <Space>
+            <Button disabled={savingAreaBatchAssignment} onClick={closeAreaBatchModal}>取消</Button>
+            <Button type="primary" icon={<SaveOutlined />} loading={savingAreaBatchAssignment} onClick={() => void batchAssignAreaManagerTargets()}>
+              保存授权
+            </Button>
+          </Space>
+        )}
+      >
         <Row gutter={[12, 12]}>
-          <Col xs={24} md={5}>
+          <Col xs={24}>
             <Text type="secondary">区域账号</Text>
             <Select
               style={{ width: '100%' }}
@@ -1569,7 +1647,7 @@ export function CustomerManagementModal(props: {
               onChange={(value) => setAreaBatchForm((current) => ({ ...current, manager_id: value }))}
             />
           </Col>
-          <Col xs={24} md={5}>
+          <Col xs={24} md={12}>
             <Text type="secondary">转发入口 Client</Text>
             <Select
               style={{ width: '100%' }}
@@ -1581,7 +1659,7 @@ export function CustomerManagementModal(props: {
               onChange={(value) => setAreaBatchForm((current) => ({ ...current, agent_id: value, selected_realm_keys: [] }))}
             />
           </Col>
-          <Col xs={24} md={5}>
+          <Col xs={24} md={12}>
             <Text type="secondary">x-ui 出口 Client</Text>
             <Select
               style={{ width: '100%' }}
@@ -1593,7 +1671,7 @@ export function CustomerManagementModal(props: {
               onChange={(value) => setAreaBatchForm((current) => ({ ...current, xui_agent_id: value, selected_xui_keys: [] }))}
             />
           </Col>
-          <Col xs={24} md={4}>
+          <Col xs={24} md={12}>
             <Space style={{ width: '100%', justifyContent: 'space-between' }}>
               <Text type="secondary">转发入口</Text>
               <Button size="small" disabled={!areaBatchForm.agent_id || !areaBatchRealmOptions.length} onClick={() => setAreaBatchForm((current) => ({ ...current, selected_realm_keys: areaBatchRealmOptions.map((option) => option.value) }))}>全选</Button>
@@ -1611,7 +1689,7 @@ export function CustomerManagementModal(props: {
               onChange={(values) => setAreaBatchForm((current) => ({ ...current, selected_realm_keys: values }))}
             />
           </Col>
-          <Col xs={24} md={5}>
+          <Col xs={24} md={12}>
             <Space style={{ width: '100%', justifyContent: 'space-between' }}>
               <Text type="secondary">x-ui 客户端 / 节点</Text>
               <Button size="small" disabled={!areaBatchXUIAgentID || !areaBatchClientTreeData.length} onClick={() => setAreaBatchForm((current) => ({ ...current, selected_xui_keys: assignmentNodeKeys(areaBatchXUIAgentID, areaBatchOverview, agents) }))}>全选</Button>
@@ -1633,7 +1711,7 @@ export function CustomerManagementModal(props: {
             />
           </Col>
         </Row>
-      </Card>
+      </Modal>
       <Table
         style={{ marginTop: 14 }}
         rowKey={(record) => record.id}

@@ -588,7 +588,7 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
           columns={readOnlyAssignmentColumns}
           dataSource={selectedCustomerAssignments}
           pagination={{ pageSize: 8, hideOnSinglePage: true }}
-          scroll={{ x: 1200 }}
+          scroll={{ x: readOnlyAssignmentColumns.reduce((width, column) => width + Number(column.width || 120), 0) }}
           locale={{ emptyText: <Empty description="暂无授权链路" /> }}
         />
       </Modal>

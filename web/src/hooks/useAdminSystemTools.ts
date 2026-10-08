@@ -1,5 +1,5 @@
 import { App as AntdApp } from 'antd'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 import type {
   AccessLogEntry,
@@ -72,6 +72,7 @@ export function useAdminSystemTools(setAdminUser: (user: AdminUser | null) => vo
   const [frontendSettingsLoading, setFrontendSettingsLoading] = useState(false)
   const [frontendSettingsLoaded, setFrontendSettingsLoaded] = useState(false)
   const [frontendSettingsSaving, setFrontendSettingsSaving] = useState(false)
+  const frontendSettingsSavePending = useRef(false)
   const [frontendSettingsForm, setFrontendSettingsForm] = useState<FrontendSettingsForm>(() => defaultFrontendSettingsForm())
   const [scheduledTasksLoading, setScheduledTasksLoading] = useState(false)
   const [scheduledTasksSaving, setScheduledTasksSaving] = useState(false)
@@ -149,31 +150,36 @@ export function useAdminSystemTools(setAdminUser: (user: AdminUser | null) => vo
       setFrontendSettingsLoaded(true)
     } catch (error) {
       handleUnauthorized(error)
-      message.error(error instanceof Error ? error.message : '加载前端样式设置失败')
+      message.error(error instanceof Error ? error.message : '加载系统设置失败')
     } finally {
       setFrontendSettingsLoading(false)
     }
   }
 
-  async function saveFrontendSettings() {
+  async function saveFrontendSettings(nextForm = frontendSettingsForm): Promise<boolean> {
+    if (frontendSettingsSavePending.current) return false
     if (!frontendSettingsLoaded || frontendSettingsLoading) {
       message.warning('公告配置尚未加载完成，请刷新后再保存')
-      return
+      return false
     }
+    frontendSettingsSavePending.current = true
     setFrontendSettingsSaving(true)
     try {
       const data = await fetchJSON<FrontendSettings>('/api/v1/admin/frontend-settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(serializeFrontendSettingsForm(frontendSettingsForm)),
+        body: JSON.stringify(serializeFrontendSettingsForm(nextForm)),
       })
       setFrontendSettingsForm(normalizeFrontendSettingsForm(data))
       applyCustomFrontendCode(data.custom_code || '')
-      message.success('前端自定义样式已保存')
+      message.success('设置已保存')
+      return true
     } catch (error) {
       handleUnauthorized(error)
-      message.error(error instanceof Error ? error.message : '保存前端样式设置失败')
+      message.error(error instanceof Error ? error.message : '保存设置失败')
+      return false
     } finally {
+      frontendSettingsSavePending.current = false
       setFrontendSettingsSaving(false)
     }
   }

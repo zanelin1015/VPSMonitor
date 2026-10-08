@@ -89,6 +89,37 @@ func TestFrontendSettingsPersistCustomerAnnouncements(t *testing.T) {
 	}
 }
 
+func TestFrontendSettingsPersistsPartialAnnouncementDrafts(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "bridge.db")
+	s, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	drafts := []model.CustomerAnnouncement{
+		{ID: "title-only", Enabled: false, Title: "未完成标题"},
+		{ID: "content-only", Enabled: false, Content: "尚未填写标题"},
+	}
+	if _, err := s.SaveFrontendSettings(model.FrontendSettings{Announcements: drafts}); err != nil {
+		s.Close()
+		t.Fatal(err)
+	}
+	s.Close()
+	s, err = NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	loaded, found, err := s.GetFrontendSettings()
+	if err != nil || !found || len(loaded.Announcements) != len(drafts) {
+		t.Fatalf("drafts must survive reopening: settings=%#v, found=%v, err=%v", loaded, found, err)
+	}
+	for index, draft := range loaded.Announcements {
+		if draft.Enabled || draft.ID != drafts[index].ID || draft.Title != drafts[index].Title || draft.Content != drafts[index].Content {
+			t.Fatalf("draft changed unexpectedly: %#v", draft)
+		}
+	}
+}
+
 func TestAnnouncementHistoryKeepsRevisionsAcrossReopen(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "bridge.db")
 	s, err := NewSQLiteStore(dbPath)

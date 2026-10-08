@@ -1,6 +1,7 @@
 import { Badge, Button, Select, Typography } from 'antd'
 import {
   ApartmentOutlined,
+  BellOutlined,
   ApiOutlined,
   CloudServerOutlined,
   DashboardOutlined,
@@ -9,7 +10,6 @@ import {
   FileSearchOutlined,
   MessageOutlined,
   ReloadOutlined,
-  SettingOutlined,
   TeamOutlined,
 } from '@ant-design/icons'
 
@@ -41,6 +41,7 @@ export interface AdminShellNavigationProps {
   onOpenFrontProxies: () => void
   onOpenSupport: () => void
   onOpenFrontendSettings: () => void
+  onOpenAnnouncements: () => void
   onOpenUpdates: () => void
   onLogout: () => void
   onOpenWorkbench: () => void
@@ -74,6 +75,7 @@ export function AdminShellNavigation(props: AdminShellNavigationProps) {
     onOpenFrontProxies,
     onOpenSupport,
     onOpenFrontendSettings,
+    onOpenAnnouncements,
     onOpenUpdates,
     onLogout,
     onOpenWorkbench,
@@ -146,9 +148,9 @@ export function AdminShellNavigation(props: AdminShellNavigationProps) {
             <FileSearchOutlined />
             <span>日志</span>
           </button> : null}
-          {canManageSystem ? <button type="button" className={activeAdminPage === 'settings' ? 'active' : ''} onClick={onOpenFrontendSettings}>
-            <SettingOutlined />
-            <span>设置</span>
+          {canManageSystem ? <button type="button" className={activeAdminPage === 'settings' ? 'active' : ''} onClick={onOpenAnnouncements}>
+            <BellOutlined />
+            <span>公告</span>
           </button> : null}
           {canManageSystem ? <button type="button" className={activeAdminPage === 'schedules' ? 'active' : ''} onClick={onOpenSchedules}>
             <ReloadOutlined />
@@ -219,10 +221,10 @@ export function AdminShellNavigation(props: AdminShellNavigationProps) {
             <span>访问日志</span>
             <small>连接排查</small>
           </button> : null}
-          {canManageSystem ? <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'settings' ? ' active' : ''}`} onClick={onOpenFrontendSettings}>
-            <SettingOutlined />
-            <span>系统设置</span>
-            <small>样式与升级</small>
+          {canManageSystem ? <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'settings' ? ' active' : ''}`} onClick={onOpenAnnouncements}>
+            <BellOutlined />
+            <span>客户公告</span>
+            <small>发布与草稿</small>
           </button> : null}
           {canManageSystem ? <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'schedules' ? ' active' : ''}`} onClick={onOpenSchedules}>
             <ReloadOutlined />

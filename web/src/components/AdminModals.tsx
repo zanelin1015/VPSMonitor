@@ -1,10 +1,8 @@
 import { useState, type ChangeEvent } from 'react'
-import { Alert, Avatar, Button, Card, Col, Divider, Dropdown, Empty, Input, InputNumber, Modal, QRCode, Row, Select, Space, Spin, Switch, Tabs, Tag, Typography } from 'antd'
+import { Alert, Avatar, Button, Card, Col, Divider, Dropdown, Empty, Input, InputNumber, Modal, Popconfirm, QRCode, Row, Select, Space, Spin, Switch, Tabs, Tag, Typography } from 'antd'
 import type { MenuProps } from 'antd'
 import {
   BellOutlined,
-  ArrowDownOutlined,
-  ArrowUpOutlined,
   CloudDownloadOutlined,
   CopyOutlined,
   DeleteOutlined,
@@ -415,29 +413,35 @@ export function FrontendSettingsModal(props: {
   saving: boolean
   form: FrontendSettingsForm
   onClose: () => void
-  onSave: () => void
+  onSave: (form?: FrontendSettingsForm) => Promise<boolean>
   onFormChange: (form: FrontendSettingsForm) => void
 }) {
   const { open, loading, saving, form, onClose, onSave, onFormChange } = props
 
   return (
     <Modal
-      title="系统设置"
+      title="前端样式自定义"
       open={open}
-      onCancel={onClose}
+      onCancel={() => { if (!saving) onClose() }}
+      closable={!saving}
+      maskClosable={!saving}
+      keyboard={!saving}
       width={920}
       footer={[
-        <Button key="cancel" onClick={onClose}>关闭</Button>,
-        <Button key="save" type="primary" loading={saving} onClick={onSave}>保存并应用</Button>,
+        <Button key="cancel" disabled={saving} onClick={onClose}>关闭</Button>,
+        <Button key="save" type="primary" disabled={loading} loading={saving} onClick={() => void onSave()}>保存并应用</Button>,
       ]}
     >
-      <FrontendSettingsPanel
-        loading={loading}
-        saving={saving}
-        form={form}
-        onSave={onSave}
-        onFormChange={onFormChange}
-      />
+      <Spin spinning={loading}>
+        <Text strong>管理员后台自定义代码（样式和脚本）</Text>
+        <Input.TextArea
+          value={form.custom_code}
+          disabled={loading || saving}
+          onChange={(event) => onFormChange({ ...form, custom_code: event.target.value })}
+          autoSize={{ minRows: 16, maxRows: 28 }}
+          placeholder={`<style>\n:root { --green: #2563eb; }\n</style>`}
+        />
+      </Spin>
     </Modal>
   )
 }
@@ -446,52 +450,76 @@ export function FrontendSettingsPanel(props: {
   loading: boolean
   saving: boolean
   form: FrontendSettingsForm
-  onSave: () => void
-  onFormChange: (form: FrontendSettingsForm) => void
+  onSave: (form?: FrontendSettingsForm) => Promise<boolean>
 }) {
-  const { loading, saving, form, onSave, onFormChange } = props
+  const { loading, saving, form, onSave } = props
+  const [draftsOpen, setDraftsOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [announcementEditorOpen, setAnnouncementEditorOpen] = useState(false)
+  const [editingAnnouncementIndex, setEditingAnnouncementIndex] = useState<number | null>(null)
+  const [announcementDraft, setAnnouncementDraft] = useState<FrontendSettingsForm['announcements'][number] | null>(null)
 
-  const updateAnnouncement = (index: number, patch: Partial<FrontendSettingsForm['announcements'][number]>) => {
-    onFormChange({
-      ...form,
-      announcements: form.announcements.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item),
-    })
+  const deleteAnnouncement = (id: string) => onSave({
+    ...form,
+    announcements: form.announcements.filter((item) => item.id !== id),
+  })
+
+  const visibleAnnouncements = form.announcements.filter((item) => item.enabled)
+  const draftAnnouncements = form.announcements.filter((item) => !item.enabled)
+
+  const openNewAnnouncement = () => {
+    setEditingAnnouncementIndex(null)
+    setAnnouncementDraft(newCustomerAnnouncement())
+    setAnnouncementEditorOpen(true)
   }
 
-  const moveAnnouncement = (index: number, offset: number) => {
-    const target = index + offset
-    if (target < 0 || target >= form.announcements.length) return
+  const openAnnouncement = (index: number) => {
+    setDraftsOpen(false)
+    setEditingAnnouncementIndex(index)
+    setAnnouncementDraft({ ...form.announcements[index] })
+    setAnnouncementEditorOpen(true)
+  }
+
+  const closeAnnouncementEditor = () => {
+    if (saving) return
+    setAnnouncementEditorOpen(false)
+    setEditingAnnouncementIndex(null)
+    setAnnouncementDraft(null)
+  }
+
+  const saveAnnouncementDraft = async (enabled: boolean) => {
+    if (saving || !announcementDraft) return
+    if (enabled ? !announcementDraft.title.trim() : !announcementDraft.title.trim() && !(announcementDraft.content || '').trim()) return
+    const next = { ...announcementDraft, enabled }
     const announcements = [...form.announcements]
-    ;[announcements[index], announcements[target]] = [announcements[target], announcements[index]]
-    onFormChange({ ...form, announcements })
+    if (editingAnnouncementIndex === null) announcements.push(next)
+    else announcements[editingAnnouncementIndex] = next
+    if (await onSave({ ...form, announcements })) {
+      setAnnouncementEditorOpen(false)
+      setEditingAnnouncementIndex(null)
+      setAnnouncementDraft(null)
+    }
   }
 
   return (
     <div className="frontend-settings-page">
       <div className="admin-content-title">
         <div>
-          <Typography.Title level={3}>系统设置</Typography.Title>
-          <AdminHelpHint title="配置管理员后台自定义样式；用户账号样式仍在用户看板里单独配置。" />
+          <Typography.Title level={3}>客户公告</Typography.Title>
+          <AdminHelpHint title="页面仅列出启用公告，新增与编辑通过弹窗完成；草稿不会展示给用户。" />
         </div>
-        <Button type="primary" loading={saving} onClick={onSave}>保存并应用</Button>
+        <Space>
+          <Button disabled={loading || saving} onClick={() => setHistoryOpen(true)}>公告历史（{form.announcement_history.length}）</Button>
+          <Button disabled={loading || saving} onClick={() => setDraftsOpen(true)}>草稿（{draftAnnouncements.length}）</Button>
+          <Button type="primary" icon={<PlusOutlined />} disabled={loading || saving} onClick={openNewAnnouncement}>新增公告</Button>
+        </Space>
       </div>
       <Spin spinning={loading}>
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <div className="admin-settings-section-heading">
-            <div>
-              <Typography.Title level={4}>客户公告</Typography.Title>
-              <AdminHelpHint title="启用后展示在 Customer 看板顶部，可用于更新 TG、WhatsApp 等联系方式。" />
-            </div>
-            <Button
-              icon={<PlusOutlined />}
-              onClick={() => onFormChange({
-                ...form,
-                announcements: [...form.announcements, newCustomerAnnouncement()],
-              })}
-            >新增公告</Button>
-          </div>
-          {form.announcements.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无客户公告" /> : null}
-          {form.announcements.map((announcement, index) => (
+          {visibleAnnouncements.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无启用公告" /> : null}
+          {visibleAnnouncements.map((announcement) => {
+            const index = form.announcements.findIndex((item) => item.id === announcement.id)
+            return (
             <Card
               key={announcement.id}
               size="small"
@@ -499,76 +527,59 @@ export function FrontendSettingsPanel(props: {
               title={announcement.title.trim() || `公告 ${index + 1}`}
               extra={(
                 <Space size={4}>
-                  <Switch
-                    size="small"
-                    checked={announcement.enabled}
-                    checkedChildren="启用"
-                    unCheckedChildren="停用"
-                    onChange={(enabled) => updateAnnouncement(index, { enabled })}
-                  />
-                  <Button type="text" icon={<ArrowUpOutlined />} disabled={index === 0} title="上移" onClick={() => moveAnnouncement(index, -1)} />
-                  <Button type="text" icon={<ArrowDownOutlined />} disabled={index === form.announcements.length - 1} title="下移" onClick={() => moveAnnouncement(index, 1)} />
-                  <Button
-                    type="text"
-                    danger
-                    icon={<DeleteOutlined />}
-                    title="删除公告"
-                    onClick={() => onFormChange({
-                      ...form,
-                      announcements: form.announcements.filter((_, itemIndex) => itemIndex !== index),
-                    })}
-                  />
+                  <Tag color="success">启用</Tag>
+                  <Button size="small" icon={<EditOutlined />} disabled={loading || saving} onClick={() => openAnnouncement(index)}>编辑</Button>
+                  <Popconfirm title="确认删除这条公告？" onConfirm={() => deleteAnnouncement(announcement.id)}>
+                    <Button type="text" danger disabled={loading || saving} icon={<DeleteOutlined />} title="删除公告" />
+                  </Popconfirm>
                 </Space>
               )}
             >
-              <Row gutter={[12, 12]}>
-                <Col xs={24} md={6}>
-                  <Text strong>类型</Text>
-                  <Select
-                    value={announcement.level || 'info'}
-                    style={{ width: '100%' }}
-                    options={[
-                      { value: 'info', label: '通知' },
-                      { value: 'success', label: '恢复' },
-                      { value: 'warning', label: '提醒' },
-                      { value: 'error', label: '紧急' },
-                    ]}
-                    onChange={(level) => updateAnnouncement(index, { level })}
-                  />
-                </Col>
-                <Col xs={24} md={18}>
-                  <Text strong>标题</Text>
-                  <Input value={announcement.title} maxLength={120} placeholder="例如：Telegram 联系方式已更新" onChange={(event) => updateAnnouncement(index, { title: event.target.value })} />
-                </Col>
-                <Col span={24}>
-                  <Text strong>内容</Text>
-                  <Input.TextArea value={announcement.content || ''} maxLength={1000} autoSize={{ minRows: 2, maxRows: 5 }} placeholder="说明原联系方式状态以及新的联系方式" onChange={(event) => updateAnnouncement(index, { content: event.target.value })} />
-                </Col>
-                <Col xs={24} md={8}>
-                  <Text strong>链接按钮文字</Text>
-                  <Input value={announcement.link_label || ''} maxLength={60} placeholder="联系新 Telegram" onChange={(event) => updateAnnouncement(index, { link_label: event.target.value })} />
-                </Col>
-                <Col xs={24} md={16}>
-                  <Text strong>新联系方式链接</Text>
-                  <Input value={announcement.link_url || ''} maxLength={500} placeholder="https://t.me/example 或 https://wa.me/..." onChange={(event) => updateAnnouncement(index, { link_url: event.target.value })} />
-                </Col>
-                <Col xs={24} md={12}>
-                  <Text strong>开始展示（可选）</Text>
-                  <Input type="datetime-local" value={announcement.starts_at || ''} onChange={(event) => updateAnnouncement(index, { starts_at: event.target.value })} />
-                </Col>
-                <Col xs={24} md={12}>
-                  <Text strong>结束展示（可选）</Text>
-                  <Input type="datetime-local" value={announcement.ends_at || ''} onChange={(event) => updateAnnouncement(index, { ends_at: event.target.value })} />
-                </Col>
-              </Row>
+              <Text type="secondary">{announcement.content || '暂无公告内容'}</Text>
             </Card>
-          ))}
-          {form.announcement_history.length > 0 ? (
-            <Card
-              size="small"
-              className="admin-announcement-history"
-              title={`公告历史（${form.announcement_history.length}）`}
-            >
+            )
+          })}
+          <Modal title={`公告草稿（${draftAnnouncements.length}）`} open={draftsOpen} onCancel={() => setDraftsOpen(false)} width={760} footer={<Button onClick={() => setDraftsOpen(false)}>关闭</Button>}>
+              {draftAnnouncements.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无草稿" /> : null}
+              <Space direction="vertical" style={{ width: '100%' }}>
+                {draftAnnouncements.map((announcement) => {
+                  const index = form.announcements.findIndex((item) => item.id === announcement.id)
+                  return (
+                    <Card key={announcement.id} size="small" title={announcement.title.trim() || '未命名草稿'} extra={<Space><Tag>草稿</Tag><Button size="small" disabled={loading || saving} icon={<EditOutlined />} onClick={() => openAnnouncement(index)}>继续编辑</Button><Popconfirm title="确认删除这条草稿？" onConfirm={() => deleteAnnouncement(announcement.id)}><Button size="small" disabled={loading || saving} danger icon={<DeleteOutlined />} title="删除草稿" /></Popconfirm></Space>}>
+                      <Text type="secondary">{announcement.content || '暂无公告内容'}</Text>
+                    </Card>
+                  )
+                })}
+              </Space>
+          </Modal>
+          <Modal
+            title={editingAnnouncementIndex === null ? '新增公告' : '编辑公告'}
+            open={announcementEditorOpen}
+            onCancel={closeAnnouncementEditor}
+            closable={!saving}
+            maskClosable={false}
+            keyboard={!saving}
+            width={760}
+            footer={[
+              <Button key="cancel" disabled={saving} onClick={closeAnnouncementEditor}>取消</Button>,
+              <Button key="draft" loading={saving} onClick={() => void saveAnnouncementDraft(false)} disabled={loading || (!announcementDraft?.title.trim() && !(announcementDraft?.content || '').trim())}>保存草稿</Button>,
+              <Button key="publish" loading={saving} type="primary" onClick={() => void saveAnnouncementDraft(true)} disabled={loading || !announcementDraft?.title.trim()}>发布公告</Button>,
+            ]}
+          >
+            {announcementDraft ? (
+              <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0 }}><Row gutter={[12, 12]}>
+                <Col xs={24} md={6}><Text strong>类型</Text><Select aria-label="公告类型" disabled={saving} value={announcementDraft.level || 'info'} style={{ width: '100%' }} options={[{ value: 'info', label: '通知' }, { value: 'success', label: '恢复' }, { value: 'warning', label: '提醒' }, { value: 'error', label: '紧急' }]} onChange={(level) => setAnnouncementDraft((current) => current ? { ...current, level } : current)} /></Col>
+                <Col xs={24} md={18}><Text strong>标题</Text><Input aria-label="公告标题" value={announcementDraft.title} maxLength={120} onChange={(event) => setAnnouncementDraft((current) => current ? { ...current, title: event.target.value } : current)} /></Col>
+                <Col span={24}><Text strong>内容</Text><Input.TextArea aria-label="公告内容" value={announcementDraft.content || ''} maxLength={1000} autoSize={{ minRows: 4, maxRows: 8 }} onChange={(event) => setAnnouncementDraft((current) => current ? { ...current, content: event.target.value } : current)} /></Col>
+                <Col xs={24} md={8}><Text strong>链接按钮文字</Text><Input value={announcementDraft.link_label || ''} maxLength={60} onChange={(event) => setAnnouncementDraft((current) => current ? { ...current, link_label: event.target.value } : current)} /></Col>
+                <Col xs={24} md={16}><Text strong>联系方式链接</Text><Input value={announcementDraft.link_url || ''} maxLength={500} onChange={(event) => setAnnouncementDraft((current) => current ? { ...current, link_url: event.target.value } : current)} /></Col>
+                <Col xs={24} md={12}><Text strong>开始展示（可选）</Text><Input type="datetime-local" value={announcementDraft.starts_at || ''} onChange={(event) => setAnnouncementDraft((current) => current ? { ...current, starts_at: event.target.value } : current)} /></Col>
+                <Col xs={24} md={12}><Text strong>结束展示（可选）</Text><Input type="datetime-local" value={announcementDraft.ends_at || ''} onChange={(event) => setAnnouncementDraft((current) => current ? { ...current, ends_at: event.target.value } : current)} /></Col>
+              </Row></fieldset>
+            ) : null}
+          </Modal>
+          <Modal title={`公告历史（${form.announcement_history.length}）`} open={historyOpen} onCancel={() => setHistoryOpen(false)} width={760} footer={<Button onClick={() => setHistoryOpen(false)}>关闭</Button>}>
+              {form.announcement_history.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无公告历史" /> : null}
               {[...form.announcement_history].reverse().map((item) => (
                 <div key={item.id} className="admin-announcement-history-item">
                   <div className="admin-announcement-history-meta">
@@ -585,18 +596,7 @@ export function FrontendSettingsPanel(props: {
                   ) : null}
                 </div>
               ))}
-            </Card>
-          ) : null}
-          <Divider />
-          <div>
-            <Text strong>管理员后台自定义代码（样式和脚本）</Text>
-            <Input.TextArea
-              value={form.custom_code}
-              onChange={(event) => onFormChange({ ...form, custom_code: event.target.value })}
-              autoSize={{ minRows: 16, maxRows: 28 }}
-              placeholder={`<style>\n:root { --green: #2563eb; }\n</style>\n<script>\nwindow.CustomBackgroundImage = 'https://example.com/bg.jpg'\n</script>`}
-            />
-          </div>
+          </Modal>
         </Space>
       </Spin>
     </div>

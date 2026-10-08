@@ -89,3 +89,14 @@ func TestValidateFrontendSettingsRejectsInvalidAnnouncement(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateFrontendSettingsAllowsPartialAnnouncementDrafts(t *testing.T) {
+	for _, draft := range []model.CustomerAnnouncement{
+		{Enabled: false, Title: "Draft title"},
+		{Enabled: false, Content: "Draft content"},
+	} {
+		if err := validateFrontendSettings(model.FrontendSettings{Announcements: []model.CustomerAnnouncement{draft}}); err != nil {
+			t.Fatalf("partial draft rejected: %v", err)
+		}
+	}
+}

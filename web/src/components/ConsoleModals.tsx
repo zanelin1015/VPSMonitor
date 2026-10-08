@@ -106,7 +106,7 @@ export interface ConsoleModalsProps {
   onRefreshTelegramBots: () => void
   onSaveAccount: () => void
   onSaveClientInstallSettings: () => void
-  onSaveFrontendSettings: () => void
+  onSaveFrontendSettings: (form?: FrontendSettingsForm) => Promise<boolean>
   onSaveTelegramBot: () => void
   onSubmitXUIAction: () => void
   onTelegramBotFormChange: Dispatch<SetStateAction<TelegramBotForm>>

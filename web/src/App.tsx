@@ -1631,10 +1631,6 @@ export default function App() {
   }
   const openSupportPage = () => setActiveAdminPage('support')
   const openSettingsPage = () => {
-    if (activeAdminPage === 'settings') {
-      void openFrontendSettingsModal(false)
-      return
-    }
     setActiveAdminPage('settings')
   }
   const openAccessLogsPage = () => setActiveAdminPage('access-logs')
@@ -1659,7 +1655,8 @@ export default function App() {
     onOpenCustomers: openCustomersPage,
     onOpenFrontProxies: openFrontProxiesPage,
     onOpenSupport: openSupportPage,
-    onOpenFrontendSettings: openSettingsPage,
+    onOpenFrontendSettings: () => void openFrontendSettingsModal(true),
+    onOpenAnnouncements: openSettingsPage,
     onOpenUpdates: () => setUpdateModalOpen(true),
     onLogout: () => void logout(),
     onOpenWorkbench: returnHome,
@@ -1757,7 +1754,7 @@ export default function App() {
             onRefreshTelegramBots={() => void loadTelegramBots()}
             onSaveAccount={() => void saveAccount()}
             onSaveClientInstallSettings={() => void saveClientInstallSettings()}
-            onSaveFrontendSettings={() => void saveFrontendSettings()}
+            onSaveFrontendSettings={saveFrontendSettings}
             onSaveTelegramBot={saveTelegramBot}
             onSubmitXUIAction={() => void createXUIAction()}
             onTelegramBotFormChange={setTelegramBotForm}
@@ -1811,8 +1808,7 @@ export default function App() {
               loading={frontendSettingsLoading}
               saving={frontendSettingsSaving}
               form={frontendSettingsForm}
-              onSave={() => void saveFrontendSettings()}
-              onFormChange={setFrontendSettingsForm}
+              onSave={saveFrontendSettings}
             />
           </main>
         ) : activeAdminPage === 'schedules' ? (
