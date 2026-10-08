@@ -580,7 +580,7 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
         open={assignmentViewModalOpen}
         onCancel={() => setAssignmentViewModalOpen(false)}
         footer={<Button onClick={() => setAssignmentViewModalOpen(false)}>关闭</Button>}
-        width={980}
+        width={1260}
         destroyOnClose
       >
         <Table
@@ -588,6 +588,7 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
           columns={readOnlyAssignmentColumns}
           dataSource={selectedCustomerAssignments}
           pagination={{ pageSize: 8, hideOnSinglePage: true }}
+          scroll={{ x: 1200 }}
           locale={{ emptyText: <Empty description="暂无授权链路" /> }}
         />
       </Modal>

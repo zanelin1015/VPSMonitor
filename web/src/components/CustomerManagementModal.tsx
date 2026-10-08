@@ -1253,14 +1253,14 @@ export function CustomerManagementModal(props: {
     }
   }
 
-  async function saveAssignment() {
+  async function saveAssignment(): Promise<boolean> {
     if (!selectedCustomerID) {
       message.warning('请先选择用户')
-      return
+      return false
     }
     if (!assignmentForm.agent_id || !assignmentForm.inbound_id) {
       message.warning('请选择 Client 和节点')
-      return
+      return false
     }
     setSavingAssignment(true)
     try {
@@ -1309,8 +1309,10 @@ export function CustomerManagementModal(props: {
       if (canManageAreaManagers) {
         await loadAreaManagers()
       }
+      return true
     } catch (error) {
       message.error(error instanceof Error ? error.message : '保存分配失败')
+      return false
     } finally {
       setSavingAssignment(false)
     }
@@ -1713,7 +1715,7 @@ export function CustomerManagementModal(props: {
         setAssignmentForm(emptyAssignmentForm)
       }}
       onSelectClient={(value) => selectClient(value)}
-      onSaveAssignment={() => void saveAssignment()}
+      onSaveAssignment={saveAssignment}
     />
   )
 

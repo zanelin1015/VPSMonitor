@@ -5,6 +5,17 @@ export function sourceClientKey(client: XUIClientView): string {
   return [client.inbound_id || 0, client.inbound_tag || '', client.email || ''].join('::')
 }
 
+/**
+ * Build the default outbound label used when a forwarding rule is created from
+ * a registered Client. Keep the label tied to the source Client and the
+ * selected client identity so it remains easy to identify in routing rules.
+ */
+export function defaultOutboundTagForSourceClient(sourceOverview: XUIOverview, sourceClient: XUIClientView): string {
+  const sourceClientName = sourceOverview.agent_name || sourceOverview.agent_id
+  const clientName = sourceClient.email || sourceClient.comment || sourceClient.sub_id || `client-${sourceClient.inbound_id}`
+  return normalizeOutboundTag([sourceClientName, clientName].filter(Boolean).join('-'))
+}
+
 export function buildOutboundImportPatch(
   sourceOverview: XUIOverview,
   sourceNode: XUINodeView,
@@ -21,15 +32,9 @@ export function buildOutboundImportPatch(
     ''
   const protocol = normalizeOutboundProtocol(sourceNode.protocol || sourceClient.protocol || currentForm.protocol || 'freedom')
   const port = validPort(sourceNode.port) || validPort(importEndpoint.port) || parsePortFromText(sourceNode.tag, sourceNode.remark, sourceClient.inbound_tag, sourceClient.inbound_remark) || validPort(currentForm.port)
-  const tagParts = [
-    sourceOverview.agent_name || sourceOverview.agent_id,
-    sourceNode.tag || sourceNode.remark || String(sourceNode.id),
-    sourceClient.email || 'link',
-  ]
-
   return {
     source_type: 'registered_client',
-    tag: normalizeOutboundTag(tagParts.join('-')),
+    tag: defaultOutboundTagForSourceClient(sourceOverview, sourceClient),
     protocol,
     address,
     port,
