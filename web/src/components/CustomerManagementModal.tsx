@@ -462,8 +462,8 @@ export function CustomerManagementModal(props: {
     {
       title: '状态',
       dataIndex: 'enabled',
-      width: 120,
-      render: (_, record) => renderCustomerStatusButton(record),
+      width: 90,
+      render: (enabled: boolean) => <Tag color={enabled ? 'blue' : 'default'}>{enabled ? '启用' : '停用'}</Tag>,
     },
     {
       title: '操作',
@@ -546,8 +546,8 @@ export function CustomerManagementModal(props: {
     {
       title: '状态',
       dataIndex: 'enabled',
-      width: 90,
-      render: (enabled: boolean) => <Tag color={enabled ? 'blue' : 'default'}>{enabled ? '启用' : '停用'}</Tag>,
+      width: 120,
+      render: (_, record) => renderCustomerStatusButton(record),
     },
     {
       title: '操作',
