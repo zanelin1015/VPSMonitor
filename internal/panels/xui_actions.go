@@ -21,7 +21,9 @@ func (c *XUIClient) ExecuteAction(ctx context.Context, action model.XUIAction) (
 		c.invalidateSession()
 	}
 	result, err := c.executeActionAuthenticated(ctx, action)
-	if err == nil || !isXUIAuthError(err) {
+	// A non-nil result means the action has already saved changes. Never replay
+	// a destructive action because the subsequent restart lost authentication.
+	if err == nil || result != nil || !isXUIAuthError(err) {
 		return result, err
 	}
 	c.invalidateSession()
@@ -33,7 +35,7 @@ func (c *XUIClient) ExecuteAction(ctx context.Context, action model.XUIAction) (
 
 func actionCanUseLocalXrayFallback(kind string) bool {
 	switch kind {
-	case model.XUIActionAddOutbound, model.XUIActionAddRoutingRule, model.XUIActionUpsertRoutingRule:
+	case model.XUIActionAddOutbound, model.XUIActionAddRoutingRule, model.XUIActionUpsertRoutingRule, model.XUIActionDeleteRoutingRules:
 		return true
 	default:
 		return false
@@ -50,6 +52,8 @@ func (c *XUIClient) executeActionAuthenticated(ctx context.Context, action model
 		return c.addRoutingRule(ctx, action.Payload)
 	case model.XUIActionUpsertRoutingRule:
 		return c.upsertRoutingRule(ctx, action.Payload)
+	case model.XUIActionDeleteRoutingRules:
+		return c.deleteRoutingRules(ctx, action.Payload)
 	case model.XUIActionUpdateClientExpiry:
 		return c.updateClientExpiry(ctx, action.Payload)
 	case model.XUIActionUpdateClientTraffic:

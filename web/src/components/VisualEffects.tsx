@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 
 import type { FrontendSettings } from '../types'
 import { fetchJSON } from '../lib/appHelpers'
+import { withAppBasePath } from '../lib/appBasePath'
 
 const DEFAULT_BACKGROUND_IMAGE = ''
 const CUSTOM_EFFECT_LAYER_Z_INDEX = '2147483000'
@@ -161,7 +162,7 @@ function proxiedImageURL(value: string) {
     if (url.origin === window.location.origin) {
       return url.toString()
     }
-    return `/api/v1/image-proxy?url=${encodeURIComponent(url.toString())}`
+    return withAppBasePath(`/api/v1/image-proxy?url=${encodeURIComponent(url.toString())}`)
   } catch {
     return value
   }

@@ -207,6 +207,7 @@ func (a *App) executeXUIAction(ctx context.Context, effectiveConfig model.Manage
 			actionCtx, actionCancel := context.WithTimeout(ctx, a.xuiActionTimeout(action.Kind))
 			output, actionErr := xuiClient.ExecuteAction(actionCtx, action)
 			actionCancel()
+			result.Result = output
 			if actionErr != nil {
 				result.Status = model.XUIActionStatusFailed
 				result.Error = actionErr.Error()
@@ -225,6 +226,7 @@ func (a *App) xuiActionTimeout(kind string) time.Duration {
 		model.XUIActionAddClient,
 		model.XUIActionAddRoutingRule,
 		model.XUIActionUpsertRoutingRule,
+		model.XUIActionDeleteRoutingRules,
 		model.XUIActionUpdateClientExpiry,
 		model.XUIActionUpdateClientTraffic,
 		model.XUIActionSetClientEnabled,

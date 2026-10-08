@@ -673,6 +673,8 @@ export function actionKindLabel(kind: string): string {
       return '从内部导入出站'
     case 'add_routing_rule':
       return '新增转发 / 路由规则'
+    case 'delete_routing_rules':
+      return '删除路由规则（单条 / 批量）'
     case 'restart_xui':
       return '重启 x-ui / Xray'
     case 'execute_command':

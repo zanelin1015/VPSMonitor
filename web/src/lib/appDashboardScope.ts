@@ -15,6 +15,7 @@ import {
   topologyMatchesSelectedTag,
 } from './appHelpers'
 import { summarizeDeduplicatedNetwork } from './traffic'
+import { clientMatchesSearch } from './agentSearch'
 
 type DashboardScopeInput = {
   agents: DashboardAgentView[]
@@ -50,16 +51,7 @@ export function buildDashboardScope(input: DashboardScopeInput) {
   } = input
 
   const filteredClients = currentOverview
-    ? currentOverview.clients.filter((client) => {
-        if (!deferredClientSearch) {
-          return true
-        }
-        const haystack = [client.email, client.comment, client.inbound_tag, client.inbound_remark, client.inbound_id]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase()
-        return haystack.includes(deferredClientSearch)
-      })
+    ? currentOverview.clients.filter((client) => clientMatchesSearch(client, deferredClientSearch))
     : []
 
   const filteredAgents = agents.filter((item) => hasSelectedTag(item.tags, selectedTag))

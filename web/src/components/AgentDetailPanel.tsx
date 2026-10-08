@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
-import { Alert, AutoComplete, Badge, Button, Card, Empty, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, Tag, Tooltip, Typography } from 'antd'
+import { useEffect, useRef, useState } from 'react'
+import { App as AntdApp, Alert, AutoComplete, Badge, Button, Card, Empty, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, Tag, Tooltip, Typography } from 'antd'
 import type { TabsProps } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { ArrowLeftOutlined, ReloadOutlined, SaveOutlined, SettingOutlined, SwapOutlined } from '@ant-design/icons'
+import { ArrowLeftOutlined, DeleteOutlined, ReloadOutlined, SaveOutlined, SettingOutlined, SwapOutlined } from '@ant-design/icons'
 
 import type {
   AgentEntryConfig,
@@ -24,6 +24,8 @@ import type {
   XUIRoutingRuleView,
 } from '../types'
 import { AdminHelpHint } from './AdminHelpHint'
+import { buildRoutingRulesDeletePayload, isPendingRoutingDeletion, routingRuleDeleteDisabledReason } from '../lib/routingRules'
+import type { RoutingRulesDeletePayload } from '../lib/routingRules'
 import type { ConfigSectionKey } from '../lib/appHelpers'
 import type { CurrencyCode } from '../lib/currency'
 import { REVENUE_CURRENCIES } from '../lib/currency'
@@ -112,6 +114,7 @@ export interface AgentDetailPanelProps {
   xuiActions: XUIAction[]
   xuiActionsLoading: boolean
   xuiClientDeleteLoadingKey: string
+  routingRuleDeleteLoading: boolean
   xuiClientTrafficSavingKey: string
   xuiClientToggleLoadingKey: string
   agentDeleteLoading: boolean
@@ -148,6 +151,7 @@ export interface AgentDetailPanelProps {
   onDeleteCurrentAgent: () => void
   onReplaceCurrentAgent: (replacementAgentID: string) => Promise<boolean>
   onDeleteXUIClient: (client: XUIClientView) => void
+  onDeleteRoutingRules: (payload: RoutingRulesDeletePayload) => Promise<XUIAction | null>
   onSaveXUIClientTrafficLimit: (client: XUIClientView, totalGB: number) => void
   onSetXUIClientEnabled: (client: XUIClientView, enabled: boolean) => void
   onRefreshCurrentAgent: () => void
@@ -190,6 +194,7 @@ function isAccountBasedProxyClient(client: XUIClientView): boolean {
 }
 
 export function AgentDetailPanel(props: AgentDetailPanelProps) {
+  const { message } = AntdApp.useApp()
   const {
     activeTabKey,
     agentLogs,
@@ -224,6 +229,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     xuiActions,
     xuiActionsLoading,
     xuiClientDeleteLoadingKey,
+    routingRuleDeleteLoading,
     xuiClientTrafficSavingKey,
     xuiClientToggleLoadingKey,
     agentDeleteLoading,
@@ -260,6 +266,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onDeleteCurrentAgent,
     onReplaceCurrentAgent,
     onDeleteXUIClient,
+    onDeleteRoutingRules,
     onSaveXUIClientTrafficLimit,
     onSetXUIClientEnabled,
     onRefreshCurrentAgent,
@@ -292,6 +299,53 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const [terminalShell, setTerminalShell] = useState(defaultTerminalShell(selectedAgent.client_os, selectedAgent.system_version))
   const [terminalFontSize, setTerminalFontSize] = useState(13)
   const [terminalExpanded, setTerminalExpanded] = useState(false)
+  const [selectedRoutingRuleKeys, setSelectedRoutingRuleKeys] = useState<number[]>([])
+  const [routingDeleteDraft, setRoutingDeleteDraft] = useState<RoutingRulesDeletePayload | null>(null)
+  const [submittedRoutingDeleteID, setSubmittedRoutingDeleteID] = useState<number | null>(null)
+  const refreshRoutingActionsRef = useRef(onRefreshXUIActions)
+  refreshRoutingActionsRef.current = onRefreshXUIActions
+  const routingFingerprint = overview?.routing_rules_fingerprint || ''
+  const routingRules = overview?.editable_routing_rules ?? overview?.routing_rules ?? []
+  const pendingRoutingDelete = submittedRoutingDeleteID !== null
+    || xuiActions.some((action) => action.agent_id === selectedAgentId && isPendingRoutingDeletion(action))
+  const routingDeleteBusy = routingRuleDeleteLoading || xuiActionsLoading || pendingRoutingDelete
+  const canDeleteRoutes = canManageConfig && !restrictedView
+
+  useEffect(() => {
+    setSelectedRoutingRuleKeys([])
+  }, [selectedAgentId, routingFingerprint])
+
+  useEffect(() => {
+    const action = xuiActions.find((item) => item.id === submittedRoutingDeleteID)
+    if (action && !isPendingRoutingDeletion(action)) setSubmittedRoutingDeleteID(null)
+  }, [submittedRoutingDeleteID, xuiActions])
+
+  useEffect(() => {
+    if (!pendingRoutingDelete) return
+    const timer = window.setInterval(() => refreshRoutingActionsRef.current(), 3000)
+    return () => window.clearInterval(timer)
+  }, [pendingRoutingDelete, selectedAgentId])
+
+  function confirmRoutingRuleDeletion(rules: XUIRoutingRuleView[]) {
+    if (!canDeleteRoutes || routingDeleteBusy || !rules.length) return
+    // Capture exact targets when the dialog opens. A background refresh must
+    // never silently change the rules the user is about to confirm.
+    try {
+      setRoutingDeleteDraft(buildRoutingRulesDeletePayload(rules, routingFingerprint))
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '请选择有效的路由规则')
+    }
+  }
+
+  async function submitRoutingRuleDeletion() {
+    if (!routingDeleteDraft || !canDeleteRoutes || routingDeleteBusy || routingDeleteDraft.rules_fingerprint !== routingFingerprint) return
+    const action = await onDeleteRoutingRules(routingDeleteDraft)
+    if (action) {
+      if (isPendingRoutingDeletion(action)) setSubmittedRoutingDeleteID(action.id)
+      setRoutingDeleteDraft(null)
+      setSelectedRoutingRuleKeys([])
+    }
+  }
 
   async function submitAgentReplacement() {
     if (!replacementAgentID) {
@@ -941,9 +995,10 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       title: '#',
       dataIndex: 'index',
       width: 70,
-      render: (value: number) => (
+      render: (value: number, record) => (
         <span id={ruleElementId(value)} className={selectedRuleIndex === value ? 'route-anchor active' : 'route-anchor'}>
           R{value}
+          {record.enabled === false ? <Tag style={{ marginLeft: 6 }}>停用</Tag> : null}
         </span>
       ),
     },
@@ -984,6 +1039,25 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       render: (value: string | undefined, record) => value || summarizeRule(record),
     },
   ]
+  if (canDeleteRoutes) {
+    routingColumns.push({
+      title: '操作',
+      key: 'actions',
+      width: 100,
+      fixed: 'right',
+      render: (_, record) => (
+        <Tooltip title={routingRuleDeleteDisabledReason(record) || (!routingFingerprint ? '请升级 Bridge Client，并立即获取 Client 信息以读取面板保存的规则' : undefined)}>
+          <Button
+            size="small"
+            danger
+            icon={<DeleteOutlined />}
+            disabled={routingDeleteBusy || !routingFingerprint || Boolean(routingRuleDeleteDisabledReason(record))}
+            onClick={() => confirmRoutingRuleDeletion([record])}
+          >删除</Button>
+        </Tooltip>
+      ),
+    })
+  }
 
   const xuiActionColumns: ColumnsType<XUIAction> = [
     { title: 'ID', dataIndex: 'id', width: 76 },
@@ -1356,9 +1430,40 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     },
     {
       key: 'routes',
-      label: `路由规则 (${overview?.routing_rules.length || 0})`,
+      label: `路由规则 (${routingRules.length})`,
       children: overview ? (
-        <Table rowKey={(record) => record.index} columns={routingColumns} dataSource={overview.routing_rules} pagination={false} scroll={{ x: 1100 }} rowClassName={(record) => (selectedRuleIndex === record.index ? 'route-row-selected' : '')} />
+        <>
+          {canDeleteRoutes ? (
+            <Space wrap style={{ marginBottom: 12 }}>
+              <Button
+                danger
+                icon={<DeleteOutlined />}
+                loading={routingRuleDeleteLoading}
+                disabled={routingDeleteBusy || !selectedRoutingRuleKeys.length || !routingFingerprint}
+                onClick={() => confirmRoutingRuleDeletion(routingRules.filter((rule) => selectedRoutingRuleKeys.includes(rule.index)))}
+              >批量删除{selectedRoutingRuleKeys.length ? ` (${selectedRoutingRuleKeys.length})` : ''}</Button>
+              {selectedRoutingRuleKeys.length ? <Button type="link" disabled={routingDeleteBusy} onClick={() => setSelectedRoutingRuleKeys([])}>取消选择</Button> : null}
+              <AdminHelpHint title="勾选后可批量删除。按倒序逐条移除，统一保存并重载 Xray；不删除客户端或出站。系统 API 路由不可删除，规则变化时会取消本次操作。执行结果可在 x-ui 操作记录查看。需升级 Bridge Client 后使用。" />
+              {routingDeleteBusy ? <Text type="secondary">删除任务下发中或执行中，请查看 x-ui 操作记录</Text> : null}
+            </Space>
+          ) : null}
+          <Table
+            rowKey={(record) => record.index}
+            columns={routingColumns}
+            dataSource={routingRules}
+            pagination={false}
+            scroll={{ x: 1100 }}
+            rowClassName={(record) => (selectedRuleIndex === record.index ? 'route-row-selected' : '')}
+            rowSelection={canDeleteRoutes ? {
+              selectedRowKeys: selectedRoutingRuleKeys,
+              onChange: (keys) => setSelectedRoutingRuleKeys(keys.map(Number)),
+              getCheckboxProps: (record) => ({
+                disabled: routingDeleteBusy || !routingFingerprint || Boolean(routingRuleDeleteDisabledReason(record)),
+                title: routingRuleDeleteDisabledReason(record),
+              }),
+            } : undefined}
+          />
+        </>
       ) : (
         <Empty description="暂无路由规则数据" />
       ),
@@ -1624,6 +1729,22 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
           items={detailTabs}
         />
       </Card>
+      <Modal
+        title={`删除 ${routingDeleteDraft?.rules.length || 0} 条路由规则？`}
+        open={routingDeleteDraft !== null}
+        okText="确认删除"
+        cancelText="取消"
+        okButtonProps={{ danger: true, disabled: routingDeleteBusy || routingDeleteDraft?.rules_fingerprint !== routingFingerprint }}
+        confirmLoading={routingRuleDeleteLoading}
+        closable={!routingRuleDeleteLoading}
+        maskClosable={!routingRuleDeleteLoading}
+        onCancel={() => { if (!routingRuleDeleteLoading) setRoutingDeleteDraft(null) }}
+        onOk={() => void submitRoutingRuleDeletion()}
+      >
+        <p>选中的规则：{routingDeleteDraft?.rules.map((rule) => `R${rule.index}`).join('、')}</p>
+        <p>将逐条移除并统一保存，随后重载 Xray，可能短暂影响连接。只删除路由规则，不删除客户端或出站。此操作不能直接撤销。</p>
+        {routingDeleteDraft?.rules_fingerprint !== routingFingerprint ? <Alert type="warning" showIcon message="路由规则已变化，请取消并重新选择。" /> : null}
+      </Modal>
       <Modal
         title="替换 Client"
         open={replacementModalOpen}

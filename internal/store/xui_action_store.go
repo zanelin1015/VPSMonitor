@@ -26,6 +26,11 @@ func (s *SQLiteStore) CreateXUIActionWithActor(agentID string, req model.XUIActi
 	if req.Payload == nil {
 		req.Payload = map[string]any{}
 	}
+	if req.Kind == model.XUIActionDeleteRoutingRules {
+		if _, err := model.ParseRoutingRulesDeletePayload(req.Payload); err != nil {
+			return model.XUIAction{}, err
+		}
+	}
 	if _, found, err := s.GetAgent(agentID); err != nil {
 		return model.XUIAction{}, err
 	} else if !found {

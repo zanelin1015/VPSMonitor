@@ -301,11 +301,11 @@ func (a *App) customerOverview(user model.CustomerUser) (model.CustomerOverviewR
 		return model.CustomerOverviewResponse{}, err
 	}
 	return model.CustomerOverviewResponse{
-		User:          user,
-		GeneratedAt:   time.Now().UTC(),
-		Announcements: activeCustomerAnnouncements(frontendSettings.Announcements, time.Now().UTC()),
+		User:                user,
+		GeneratedAt:         time.Now().UTC(),
+		Announcements:       activeCustomerAnnouncements(frontendSettings.Announcements, time.Now().UTC()),
 		ReadAnnouncementIDs: readAnnouncementIDs,
-		Links:         links,
+		Links:               links,
 	}, nil
 }
 
@@ -1131,7 +1131,7 @@ func (a *App) setCustomerSessionCookie(w http.ResponseWriter, r *http.Request, t
 	http.SetCookie(w, &http.Cookie{
 		Name:     customerSessionCookieName,
 		Value:    token,
-		Path:     "/",
+		Path:     requestSessionCookiePath(r),
 		Expires:  expiresAt,
 		MaxAge:   int(time.Until(expiresAt).Seconds()),
 		HttpOnly: true,
@@ -1144,7 +1144,7 @@ func (a *App) clearCustomerSessionCookie(w http.ResponseWriter, r *http.Request)
 	http.SetCookie(w, &http.Cookie{
 		Name:     customerSessionCookieName,
 		Value:    "",
-		Path:     "/",
+		Path:     requestSessionCookiePath(r),
 		Expires:  time.Unix(0, 0),
 		MaxAge:   -1,
 		HttpOnly: true,

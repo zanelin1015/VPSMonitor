@@ -81,6 +81,10 @@ func TestXUICollect(t *testing.T) {
 						},
 					},
 				}), nil
+			case "/panel/xray/":
+				return jsonResponse(t, req, map[string]any{"success": true, "obj": map[string]any{"xraySetting": map[string]any{
+					"routing": map[string]any{"rules": []map[string]any{{"outboundTag": "relay-hk"}}},
+				}}}), nil
 			case "/panel/xray/getOutboundsTraffic":
 				return jsonResponse(t, req, map[string]any{
 					"success": true,

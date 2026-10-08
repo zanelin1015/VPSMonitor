@@ -41,9 +41,10 @@ type xuiEnvelope struct {
 }
 
 type mutableXrayConfig struct {
-	config map[string]any
-	source string
-	dbPath string
+	config          map[string]any
+	source          string
+	dbPath          string
+	outboundTestURL *string
 }
 
 type xuiHTTPError struct {
@@ -215,6 +216,10 @@ func (c *XUIClient) collectAuthenticated(ctx context.Context, snapshot *model.XU
 	snapshot.RawConfig = configJSON
 	snapshot.Outbounds = extractObjectList(configJSON["outbounds"])
 	snapshot.RoutingRules = extractRoutingRules(configJSON["routing"])
+	// Deletion must use the saved panel template, never runtime rule indices.
+	if mutable, err := c.getMutableXrayConfig(ctx); err == nil {
+		snapshot.RoutingTemplate = routingTemplateForSnapshot(mutable.config)
+	}
 
 	outboundTraffic, err := c.getJSONList(ctx, "/panel/xray/getOutboundsTraffic")
 	if err == nil {

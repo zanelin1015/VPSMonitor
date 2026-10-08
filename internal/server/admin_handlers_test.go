@@ -95,6 +95,9 @@ func TestAreaManagerXUIActionAllowedIncludesAddClient(t *testing.T) {
 
 	app := &App{store: sqliteStore}
 	user := model.AdminUser{ID: manager.ID, Role: model.AdminRoleAreaManager, AgentIDs: []string{"agent-1"}}
+	if app.areaManagerXUIActionAllowed(user, "agent-1", model.XUIActionRequest{Kind: model.XUIActionDeleteRoutingRules}) {
+		t.Fatal("area manager must not be allowed to delete arbitrary routing rules")
+	}
 	if !app.areaManagerXUIActionAllowed(user, "agent-1", model.XUIActionRequest{
 		Kind: model.XUIActionAddClient,
 		Payload: map[string]any{

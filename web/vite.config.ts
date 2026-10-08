@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react'
 const apiTarget = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.VPSMONITOR_API_TARGET || 'http://127.0.0.1:8090'
 
 export default defineConfig({
+  base: './',
   plugins: [react()],
   server: {
     host: '0.0.0.0',
@@ -12,6 +13,7 @@ export default defineConfig({
       '/api': {
         target: apiTarget,
         changeOrigin: true,
+        ws: true,
       },
       '/healthz': {
         target: apiTarget,

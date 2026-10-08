@@ -1138,6 +1138,12 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 				writeError(w, http.StatusForbidden, "only root admin can create this x-ui action")
 				return
 			}
+			if req.Kind == model.XUIActionDeleteRoutingRules {
+				if _, err := model.ParseRoutingRulesDeletePayload(req.Payload); err != nil {
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+			}
 			if isAreaManager(user) && user.OutboundCreateEnabled {
 				if outboundTag := outboundTagFromPayload(req.Payload); outboundTag != "" {
 					if err := a.store.UpsertAreaManagerOutboundGrant(user.ID, model.AreaManagerOutboundGrantRequest{
@@ -1199,6 +1205,11 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 			}
 			writeError(w, status, err.Error())
 			return
+		}
+		if action.Kind == model.XUIActionDeleteRoutingRules && action.Result["saved"] == true && a.realtime != nil {
+			// Refresh the full saved-template snapshot, including partial success
+			// where saving worked but restarting Xray did not.
+			a.realtime.sendAgentControl(agentID, model.AgentControlMessage{Type: model.AgentControlCollectNow})
 		}
 		writeJSON(w, http.StatusOK, action)
 		return
@@ -1451,7 +1462,7 @@ func filterRootOnlyXUIActions(actions []model.XUIAction) []model.XUIAction {
 
 func isRootOnlyXUIActionKind(kind string) bool {
 	switch kind {
-	case model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI:
+	case model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI, model.XUIActionDeleteRoutingRules:
 		return true
 	default:
 		return false
@@ -1464,6 +1475,7 @@ func realtimeXUIActionAllowed(kind string) bool {
 		model.XUIActionAddClient,
 		model.XUIActionAddRoutingRule,
 		model.XUIActionUpsertRoutingRule,
+		model.XUIActionDeleteRoutingRules,
 		model.XUIActionUpdateClientExpiry,
 		model.XUIActionUpdateClientTraffic,
 		model.XUIActionSetClientEnabled,
@@ -1556,6 +1568,7 @@ func xuiActionUsesPanelAuth(kind string) bool {
 		model.XUIActionAddClient,
 		model.XUIActionAddRoutingRule,
 		model.XUIActionUpsertRoutingRule,
+		model.XUIActionDeleteRoutingRules,
 		model.XUIActionUpdateClientExpiry,
 		model.XUIActionUpdateClientTraffic,
 		model.XUIActionSetClientEnabled,

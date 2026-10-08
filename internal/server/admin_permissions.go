@@ -178,6 +178,8 @@ func (a *App) sanitizeXUIOverviewForAdmin(user model.AdminUser, overview *model.
 	if overview == nil || isRootAdmin(user) {
 		return
 	}
+	overview.EditableRoutingRules = nil
+	overview.RoutingRulesFingerprint = ""
 	a.sanitizeRealmTargetNamesForAreaManager(overview)
 	overview.AgentName = areaManagerDisplayName("", overview.AgentName, overview.AgentID)
 	overview.BaseURL = ""
@@ -327,6 +329,8 @@ func (a *App) sanitizeXUIOverviewForAreaAssignment(user model.AdminUser, overvie
 	if overview == nil || isRootAdmin(user) {
 		return
 	}
+	overview.EditableRoutingRules = nil
+	overview.RoutingRulesFingerprint = ""
 	a.sanitizeRealmTargetNamesForAreaManager(overview)
 	overview.AgentName = areaManagerDisplayName("", overview.AgentName, overview.AgentID)
 	overview.BaseURL = ""

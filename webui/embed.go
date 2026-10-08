@@ -3,6 +3,7 @@ package webui
 import (
 	"bytes"
 	"embed"
+	"html"
 	"io/fs"
 	"net/http"
 	"path"
@@ -13,7 +14,7 @@ import (
 //go:embed dist/*
 var distFS embed.FS
 
-func NewHandler() http.Handler {
+func NewHandler(basePaths ...func(*http.Request) string) http.Handler {
 	sub, err := fs.Sub(distFS, "dist")
 	if err != nil {
 		return http.NotFoundHandler()
@@ -21,6 +22,10 @@ func NewHandler() http.Handler {
 
 	fileServer := http.FileServer(http.FS(sub))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		basePath := ""
+		if len(basePaths) > 0 && basePaths[0] != nil {
+			basePath = basePaths[0](r)
+		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -28,7 +33,7 @@ func NewHandler() http.Handler {
 
 		name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
 		if name == "." || name == "" {
-			serveIndexHTML(w, r, sub)
+			serveIndexHTML(w, r, sub, basePath)
 			return
 		}
 
@@ -39,7 +44,7 @@ func NewHandler() http.Handler {
 			return
 		}
 
-		serveIndexHTML(w, r, sub)
+		serveIndexHTML(w, r, sub, basePath)
 	})
 }
 
@@ -57,12 +62,16 @@ func fileExists(files fs.FS, name string) bool {
 	return !info.IsDir()
 }
 
-func serveIndexHTML(w http.ResponseWriter, r *http.Request, files fs.FS) {
+func serveIndexHTML(w http.ResponseWriter, r *http.Request, files fs.FS, basePath string) {
 	body, err := fs.ReadFile(files, "index.html")
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
+	base := html.EscapeString(strings.TrimRight(basePath, "/") + "/")
+	body = bytes.Replace(body, []byte("<head>"), []byte("<head><base href=\""+base+"\">"), 1)
+	// Entry HTML must not be shared between root and prefix deployments.
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(body))
 }

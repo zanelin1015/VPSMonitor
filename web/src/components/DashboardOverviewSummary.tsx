@@ -8,6 +8,7 @@ import type { CurrencyCode, ExchangeRatesState, MonthlyFinanceCostDetail, Monthl
 import { buildMonthlyFinanceCostDetails, buildMonthlyFinanceExcludedRevenueDetails, buildMonthlyFinanceRevenueDetails, financeAssignmentMatchesRevenueRow, formatMoney } from '../lib/currency'
 import { fetchJSON } from '../lib/appHelpers'
 import { type AgentNetworkSummary, formatBytes, formatSpeed } from '../lib/traffic'
+import { readFinanceVisibilityPreference, writeFinanceVisibilityPreference } from '../lib/financeVisibility'
 
 const { Text } = Typography
 
@@ -73,13 +74,7 @@ export function OverviewSummaryCard(props: {
     onCostCurrencyChange,
   } = props
   const [financeDetailOpen, setFinanceDetailOpen] = useState(financePage)
-  const [profitVisible, setProfitVisible] = useState(() => {
-    try {
-      return window.localStorage.getItem('bridge-core.profit-visible') !== 'false'
-    } catch {
-      return true
-    }
-  })
+  const [profitVisible, setProfitVisible] = useState(readFinanceVisibilityPreference)
   const [customerRows, setCustomerRows] = useState<CustomerAdminView[]>([])
   const [customerRowsLoading, setCustomerRowsLoading] = useState(false)
   const effectiveCustomerRows = financeCustomers.length ? financeCustomers : customerRows
@@ -107,11 +102,7 @@ export function OverviewSummaryCard(props: {
   const toggleProfitVisibility = () => {
     setProfitVisible((visible) => {
       const next = !visible
-      try {
-        window.localStorage.setItem('bridge-core.profit-visible', String(next))
-      } catch {
-        // Visibility preference is optional; the current page still toggles.
-      }
+      writeFinanceVisibilityPreference(next)
       return next
     })
   }

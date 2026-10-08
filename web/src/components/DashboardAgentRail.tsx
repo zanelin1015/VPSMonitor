@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Alert, Button, Card, Empty, List, Segmented, Space, Tag } from 'antd'
+import { Alert, Button, Card, Empty, Input, List, Segmented, Space, Tag } from 'antd'
 import { ApartmentOutlined, BarsOutlined, CloudServerOutlined, ReloadOutlined } from '@ant-design/icons'
 
 import type { DashboardAgentView, DashboardTagView } from '../types'
@@ -28,6 +28,7 @@ import {
 } from '../lib/traffic'
 import { MiniProgress } from './MiniProgress'
 import { agentHealthFilterLabel, normalizeAgentHealthFilter, type AgentHealthFilter } from '../lib/agentHealth'
+import { matchingAgentClients } from '../lib/agentSearch'
 
 export function AgentRail(props: {
   agents: DashboardAgentView[]
@@ -47,15 +48,17 @@ export function AgentRail(props: {
   onSelectTag: (tag: string) => void
   onHealthFilterChange: (filter: AgentHealthFilter) => void
   onSelectAgent: (agentID: string, active: boolean) => void
+  searchText: string
+  onSearchTextChange: (value: string) => void
 }) {
-  const { agents, loading, error, selectedTag, healthFilter, selectedAgentId, tagFilterOptions, viewMode, panelExpanded, topologyVisible, restrictedView = false, onToggleViewMode, onToggleTopology, onRefresh, onSelectTag, onHealthFilterChange, onSelectAgent } = props
+  const { agents, loading, error, selectedTag, healthFilter, selectedAgentId, tagFilterOptions, viewMode, panelExpanded, topologyVisible, restrictedView = false, searchText, onToggleViewMode, onToggleTopology, onRefresh, onSelectTag, onHealthFilterChange, onSelectAgent, onSearchTextChange } = props
   const effectiveViewMode: AgentViewMode = panelExpanded ? 'list' : viewMode
   const [agentPage, setAgentPage] = useState(1)
   const [agentPageSize, setAgentPageSize] = useState(10)
 
   useEffect(() => {
     setAgentPage(1)
-  }, [selectedTag, healthFilter, effectiveViewMode])
+  }, [selectedTag, healthFilter, effectiveViewMode, searchText])
 
   useEffect(() => {
     const maxPage = Math.max(1, Math.ceil(agents.length / agentPageSize))
@@ -110,6 +113,16 @@ export function AgentRail(props: {
         }
       >
         {error ? <Alert type="error" showIcon message="加载失败" description={error} className="compact-alert" /> : null}
+        <div className="agent-search-row">
+          <Input.Search
+            allowClear
+            value={searchText}
+            aria-label="搜索 VPS、节点或客户端"
+            placeholder={restrictedView ? '搜索 Client 名称 / 标签' : '搜索节点、客户端名称 / 邮箱 / 备注'}
+            onChange={(event) => onSearchTextChange(event.target.value)}
+          />
+          {searchText.trim() ? <span className="agent-search-count" aria-live="polite">匹配 {agents.length} 台 VPS</span> : null}
+        </div>
         <Segmented
           block
           size="small"
@@ -136,7 +149,7 @@ export function AgentRail(props: {
             className={`agent-list agent-list-${effectiveViewMode}`}
             dataSource={agents}
             loading={loading}
-            locale={{ emptyText: <Empty description={healthFilter !== 'all' ? `暂无${agentHealthFilterLabel(healthFilter)} Client` : selectedTag ? '该标签下暂无 client' : '暂无已注册 client'} /> }}
+            locale={{ emptyText: <Empty description={searchText.trim() ? '当前筛选范围内没有匹配的节点或客户端' : healthFilter !== 'all' ? `暂无${agentHealthFilterLabel(healthFilter)} Client` : selectedTag ? '该标签下暂无 client' : '暂无已注册 client'} /> }}
             pagination={{
               current: agentPage,
               pageSize: agentPageSize,
@@ -170,6 +183,7 @@ export function AgentRail(props: {
                 viewMode={effectiveViewMode}
                 compact={panelExpanded}
                 restrictedView={restrictedView}
+                searchText={searchText}
                 onSelect={onSelectAgent}
               />
             )}
@@ -187,9 +201,10 @@ function AgentRailItem(props: {
   viewMode: AgentViewMode
   compact?: boolean
   restrictedView?: boolean
+  searchText: string
   onSelect: (agentID: string, active: boolean) => void
 }) {
-  const { item, displaySortOrder, active, viewMode, compact = false, restrictedView = false, onSelect } = props
+  const { item, displaySortOrder, active, viewMode, compact = false, restrictedView = false, searchText, onSelect } = props
   const renewalStatus = calculateRenewalStatus(item.renewal)
   const trafficStatus = calculateTrafficStatus(item)
   const trafficTotalLabel = restrictedView ? '周期已用流量' : trafficStatus.isPeriod ? '周期总流量' : '总流量'
@@ -240,6 +255,7 @@ function AgentRailItem(props: {
             {compactExtraTagCount ? <span className="agent-tag-chip">+{compactExtraTagCount}</span> : null}
           </div>
           <div className="agent-meta agent-footer-line agent-compact-footer">{footerText}</div>
+          <AgentSearchMatches item={item} searchText={searchText} />
         </button>
       </List.Item>
     )
@@ -267,6 +283,7 @@ function AgentRailItem(props: {
                 {serverSeenIP ? <span title="Server 看到的 Client 连接来源，可能是入口转发机">· 连接来源 {serverSeenIP}</span> : null}
               </div> : null}
               <div className="agent-meta agent-footer-line agent-list-footer">{footerText}</div>
+              <AgentSearchMatches item={item} searchText={searchText} />
             </div>
             <div className="agent-list-runtime">
               {!restrictedView && showStatusText ? <span className={`agent-status-pill agent-status-${statusLevel}`}>{displayStatus.label}</span> : null}
@@ -307,10 +324,26 @@ function AgentRailItem(props: {
               <AgentFlowProgress renewalStatus={restrictedView ? null : renewalStatus} trafficLabel={trafficTotalLabel} trafficValue={trafficSummaryValue} trafficStatus={trafficStatus} restrictedView={restrictedView} />
             </div>
             <div className="agent-meta agent-footer-line">{footerText}</div>
+            <AgentSearchMatches item={item} searchText={searchText} />
           </>
         )}
       </button>
     </List.Item>
+  )
+}
+
+function AgentSearchMatches({ item, searchText }: { item: DashboardAgentView; searchText: string }) {
+  const matches = matchingAgentClients(item, searchText)
+  if (!matches.length) {
+    return null
+  }
+  const labels = matches.map((client) => [client.comment, client.email, client.inbound_remark || client.inbound_tag].filter(Boolean).join(' · ') || `入站 ${client.inbound_id}`)
+  return (
+    <div className="agent-search-matches" title={labels.join('\n')}>
+      <strong>命中客户端 {matches.length}</strong>
+      {labels.slice(0, 2).map((label, index) => <span key={index}>{label}</span>)}
+      {labels.length > 2 ? <span>另有 {labels.length - 2} 个，点击查看</span> : null}
+    </div>
   )
 }
 

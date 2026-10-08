@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { Button, Card, Empty, Tag, Typography } from 'antd'
+import { EyeInvisibleOutlined, EyeOutlined } from '@ant-design/icons'
 import { Line } from '@ant-design/plots'
 import type { LineConfig } from '@ant-design/plots'
 
@@ -25,6 +27,7 @@ import {
 } from '../lib/traffic'
 import { MiniProgress } from './MiniProgress'
 import { agentHealthCategory, type AgentHealthCategory } from '../lib/agentHealth'
+import { readFinanceVisibilityPreference, writeFinanceVisibilityPreference } from '../lib/financeVisibility'
 
 const { Text } = Typography
 
@@ -86,6 +89,7 @@ export function AdminWorkbenchDashboard(props: {
   onOpenTopology: () => void
 }) {
   const { agents, dashboardView, scopedNetwork, monthlyFinance, costCurrency, restrictedView = false, onSelectAgent, onOpenHealthFilter, onOpenTopology } = props
+  const [profitVisible, setProfitVisible] = useState(readFinanceVisibilityPreference)
   const statusRows = useMemo<WorkbenchMetricRow[]>(() => agents.map((agent) => {
     const renewal = calculateRenewalStatus(agent.renewal)
     return {
@@ -146,6 +150,13 @@ export function AdminWorkbenchDashboard(props: {
     { label: '月利润', value: monthlyFinance.profitTotal, tone: monthlyFinance.profitTotal >= 0 ? 'profit' : 'loss' },
   ]
   const maxFinance = Math.max(1, ...financeBars.map((bar) => Math.abs(bar.value)))
+  const toggleProfitVisibility = () => {
+    setProfitVisible((visible) => {
+      const next = !visible
+      writeFinanceVisibilityPreference(next)
+      return next
+    })
+  }
   return (
     <section className="admin-workbench">
       <div className="admin-workbench-strip">
@@ -161,9 +172,20 @@ export function AdminWorkbenchDashboard(props: {
         {!restrictedView ? <WorkbenchKpi label="续费风险" value={`${renewalRiskCount}`} note={`30天内 ${renewalWithin30Count}`} tone={renewalRiskCount ? 'bad' : 'ok'} /> : null}
         {!restrictedView ? <WorkbenchKpi
           label="本月利润"
-          value={monthlyFinance.available ? formatMoney(monthlyFinance.profitTotal, costCurrency) : '--'}
-          note={monthlyFinance.available ? `收入 ${formatMoney(monthlyFinance.revenueTotal, costCurrency)}` : monthlyFinance.error || '财务数据加载中'}
+          value={monthlyFinance.available ? (profitVisible ? formatMoney(monthlyFinance.profitTotal, costCurrency) : '••••••') : '--'}
+          note={monthlyFinance.available ? (profitVisible ? `收入 ${formatMoney(monthlyFinance.revenueTotal, costCurrency)}` : '收入 ••••••') : monthlyFinance.error || '财务数据加载中'}
           tone={monthlyFinance.available && monthlyFinance.profitTotal >= 0 ? 'profit' : 'bad'}
+          action={(
+            <Button
+              type="text"
+              size="small"
+              className="workbench-profit-visibility"
+              aria-label={profitVisible ? '隐藏利润' : '显示利润'}
+              title={profitVisible ? '隐藏利润' : '显示利润'}
+              icon={profitVisible ? <EyeOutlined /> : <EyeInvisibleOutlined />}
+              onClick={toggleProfitVisibility}
+            />
+          )}
         /> : null}
       </div>
 
@@ -231,24 +253,26 @@ export function AdminWorkbenchDashboard(props: {
             <Text strong>财务月览</Text>
             <Tag color={!monthlyFinance.available ? 'default' : monthlyFinance.profitTotal >= 0 ? 'green' : 'red'}>{monthlyFinance.available ? costCurrency : '未就绪'}</Tag>
           </div>
-          <div className="workbench-finance-total">
-            <span>预计月利润</span>
-            <strong className={monthlyFinance.profitTotal >= 0 ? 'finance-positive' : 'finance-negative'}>{monthlyFinance.available ? formatMoney(monthlyFinance.profitTotal, costCurrency) : '--'}</strong>
-          </div>
-          <div className="workbench-finance-bars">
-            {financeBars.map((bar) => (
-              <div className={`workbench-finance-bar workbench-finance-${bar.tone}`} key={bar.label}>
-                <div><span>{bar.label}</span><strong>{monthlyFinance.available ? formatMoney(bar.value, costCurrency) : '--'}</strong></div>
-                <i><b style={{ width: `${monthlyFinance.available ? percentOf(Math.abs(bar.value), maxFinance) : 0}%` }} /></i>
-              </div>
-            ))}
-          </div>
-          <div className="workbench-finance-foot">
-            {monthlyFinance.available ? <>
-              <span>成本 {monthlyFinance.costCount}/{agents.length}</span>
-              <span>收费客户端 {monthlyFinance.revenueCount}</span>
-              {monthlyFinance.excludedRevenueCount ? <span>未计收入 {monthlyFinance.excludedRevenueCount}</span> : null}
-            </> : <span>{monthlyFinance.error || '财务数据加载中'}</span>}
+          <div className={profitVisible ? 'workbench-finance-private' : 'workbench-finance-private workbench-finance-private-hidden'}>
+            <div className="workbench-finance-total">
+              <span>预计月利润</span>
+              <strong className={monthlyFinance.profitTotal >= 0 ? 'finance-positive' : 'finance-negative'}>{monthlyFinance.available ? formatMoney(monthlyFinance.profitTotal, costCurrency) : '--'}</strong>
+            </div>
+            <div className="workbench-finance-bars">
+              {financeBars.map((bar) => (
+                <div className={`workbench-finance-bar workbench-finance-${bar.tone}`} key={bar.label}>
+                  <div><span>{bar.label}</span><strong>{monthlyFinance.available ? formatMoney(bar.value, costCurrency) : '--'}</strong></div>
+                  <i><b style={{ width: `${monthlyFinance.available ? percentOf(Math.abs(bar.value), maxFinance) : 0}%` }} /></i>
+                </div>
+              ))}
+            </div>
+            <div className="workbench-finance-foot">
+              {monthlyFinance.available ? <>
+                <span>成本 {monthlyFinance.costCount}/{agents.length}</span>
+                <span>收费客户端 {monthlyFinance.revenueCount}</span>
+                {monthlyFinance.excludedRevenueCount ? <span>未计收入 {monthlyFinance.excludedRevenueCount}</span> : null}
+              </> : <span>{monthlyFinance.error || '财务数据加载中'}</span>}
+            </div>
           </div>
         </Card> : null}
 
@@ -297,10 +321,10 @@ function WorkbenchHealthLink(props: {
   )
 }
 
-function WorkbenchKpi(props: { label: string; value: string; note: string; tone: 'ok' | 'warn' | 'bad' | 'speed' | 'traffic' | 'profit' }) {
+function WorkbenchKpi(props: { label: string; value: string; note: string; tone: 'ok' | 'warn' | 'bad' | 'speed' | 'traffic' | 'profit'; action?: ReactNode }) {
   return (
     <div className={`admin-workbench-metric workbench-kpi-${props.tone}`}>
-      <span>{props.label}</span>
+      <div className="workbench-kpi-label"><span>{props.label}</span>{props.action}</div>
       <strong>{props.value}</strong>
       <small>{props.note}</small>
     </div>

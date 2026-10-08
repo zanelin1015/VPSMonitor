@@ -49,11 +49,13 @@ import { useAdminSystemTools } from './hooks/useAdminSystemTools'
 import { useAdminRouteSync } from './hooks/useAdminRouteSync'
 import { useXUIRemoteActions } from './hooks/useXUIRemoteActions'
 import type { AdminPageKey } from './lib/adminRoute'
+import { appPathname } from './lib/appBasePath'
 import { isAreaManagerAdminUser, sanitizeAreaRealtimeMetric } from './lib/adminUsers'
 import { createAppNavigationHandlers } from './lib/appNavigation'
 import { normalizeScheduledTaskSettings } from './lib/scheduledTasks'
 import { buildDashboardScope } from './lib/appDashboardScope'
 import { agentMatchesHealthFilter, type AgentHealthFilter } from './lib/agentHealth'
+import { agentMatchesSearch, matchingAgentClients } from './lib/agentSearch'
 
 import type {
   AgentViewMode,
@@ -240,8 +242,11 @@ export default function App() {
   const [outboundSourceOverview, setOutboundSourceOverview] = useState<XUIOverview | null>(null)
   const [outboundSourceLoading, setOutboundSourceLoading] = useState(false)
   const [clientSearch, setClientSearch] = useState('')
+  const [agentListSearch, setAgentListSearch] = useState('')
   const [importURLClient, setImportURLClient] = useState<XUIClientView | null>(null)
   const deferredClientSearch = useDeferredValue(clientSearch.trim().toLowerCase())
+  const deferredAgentListSearch = useDeferredValue(agentListSearch)
+  const pendingClientSearchRef = useRef<{ agentID: string; query: string } | null>(null)
   const inFlightRequestsRef = useRef<Set<string>>(new Set())
   const lastDetailAgentIdRef = useRef('')
   const isCurrentAgentRequest = useCurrentAgentRequest(selectedAgentId)
@@ -310,9 +315,11 @@ export default function App() {
     xuiClientDeleteLoadingKey,
     xuiClientToggleLoadingKey,
     xuiClientTrafficSavingKey,
+    routingRuleDeleteLoadingAgentId,
     xuiRestartLoading,
     xuiUpdateLoading,
     deleteXUIClient,
+    deleteRoutingRules,
     executeRemoteCommand,
     restartXUIService,
     saveXUIClientTrafficLimit,
@@ -366,7 +373,7 @@ export default function App() {
     setCustomerAssignmentDraft,
   })
   const topologyScopeLabel = selectedAgentId ? selectedAgent?.agent_name || selectedAgentId : selectedTag ? `${selectedTag} 标签` : '全部 Client'
-  const normalizedPath = window.location.pathname.replace(/\/+$/, '') || '/'
+  const normalizedPath = appPathname()
   const customerMode = normalizedPath === '/customer'
   const publicSiteMode = normalizedPath === '/site' || normalizedPath === '/official' || new URLSearchParams(window.location.search).get('page') === 'site'
   const isAreaManagerAccount = isAreaManagerAdminUser(adminUser)
@@ -551,6 +558,7 @@ export default function App() {
     }
     if (!selectedAgentId) {
       lastDetailAgentIdRef.current = ''
+      pendingClientSearchRef.current = null
       setActiveTabKey((current) => (current === 'config' ? 'overview' : current))
       setOverview(null)
       setManagedConfig(null)
@@ -579,7 +587,9 @@ export default function App() {
       setAgentLogs(null)
       setAgentLogsError('')
       setConfigAudits([])
-      setClientSearch('')
+      const pendingSearch = pendingClientSearchRef.current
+      setClientSearch(pendingSearch?.agentID === selectedAgentId ? pendingSearch.query : '')
+      pendingClientSearchRef.current = null
       setSelectedOutboundTag('')
       setSelectedRuleIndex(null)
       setSelectedNodeAnchor('')
@@ -648,6 +658,7 @@ export default function App() {
     setDashboardView(null)
     setSelectedTag('')
     setAgentHealthFilter('all')
+    setAgentListSearch('')
     setAgents([])
     setFinanceCustomers([])
     setFinanceAreaManagers([])
@@ -1538,7 +1549,7 @@ export default function App() {
     costCurrency,
     exchangeRates,
   })
-  const agentListAgents = filteredAgents.filter((agent) => agentMatchesHealthFilter(agent, agentHealthFilter))
+  const agentListAgents = filteredAgents.filter((agent) => agentMatchesHealthFilter(agent, agentHealthFilter) && agentMatchesSearch(agent, deferredAgentListSearch))
 
   if (publicSiteMode) {
     return (
@@ -1901,16 +1912,27 @@ export default function App() {
             onRefresh={() => void loadAgents()}
             onSelectTag={selectDashboardTag}
             onHealthFilterChange={setAgentHealthFilter}
+            searchText={agentListSearch}
+            onSearchTextChange={setAgentListSearch}
             onSelectAgent={(agentID, active) => {
               if (topologyVisible) {
                 selectTopologyAgent(agentID)
                 return
               }
+              const searchAgent = agentListAgents.find((agent) => agent.agent_id === agentID)
+              const hasClientMatches = searchAgent && matchingAgentClients(searchAgent, agentListSearch).length > 0
+              pendingClientSearchRef.current = hasClientMatches && !active ? { agentID, query: agentListSearch.trim() } : null
+              if (hasClientMatches) {
+                setClientSearch(agentListSearch.trim())
+                setActiveTabKey('clients')
+              } else if (agentListSearch.trim()) {
+                setClientSearch('')
+              }
               if (active && !topologyVisible) {
                 setReloadToken((current) => current + 1)
                 return
               }
-              openAgentDetailPanel(agentID)
+              openAgentDetailPanel(agentID, hasClientMatches ? 'clients' : 'overview')
             }}
           />
 
@@ -2018,6 +2040,7 @@ export default function App() {
                 xuiActions={xuiActions}
                 xuiActionsLoading={xuiActionsLoading}
                 xuiClientDeleteLoadingKey={xuiClientDeleteLoadingKey}
+                routingRuleDeleteLoading={routingRuleDeleteLoadingAgentId === selectedAgentId}
                 xuiClientTrafficSavingKey={xuiClientTrafficSavingKey}
                 xuiClientToggleLoadingKey={xuiClientToggleLoadingKey}
                 agentDeleteLoading={agentDeleteLoading}
@@ -2085,6 +2108,7 @@ export default function App() {
                 onDeleteCurrentAgent={() => void deleteAgent(selectedAgentId)}
                 onReplaceCurrentAgent={(replacementAgentID) => replaceAgent(replacementAgentID, selectedAgentId)}
                 onDeleteXUIClient={(client) => void deleteXUIClient(client, selectedAgentId)}
+                onDeleteRoutingRules={(payload) => deleteRoutingRules(payload, selectedAgentId)}
                 onSaveXUIClientTrafficLimit={(client, totalGB) => void saveXUIClientTrafficLimit(client, totalGB, selectedAgentId)}
                 onSetXUIClientEnabled={(client, enabled) => void setXUIClientEnabled(client, enabled, selectedAgentId)}
                 onRefreshCurrentAgent={() => void requestAgentSnapshot(selectedAgentId)}

@@ -6,6 +6,7 @@ import { SaveOutlined } from '@ant-design/icons'
 
 import type { AreaManagerAssignment, CustomerAdminView, CustomerAssignment, XUIOverview } from '../types'
 import { REVENUE_CURRENCIES } from '../lib/currency'
+import { customerEntryURL } from '../lib/appBasePath'
 import type { AreaManagerFormState, AssignmentFormState, CustomerFormState } from './CustomerManagementHelpers'
 import {
   areaAssignmentKey,
@@ -447,7 +448,7 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
           </Col>
           <Col xs={24}>
             <Text type="secondary">用户入口地址</Text>
-            <Input value={`${window.location.origin}/customer`} readOnly />
+            <Input value={customerEntryURL()} readOnly />
           </Col>
         </Row>
       </Modal>
@@ -570,7 +571,7 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
           </Col>
           <Col xs={24}>
             <Text type="secondary">用户入口地址</Text>
-            <Input value={`${window.location.origin}/customer`} readOnly />
+            <Input value={customerEntryURL()} readOnly />
           </Col>
         </Row>
       </Modal>

@@ -34,6 +34,50 @@
   margin-bottom: 8px;
 }
 
+.agent-search-row {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.agent-search-row .ant-input-search {
+  min-width: 0;
+  width: 100%;
+  max-width: 520px;
+}
+
+.agent-search-count {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.agent-search-matches {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--green-soft);
+  color: var(--text);
+  font-size: 11px;
+  text-align: left;
+}
+
+.agent-search-matches strong {
+  color: var(--green);
+}
+
+.agent-search-matches span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .agent-health-filter .ant-segmented-item-label {
   overflow: hidden;
   padding-inline: 7px;

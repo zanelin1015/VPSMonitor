@@ -73,6 +73,7 @@ func (c *XUIClient) collectLocal(ctx context.Context, snapshot *model.XUISnapsho
 	if err != nil {
 		return fmt.Errorf("read x-ui local xray config: %w", err)
 	}
+	snapshot.RoutingTemplate = routingTemplateForSnapshot(configJSON)
 	configJSON = c.enrichLocalXrayConfig(ctx, configJSON)
 	outboundTraffic, err := readLocalOutboundTraffic(ctx, db)
 	if err != nil {

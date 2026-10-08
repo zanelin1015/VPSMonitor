@@ -71,6 +71,7 @@ type XUISnapshot struct {
 	Inbounds        []map[string]any      `json:"inbounds,omitempty"`
 	Outbounds       []map[string]any      `json:"outbounds,omitempty"`
 	RoutingRules    []map[string]any      `json:"routing_rules,omitempty"`
+	RoutingTemplate *XUIRoutingTemplate   `json:"routing_template,omitempty"`
 	OutboundTraffic []map[string]any      `json:"outbound_traffic,omitempty"`
 	Certificates    []XUILocalCertificate `json:"certificates,omitempty"`
 	RawConfig       map[string]any        `json:"raw_config,omitempty"`

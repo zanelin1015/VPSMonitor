@@ -97,9 +97,9 @@ func (c *XUIClient) resetCookieJar() {
 }
 
 func (c *XUIClient) getMutableXrayConfig(ctx context.Context) (mutableXrayConfig, error) {
-	configJSON, err := c.getXrayTemplate(ctx)
+	mutable, err := c.getXrayTemplateWithSettings(ctx)
 	if err == nil {
-		return mutableXrayConfig{config: configJSON, source: "api"}, nil
+		return mutable, nil
 	}
 	if !isXUIHTTPStatus(err, http.StatusNotFound) && !isXUIAuthError(err) {
 		return mutableXrayConfig{}, err
@@ -132,7 +132,7 @@ func (c *XUIClient) readLocalMutableXrayConfig(ctx context.Context) (map[string]
 func (c *XUIClient) updateMutableXrayConfig(ctx context.Context, mutableConfig mutableXrayConfig) error {
 	switch mutableConfig.source {
 	case "api":
-		return c.updateXrayTemplate(ctx, mutableConfig.config)
+		return c.updateXrayTemplateWithTestURL(ctx, mutableConfig.config, mutableConfig.outboundTestURL)
 	case "local_db":
 		db, err := sql.Open("sqlite", mutableConfig.dbPath)
 		if err != nil {
@@ -146,49 +146,54 @@ func (c *XUIClient) updateMutableXrayConfig(ctx context.Context, mutableConfig m
 }
 
 func (c *XUIClient) getXrayTemplate(ctx context.Context) (map[string]any, error) {
+	mutable, err := c.getXrayTemplateWithSettings(ctx)
+	return mutable.config, err
+}
+
+func (c *XUIClient) getXrayTemplateWithSettings(ctx context.Context) (mutableXrayConfig, error) {
 	var lastErr error
 	for _, path := range []string{"/panel/xray/", "/panel/api/xray/"} {
-		configJSON, err := c.getXrayTemplateAt(ctx, path)
+		mutable, err := c.getXrayTemplateAt(ctx, path)
 		if err == nil {
-			return configJSON, nil
+			return mutable, nil
 		}
 		lastErr = err
 		if !isXUIHTTPStatus(err, http.StatusNotFound) {
-			return nil, err
+			return mutableXrayConfig{}, err
 		}
 	}
-	return nil, lastErr
+	return mutableXrayConfig{}, lastErr
 }
 
-func (c *XUIClient) getXrayTemplateAt(ctx context.Context, path string) (map[string]any, error) {
+func (c *XUIClient) getXrayTemplateAt(ctx context.Context, path string) (mutableXrayConfig, error) {
 	form := url.Values{}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, strings.NewReader(form.Encode()))
 	if err != nil {
-		return nil, fmt.Errorf("build x-ui template request: %w", err)
+		return mutableXrayConfig{}, fmt.Errorf("build x-ui template request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	var payload xuiEnvelope
 	if err := c.doJSON(req, &payload); err != nil {
-		return nil, fmt.Errorf("x-ui template request failed: %w", err)
+		return mutableXrayConfig{}, fmt.Errorf("x-ui template request failed: %w", err)
 	}
 	if !payload.Success {
-		return nil, fmt.Errorf("x-ui template request failed: %s", payload.Msg)
+		return mutableXrayConfig{}, fmt.Errorf("x-ui template request failed: %s", payload.Msg)
 	}
 
 	var wrapper map[string]json.RawMessage
 	var wrappedText string
 	if err := json.Unmarshal(payload.Obj, &wrappedText); err == nil {
 		if err := json.Unmarshal([]byte(wrappedText), &wrapper); err != nil {
-			return nil, fmt.Errorf("decode x-ui template wrapper: %w", err)
+			return mutableXrayConfig{}, fmt.Errorf("decode x-ui template wrapper: %w", err)
 		}
 	} else if err := json.Unmarshal(payload.Obj, &wrapper); err != nil {
-		return nil, fmt.Errorf("decode x-ui template wrapper: %w", err)
+		return mutableXrayConfig{}, fmt.Errorf("decode x-ui template wrapper: %w", err)
 	}
 
 	raw, ok := wrapper["xraySetting"]
 	if !ok {
-		return nil, fmt.Errorf("x-ui template response missing xraySetting")
+		return mutableXrayConfig{}, fmt.Errorf("x-ui template response missing xraySetting")
 	}
 	var rawText string
 	if err := json.Unmarshal(raw, &rawText); err == nil {
@@ -196,15 +201,27 @@ func (c *XUIClient) getXrayTemplateAt(ctx context.Context, path string) (map[str
 	}
 	var configJSON map[string]any
 	if err := json.Unmarshal(raw, &configJSON); err != nil {
-		return nil, fmt.Errorf("decode x-ui template config: %w", err)
+		return mutableXrayConfig{}, fmt.Errorf("decode x-ui template config: %w", err)
 	}
-	return configJSON, nil
+	mutable := mutableXrayConfig{config: configJSON, source: "api"}
+	if rawURL, exists := wrapper["outboundTestUrl"]; exists {
+		var testURL string
+		if err := json.Unmarshal(rawURL, &testURL); err != nil {
+			return mutableXrayConfig{}, fmt.Errorf("decode x-ui outbound test URL: %w", err)
+		}
+		mutable.outboundTestURL = &testURL
+	}
+	return mutable, nil
 }
 
 func (c *XUIClient) updateXrayTemplate(ctx context.Context, configJSON map[string]any) error {
+	return c.updateXrayTemplateWithTestURL(ctx, configJSON, nil)
+}
+
+func (c *XUIClient) updateXrayTemplateWithTestURL(ctx context.Context, configJSON map[string]any, testURL *string) error {
 	var lastErr error
 	for _, path := range []string{"/panel/xray/update", "/panel/api/xray/update"} {
-		err := c.updateXrayTemplateAt(ctx, path, configJSON)
+		err := c.updateXrayTemplateAt(ctx, path, configJSON, testURL)
 		if err == nil {
 			return nil
 		}
@@ -216,7 +233,7 @@ func (c *XUIClient) updateXrayTemplate(ctx context.Context, configJSON map[strin
 	return lastErr
 }
 
-func (c *XUIClient) updateXrayTemplateAt(ctx context.Context, path string, configJSON map[string]any) error {
+func (c *XUIClient) updateXrayTemplateAt(ctx context.Context, path string, configJSON map[string]any, testURL *string) error {
 	body, err := json.Marshal(configJSON)
 	if err != nil {
 		return fmt.Errorf("marshal x-ui template config: %w", err)
@@ -224,6 +241,10 @@ func (c *XUIClient) updateXrayTemplateAt(ctx context.Context, path string, confi
 	form := url.Values{}
 	form.Set("xraySetting", string(body))
 	form.Set("outboundTestUrl", "https://www.google.com/generate_204")
+	if testURL != nil {
+		// Saving route edits must not reset the panel's configured test URL.
+		form.Set("outboundTestUrl", *testURL)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, strings.NewReader(form.Encode()))
 	if err != nil {

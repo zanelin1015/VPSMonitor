@@ -5,6 +5,7 @@ import worldMap from '@svg-maps/world'
 
 import type { ClientChainView, DashboardAgentView, GlobalDashboardView, TopologyLinkView } from '../types'
 import { fetchJSON, formatDateTime } from '../lib/appHelpers'
+import { adminEntryPath } from '../lib/appBasePath'
 import { VisualEffects } from './VisualEffects'
 
 interface PublicCountrySummary {
@@ -118,7 +119,7 @@ export function PublicSite() {
             <h1>ZaneLin</h1>
             <p>跨区域 VPS、Realm 中转与 X-UI 节点的统一拓扑视图。</p>
             <div className="public-hero-actions">
-              <Button type="primary" size="large" href="/admin">
+              <Button type="primary" size="large" href={adminEntryPath()}>
                 进入控制台
               </Button>
               <Button size="large" icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>

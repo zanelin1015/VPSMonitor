@@ -3,21 +3,23 @@ package model
 import "time"
 
 type XUIOverview struct {
-	AgentID           string                `json:"agent_id"`
-	AgentName         string                `json:"agent_name,omitempty"`
-	BaseURL           string                `json:"base_url,omitempty"`
-	ReportedAt        time.Time             `json:"reported_at"`
-	CollectedAt       time.Time             `json:"collected_at"`
-	Summary           VPSSummary            `json:"summary"`
-	NodeCount         int                   `json:"node_count"`
-	ClientCount       int                   `json:"client_count"`
-	OnlineClientCount int                   `json:"online_client_count"`
-	Nodes             []XUINodeView         `json:"nodes"`
-	Clients           []XUIClientView       `json:"clients"`
-	Outbounds         []XUIOutboundView     `json:"outbounds"`
-	Balancers         []XUIBalancerView     `json:"balancers,omitempty"`
-	RoutingRules      []XUIRoutingRuleView  `json:"routing_rules"`
-	Certificates      []XUILocalCertificate `json:"certificates"`
+	AgentID                 string                `json:"agent_id"`
+	AgentName               string                `json:"agent_name,omitempty"`
+	BaseURL                 string                `json:"base_url,omitempty"`
+	ReportedAt              time.Time             `json:"reported_at"`
+	CollectedAt             time.Time             `json:"collected_at"`
+	Summary                 VPSSummary            `json:"summary"`
+	NodeCount               int                   `json:"node_count"`
+	ClientCount             int                   `json:"client_count"`
+	OnlineClientCount       int                   `json:"online_client_count"`
+	Nodes                   []XUINodeView         `json:"nodes"`
+	Clients                 []XUIClientView       `json:"clients"`
+	Outbounds               []XUIOutboundView     `json:"outbounds"`
+	Balancers               []XUIBalancerView     `json:"balancers,omitempty"`
+	RoutingRules            []XUIRoutingRuleView  `json:"routing_rules"`
+	RoutingRulesFingerprint string                `json:"routing_rules_fingerprint,omitempty"`
+	EditableRoutingRules    *[]XUIRoutingRuleView `json:"editable_routing_rules,omitempty"`
+	Certificates            []XUILocalCertificate `json:"certificates"`
 }
 
 type XUIRouteTrace struct {
@@ -132,6 +134,9 @@ type XUIBalancerView struct {
 
 type XUIRoutingRuleView struct {
 	Index       int      `json:"index"`
+	Fingerprint string   `json:"fingerprint,omitempty"`
+	Protected   bool     `json:"protected,omitempty"`
+	Enabled     *bool    `json:"enabled,omitempty"`
 	Type        string   `json:"type,omitempty"`
 	InboundTags []string `json:"inbound_tags,omitempty"`
 	Users       []string `json:"users,omitempty"`

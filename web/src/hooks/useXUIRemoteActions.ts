@@ -1,8 +1,9 @@
 import { App as AntdApp } from 'antd'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 import type { AdminUser, XUIAction, XUIClientView } from '../types'
 import { fetchJSON, isUnauthorized } from '../lib/appHelpers'
+import type { RoutingRulesDeletePayload } from '../lib/routingRules'
 
 type LoadOptions = { silent?: boolean }
 type LoadAgentResource = (agentID: string, options?: LoadOptions) => Promise<void>
@@ -32,6 +33,8 @@ export function useXUIRemoteActions(input: {
   const [xuiClientDeleteLoadingKey, setXUIClientDeleteLoadingKey] = useState('')
   const [xuiClientToggleLoadingKey, setXUIClientToggleLoadingKey] = useState('')
   const [xuiClientTrafficSavingKey, setXUIClientTrafficSavingKey] = useState('')
+  const [routingRuleDeleteLoadingAgentId, setRoutingRuleDeleteLoadingAgentId] = useState('')
+  const routingDeleteSubmitting = useRef(false)
 
   const handleUnauthorized = (error: unknown) => {
     if (isUnauthorized(error)) {
@@ -124,6 +127,35 @@ export function useXUIRemoteActions(input: {
     } finally {
       setXUIClientDeleteLoadingKey('')
     }
+  }
+
+  async function deleteRoutingRules(payload: RoutingRulesDeletePayload, agentID = selectedAgentId): Promise<XUIAction | null> {
+    if (!agentID || routingDeleteSubmitting.current) return null
+    routingDeleteSubmitting.current = true
+    setRoutingRuleDeleteLoadingAgentId(agentID)
+    let action: XUIAction
+    try {
+      action = await fetchJSON<XUIAction>(`/api/v1/agents/${agentID}/xui/actions`, {
+        method: 'POST',
+        body: JSON.stringify({ kind: 'delete_routing_rules', payload }),
+      })
+    } catch (error) {
+      handleUnauthorized(error)
+      message.error(error instanceof Error ? error.message : '下发删除路由规则任务失败')
+      return null
+    } finally {
+      routingDeleteSubmitting.current = false
+      setRoutingRuleDeleteLoadingAgentId('')
+    }
+    message.success(`已下发删除 ${payload.rules.length} 条路由规则的任务，执行结果请查看 x-ui 操作记录`)
+    // Queueing is not completion. Poll the existing action-result refresh flow
+    // even if refreshing the operation list temporarily fails.
+    scheduleXUIActionResultRefresh(agentID)
+    void loadXUIActions(agentID, { silent: true })
+    ;[1000, 3000, 8000, 15000].forEach((delay) => {
+      window.setTimeout(() => void loadOverview(agentID, { silent: true }), delay)
+    })
+    return action
   }
 
   async function setXUIClientEnabled(record: XUIClientView, enabled: boolean, agentID = selectedAgentId) {
@@ -242,9 +274,11 @@ export function useXUIRemoteActions(input: {
     xuiClientDeleteLoadingKey,
     xuiClientToggleLoadingKey,
     xuiClientTrafficSavingKey,
+    routingRuleDeleteLoadingAgentId,
     xuiRestartLoading,
     xuiUpdateLoading,
     deleteXUIClient,
+    deleteRoutingRules,
     executeRemoteCommand,
     restartXUIService,
     saveXUIClientTrafficLimit,

@@ -7,9 +7,12 @@
     "dev": "vite",
     "build": "tsc --project tsconfig.app.json && tsc --project tsconfig.node.json && vite build",
     "preview": "vite preview",
+    "test:app-base": "node scripts/test-app-base.mjs",
     "test:client-expiry": "node scripts/test-client-expiry.mjs",
     "test:dashboard-network": "node scripts/test-dashboard-network.mjs",
-    "test:finance": "node scripts/test-finance.mjs"
+    "test:finance": "node scripts/test-finance.mjs",
+    "test:agent-search": "node scripts/test-agent-search.mjs",
+    "test:routing-delete": "node scripts/test-routing-delete.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "5.6.1",

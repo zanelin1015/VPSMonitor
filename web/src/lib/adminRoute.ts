@@ -1,4 +1,5 @@
 import { normalizeAgentHealthFilter, type AgentHealthFilter } from './agentHealth'
+import { adminEntryPath, appPathname } from './appBasePath'
 
 export type AdminPageKey = 'dashboard' | 'assets' | 'finance' | 'customers' | 'front-proxies' | 'support' | 'access-logs' | 'settings' | 'schedules'
 
@@ -17,7 +18,7 @@ export interface AdminRouteState {
 
 export function parseAdminRouteState(canManageSystem: boolean, canViewFrontProxies = canManageSystem): AdminRouteState {
   const params = new URLSearchParams(window.location.search)
-  const path = window.location.pathname.replace(/\/+$/, '')
+  const path = appPathname()
   const rawPage = (params.get('page') || pageFromAdminPath(path)).toLowerCase()
   const topology = rawPage === 'topology' || params.get('topology') === '1'
   let page: AdminPageKey = topology ? 'dashboard' : normalizeAdminPage(rawPage)
@@ -86,7 +87,8 @@ export function buildAdminRouteURL(route: AdminRouteState): string {
     }
   }
   const query = params.toString()
-  return query ? `/?${query}` : '/'
+  const entry = adminEntryPath()
+  return query ? `${entry}?${query}` : entry
 }
 
 function normalizeAdminPage(value: string): AdminPageKey {

@@ -95,6 +95,10 @@ func BuildXUIOverviewWithOptions(snapshot model.AgentSnapshot, options XUIOvervi
 	}
 
 	rules := normalizeRouteRules(snapshot.XUI.RoutingRules)
+	for index, raw := range snapshot.XUI.RoutingRules {
+		rules[index].view.Protected = model.IsProtectedRoutingRule(raw, snapshot.XUI.RawConfig)
+	}
+	editableRoutingRules, routingFingerprint := routingDeletionView(snapshot.XUI, rules)
 	trafficByTag := outboundTrafficByTag(snapshot.XUI.OutboundTraffic)
 	outbounds, defaultOutboundTag := normalizeOutbounds(snapshot.XUI.Outbounds, trafficByTag)
 	if defaultOutboundTag == "" && len(snapshot.XUI.Inbounds) > 0 {
@@ -141,21 +145,23 @@ func BuildXUIOverviewWithOptions(snapshot model.AgentSnapshot, options XUIOvervi
 	})
 
 	return &model.XUIOverview{
-		AgentID:           snapshot.AgentID,
-		AgentName:         snapshot.AgentName,
-		BaseURL:           snapshot.XUI.BaseURL,
-		ReportedAt:        snapshot.ReportedAt,
-		CollectedAt:       snapshot.XUI.CollectedAt,
-		Summary:           snapshot.Summary,
-		NodeCount:         len(nodes),
-		ClientCount:       len(clients),
-		OnlineClientCount: onlineCount,
-		Nodes:             nodes,
-		Clients:           clients,
-		Outbounds:         outbounds,
-		Balancers:         balancers,
-		RoutingRules:      unwrapRules(rules),
-		Certificates:      append([]model.XUILocalCertificate{}, certificates...),
+		RoutingRulesFingerprint: routingFingerprint,
+		EditableRoutingRules:    editableRoutingRules,
+		AgentID:                 snapshot.AgentID,
+		AgentName:               snapshot.AgentName,
+		BaseURL:                 snapshot.XUI.BaseURL,
+		ReportedAt:              snapshot.ReportedAt,
+		CollectedAt:             snapshot.XUI.CollectedAt,
+		Summary:                 snapshot.Summary,
+		NodeCount:               len(nodes),
+		ClientCount:             len(clients),
+		OnlineClientCount:       onlineCount,
+		Nodes:                   nodes,
+		Clients:                 clients,
+		Outbounds:               outbounds,
+		Balancers:               balancers,
+		RoutingRules:            unwrapRules(rules),
+		Certificates:            append([]model.XUILocalCertificate{}, certificates...),
 	}
 }
 
@@ -370,6 +376,7 @@ func normalizeRouteRules(rawRules []map[string]any) []routeRule {
 	for idx, raw := range rawRules {
 		view := model.XUIRoutingRuleView{
 			Index:       idx + 1,
+			Fingerprint: model.RoutingFingerprint(raw),
 			Type:        stringValue(raw["type"]),
 			InboundTags: stringList(raw["inboundTag"]),
 			Users:       stringList(raw["user"]),
@@ -385,6 +392,9 @@ func normalizeRouteRules(rawRules []map[string]any) []routeRule {
 			VLESSRoute:  stringList(raw["vlessRoute"]),
 		}
 		view.Summary = routeSummary(view)
+		if enabled, ok := raw["enabled"].(bool); ok {
+			view.Enabled = &enabled
+		}
 		rules = append(rules, routeRule{view: view})
 	}
 	return rules
@@ -401,7 +411,10 @@ func unwrapRules(rules []routeRule) []model.XUIRoutingRuleView {
 func collectGlobalRuleIndexes(rules []routeRule) []int {
 	indexes := make([]int, 0)
 	for _, rule := range rules {
-		if len(rule.view.InboundTags) == 0 && len(rule.view.Users) == 0 && (rule.view.OutboundTag != "" || rule.view.BalancerTag != "") {
+		if rule.view.Enabled != nil && !*rule.view.Enabled {
+			continue
+		}
+		if rule.view.Index > 0 && len(rule.view.InboundTags) == 0 && len(rule.view.Users) == 0 && (rule.view.OutboundTag != "" || rule.view.BalancerTag != "") {
 			indexes = append(indexes, rule.view.Index)
 		}
 	}
@@ -410,6 +423,9 @@ func collectGlobalRuleIndexes(rules []routeRule) []int {
 
 func resolveRoute(email, inboundTag string, rules []routeRule, defaultOutboundTag string, globalRuleIndexes []int) model.XUIRouteTrace {
 	for _, rule := range rules {
+		if rule.view.Enabled != nil && !*rule.view.Enabled {
+			continue
+		}
 		if !ruleApplies(rule.view, email, inboundTag) {
 			continue
 		}

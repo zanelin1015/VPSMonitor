@@ -220,7 +220,7 @@ func (a *App) setAdminSessionCookie(w http.ResponseWriter, r *http.Request, toke
 	http.SetCookie(w, &http.Cookie{
 		Name:     adminSessionCookieName,
 		Value:    token,
-		Path:     "/",
+		Path:     requestSessionCookiePath(r),
 		Expires:  expiresAt,
 		MaxAge:   int(time.Until(expiresAt).Seconds()),
 		HttpOnly: true,
@@ -233,7 +233,7 @@ func (a *App) clearAdminSessionCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     adminSessionCookieName,
 		Value:    "",
-		Path:     "/",
+		Path:     requestSessionCookiePath(r),
 		Expires:  time.Unix(0, 0),
 		MaxAge:   -1,
 		HttpOnly: true,

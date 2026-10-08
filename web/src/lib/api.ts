@@ -1,4 +1,5 @@
 import type { AgentListItem, AgentRealtimeMetrics, VPSSummary } from '../types'
+import { withAppBasePath } from './appBasePath'
 
 export class APIError extends Error {
   status: number
@@ -10,7 +11,7 @@ export class APIError extends Error {
 }
 
 export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, { ...init, credentials: 'same-origin' })
+  const response = await fetch(withAppBasePath(url), { ...init, credentials: 'same-origin' })
   if (!response.ok) {
     let detail = response.statusText
     try {
@@ -27,13 +28,13 @@ export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> 
 }
 
 export function buildDashboardRealtimeURL(): string {
-  const url = new URL('/api/v1/dashboard/realtime', window.location.href)
+  const url = new URL(withAppBasePath('/api/v1/dashboard/realtime'), window.location.href)
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   return url.toString()
 }
 
 export function buildAgentTerminalURL(agentID: string, shell: string, cols = 120, rows = 36): string {
-  const url = new URL(`/api/v1/agents/${encodeURIComponent(agentID)}/terminal/ws`, window.location.href)
+  const url = new URL(withAppBasePath(`/api/v1/agents/${encodeURIComponent(agentID)}/terminal/ws`), window.location.href)
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   if (shell) {
     url.searchParams.set('shell', shell)

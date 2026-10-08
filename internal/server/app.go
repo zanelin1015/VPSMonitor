@@ -226,8 +226,8 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("/healthz", a.handleHealth)
 	if a.demoDataSource != nil {
 		mux.Handle("/api/", a.demoDataSource)
-		mux.Handle("/", webui.NewHandler())
-		return secureTransportHeaders(a, limitJSONRequestBodies(mux))
+		mux.Handle("/", webui.NewHandler(requestPublicPrefix))
+		return a.withPublicPath(secureTransportHeaders(a, limitJSONRequestBodies(mux)))
 	}
 	mux.HandleFunc("/api/v1/admin/", a.handleAdmin)
 	mux.HandleFunc("/api/v1/customer/", a.handleCustomer)
@@ -241,8 +241,8 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/agents", a.handleAgents)
 	mux.HandleFunc("/api/v1/agents/register", a.handleRegister)
 	mux.HandleFunc("/api/v1/agents/", a.handleAgentByID)
-	mux.Handle("/", webui.NewHandler())
-	return secureTransportHeaders(a, limitJSONRequestBodies(mux))
+	mux.Handle("/", webui.NewHandler(requestPublicPrefix))
+	return a.withPublicPath(secureTransportHeaders(a, limitJSONRequestBodies(mux)))
 }
 
 func secureTransportHeaders(app *App, next http.Handler) http.Handler {

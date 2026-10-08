@@ -868,6 +868,9 @@ export interface XUIBalancerView {
 
 export interface XUIRoutingRuleView {
   index: number
+  fingerprint?: string
+  protected?: boolean
+  enabled?: boolean
   type?: string
   inbound_tags?: string[]
   users?: string[]
@@ -911,6 +914,8 @@ export interface XUIOverview {
   outbounds: XUIOutboundView[]
   balancers?: XUIBalancerView[]
   routing_rules: XUIRoutingRuleView[]
+  routing_rules_fingerprint?: string
+  editable_routing_rules?: XUIRoutingRuleView[]
   certificates: XUILocalCertificate[]
 }
 

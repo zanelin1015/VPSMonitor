@@ -8,6 +8,7 @@
   "credential_key_path": "./data/credential.key",
   "registration_token": "replace-with-registration-token",
   "trusted_proxy_cidrs": [],
+  "public_path_prefixes": {},
   "admin_username": "admin",
   "admin_password": "replace-with-admin-password",
   "snapshot_retention_days": 30,

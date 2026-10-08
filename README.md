@@ -14,7 +14,8 @@ VPSMonitor 是一套围绕 `x-ui / 3x-ui` 的 VPS 集中管理系统。它不替
 管理端可以完成：
 
 - Client 自动注册、在线状态、CPU/内存/磁盘、网速和流量监控。
-- x-ui 节点、客户端、出站和路由规则查看与下发。
+- x-ui 节点、客户端、出站和路由规则查看与下发；路由规则支持单条和多选删除，并保护系统 API 路由。
+- 按 VPS、节点和客户端名称搜索定位，支持跨列表分页查找。
 - 从一台 Client 导入另一台 Client 的节点客户端，配置 Realm 中转或 HAProxy 主备转发。
 - 拓扑图和 Client 链路追踪；工作台和 Client 页面会对同一条转发链路去重，避免网速与流量重复累加。
 - Client 收费周期、流量上限、收入、成本和利润统计。
@@ -79,7 +80,7 @@ sudo env \
 升级到指定 Release 时设置版本即可：
 
 ```bash
-sudo env VPSMONITOR_VERSION=v0.3.30 \
+sudo env VPSMONITOR_VERSION=v0.3.31 \
   VPSMONITOR_SERVER_URL="https://monitor.example.com" \
   VPSMONITOR_REGISTRATION_TOKEN="替换为Server注册Token" \
   /tmp/vpsmonitor-install.sh client
@@ -134,6 +135,7 @@ Windows 服务默认名为 `VPSMonitorClient`。安装器会保留已有 `client
 | `listen_addr` | HTTP 服务监听地址，例如 `:8090`。 |
 | `tls_cert_file` / `tls_key_file` | Server 直接提供 HTTPS 时的证书和私钥，必须同时配置。 |
 | `trusted_proxy_cidrs` | HTTPS 由反向代理终止时，允许传递 `X-Forwarded-Proto: https` 的代理网段。 |
+| `public_path_prefixes` | 按域名启用 `/zanelin` 子路径，例如 `{"monitor.example.com":"/zanelin"}`；仅接受可信代理传入的匹配 `X-Forwarded-Prefix`。默认空对象，保留原根路径入口。 |
 | `allow_insecure_http` | 仅本地开发时允许 HTTP；生产环境保持 `false`。 |
 | `data_dir` | 运行数据目录，默认 `./data`。 |
 | `database_path` | SQLite 路径，默认 `$data_dir/bridge.db`。 |
@@ -144,6 +146,8 @@ Windows 服务默认名为 `VPSMonitorClient`。安装器会保留已有 `client
 | `snapshot_retention_count` | 每个 Client 最多保留的历史快照数，默认 5000。负数关闭数量清理。 |
 
 Server 管理台地址通常是 `https://你的域名/`。Customer 入口是 `https://你的域名/customer`，公开站点入口是 `https://你的域名/site`（如果启用）。
+
+使用 `/zanelin` 子路径时，需要在反向代理中同时配置路由：`/zanelin/monitor` 转到 Server 的 `/`，`/zanelin/customer` 转到 `/customer`，API 和静态资源去掉 `/zanelin` 前缀后转发，并传入 `X-Forwarded-Prefix: /zanelin`。Server 的 `public_path_prefixes` 必须明确包含该域名，`trusted_proxy_cidrs` 必须包含反向代理地址；仅添加配置字段不会自动建立这些入口。登录 Cookie、实时 WebSocket 和 Customer 订阅链接会使用同一前缀，未配置的域名继续使用原入口。
 
 ### Client 配置
 
@@ -249,6 +253,8 @@ Realm 和 HAProxy 的规则由 Server 下发，Client 负责加载并上报运�
 
 发布新版本时，必须把 Server/Client 对应架构的安装包和 `checksums.txt` 一起上传到 GitHub Release；在线升级只接受官方仓库和带 SHA-256 的 Release 资产。
 
+路由规则删除要求 Server 和目标 Client 均升级到 0.3.31 或更高版本。删除前会校验完整规则列表及所选规则，规则发生变化时拒绝删除并要求刷新；多选按索引倒序逐条移除，保存后重载 Xray。系统 API 路由不可删除。如果提示规则已保存但重载失败，请手动重启 x-ui / Xray，不要重复提交删除。
+
 ## 打包与测试
 
 Linux/macOS：
@@ -289,6 +295,9 @@ npm run build
 npm run test:client-expiry
 npm run test:dashboard-network
 npm run test:finance
+npm run test:agent-search
+npm run test:routing-delete
+npm run test:app-base
 cd ..
 go test ./...
 ```

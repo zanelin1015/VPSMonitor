@@ -1,4 +1,5 @@
 import type { ClientInstallInfo, CustomerAnnouncement, CustomerAnnouncementHistory, FrontendSettings } from '../types'
+import { appBasePath } from './appBasePath'
 
 export type ClientInstallCommandKind = 'linux' | 'openwrt' | 'windows-powershell' | 'windows-cmd'
 
@@ -45,7 +46,7 @@ export function defaultTelegramBotForm(): TelegramBotForm {
 
 export function defaultClientInstallCommandForm(): ClientInstallCommandForm {
   return {
-    server_url: typeof window !== 'undefined' ? window.location.origin : 'http://SERVER_IP:8090',
+    server_url: typeof window !== 'undefined' ? window.location.origin + appBasePath() : 'http://SERVER_IP:8090',
     registration_token: '',
     install_script_url: 'https://raw.githubusercontent.com/zanelin1015/VPSMonitor/main/install.sh',
     poll_interval: '30s',

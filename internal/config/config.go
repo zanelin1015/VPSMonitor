@@ -26,6 +26,7 @@ type ServerConfig struct {
 	CredentialKeyPath      string            `json:"credential_key_path"`
 	RegistrationToken      string            `json:"registration_token"`
 	TrustedProxyCIDRs      []string          `json:"trusted_proxy_cidrs"`
+	PublicPathPrefixes     map[string]string `json:"public_path_prefixes,omitempty"`
 	AdminUsername          string            `json:"admin_username"`
 	AdminPassword          string            `json:"admin_password"`
 	AdminToken             string            `json:"admin_token"`

@@ -401,5 +401,5 @@ func requestPublicBaseURL(r *http.Request) string {
 	if host == "" {
 		host = "SERVER_IP:8090"
 	}
-	return strings.TrimRight(strings.TrimSpace(proto), ":/") + "://" + strings.TrimSpace(host)
+	return strings.TrimRight(strings.TrimSpace(proto), ":/") + "://" + strings.TrimSpace(host) + requestPublicPrefix(r)
 }
