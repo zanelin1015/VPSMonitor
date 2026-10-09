@@ -29,6 +29,7 @@ import { ClientInstallCommandBox } from './ClientInstallCommandBox'
 import { AdminHelpHint } from './AdminHelpHint'
 import { TelegramBotPanel } from './TelegramBotPanel'
 import { TrafficResetPanel } from './TrafficResetPanel'
+import { ClientUpdateLogPanel } from './ClientUpdateLogPanel'
 import { renderAddClientActionForm, renderOutboundActionForm, renderRoutingActionForm } from './XUIActionForms'
 
 const { Text } = Typography
@@ -925,15 +926,16 @@ export function SystemUpdateModal(props: {
   onRefreshLatest: () => void
   onUpdateServer: () => void
   onUpdateClients: () => void
+  onForceUpdateClients: () => void
 }) {
-  const { open, loading, latestLoading, latestInfo, latestError, systemInfo, onClose, onRefreshLatest, onUpdateServer, onUpdateClients } = props
+  const { open, loading, latestLoading, latestInfo, latestError, systemInfo, onClose, onRefreshLatest, onUpdateServer, onUpdateClients, onForceUpdateClients } = props
   const serverUpdateAvailable = Boolean(latestInfo?.server_update_available)
   const clientUpdateCount = Number(latestInfo?.client_update_available_count || 0)
   const latestServerVersion = latestInfo?.latest_server_version || latestInfo?.latest_version || '-'
   const latestClientVersion = latestInfo?.latest_client_version || latestInfo?.latest_version || '-'
 
   return (
-    <Modal title="在线升级" open={open} onCancel={onClose} footer={null} width={760}>
+    <Modal title="在线升级" open={open} onCancel={onClose} footer={null} width={1120}>
       <Spin spinning={latestLoading}>
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Alert
@@ -983,8 +985,19 @@ export function SystemUpdateModal(props: {
           <Button onClick={onRefreshLatest} loading={latestLoading}>检查最新版本</Button>
           <Button type="primary" disabled={!serverUpdateAvailable} loading={loading} onClick={onUpdateServer}>升级当前 Server</Button>
           <Button disabled={clientUpdateCount <= 0} loading={loading} onClick={onUpdateClients}>下发升级到可升级 Client</Button>
+          <Popconfirm
+            title="确认强制升级 Client？"
+            description="会重新下发到已识别且支持安全升级的 Client；高于目标版本、缺少校验能力或已有任务的 Client 仍会跳过。"
+            okText="确认强制升级"
+            cancelText="取消"
+            onConfirm={onForceUpdateClients}
+          >
+            <Button disabled={!latestInfo?.supported_client_count} loading={loading}>强制升级 Client</Button>
+          </Popconfirm>
         </Space>
         <AdminHelpHint title="Client 升级前会确认系统和架构，避免向不匹配的系统下发安装包。" />
+        <Divider />
+        <ClientUpdateLogPanel open={open} dispatching={loading} candidates={latestInfo?.agent_status} targetVersion={latestClientVersion} />
         </Space>
       </Spin>
     </Modal>

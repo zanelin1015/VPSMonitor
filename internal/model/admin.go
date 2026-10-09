@@ -295,6 +295,9 @@ type UpdateResponse struct {
 	Status      string              `json:"status"`
 	Count       int                 `json:"count,omitempty"`
 	Skipped     int                 `json:"skipped,omitempty"`
+	Failed      int                 `json:"failed,omitempty"`
+	BatchID     string              `json:"batch_id,omitempty"`
+	Logs        []ClientUpdateLog   `json:"logs,omitempty"`
 	Latest      *UpdateLatestInfo   `json:"latest,omitempty"`
 	AgentStatus []UpdateAgentStatus `json:"agent_status,omitempty"`
 }

@@ -1783,6 +1783,7 @@ function AppContent() {
             onTelegramBotEditIDChange={setEditingTelegramBotId}
             onTestTelegramBot={(id) => void testTelegramBot(id)}
             onUpdateAllClients={() => void updateAllClientsOnline()}
+            onForceUpdateAllClients={() => void updateAllClientsOnline(true)}
             onUpdateFrontendSettingsFormChange={setFrontendSettingsForm}
             onUpdateAddClientActionForm={setAddClientActionForm}
             onUpdateOutboundActionForm={setOutboundActionForm}

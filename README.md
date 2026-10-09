@@ -80,7 +80,7 @@ sudo env \
 升级到指定 Release 时设置版本即可：
 
 ```bash
-sudo env VPSMONITOR_VERSION=v0.3.36 \
+sudo env VPSMONITOR_VERSION=v0.3.37 \
   VPSMONITOR_SERVER_URL="https://monitor.example.com" \
   VPSMONITOR_REGISTRATION_TOKEN="替换为Server注册Token" \
   /tmp/vpsmonitor-install.sh client
@@ -261,6 +261,10 @@ Realm 和 HAProxy 的规则由 Server 下发，Client 负责加载并上报运�
 
 发布新版本时，必须把 Server/Client 对应架构的安装包和 `checksums.txt` 一起上传到 GitHub Release；在线升级只接受官方仓库和带 SHA-256 的 Release 资产。
 
+在线升级弹窗中的「Client 升级日志」保存每次批量下发的逐台结果，包括北京时间、Client 名称/ID、原版本和目标版本、下发或跳过结果及原因。可按名称、版本、原因搜索并筛选跳过记录，默认显示最近 200 条；重启或删除 Client 不会删除历史日志。系统/架构未知、安装包或校验值缺失、已是最新、旧 Client 不支持安全升级及已有升级任务均会明确记录原因。可升级台数使用与实际下发相同的版本、平台和安全升级能力检查。
+
+日志将「待领取」「执行中」「已启动，待确认」「执行失败」「结果未确认」与「升级成功」区分显示。Client 成功启动升级程序不等于安装成功，只有完成回执之后重新上报目标版本才确认升级成功。弹窗打开时每 10 秒刷新；旧版本没有保存过的历史跳过记录无法补录。
+
 路由规则删除要求 Server 和目标 Client 均升级到 0.3.31 或更高版本。删除前会校验完整规则列表及所选规则，规则发生变化时拒绝删除并要求刷新；多选按索引倒序逐条移除，保存后重载 Xray。系统 API 路由不可删除。如果提示规则已保存但重载失败，请手动重启 x-ui / Xray，不要重复提交删除。
 
 ## 客户端周期流量重置
@@ -289,7 +293,7 @@ chmod +x ./scripts/build.sh
 指定版本：
 
 ```bash
-VPSMONITOR_BUILD_VERSION=0.3.36 ./scripts/build.sh
+VPSMONITOR_BUILD_VERSION=0.3.37 ./scripts/build.sh
 ```
 
 脚本会先构建 `web` 前端、运行 `go test ./...`，然后输出：
@@ -304,7 +308,7 @@ VPSMONITOR_BUILD_VERSION=0.3.36 ./scripts/build.sh
 Windows PowerShell：
 
 ```powershell
-$env:VPSMONITOR_BUILD_VERSION = "0.3.36"
+$env:VPSMONITOR_BUILD_VERSION = "0.3.37"
 ./scripts/build.ps1
 ```
 

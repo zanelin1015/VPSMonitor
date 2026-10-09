@@ -310,19 +310,21 @@ export function useAdminSystemTools(setAdminUser: (user: AdminUser | null) => vo
     }
   }
 
-  async function updateAllClientsOnline() {
-    if (!updateLatestInfo?.client_update_available_count) {
-      message.info('没有需要升级的 Client')
-      return
-    }
+	async function updateAllClientsOnline(force = false) {
+	if (!updateLatestInfo || (!force && !updateLatestInfo.client_update_available_count) || (force && !updateLatestInfo.supported_client_count)) {
+	  message.info(force ? '没有可强制升级的 Client' : '没有需要升级的 Client')
+	  return
+	}
     setUpdateLoading(true)
     try {
       const result = await fetchJSON<UpdateResponse>('/api/v1/admin/updates/clients', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ version: updateLatestInfo.latest_client_tag || updateLatestInfo.latest_client_version || updateLatestInfo.latest_tag || updateLatestInfo.latest_version }),
-      })
-      message.success(`已下发 Client 升级任务：${result.count || 0} 台，跳过 ${result.skipped || 0} 台`)
+		body: JSON.stringify({ version: updateLatestInfo.latest_client_tag || updateLatestInfo.latest_client_version || updateLatestInfo.latest_tag || updateLatestInfo.latest_version, force }),
+	      })
+	      const summary = `${force ? '已强制下发' : '已下发'} Client 升级任务：${result.count || 0} 台，跳过 ${result.skipped || 0} 台，失败 ${result.failed || 0} 台；详情见下方升级日志`
+      if (result.failed) message.warning(summary)
+      else message.success(summary)
       await loadUpdateLatestInfo()
     } catch (error) {
       handleUnauthorized(error)

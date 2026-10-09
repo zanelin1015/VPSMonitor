@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -29,6 +30,19 @@ func (a *App) handleAdminUpdates(w http.ResponseWriter, r *http.Request, parts [
 	}
 	if len(parts) != 1 {
 		writeError(w, http.StatusNotFound, "update route not found")
+		return
+	}
+	if parts[0] == "client-logs" {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		logs, err := a.clientUpdateLogs()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"items": logs})
 		return
 	}
 	if parts[0] == "latest" {
@@ -379,6 +393,9 @@ func (a *App) createClientUpdateActions(req model.UpdateRequest) (model.UpdateRe
 	}
 	count := 0
 	skipped := 0
+	failed := 0
+	batchID := rand.Text()
+	logs := []model.ClientUpdateLog{}
 	statuses := make([]model.UpdateAgentStatus, 0, len(agents))
 	for _, agent := range agents {
 		if len(selected) > 0 {
@@ -386,15 +403,15 @@ func (a *App) createClientUpdateActions(req model.UpdateRequest) (model.UpdateRe
 				continue
 			}
 		}
-		status := buildUpdateAgentStatus(agent, latest.LatestClientVersion, packagePrefix, latest.ClientAssets)
+		status, reasonCode := clientUpdateEligibility(agent, latestSnapshots[agent.AgentID], latest, packagePrefix, req.Force)
 		statuses = append(statuses, status)
+		log := model.ClientUpdateLog{BatchID: batchID, AgentID: agent.AgentID, AgentName: firstNonEmptyString(agent.AgentName, agent.AgentID), Version: agent.Version, TargetVersion: latest.LatestClientVersion, OS: status.OS, Arch: status.Arch, Force: req.Force, Decision: "skipped", ReasonCode: reasonCode, Reason: status.Reason}
 		if !status.UpdateAvailable {
-			skipped++
-			continue
-		}
-		if !supportsVerifiedAutomaticUpdate(latestSnapshots[agent.AgentID]) {
-			status.Reason = "client requires a one-time manual upgrade before verified automatic updates are available"
-			statuses[len(statuses)-1] = status
+			entry, _, err := a.store.RecordClientUpdate(log, nil)
+			if err != nil {
+				return model.UpdateResponse{}, err
+			}
+			logs = append(logs, entry)
 			skipped++
 			continue
 		}
@@ -404,6 +421,7 @@ func (a *App) createClientUpdateActions(req model.UpdateRequest) (model.UpdateRe
 		}
 		payload := map[string]any{
 			"version":                 version,
+			"force":                   req.Force,
 			"repo":                    repo,
 			"package_prefix":          packagePrefix,
 			"package_sha256":          packageSHA256,
@@ -417,17 +435,33 @@ func (a *App) createClientUpdateActions(req model.UpdateRequest) (model.UpdateRe
 		if serviceName != "" {
 			payload["service_name"] = serviceName
 		}
-		action, err := a.store.CreateXUIAction(agent.AgentID, model.XUIActionRequest{Kind: model.XUIActionUpdateClient, Payload: payload})
-		if err != nil {
-			return model.UpdateResponse{}, err
+		log.Decision, log.ReasonCode, log.Reason = "dispatched", "queued", "升级任务已下发，等待 Client 领取"
+		if req.Force {
+			log.ReasonCode, log.Reason = "forced_queued", "强制升级任务已下发，等待 Client 领取"
 		}
-		a.dispatchXUIActionRealtime(agent.AgentID, action)
-		count++
+		entry, action, err := a.store.RecordClientUpdate(log, payload)
+		if err != nil {
+			log.Decision, log.ReasonCode, log.Reason = "failed", "dispatch_failed", "下发升级任务失败："+err.Error()
+			entry, _, err = a.store.RecordClientUpdate(log, nil)
+			if err != nil {
+				return model.UpdateResponse{}, err
+			}
+			failed++
+		} else if entry.Decision == "skipped" {
+			skipped++
+		} else {
+			a.dispatchXUIActionRealtime(agent.AgentID, action)
+			count++
+		}
+		logs = append(logs, entry)
 	}
 	return model.UpdateResponse{
 		Status:      "client update tasks created",
 		Count:       count,
 		Skipped:     skipped,
+		Failed:      failed,
+		BatchID:     batchID,
+		Logs:        logs,
 		Latest:      latest,
 		AgentStatus: statuses,
 	}, nil
@@ -558,8 +592,12 @@ func (a *App) fetchUpdateLatestInfo(repo string, packagePrefix string) (*model.U
 		Authenticated:         githubToken() != "",
 	}
 	applyGitHubRateLimit(info, resp)
+	snapshots := map[string]model.AgentSnapshot{}
+	for _, snapshot := range a.store.ListLatest() {
+		snapshots[snapshot.AgentID] = snapshot
+	}
 	for _, agent := range agents {
-		status := buildUpdateAgentStatus(agent, clientLatest.Version, packagePrefix, clientLatest.Assets)
+		status, _ := clientUpdateEligibility(agent, snapshots[agent.AgentID], info, packagePrefix, false)
 		info.AgentStatus = append(info.AgentStatus, status)
 		switch {
 		case status.OS == "" || status.Arch == "":

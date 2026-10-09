@@ -649,8 +649,33 @@ export interface UpdateResponse {
   status: string
   count?: number
   skipped?: number
+  failed?: number
+  batch_id?: string
+  logs?: ClientUpdateLog[]
   latest?: UpdateLatestInfo
   agent_status?: UpdateAgentStatus[]
+}
+
+export interface ClientUpdateLog {
+  id: number
+  batch_id: string
+  agent_id: string
+  agent_name: string
+  version: string
+  target_version: string
+  os: string
+  arch: string
+  decision: string
+  force?: boolean
+  reason_code: string
+  reason: string
+  action_id?: number
+  created_at: string
+  task_status?: string
+  task_error?: string
+  claimed_at?: string
+  completed_at?: string
+  confirmed_at?: string
 }
 
 

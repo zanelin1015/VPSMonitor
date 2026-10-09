@@ -18,6 +18,12 @@ func (s *SQLiteStore) init() error {
 	}
 
 	schema := []string{
+		`CREATE TABLE IF NOT EXISTS client_update_logs (
+		 id INTEGER PRIMARY KEY AUTOINCREMENT, action_id INTEGER NOT NULL DEFAULT 0,
+		 data_json TEXT NOT NULL, task_status TEXT NOT NULL DEFAULT '',
+		 task_error TEXT NOT NULL DEFAULT '', claimed_at TEXT NOT NULL DEFAULT '',
+		 completed_at TEXT NOT NULL DEFAULT '', confirmed_at TEXT NOT NULL DEFAULT '');`,
+		`CREATE INDEX IF NOT EXISTS idx_client_update_logs_action ON client_update_logs(action_id);`,
 		`CREATE TABLE IF NOT EXISTS traffic_reset_policies (
 		 id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, data_json TEXT NOT NULL,
 		 FOREIGN KEY(agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE);`,
@@ -402,6 +408,11 @@ func (s *SQLiteStore) init() error {
 		);
 		`,
 	}
+	schema = append(schema, `CREATE TRIGGER IF NOT EXISTS client_update_task_log
+	 AFTER UPDATE OF status, error, claimed_at, completed_at ON xui_actions
+	 WHEN NEW.kind = 'update_client'
+	 BEGIN UPDATE client_update_logs SET task_status=NEW.status, task_error=NEW.error,
+	 claimed_at=NEW.claimed_at, completed_at=NEW.completed_at WHERE action_id=NEW.id; END;`)
 	for _, stmt := range schema {
 		if _, err := s.db.Exec(stmt); err != nil {
 			return fmt.Errorf("init schema: %w", err)
