@@ -42,7 +42,6 @@ import {
   effectiveClientBillingStartTime,
   findClientBilling,
   findOutboundLinkedClient,
-  formatDateInputFromMillis,
   formatDateTime,
   formatExpiryTime,
   formatRelativeTime,
@@ -287,6 +286,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onFeatureChange,
   } = props
   const [remoteCommandOpen, setRemoteCommandOpen] = useState(false)
+  const [clientExpiryEditor, setClientExpiryEditor] = useState<{ client: XUIClientView; value: string } | null>(null)
   const [remoteCommand, setRemoteCommand] = useState('')
   const [remoteShell, setRemoteShell] = useState('bash')
   const [remoteTimeout, setRemoteTimeout] = useState(120)
@@ -757,14 +757,17 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         return (
           <Space direction="vertical" size={6} className="client-expiry-cell">
             <Text type="secondary">x-ui 当前：{formatExpiryTime(record.expiry_time)}</Text>
-            <Text type="secondary">当前周期到期：{formatExpiryTime(effectiveExpiry)}</Text>
+            <Space wrap={false} size={6}>
+              <Text type="secondary">保存的到期时间：{formatExpiryTime(effectiveExpiry)}</Text>
+              <Button size="small" disabled={!canManageConfig} onClick={() => setClientExpiryEditor({ client: record, value: effectiveExpiry > 0 ? new Date(effectiveExpiry + 8 * 3600000).toISOString().slice(0, 19) : '' })}>修改</Button>
+            </Space>
             <Space wrap={false} size={[6, 6]}>
               <Input
                 size="small"
                 type="date"
                 style={{ width: 132 }}
                 disabled={!canManageConfig}
-                value={formatDateInputFromMillis(effectiveStart)}
+                value={effectiveStart > 0 ? new Date(effectiveStart + 8 * 3600000).toISOString().slice(0, 10) : ''}
                 onChange={(event) => onUpdateClientBillingDraft(record, clientBillingPatchFromStart(dateInputToStartMillis(event.target.value), billingCycle))}
               />
               <Tag color="blue">按收费周期：{billingCycleLabel(billingCycle)}</Tag>
@@ -1742,6 +1745,17 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
           items={detailTabs}
         />
       </Card>
+      <Modal title={`手动修改到期时间 · ${clientExpiryEditor?.client.email || ''}`} open={!!clientExpiryEditor}
+        onCancel={() => setClientExpiryEditor(null)} okText="应用到表单" cancelText="取消"
+        onOk={() => {
+          if (clientExpiryEditor) onUpdateClientBillingDraft(clientExpiryEditor.client, { expire_time: clientExpiryEditor.value ? Date.parse(`${clientExpiryEditor.value}+08:00`) : 0, expire_auto_renew: false })
+          setClientExpiryEditor(null)
+        }}>
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Text type="secondary">北京时间，精确到秒。留空表示不限期。应用后请点击该客户端的保存按钮；不会自动续期。</Text>
+          <Input type="datetime-local" step={1} value={clientExpiryEditor?.value || ''} onChange={(event) => setClientExpiryEditor((current) => current ? { ...current, value: event.target.value } : null)} />
+        </Space>
+      </Modal>
       <Modal
         title={`删除 ${routingDeleteDraft?.rules.length || 0} 条路由规则？`}
         open={routingDeleteDraft !== null}

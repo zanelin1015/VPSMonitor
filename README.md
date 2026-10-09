@@ -80,7 +80,7 @@ sudo env \
 升级到指定 Release 时设置版本即可：
 
 ```bash
-sudo env VPSMONITOR_VERSION=v0.3.35 \
+sudo env VPSMONITOR_VERSION=v0.3.36 \
   VPSMONITOR_SERVER_URL="https://monitor.example.com" \
   VPSMONITOR_REGISTRATION_TOKEN="替换为Server注册Token" \
   /tmp/vpsmonitor-install.sh client
@@ -263,6 +263,20 @@ Realm 和 HAProxy 的规则由 Server 下发，Client 负责加载并上报运�
 
 路由规则删除要求 Server 和目标 Client 均升级到 0.3.31 或更高版本。删除前会校验完整规则列表及所选规则，规则发生变化时拒绝删除并要求刷新；多选按索引倒序逐条移除，保存后重载 Xray。系统 API 路由不可删除。如果提示规则已保存但重载失败，请手动重启 x-ui / Xray，不要重复提交删除。
 
+## 客户端周期流量重置
+
+管理员在「定时任务 → 客户端周期流量重置」配置全局开关和每个实际客户端的策略。新功能默认关闭，需升级 Server 和 Client；旧 Client 不会收到重置指令。支持月、季、半年、年，可跟随客户端开始日期和收费周期，也可独立指定重置基准。
+
+时间统一为北京时间：每个周期结束前 5 分钟准备任务，结束后 1 分钟开始下发，默认允许离线后在 360 分钟内补执行。月底按原始开始日计算并截取当月最后一天，不累计日期偏移。任务按实际客户端与周期边界持久化去重；超出补执行窗口不追溯清零。
+
+执行只调用该客户端的周期流量重置接口，不修改额度、倍率、费用、授权、路由、凭据或到期时间。Customer 使用当前上传/下载统计，清零后不回退到历史累计流量。仅配置启用、未过期的客户端可执行；3x-ui 重置接口同时恢复因额度耗尽而停用的流量记录。人工禁用、已到期、相对到期时间或同邮箱跨多个入站的客户端会被拒绝，不绕过服务到期限制。实际到期后须先由管理员手动续期。
+
+客户端开始日期或收费周期发生编辑时，仍按开始时间加周期计算到期时间；手动填写的到期时间优先。页面刷新、读取配置、仅修改费用和自动重置均不会滚动续期。客户端提供北京时间精确到秒的手动到期输入。
+
+「定时任务 → 流量重置日志」独立保存每次重置的实际执行/完成时间、Client、客户端名称/邮箱和成功、失败或未确认结果，以及失败原因。日志持久化到数据库，不被后续核验覆盖；重启或删除 Client 后仍保留历史记录。页面默认展示最近 100 条，可搜索客户端和失败原因。未收到实际执行时间时，明确标注 Server 领取/记录时间，不把计划执行时间冒充实际时间。
+
+重置前 Client 在配置文件旁的 `traffic-reset-journal` 目录持久化执行意图；请保留该目录。若请求超时、回执丢失或进程中断，任务标记需要人工核查，绝不自动二次清零。已确认重置但回读失败的任务，可在执行窗口内发起只读核验，不会再次清零。上线前应先在测试客户端验证所用 3x-ui 版本的接口行为，再开启策略；本地测试不代表已验证生产面板。
+
 ## 打包与测试
 
 Linux/macOS：
@@ -275,7 +289,7 @@ chmod +x ./scripts/build.sh
 指定版本：
 
 ```bash
-VPSMONITOR_BUILD_VERSION=0.3.35 ./scripts/build.sh
+VPSMONITOR_BUILD_VERSION=0.3.36 ./scripts/build.sh
 ```
 
 脚本会先构建 `web` 前端、运行 `go test ./...`，然后输出：
@@ -290,7 +304,7 @@ VPSMONITOR_BUILD_VERSION=0.3.35 ./scripts/build.sh
 Windows PowerShell：
 
 ```powershell
-$env:VPSMONITOR_BUILD_VERSION = "0.3.35"
+$env:VPSMONITOR_BUILD_VERSION = "0.3.36"
 ./scripts/build.ps1
 ```
 

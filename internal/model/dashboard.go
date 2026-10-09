@@ -69,6 +69,7 @@ type XUINodeView struct {
 }
 
 type XUIClientView struct {
+	ConfigEnabled *bool         `json:"config_enabled,omitempty"`
 	ClientID      string        `json:"client_id,omitempty"`
 	InboundID     int           `json:"inbound_id"`
 	InboundTag    string        `json:"inbound_tag,omitempty"`

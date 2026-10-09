@@ -616,7 +616,7 @@ func customerClientTrafficUsed(client model.XUIClientView) int64 {
 	if up > 0 || down > 0 {
 		return up + down
 	}
-	return max(client.TrafficTotal, client.AllTime, int64(0))
+	return max(client.TrafficTotal, int64(0))
 }
 
 func scaleCustomerTraffic(value int64, multiplier float64) int64 {

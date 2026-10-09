@@ -258,8 +258,9 @@ type CustomerAnnouncementHistory struct {
 }
 
 type ScheduledTaskSettings struct {
-	AlertSweep         ScheduledTaskConfig `json:"alert_sweep"`
-	DailyTrafficReport ScheduledTaskConfig `json:"daily_traffic_report"`
+	TrafficReset       TrafficResetSettings `json:"traffic_reset"`
+	AlertSweep         ScheduledTaskConfig  `json:"alert_sweep"`
+	DailyTrafficReport ScheduledTaskConfig  `json:"daily_traffic_report"`
 }
 
 type ScheduledTaskConfig struct {

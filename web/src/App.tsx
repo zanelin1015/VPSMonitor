@@ -1421,8 +1421,10 @@ function AppContent() {
     const baseConfig = savedManagedConfig || createEmptyManagedConfig(selectedAgentId, selectedAgent?.agent_name)
     const billing = findClientBilling(managedConfig.renewal?.client_billings, record) || defaultClientBilling(record)
     const expiryTime = effectiveClientBillingExpiryTime(billing, record.expiry_time || 0)
+    const previousBilling = findClientBilling(baseConfig.renewal?.client_billings, record)
+    const expiryEdited = Number(billing.expire_time || 0) !== Number(previousBilling?.expire_time || 0)
     const accountBasedProxy = ['http', 'socks', 'socks5'].includes((record.protocol || '').toLowerCase())
-    const shouldSyncExpiry = !accountBasedProxy && expiryTime > 0 && expiryTime !== Math.max(0, Number(record.expiry_time || 0))
+    const shouldSyncExpiry = expiryEdited && !accountBasedProxy && expiryTime >= 0 && expiryTime !== Math.max(0, Number(record.expiry_time || 0))
     const targetAgentID = record.realm_target_agent_id || selectedAgentId
     const targetInboundID = record.realm_target_inbound_id || record.inbound_id
     const targetInboundTag = record.realm_target_inbound_tag || record.inbound_tag || ''

@@ -720,6 +720,7 @@ export interface CustomerAnnouncementHistory extends CustomerAnnouncement {
 }
 
 export interface ScheduledTaskSettings {
+  traffic_reset: { enabled: boolean; catch_up_minutes: number }
   alert_sweep: ScheduledTaskConfig
   daily_traffic_report: ScheduledTaskConfig
 }

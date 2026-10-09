@@ -18,6 +18,22 @@ func (s *SQLiteStore) UpdateAgentConfigWithActor(agentID string, cfg model.Manag
 		return model.AgentRecord{}, fmt.Errorf("agent not found")
 	}
 
+	// Compute only on an explicit start/cycle edit, never during reads,
+	// unrelated saves or the traffic-reset scheduler. Preserve manual overrides.
+	for i := range cfg.Renewal.ClientBillings {
+		billing := &cfg.Renewal.ClientBillings[i]
+		var old model.XUIClientBillingConfig
+		for _, existing := range before.Renewal.ClientBillings {
+			if (billing.ClientID != "" && existing.ClientID == billing.ClientID) || (existing.ClientID == "" && existing.InboundID == billing.InboundID && existing.Email == billing.Email) {
+				old = existing
+				break
+			}
+		}
+		if billing.StartTime > 0 && (billing.StartTime != old.StartTime || billing.RevenueCycle != old.RevenueCycle) && billing.ExpireTime == old.ExpireTime {
+			billing.ExpireTime = calculateClientBillingExpireTime(billing.StartTime, billing.RevenueCycle, time.Time{})
+			billing.ExpireAutoRenew = false
+		}
+	}
 	record, err := s.updateAgentConfig(agentID, cfg)
 	if err != nil {
 		return model.AgentRecord{}, err

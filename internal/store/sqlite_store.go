@@ -448,10 +448,7 @@ func normalizeClientBillings(items []model.XUIClientBillingConfig) []model.XUICl
 		}
 		// Client time periods follow the price cycle so billing and expiry stay in sync.
 		item.ExpireCycle = item.RevenueCycle
-		if item.StartTime > 0 {
-			item.ExpireAutoRenew = true
-			item.ExpireTime = calculateClientBillingExpireTime(item.StartTime, item.RevenueCycle, time.Now())
-		}
+		// No implicit renewal during reads or unrelated configuration saves.
 		key := fmt.Sprintf("%d\x00%s\x00%s", item.InboundID, item.InboundTag, item.Email)
 		if item.ClientID != "" {
 			key = "id:\x00" + item.ClientID
@@ -469,15 +466,11 @@ func calculateClientBillingExpireTime(startMillis int64, cycle string, now time.
 	if startMillis <= 0 {
 		return 0
 	}
-	periodStart := time.UnixMilli(startMillis)
-	nextStart := addClientBillingCycle(periodStart, cycle)
-	periodEnd := nextStart.Add(-time.Second)
-	for !periodEnd.After(now) {
-		periodStart = nextStart
-		nextStart = addClientBillingCycle(periodStart, cycle)
-		periodEnd = nextStart.Add(-time.Second)
+	months, err := model.TrafficCycleMonths(cycle)
+	if err != nil {
+		months = 1
 	}
-	return periodEnd.UnixMilli()
+	return model.ClientCycleBoundary(time.UnixMilli(startMillis), months).UnixMilli()
 }
 
 func addClientBillingCycle(value time.Time, cycle string) time.Time {
@@ -928,6 +921,8 @@ func hasXUIConfig(cfg config.XUIConfig) bool {
 
 func isValidXUIActionKind(kind string) bool {
 	switch kind {
+	case model.XUIActionResetClientTraffic:
+		return true
 	case model.XUIActionAddOutbound, model.XUIActionAddClient, model.XUIActionAddRoutingRule, model.XUIActionUpsertRoutingRule, model.XUIActionDeleteRoutingRules, model.XUIActionUpdateClientExpiry, model.XUIActionUpdateClientTraffic, model.XUIActionSetClientEnabled, model.XUIActionDeleteClient, model.XUIActionUpdateClient, model.XUIActionRestartXUI, model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI:
 		return true
 	default:

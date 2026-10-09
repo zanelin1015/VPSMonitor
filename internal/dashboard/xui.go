@@ -263,6 +263,7 @@ func normalizeClients(inbounds []inboundRecord, rules []routeRule, defaultOutbou
 			}
 
 			clients = append(clients, model.XUIClientView{
+				ConfigEnabled: &cfg.enable,
 				ClientID:      cfg.authUUID,
 				InboundID:     inbound.view.ID,
 				InboundTag:    inbound.view.Tag,
@@ -284,7 +285,7 @@ func normalizeClients(inbounds []inboundRecord, rules []routeRule, defaultOutbou
 				Up:            stats.up,
 				Down:          stats.down,
 				AllTime:       stats.allTime,
-				TrafficTotal:  chooseInt64(stats.allTime, stats.up+stats.down),
+				TrafficTotal:  stats.up + stats.down,
 				LastOnline:    stats.lastOnline,
 				Route:         resolveRoute(cfg.email, inbound.view.Tag, rules, defaultOutboundTag, globalRuleIndexes),
 			})

@@ -44,11 +44,9 @@ export function normalizeClientBillings(items: XUIClientBillingConfig[]): XUICli
       revenue_currency: item.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
       revenue_cycle: billingCycle,
       start_time: startTime,
-      expire_time: startTime > 0
-        ? calculateClientBillingExpiryTime(startTime, billingCycle)
-        : Math.max(0, Number(item.expire_time || 0)),
+      expire_time: Math.max(0, Number(item.expire_time || 0)),
       expire_cycle: billingCycle,
-      expire_auto_renew: startTime > 0,
+      expire_auto_renew: Boolean(item.expire_auto_renew),
     }
     const key = billing.client_id ? `id:${billing.client_id}` : clientBillingKey(billing)
     if (seen.has(key)) {
@@ -79,7 +77,7 @@ export function defaultClientBilling(client: XUIClientView): XUIClientBillingCon
     revenue_currency: 'CNY',
     revenue_cycle: 'month',
     start_time: 0,
-    expire_time: 0,
+    expire_time: Math.max(0, Number(client.expiry_time || 0)),
     expire_cycle: 'month',
     expire_auto_renew: false,
   }
@@ -128,7 +126,7 @@ export function dateInputToStartMillis(value: string): number {
   if (!value) {
     return 0
   }
-  const date = new Date(`${value}T00:00:00`)
+  const date = new Date(`${value}T00:00:00+08:00`)
   if (!Number.isFinite(date.getTime())) {
     return 0
   }
@@ -142,7 +140,7 @@ export function clientBillingPatchFromStart(startTime: number, cycle?: string): 
     start_time: normalizedStart,
     expire_time: calculateClientBillingExpiryTime(normalizedStart, normalizedCycle),
     expire_cycle: normalizedCycle,
-    expire_auto_renew: normalizedStart > 0,
+    expire_auto_renew: false,
   }
 }
 
@@ -155,11 +153,7 @@ export function effectiveClientBillingStartTime(billing: XUIClientBillingConfig,
 }
 
 export function effectiveClientBillingExpiryTime(billing: XUIClientBillingConfig, fallbackExpiry = 0): number {
-  const startTime = Math.max(0, Number(billing.start_time || 0))
-  if (startTime > 0) {
-    return calculateClientBillingExpiryTime(startTime, clientBillingCycle(billing))
-  }
-  return Math.max(0, Number(billing.expire_time || fallbackExpiry || 0))
+  return Math.max(0, Number(billing.expire_time ?? fallbackExpiry ?? 0))
 }
 
 export function calculateRenewalStatus(config?: VPSRenewalConfig): {
@@ -330,22 +324,18 @@ function clientBillingCycle(billing: Pick<XUIClientBillingConfig, 'revenue_cycle
   return normalizeClientExpireCycle(billing.revenue_cycle || billing.expire_cycle)
 }
 
-function calculateClientBillingExpiryTime(startTime: number, cycle?: string, now = Date.now()): number {
+function calculateClientBillingExpiryTime(startTime: number, cycle?: string): number {
   if (!startTime) {
     return 0
   }
-  let periodStart = startOfLocalDay(new Date(startTime))
+  const periodStart = new Date(startTime + 8 * 60 * 60 * 1000)
   if (!Number.isFinite(periodStart.getTime())) {
     return 0
   }
-  let nextStart = addRenewalCycle(periodStart, normalizeClientExpireCycle(cycle))
-  let periodEnd = new Date(nextStart.getTime() - 1000)
-  while (periodEnd.getTime() <= now) {
-    periodStart = nextStart
-    nextStart = addRenewalCycle(periodStart, normalizeClientExpireCycle(cycle))
-    periodEnd = new Date(nextStart.getTime() - 1000)
-  }
-  return periodEnd.getTime()
+  const months = { month: 1, quarter: 3, semiannual: 6, year: 12 }[normalizeClientExpireCycle(cycle)]
+  const first = new Date(Date.UTC(periodStart.getUTCFullYear(), periodStart.getUTCMonth() + months, 1))
+  const lastDay = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate()
+  return Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(periodStart.getUTCDate(), lastDay)) - 8 * 60 * 60 * 1000
 }
 
 function deriveClientBillingStartTime(expireTime: number, cycle?: string): number {

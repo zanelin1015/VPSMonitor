@@ -14,8 +14,9 @@ func detectAgentCapabilities(runner commandRunner) model.AgentCapabilities {
 
 func detectAgentCapabilitiesForOS(osName string, runner commandRunner) model.AgentCapabilities {
 	return model.AgentCapabilities{
-		Realm:   realmCapabilityAvailable(osName, runner),
-		HAProxy: haProxyCapabilityAvailable(osName, runner),
+		TrafficReset: true,
+		Realm:        realmCapabilityAvailable(osName, runner),
+		HAProxy:      haProxyCapabilityAvailable(osName, runner),
 	}
 }
 

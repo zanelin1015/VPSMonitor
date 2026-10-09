@@ -541,6 +541,8 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch parts[1] {
+	case "traffic-reset-validation":
+		a.handleTrafficResetValidation(w, r, agentID)
 	case "replace":
 		if len(parts) != 2 {
 			writeError(w, http.StatusNotFound, "route not found")
@@ -1130,6 +1132,10 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 				writeError(w, http.StatusBadRequest, fmt.Sprintf("decode x-ui action: %v", err))
 				return
 			}
+			if req.Kind == model.XUIActionResetClientTraffic {
+				writeError(w, http.StatusForbidden, "traffic reset actions may only be created by the period scheduler")
+				return
+			}
 			if isAreaManager(user) && !a.areaManagerXUIActionAllowed(user, agentID, req) {
 				writeError(w, http.StatusForbidden, "outbound or node is outside the area manager authorization scope")
 				return
@@ -1462,7 +1468,7 @@ func filterRootOnlyXUIActions(actions []model.XUIAction) []model.XUIAction {
 
 func isRootOnlyXUIActionKind(kind string) bool {
 	switch kind {
-	case model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI, model.XUIActionDeleteRoutingRules:
+	case model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI, model.XUIActionDeleteRoutingRules, model.XUIActionResetClientTraffic:
 		return true
 	default:
 		return false
@@ -1564,6 +1570,8 @@ func (a *App) dispatchXUITrafficCollectionRealtime(agentID string) {
 
 func xuiActionUsesPanelAuth(kind string) bool {
 	switch kind {
+	case model.XUIActionResetClientTraffic:
+		return true
 	case model.XUIActionAddOutbound,
 		model.XUIActionAddClient,
 		model.XUIActionAddRoutingRule,

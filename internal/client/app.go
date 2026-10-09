@@ -161,6 +161,8 @@ func (a *App) executePendingXUIActions(ctx context.Context, effectiveConfig mode
 func (a *App) executeXUIAction(ctx context.Context, effectiveConfig model.ManagedAgentConfig, xuiClient *panels.XUIClient, xuiErr error, action model.XUIAction) model.XUIActionResultRequest {
 	result := model.XUIActionResultRequest{Status: model.XUIActionStatusSucceeded}
 	switch action.Kind {
+	case model.XUIActionResetClientTraffic:
+		return a.executeTrafficReset(ctx, xuiClient, action)
 	case model.XUIActionUpdateClient:
 		output, actionErr := a.startSelfUpdate(action.Payload)
 		if actionErr != nil {
@@ -472,6 +474,7 @@ func payloadBool(payload map[string]any, key string, fallback bool) bool {
 
 func (a *App) collect(ctx context.Context, effectiveConfig model.ManagedAgentConfig) model.AgentSnapshot {
 	snapshot := model.AgentSnapshot{
+		Capabilities:       a.capabilities,
 		AgentID:            a.config.AgentID,
 		AgentName:          firstNonEmpty(effectiveConfig.AgentName, a.config.AgentName, a.config.AgentID),
 		Version:            version.Version,

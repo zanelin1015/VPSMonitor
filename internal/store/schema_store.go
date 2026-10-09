@@ -18,6 +18,19 @@ func (s *SQLiteStore) init() error {
 	}
 
 	schema := []string{
+		`CREATE TABLE IF NOT EXISTS traffic_reset_policies (
+		 id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, data_json TEXT NOT NULL,
+		 FOREIGN KEY(agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE);`,
+		`CREATE TABLE IF NOT EXISTS traffic_reset_jobs (
+		 id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, status TEXT NOT NULL, action_id INTEGER NOT NULL DEFAULT 0,
+		 data_json TEXT NOT NULL, updated_at TEXT NOT NULL,
+		 FOREIGN KEY(agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE);`,
+		`CREATE INDEX IF NOT EXISTS idx_traffic_reset_jobs ON traffic_reset_jobs(updated_at DESC);`,
+		`CREATE TABLE IF NOT EXISTS traffic_reset_logs (
+		 id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT NOT NULL, action_id INTEGER NOT NULL,
+		 operation TEXT NOT NULL, data_json TEXT NOT NULL, recorded_at TEXT NOT NULL,
+		 UNIQUE(job_id, action_id, operation));`,
+		`CREATE INDEX IF NOT EXISTS idx_traffic_reset_logs_time ON traffic_reset_logs(id DESC);`,
 		`
 		CREATE TABLE IF NOT EXISTS admin_accounts (
 			id INTEGER PRIMARY KEY CHECK (id = 1),

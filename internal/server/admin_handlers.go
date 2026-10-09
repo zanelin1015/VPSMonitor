@@ -105,6 +105,8 @@ func (a *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.handleAdminFrontendSettings(w, r)
+	case "traffic-reset":
+		a.handleAdminTrafficReset(w, r)
 	case "scheduled-tasks":
 		if r.Method != http.MethodGet && r.Method != http.MethodPut {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")

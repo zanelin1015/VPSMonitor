@@ -6,6 +6,7 @@ import (
 )
 
 type AgentSnapshot struct {
+	Capabilities       AgentCapabilities      `json:"capabilities,omitempty"`
 	AgentID            string                 `json:"agent_id"`
 	AgentName          string                 `json:"agent_name,omitempty"`
 	Version            string                 `json:"version,omitempty"`

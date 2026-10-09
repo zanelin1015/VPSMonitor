@@ -494,6 +494,7 @@ func (s *SQLiteStore) SaveScheduledTaskSettings(settings model.ScheduledTaskSett
 
 func defaultScheduledTaskSettings() model.ScheduledTaskSettings {
 	return model.ScheduledTaskSettings{
+		TrafficReset: model.TrafficResetSettings{CatchUpMinutes: 360},
 		AlertSweep: model.ScheduledTaskConfig{
 			Enabled:         true,
 			IntervalMinutes: 5,
@@ -507,6 +508,12 @@ func defaultScheduledTaskSettings() model.ScheduledTaskSettings {
 }
 
 func normalizeScheduledTaskSettings(settings model.ScheduledTaskSettings) model.ScheduledTaskSettings {
+	if settings.TrafficReset.CatchUpMinutes <= 0 {
+		settings.TrafficReset.CatchUpMinutes = 360
+	}
+	if settings.TrafficReset.CatchUpMinutes > 1440 {
+		settings.TrafficReset.CatchUpMinutes = 1440
+	}
 	defaults := defaultScheduledTaskSettings()
 	if settings.AlertSweep.IntervalMinutes <= 0 {
 		settings.AlertSweep.IntervalMinutes = defaults.AlertSweep.IntervalMinutes

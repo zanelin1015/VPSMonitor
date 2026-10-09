@@ -3,6 +3,7 @@ package model
 import "time"
 
 const (
+	XUIActionResetClientTraffic  = "reset_client_traffic"
 	XUIActionAddOutbound         = "add_outbound"
 	XUIActionAddClient           = "add_client"
 	XUIActionAddRoutingRule      = "add_routing_rule"
