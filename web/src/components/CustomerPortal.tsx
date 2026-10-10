@@ -1,32 +1,29 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, App as AntdApp, Button, Card, Checkbox, Empty, Input, Modal, QRCode, Select, Space, Spin, Statistic, Tag, Typography } from 'antd'
-import { BgColorsOutlined, CheckCircleOutlined, CheckOutlined, CloseCircleOutlined, CloseOutlined, CopyOutlined, EditOutlined, InfoCircleOutlined, LockOutlined, LogoutOutlined, QrcodeOutlined, ReloadOutlined, WarningOutlined } from '@ant-design/icons'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Alert, App as AntdApp, Button, Card, Checkbox, Empty, Input, Modal, Pagination, Progress, QRCode, Segmented, Space, Spin, Statistic, Tag, Typography } from 'antd'
+import { BarChartOutlined, CheckCircleOutlined, CheckOutlined, CloseCircleOutlined, CloseOutlined, CopyOutlined, DashboardOutlined, DownOutlined, EditOutlined, InfoCircleOutlined, LinkOutlined, LockOutlined, LogoutOutlined, ReloadOutlined, RightOutlined, UnorderedListOutlined, WarningOutlined } from '@ant-design/icons'
 
-import type { CustomerAuthResponse, CustomerLinkStep, CustomerLinkView, CustomerOverviewResponse, CustomerUser } from '../types'
+import type { CustomerAuthResponse, CustomerDailyLinkUsage, CustomerDailyUsage, CustomerLinkStep, CustomerLinkView, CustomerOverviewResponse, CustomerTrafficRecord, CustomerUsageResponse, CustomerUser } from '../types'
 import { countryFlag, fetchJSON, formatDateTime } from '../lib/appHelpers'
 import { formatBytes } from '../lib/traffic'
 import { LoginScreen } from './LoginScreen'
 import { CustomerSupportWidget } from './CustomerSupportWidget'
 import { clearCustomFrontendCode } from './VisualEffects'
-import { useAppTheme, type ThemeMode } from '../theme'
+import { CustomerThemeButton } from './CustomerThemeButton'
 
 const { Paragraph, Text, Title } = Typography
 
 export function CustomerPortal() {
   const { message } = AntdApp.useApp()
-  const { mode, effectiveMode, setMode } = useAppTheme()
-  const themeOptions = [
-    { value: 'system', label: `跟随系统（${effectiveMode === 'dark' ? '暗黑' : '明亮'}）` },
-    { value: 'light', label: '明亮' },
-    { value: 'dark', label: '暗黑' },
-  ]
   const [sessionLoading, setSessionLoading] = useState(true)
   const [loginLoading, setLoginLoading] = useState(false)
   const [overviewLoading, setOverviewLoading] = useState(false)
+  const [usageLoading, setUsageLoading] = useState(false)
+  const [usageRange, setUsageRange] = useState<'7d' | '30d'>('30d')
+  const [usageFrom, setUsageFrom] = useState('')
+  const [usageTo, setUsageTo] = useState('')
+  const [usage, setUsage] = useState<CustomerUsageResponse | null>(null)
+  const [activeMenu, setActiveMenu] = useState<'overview' | 'usage' | 'links'>('overview')
   const [savingRemarkID, setSavingRemarkID] = useState<number | null>(null)
-  const [styleModalOpen, setStyleModalOpen] = useState(false)
-  const [styleSaving, setStyleSaving] = useState(false)
-  const [styleDraft, setStyleDraft] = useState('')
   const [passwordModalOpen, setPasswordModalOpen] = useState(false)
   const [passwordSaving, setPasswordSaving] = useState(false)
   const [subscriptionModalOpen, setSubscriptionModalOpen] = useState(false)
@@ -83,12 +80,6 @@ export function CustomerPortal() {
   }, [])
 
   useEffect(() => {
-    applyCustomerStyle(user?.style_code || '')
-    setStyleDraft(user?.style_code || '')
-    return () => applyCustomerStyle('')
-  }, [user?.style_code])
-
-  useEffect(() => {
     const announcements = overview?.announcements || []
     const setKey = JSON.stringify(announcements.map((item) => [item.id, item.level, item.title, item.content, item.link_label, item.link_url]))
     if (announcements.length === 0) {
@@ -124,6 +115,7 @@ export function CustomerPortal() {
       const data = await fetchJSON<CustomerAuthResponse>('/api/v1/customer/session')
       setUser(data.user)
       await loadOverview()
+      await loadUsage('30d')
     } catch {
       setUser(null)
       setOverview(null)
@@ -143,6 +135,7 @@ export function CustomerPortal() {
       setUser(data.user)
       setLoginForm({ username: data.user.username, password: '' })
       await loadOverview()
+      await loadUsage('30d')
       message.success('登录成功')
     } catch (error) {
       message.error(error instanceof Error ? error.message : '登录失败')
@@ -159,6 +152,8 @@ export function CustomerPortal() {
     }
     setUser(null)
     setOverview(null)
+    setUsage(null)
+    setActiveMenu('overview')
     setRemarkDrafts({})
     setAnnouncementModalOpen(false)
     setAnnouncementIndex(0)
@@ -203,6 +198,25 @@ export function CustomerPortal() {
     }
   }
 
+  async function loadUsage(range: '7d' | '30d' = usageRange, from = usageFrom, to = usageTo) {
+    setUsageLoading(true)
+    try {
+      const query = from && to ? `from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}` : `range=${range}`
+      const data = await fetchJSON<CustomerUsageResponse>(`/api/v1/customer/usage?${query}`)
+      setUsage(data)
+    } catch (error) {
+      if (error instanceof Error) {
+        message.error(error.message)
+      }
+    } finally {
+      setUsageLoading(false)
+    }
+  }
+
+  async function refreshCustomerData() {
+    await Promise.all([loadOverview(), loadUsage(usageRange)])
+  }
+
   async function saveRemark(link: CustomerLinkView) {
     setSavingRemarkID(link.assignment_id)
     try {
@@ -222,24 +236,6 @@ export function CustomerPortal() {
       message.error(error instanceof Error ? error.message : '保存备注失败')
     } finally {
       setSavingRemarkID(null)
-    }
-  }
-
-  async function saveCustomerStyle() {
-    setStyleSaving(true)
-    try {
-      const data = await fetchJSON<CustomerAuthResponse>('/api/v1/customer/style', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ style_code: styleDraft }),
-      })
-      setUser(data.user)
-      setStyleModalOpen(false)
-      message.success(styleDraft.trim() ? '页面样式已保存' : '已恢复默认页面样式')
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '保存页面样式失败')
-    } finally {
-      setStyleSaving(false)
     }
   }
 
@@ -370,15 +366,11 @@ export function CustomerPortal() {
             <Text type="secondary">{overview?.generated_at ? formatDateTime(overview.generated_at) : '等待数据同步'}</Text>
           </div>
           <div className="customer-mobile-actions">
-            <Button shape="circle" aria-label="页面样式" title="页面样式" icon={<BgColorsOutlined />} onClick={() => {
-              setStyleDraft(user.style_code || '')
-              setStyleModalOpen(true)
-            }} />
+            <CustomerThemeButton />
             <Button shape="circle" aria-label="复制 Clash/Mihomo 订阅" icon={<CopyOutlined />} title="复制 Clash/Mihomo 订阅" onClick={openClashSubscriptionModal} />
             <Button shape="circle" aria-label="修改密码" title="修改密码" icon={<LockOutlined />} onClick={openPasswordModal} />
-            <Button shape="circle" aria-label="刷新" title="刷新" icon={<ReloadOutlined />} loading={overviewLoading} onClick={() => void loadOverview()} />
+            <Button shape="circle" aria-label="刷新" title="刷新" icon={<ReloadOutlined />} loading={overviewLoading || usageLoading} onClick={() => void refreshCustomerData()} />
             <Button shape="circle" aria-label="退出" title="退出" icon={<LogoutOutlined />} onClick={() => void logout()} />
-            <Select className="customer-theme-select" aria-label="客户页面主题" value={mode} options={themeOptions} onChange={(value: ThemeMode) => setMode(value)} />
           </div>
         </header>
         <section className="customer-mobile-summary">
@@ -401,41 +393,33 @@ export function CustomerPortal() {
             <Title level={1}>{user.display_name || user.username}</Title>
           </div>
           <Space wrap className="customer-header-actions">
-            <Select className="customer-theme-select" aria-label="客户页面主题" value={mode} options={themeOptions} onChange={(value: ThemeMode) => setMode(value)} />
-            <Button icon={<BgColorsOutlined />} onClick={() => {
-              setStyleDraft(user.style_code || '')
-              setStyleModalOpen(true)
-            }}>页面样式</Button>
+            <CustomerThemeButton />
             <Button icon={<CopyOutlined />} onClick={openClashSubscriptionModal}>复制 Clash/Mihomo 订阅</Button>
             <Button icon={<LockOutlined />} onClick={openPasswordModal}>修改密码</Button>
-            <Button icon={<ReloadOutlined />} loading={overviewLoading} onClick={() => void loadOverview()}>刷新</Button>
+            <Button icon={<ReloadOutlined />} loading={overviewLoading || usageLoading} onClick={() => void refreshCustomerData()}>刷新</Button>
             <Button icon={<LogoutOutlined />} onClick={() => void logout()}>退出</Button>
           </Space>
         </header>
-        <Alert
-          className="customer-policy-alert"
-          type="info"
-          showIcon
-          message="授权使用规则"
-          description="仅限已授权用户使用，可按独享或共享方式开放；禁止滥发、攻击、诈骗、爬虫滥用、扫描爆破等高风险行为。发现异常时，管理员可随时停用账号或授权链路，并停用对应 x-ui client。"
-        />
-        <CustomerAnnouncementBar announcements={overview?.announcements || []} onOpen={(index) => {
-          setAnnouncementIndex(index)
-          setAnnouncementModalOpen(true)
-        }} />
-
         <div className="customer-board-layout">
           <aside className="customer-board-side">
-            <Card bordered={false} className="surface-card customer-board-profile">
-              <Text type="secondary">用户账号</Text>
-              <Title level={3}>{user.display_name || user.username}</Title>
-              <Tag color="blue">登录可见</Tag>
-              <Button block title="复制 Clash/Mihomo 订阅" icon={<CopyOutlined />} onClick={openClashSubscriptionModal}>
-                复制订阅
-              </Button>
-              <Text type="secondary">数据更新时间</Text>
-              <Text>{overview?.generated_at ? formatDateTime(overview.generated_at) : '-'}</Text>
-            </Card>
+            <nav className="customer-section-nav" aria-label="客户面板菜单">
+              {([
+                { key: 'overview', label: '概览', icon: <DashboardOutlined /> },
+                { key: 'usage', label: '流量用量', icon: <BarChartOutlined /> },
+                { key: 'links', label: '授权链路', icon: <LinkOutlined /> },
+              ] as const).map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  className={`customer-section-nav-item${activeMenu === item.key ? ' active' : ''}`}
+                  aria-current={activeMenu === item.key ? 'page' : undefined}
+                  onClick={() => setActiveMenu(item.key)}
+                >
+                  <span className="customer-section-nav-icon" aria-hidden="true">{item.icon}</span>
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </nav>
             <Card bordered={false} className="surface-card customer-board-profile">
               <Text type="secondary">看板摘要</Text>
               <div className="customer-board-score">
@@ -450,115 +434,195 @@ export function CustomerPortal() {
           </aside>
 
           <section className="customer-board-main">
-            <div className="customer-stat-grid">
-              <Card bordered={false} className="surface-card customer-stat-card">
-                <Statistic title="已授权链路" value={overview?.links.length || 0} suffix="条" />
-              </Card>
-              <Card bordered={false} className="surface-card customer-stat-card">
-                <Statistic title="已解析链路" value={(overview?.links || []).filter((link) => link.resolved).length} suffix="条" />
-              </Card>
-              <Card bordered={false} className="surface-card customer-stat-card">
-                <Statistic title="出口地区" value={exitCountryCount} suffix="个" />
-              </Card>
-            </div>
-
-        <Spin spinning={overviewLoading}>
-          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            {overview?.generated_at ? <Text type="secondary">数据更新时间：{formatDateTime(overview.generated_at)}</Text> : null}
-            {!overview?.links.length ? (
-              <Card bordered={false} className="surface-card customer-link-card">
-                <Empty description="暂无授权链路，请联系管理员开通" />
-              </Card>
-            ) : null}
-            {(overview?.links || []).map((link) => {
-              const effectiveName = customerLinkDisplayName(link, remarkDrafts[link.assignment_id])
-              const effectiveImportURL = customerLinkImportURL(link, remarkDrafts[link.assignment_id])
-              const billingItems = customerLinkMetaItems(link)
-              return (
-              <Card key={link.assignment_id} bordered={false} className="surface-card customer-link-card">
-                <div className="customer-link-head">
-                  <div className="customer-link-main">
-                    <div className="customer-link-title-row">
-                      {editingRemarkID === link.assignment_id ? (
-                        <Input
-                          className="customer-link-remark-input"
-                          value={remarkDrafts[link.assignment_id] || ''}
-                          placeholder={link.entry_client_name}
-                          maxLength={120}
-                          autoFocus
-                          onChange={(event) => setRemarkDrafts((current) => ({ ...current, [link.assignment_id]: event.target.value }))}
-                          onPressEnter={() => void saveRemark(link)}
-                        />
-                      ) : (
-                        <Title level={3}>{effectiveName}</Title>
-                      )}
-                      {editingRemarkID === link.assignment_id ? (
-                        <Space size={4}>
-                          <Button size="small" type="primary" icon={<CheckOutlined />} loading={savingRemarkID === link.assignment_id} onClick={() => void saveRemark(link)} />
-                          <Button size="small" icon={<CloseOutlined />} onClick={() => {
-                            setRemarkDrafts((current) => ({ ...current, [link.assignment_id]: link.remark || '' }))
-                            setEditingRemarkID(null)
-                          }} />
-                        </Space>
-                      ) : (
-                        <Button
-                          size="small"
-                          type="text"
-                          className="customer-remark-edit-button"
-                          icon={<EditOutlined />}
-                          title="修改备注，导入名称会同步更新"
-                          onClick={() => {
-                            setRemarkDrafts((current) => ({ ...current, [link.assignment_id]: link.remark || '' }))
-                            setEditingRemarkID(link.assignment_id)
-                          }}
-                        />
-                      )}
-                    </div>
-                    <Paragraph className="customer-link-summary">{link.summary}</Paragraph>
+            {activeMenu === 'overview' ? (
+              <div className="customer-section-view customer-overview-view">
+                <div className="customer-section-heading">
+                  <div>
+                    <Title level={2}>概览</Title>
+                    <Text type="secondary">快速查看账号状态、授权规模和最近链路</Text>
                   </div>
-                  {billingItems.length ? (
-                    <div className="customer-link-meta-row" aria-label="授权链路费用和过期时间">
-                      {billingItems.map((item) => (
-                        <span key={item.key} className={`customer-link-meta-item customer-link-meta-${item.key}`}>{item.text}</span>
-                      ))}
-                    </div>
-                  ) : null}
-                  <Space wrap className="customer-link-exit-tags">
-                    {link.exit_country_code || link.exit_country_name ? <Tag color="blue">出口 {countryFlag(link.exit_country_code)} {link.exit_country_code || link.exit_country_name}</Tag> : null}
-                    {link.exit_ip ? <Tag color="geekblue">{link.exit_ip}</Tag> : null}
-                    {!link.resolved ? <Tag color="orange">待解析</Tag> : null}
-                  </Space>
+                  <Button type="link" onClick={() => setActiveMenu('links')}>查看全部链路</Button>
                 </div>
-
-                <div className="customer-link-visual-row">
-                  <div className="customer-topology-scroll">
-                    <CustomerTopologyMap steps={link.steps} />
-                  </div>
-                  <aside className="customer-qr-inline">
-                    <div className="customer-qr-actions">
-                      <Button type="primary" icon={<CopyOutlined />} disabled={!effectiveImportURL} onClick={() => void copyImportURL(link)}>
-                        复制链接
-                      </Button>
-                      <Button icon={<QrcodeOutlined />} disabled={!effectiveImportURL} onClick={() => setQrLink(link)}>
-                        放大二维码
-                      </Button>
-                    </div>
-                    {effectiveImportURL ? (
-                      <button type="button" className="customer-qr-button" onClick={() => setQrLink(link)}>
-                        <QRCode value={effectiveImportURL} color="#171717" bgColor="#ffffff" bordered={false} size={132} />
-                        <span>点击放大</span>
+                <Alert
+                  className="customer-policy-alert"
+                  type="info"
+                  showIcon
+                  message="授权使用规则"
+                  description="仅限已授权用户使用，可按独享或共享方式开放；禁止滥发、攻击、诈骗、爬虫滥用、扫描爆破等高风险行为。发现异常时，管理员可随时停用账号或授权链路，并停用对应 x-ui client。"
+                />
+                <CustomerAnnouncementBar announcements={overview?.announcements || []} onOpen={(index) => {
+                  setAnnouncementIndex(index)
+                  setAnnouncementModalOpen(true)
+                }} />
+                <div className="customer-stat-grid">
+                  <Card bordered={false} className="surface-card customer-stat-card">
+                    <Statistic title="已授权链路" value={overview?.links.length || 0} suffix="条" />
+                  </Card>
+                  <Card bordered={false} className="surface-card customer-stat-card">
+                    <Statistic title="已解析链路" value={(overview?.links || []).filter((link) => link.resolved).length} suffix="条" />
+                  </Card>
+                  <Card bordered={false} className="surface-card customer-stat-card">
+                    <Statistic title="出口地区" value={exitCountryCount} suffix="个" />
+                  </Card>
+                </div>
+                <Card bordered={false} className="surface-card customer-recent-links-card" title="最近授权链路">
+                  <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                    {(overview?.links || []).slice(0, 3).map((link) => (
+                      <button key={link.assignment_id} type="button" className="customer-recent-link-row" onClick={() => setActiveMenu('links')}>
+                        <span>
+                          <strong>{customerLinkDisplayName(link, remarkDrafts[link.assignment_id])}</strong>
+                          <small>{customerLinkSummaryText(link)}</small>
+                        </span>
+                        <Tag color={link.resolved ? 'blue' : 'orange'}>{link.resolved ? '已解析' : '待解析'}</Tag>
                       </button>
-                    ) : (
-                      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无二维码" />
-                    )}
-                    <Text type="secondary" className="customer-link-import-hint">导入名称：{effectiveName}</Text>
-                  </aside>
+                    ))}
+                    {!(overview?.links || []).length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无授权链路，请联系管理员开通" /> : null}
+                  </Space>
+                </Card>
+              </div>
+            ) : null}
+
+            {activeMenu === 'usage' ? (
+              <div className="customer-section-view">
+                <div className="customer-section-heading">
+                  <div>
+                    <Title level={2}>流量用量</Title>
+                    <Text type="secondary">按当前授权链路汇总上传、下载和每日消耗</Text>
+                  </div>
                 </div>
-              </Card>
-              )
-            })}
-          </Space>
-        </Spin>
+                <CustomerUsagePanel
+                  overview={overview}
+                  usage={usage}
+                  range={usageRange}
+                  dateFrom={usageFrom}
+                  dateTo={usageTo}
+                  loading={usageLoading}
+                  onRangeChange={(nextRange) => {
+                    setUsageRange(nextRange)
+                    setUsageFrom('')
+                    setUsageTo('')
+                    void loadUsage(nextRange, '', '')
+                  }}
+                  onDateRangeChange={(from, to) => {
+                    setUsageFrom(from)
+                    setUsageTo(to)
+                    void loadUsage(usageRange, from, to)
+                  }}
+                />
+              </div>
+            ) : null}
+
+            {activeMenu === 'links' ? (
+              <div className="customer-section-view customer-links-view">
+                <div className="customer-section-heading">
+                  <div>
+                    <Title level={2}>授权链路</Title>
+                    <Text type="secondary">查看链路拓扑、复制订阅或点击二维码查看大图</Text>
+                  </div>
+                  <Button icon={<CopyOutlined />} onClick={openClashSubscriptionModal}>复制订阅</Button>
+                </div>
+                <Spin spinning={overviewLoading}>
+                  <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                    {overview?.generated_at ? <Text type="secondary">数据更新时间：{formatDateTime(overview.generated_at)}</Text> : null}
+                    {!overview?.links.length ? (
+                      <Card bordered={false} className="surface-card customer-link-card">
+                        <Empty description="暂无授权链路，请联系管理员开通" />
+                      </Card>
+                    ) : null}
+                    {(overview?.links || []).map((link) => {
+                      const effectiveName = customerLinkDisplayName(link, remarkDrafts[link.assignment_id])
+                      const effectiveImportURL = customerLinkImportURL(link, remarkDrafts[link.assignment_id])
+                      const billingItems = customerLinkMetaItems(link)
+                      return (
+                      <Card key={link.assignment_id} bordered={false} className="surface-card customer-link-card">
+                        <div className="customer-link-head">
+                          <div className="customer-link-main">
+                            <div className="customer-link-title-row">
+                              {editingRemarkID === link.assignment_id ? (
+                                <Input
+                                  className="customer-link-remark-input"
+                                  value={remarkDrafts[link.assignment_id] || ''}
+                                  placeholder={link.entry_client_name}
+                                  maxLength={120}
+                                  autoFocus
+                                  onChange={(event) => setRemarkDrafts((current) => ({ ...current, [link.assignment_id]: event.target.value }))}
+                                  onPressEnter={() => void saveRemark(link)}
+                                />
+                              ) : (
+                                <Title level={3}>{effectiveName}</Title>
+                              )}
+                              {editingRemarkID === link.assignment_id ? (
+                                <Space size={4}>
+                                  <Button size="small" type="primary" icon={<CheckOutlined />} loading={savingRemarkID === link.assignment_id} onClick={() => void saveRemark(link)} />
+                                  <Button size="small" icon={<CloseOutlined />} onClick={() => {
+                                    setRemarkDrafts((current) => ({ ...current, [link.assignment_id]: link.remark || '' }))
+                                    setEditingRemarkID(null)
+                                  }} />
+                                </Space>
+                              ) : (
+                                <Button
+                                  size="small"
+                                  type="text"
+                                  className="customer-remark-edit-button"
+                                  icon={<EditOutlined />}
+                                  title="修改备注，导入名称会同步更新"
+                                  onClick={() => {
+                                    setRemarkDrafts((current) => ({ ...current, [link.assignment_id]: link.remark || '' }))
+                                    setEditingRemarkID(link.assignment_id)
+                                  }}
+                                />
+                              )}
+                            </div>
+                            <Paragraph className="customer-link-summary">{customerLinkSummaryText(link)}</Paragraph>
+                            <Space wrap className="customer-link-exit-tags">
+                              {link.exit_country_code || link.exit_country_name ? <Tag color="blue">出口 {countryFlag(link.exit_country_code)} {link.exit_country_code || link.exit_country_name}</Tag> : null}
+                              {link.exit_ip ? <Tag color="geekblue">{link.exit_ip}</Tag> : null}
+                              {!link.resolved ? <Tag color="orange">待解析</Tag> : null}
+                              <Button
+                                type="primary"
+                                size="small"
+                                className="customer-link-copy-button"
+                                icon={<CopyOutlined />}
+                                disabled={!effectiveImportURL}
+                                onClick={() => void copyImportURL(link)}
+                              >
+                                复制链接
+                              </Button>
+                            </Space>
+                          </div>
+                          <CustomerLinkTraffic link={link} />
+                          {billingItems.length ? (
+                            <div className="customer-link-meta-row" aria-label="授权链路费用和过期时间">
+                              {billingItems.map((item) => (
+                                <span key={item.key} className={`customer-link-meta-item customer-link-meta-${item.key}`}>{item.text}</span>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <div className="customer-link-visual-row">
+                          <div className="customer-topology-scroll">
+                            <CustomerTopologyMap steps={link.steps} />
+                          </div>
+                          <aside className="customer-qr-inline">
+                            {effectiveImportURL ? (
+                              <button type="button" className="customer-qr-button" onClick={() => setQrLink(link)}>
+                                <QRCode value={effectiveImportURL} color="#171717" bgColor="#ffffff" bordered={false} size={132} />
+                                <span>点击放大</span>
+                              </button>
+                            ) : (
+                              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无二维码" />
+                            )}
+                            <Text type="secondary" className="customer-link-import-hint">导入名称：{effectiveName}</Text>
+                          </aside>
+                        </div>
+                      </Card>
+                      )
+                    })}
+                  </Space>
+                </Spin>
+              </div>
+            ) : null}
           </section>
         </div>
       </div>
@@ -575,6 +639,7 @@ export function CustomerPortal() {
       <CustomerSupportWidget />
 
       <Modal
+        className="customer-subscription-modal"
         title="选择 Clash/Mihomo 订阅节点"
         open={subscriptionModalOpen}
         onCancel={closeSubscriptionModal}
@@ -619,40 +684,13 @@ export function CustomerPortal() {
                 <Checkbox key={link.assignment_id} value={link.assignment_id} disabled={!link.resolved || !link.import_url}>
                   <div>
                     <Text strong>{customerLinkDisplayName(link, remarkDrafts[link.assignment_id])}</Text>
-                    <div className="muted-line">{link.summary}{link.resolved && link.import_url ? '' : '（暂不可导出）'}</div>
+                    <div className="muted-line">{customerLinkSummaryText(link)}{link.resolved && link.import_url ? '' : '（暂不可导出）'}</div>
                   </div>
                 </Checkbox>
               ))}
             </Space>
           </Checkbox.Group>
           {!(overview?.links || []).length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无授权链路" /> : null}
-        </Space>
-      </Modal>
-
-      <Modal
-        title="我的页面样式"
-        open={styleModalOpen}
-        onCancel={() => setStyleModalOpen(false)}
-        width={820}
-        footer={[
-          <Button key="reset" onClick={() => setStyleDraft('')}>恢复默认</Button>,
-          <Button key="cancel" onClick={() => setStyleModalOpen(false)}>取消</Button>,
-          <Button key="save" type="primary" loading={styleSaving} onClick={() => void saveCustomerStyle()}>保存样式</Button>,
-        ]}
-      >
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <Alert
-            type="info"
-            showIcon
-            message="只影响你自己的用户页面"
-            description="可以填写 CSS，或完整的 <style> / <script> 片段；留空则使用系统默认页面样式。"
-          />
-          <Input.TextArea
-            value={styleDraft}
-            onChange={(event) => setStyleDraft(event.target.value)}
-            autoSize={{ minRows: 12, maxRows: 22 }}
-            placeholder={`<style>\n.customer-page-shell { --customer-card-radius: 28px; }\n.customer-hero { background: rgba(255,255,255,.88); }\n</style>`}
-          />
         </Space>
       </Modal>
 
@@ -762,6 +800,254 @@ function CustomerAnnouncementModal(props: {
   )
 }
 
+function CustomerUsagePanel(props: {
+  overview: CustomerOverviewResponse | null
+  usage: CustomerUsageResponse | null
+  range: '7d' | '30d'
+  dateFrom: string
+  dateTo: string
+  loading: boolean
+  onRangeChange: (range: '7d' | '30d') => void
+  onDateRangeChange: (from: string, to: string) => void
+}) {
+  const [historyView, setHistoryView] = useState<'chart' | 'list'>('chart')
+  const [expandedDailyDates, setExpandedDailyDates] = useState<string[]>([])
+  const [customDateFrom, setCustomDateFrom] = useState(props.dateFrom)
+  const [customDateTo, setCustomDateTo] = useState(props.dateTo)
+  const [dailyPage, setDailyPage] = useState(1)
+  const [recordPage, setRecordPage] = useState(1)
+  const fallback = customerUsageFallback(props.overview)
+  const summary = props.usage || fallback
+  const daily = props.usage?.daily || []
+  const records = props.usage?.records || []
+  const linksByAssignmentID = useMemo(() => new Map((props.overview?.links || []).map((link) => [link.assignment_id, link])), [props.overview?.links])
+  const dailyPageSize = 7
+  const recordPageSize = 20
+  const visibleDaily = daily.slice((dailyPage - 1) * dailyPageSize, dailyPage * dailyPageSize)
+  const visibleRecords = records.slice((recordPage - 1) * recordPageSize, recordPage * recordPageSize)
+
+  useEffect(() => {
+    setCustomDateFrom(props.dateFrom)
+    setCustomDateTo(props.dateTo)
+  }, [props.dateFrom, props.dateTo])
+
+  useEffect(() => {
+    setDailyPage(1)
+    setRecordPage(1)
+    setExpandedDailyDates([])
+  }, [props.usage])
+
+  const toggleDailyDate = (date: string) => {
+    setExpandedDailyDates((current) => current.includes(date) ? current.filter((value) => value !== date) : [...current, date])
+  }
+
+  return (
+    <Card bordered={false} className="surface-card customer-usage-panel">
+      <div className="customer-usage-header">
+        <div>
+          <Title level={3}>流量用量</Title>
+          <Text type="secondary">上传、下载和每日消耗，按当前授权链路汇总</Text>
+        </div>
+        <Space wrap>
+          <Segmented
+            value={props.range}
+            options={[{ label: '近 7 天', value: '7d' }, { label: '近 30 天', value: '30d' }]}
+            onChange={(value) => props.onRangeChange(value as '7d' | '30d')}
+          />
+          <Segmented
+            value={historyView}
+            aria-label="历史记录查看方式"
+            options={[
+              { label: <span><BarChartOutlined /> 每日用量</span>, value: 'chart' },
+              { label: <span><UnorderedListOutlined /> 最近记录</span>, value: 'list' },
+            ]}
+            onChange={(value) => setHistoryView(value as 'chart' | 'list')}
+          />
+          <Space size={6} className="customer-usage-date-filter">
+            <input aria-label="开始日期" type="date" value={customDateFrom} onChange={(event) => setCustomDateFrom(event.target.value)} />
+            <span aria-hidden="true">至</span>
+            <input aria-label="结束日期" type="date" value={customDateTo} onChange={(event) => setCustomDateTo(event.target.value)} />
+            <Button
+              size="small"
+              type="primary"
+              disabled={!customDateFrom || !customDateTo || customDateFrom > customDateTo}
+              onClick={() => props.onDateRangeChange(customDateFrom, customDateTo)}
+            >
+              查询
+            </Button>
+          </Space>
+        </Space>
+      </div>
+
+      <Spin spinning={props.loading}>
+        <div className="customer-usage-summary-grid">
+          <div className="customer-usage-summary-item customer-usage-summary-primary">
+            <Text type="secondary">本周期已用</Text>
+            <strong>{formatBytes(summary.counted_total_bytes)}</strong>
+          </div>
+          <div className="customer-usage-summary-item">
+            <Text type="secondary">上传</Text>
+            <strong>{formatBytes(summary.upload_bytes)}</strong>
+          </div>
+          <div className="customer-usage-summary-item">
+            <Text type="secondary">下载</Text>
+            <strong>{formatBytes(summary.download_bytes)}</strong>
+          </div>
+          <div className="customer-usage-summary-item">
+            <Text type="secondary">可用总流量</Text>
+            <strong>{summary.unlimited ? '无限量' : formatBytes(summary.quota_bytes)}</strong>
+          </div>
+        </div>
+
+        {historyView === 'chart' ? (
+          <>
+            {daily.length ? (
+              <div className="customer-usage-table-wrap">
+                <table className="customer-usage-table">
+                  <thead><tr><th>每日用量</th><th>上传</th><th>下载</th><th>合计</th><th>计费用量</th></tr></thead>
+                  <tbody>{visibleDaily.map((item: CustomerDailyUsage) => {
+                    const linkUsage = item.links || []
+                    const expanded = expandedDailyDates.includes(item.date)
+                    return (
+                      <Fragment key={`daily-${item.date}`}>
+                        <tr className={linkUsage.length ? 'customer-usage-daily-row customer-usage-daily-row-expandable' : 'customer-usage-daily-row'}>
+                          <td>
+                            {linkUsage.length ? (
+                              <button
+                                type="button"
+                                className="customer-usage-expand-button"
+                                aria-label={`${expanded ? '收起' : '展开'} ${item.date} 的链路用量`}
+                                aria-expanded={expanded}
+                                onClick={() => toggleDailyDate(item.date)}
+                              >
+                                {expanded ? <DownOutlined /> : <RightOutlined />}
+                                <span>{item.date}</span>
+                              </button>
+                            ) : item.date}
+                          </td>
+                          <td>{formatBytes(item.upload_bytes)}</td>
+                          <td>{formatBytes(item.download_bytes)}</td>
+                          <td>{formatBytes(item.total_bytes)}</td>
+                          <td>{formatBytes(item.counted_bytes)}</td>
+                        </tr>
+                        {expanded ? (
+                          <tr key={`detail-${item.date}-links`} className="customer-usage-daily-details-row">
+                            <td colSpan={5}>
+                              <div className="customer-usage-daily-details" aria-label={`${item.date} 链路用量明细`}>
+                                <div className="customer-usage-daily-details-title">链路用量明细</div>
+                                <div className="customer-usage-daily-details-head">
+                                  <span>链路</span><span>上传</span><span>下载</span><span>合计</span><span>计费用量</span>
+                                </div>
+                                {linkUsage.map((linkItem: CustomerDailyLinkUsage) => {
+                                  const link = linksByAssignmentID.get(linkItem.assignment_id)
+                                  return (
+                                    <div key={`${item.date}-${linkItem.assignment_id}`} className="customer-usage-daily-details-item">
+                                      <span className="customer-usage-daily-details-name">{link ? customerLinkDisplayName(link) : `链路 #${linkItem.assignment_id}`}</span>
+                                      <span>{formatBytes(linkItem.upload_bytes)}</span>
+                                      <span>{formatBytes(linkItem.download_bytes)}</span>
+                                      <span>{formatBytes(linkItem.total_bytes)}</span>
+                                      <span>{formatBytes(linkItem.counted_bytes)}</span>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
+                    )
+                  })}</tbody>
+                </table>
+                {daily.length > dailyPageSize ? (
+                  <Pagination
+                    className="customer-usage-pagination"
+                    current={dailyPage}
+                    pageSize={dailyPageSize}
+                    total={daily.length}
+                    showSizeChanger={false}
+                    size="small"
+                    onChange={(page) => setDailyPage(page)}
+                  />
+                ) : null}
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <div className="customer-usage-history-list" aria-label="最近流量记录">
+            <div className="customer-usage-chart-head">
+              <Text strong>最近流量记录</Text>
+              <Text type="secondary">仅保留最近 3 天 · 上传 / 下载</Text>
+            </div>
+            {records.length ? visibleRecords.map((item: CustomerTrafficRecord) => (
+              <div key={`history-${item.recorded_at}`} className="customer-usage-history-row">
+                <Text className="customer-usage-history-date">{formatCustomerTrafficRecordTime(item.recorded_at)}</Text>
+                <div className="customer-usage-history-values">
+                  <span className="customer-usage-history-upload">↑ {formatBytes(item.upload_bytes)}</span>
+                  <span className="customer-usage-history-download">↓ {formatBytes(item.download_bytes)}</span>
+                </div>
+              </div>
+            )) : daily.length ? [...daily].reverse().map((item) => (
+              <div key={`history-${item.date}`} className="customer-usage-history-row">
+                <Text className="customer-usage-history-date">{item.date}</Text>
+                <div className="customer-usage-history-values">
+                  <span className="customer-usage-history-upload">↑ {formatBytes(item.upload_bytes)}</span>
+                  <span className="customer-usage-history-download">↓ {formatBytes(item.download_bytes)}</span>
+                </div>
+              </div>
+            )) : (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无流量历史记录，等待下一次采集" />
+            )}
+            {records.length > recordPageSize ? (
+              <Pagination
+                className="customer-usage-pagination"
+                current={recordPage}
+                pageSize={recordPageSize}
+                total={records.length}
+                showSizeChanger={false}
+                size="small"
+                onChange={(page) => setRecordPage(page)}
+              />
+            ) : null}
+          </div>
+        )}
+      </Spin>
+    </Card>
+  )
+}
+
+function customerUsageFallback(overview: CustomerOverviewResponse | null): CustomerUsageResponse {
+  let upload = 0
+  let download = 0
+  let counted = 0
+  let quota = 0
+  let unlimited = false
+  let nextResetAt = 0
+  for (const link of overview?.links || []) {
+    const multiplierValue = Number(link.traffic_multiplier || 1)
+    const multiplier = Number.isFinite(multiplierValue) && multiplierValue > 0 ? multiplierValue : 1
+    upload += Math.max(0, Math.round(Number(link.traffic_upload_bytes || 0) * multiplier))
+    download += Math.max(0, Math.round(Number(link.traffic_download_bytes || 0) * multiplier))
+    counted += Math.max(0, Number(link.traffic_used_bytes || 0))
+    if (Number(link.traffic_limit_bytes || 0) <= 0) unlimited = true
+    else quota += Number(link.traffic_limit_bytes || 0)
+    if (Number(link.traffic_reset_at || 0) > 0 && (!nextResetAt || Number(link.traffic_reset_at) < nextResetAt)) nextResetAt = Number(link.traffic_reset_at)
+  }
+  return {
+    generated_at: overview?.generated_at || new Date().toISOString(),
+    range_start: '',
+    range_end: '',
+    upload_bytes: upload,
+    download_bytes: download,
+    raw_total_bytes: upload + download,
+    counted_total_bytes: counted,
+    quota_bytes: quota,
+    remaining_bytes: unlimited ? 0 : Math.max(0, quota - counted),
+    next_reset_at: nextResetAt || undefined,
+    unlimited,
+    daily: [],
+  }
+}
+
 function CustomerAnnouncementBar(props: {
   announcements: NonNullable<CustomerOverviewResponse['announcements']>
   onOpen: (index: number) => void
@@ -862,17 +1148,68 @@ function topologyNodeIcon(role: string) {
 
 function customerLinkDisplayName(link: CustomerLinkView, draft?: string): string {
   const draftName = (draft || '').trim()
-  return draftName || link.remark || link.entry_client_name || link.client_email || '授权链路'
+  const savedRemark = (link.remark || '').trim()
+  const routeName = customerLinkRouteName(link)
+  return draftName || savedRemark || routeName || link.client_email || '授权链路'
+}
+
+function customerLinkSummaryText(link: CustomerLinkView): string {
+  const summary = (link.summary || '').trim()
+  const withoutExit = summary.replace(/\s+出口\b.*$/u, '').trim()
+  return withoutExit || customerLinkRouteName(link) || link.entry_client_name || `链路 #${link.assignment_id}`
+}
+
+function customerLinkRouteName(link: CustomerLinkView): string {
+  const parts = [
+    link.entry_client_name,
+    ...(link.steps || []).filter((step) => step.role === 'relay').map((step) => step.label),
+  ]
+    .map((value) => (value || '').trim())
+    .filter(Boolean)
+  return Array.from(new Set(parts)).join('-')
+}
+
+function CustomerLinkTraffic({ link }: { link: CustomerLinkView }) {
+  const trafficUsed = Math.max(0, Number(link.traffic_used_bytes || 0))
+  const trafficLimit = Math.max(0, Number(link.traffic_limit_bytes || 0))
+  const multiplierValue = Number(link.traffic_multiplier || 1)
+  const multiplier = Number.isFinite(multiplierValue) && multiplierValue > 0 ? multiplierValue : 1
+  const upload = Math.max(0, Math.round(Number(link.traffic_upload_bytes || 0) * multiplier))
+  const download = Math.max(0, Math.round(Number(link.traffic_download_bytes || 0) * multiplier))
+  const unlimited = trafficLimit <= 0
+  const percent = unlimited ? 0 : Math.min(100, (trafficUsed / trafficLimit) * 100)
+  const strokeColor = percent >= 90 ? '#ef4444' : percent >= 75 ? '#f59e0b' : '#2563eb'
+
+  return (
+    <div className="customer-link-traffic" aria-label="链路流量用量">
+      <div className="customer-link-traffic-head">
+        <Text strong>流量用量</Text>
+        <Text className="customer-link-traffic-value">
+          {formatBytes(trafficUsed)} / {unlimited ? '无上限' : formatBytes(trafficLimit)}
+        </Text>
+      </div>
+      {unlimited ? (
+        <div className="customer-link-traffic-unlimited" aria-label="流量无上限">
+          <span className="customer-link-traffic-track"><span className="customer-link-traffic-fill" /></span>
+          <Text type="secondary">无上限</Text>
+        </div>
+      ) : (
+        <Progress className="customer-link-traffic-progress" percent={percent} showInfo={false} strokeColor={strokeColor} />
+      )}
+      <div className="customer-link-traffic-detail">
+        <span>上传 {formatBytes(upload)}</span>
+        <span>下载 {formatBytes(download)}</span>
+      </div>
+    </div>
+  )
 }
 
 function customerLinkMetaItems(link: CustomerLinkView): Array<{ key: string; text: string }> {
   const items: Array<{ key: string; text: string }> = []
-  const trafficUsed = Math.max(0, Number(link.traffic_used_bytes || 0))
-  const trafficLimit = Math.max(0, Number(link.traffic_limit_bytes || 0))
-  if (trafficUsed > 0 || trafficLimit > 0) {
+  if (Number(link.traffic_reset_at || 0) > 0) {
     items.push({
-      key: 'traffic',
-      text: `流量：已用 ${formatBytes(trafficUsed)} / ${trafficLimit > 0 ? `双向限额 ${formatBytes(trafficLimit)}` : '无上限'}`,
+      key: 'traffic-reset',
+      text: `下次重置：${formatCustomerResetTime(Number(link.traffic_reset_at || 0))}`,
     })
   }
   if (Number(link.revenue_amount || 0) > 0) {
@@ -925,6 +1262,27 @@ function formatCustomerExpiryTime(value: number): string {
   }).format(new Date(value))
 }
 
+function formatCustomerResetTime(value: number): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
+function formatCustomerTrafficRecordTime(value: string): string {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(parsed)
+}
+
 function cycleUnitLabel(cycle?: string): string {
   switch (cycle) {
     case 'quarter':
@@ -975,36 +1333,4 @@ function rewriteVMessImportName(source: string, displayName: string): string {
   } catch {
     return source
   }
-}
-
-function applyCustomerStyle(styleCode: string) {
-  document.querySelectorAll('[data-vpsmonitor-customer-style="true"]').forEach((node) => node.remove())
-  const code = styleCode.trim()
-  if (!code) {
-    return
-  }
-  const template = document.createElement('template')
-  template.innerHTML = code.includes('<') ? code : `<style>${code}</style>`
-  Array.from(template.content.childNodes).forEach((node) => appendCustomerStyleNode(node))
-}
-
-function appendCustomerStyleNode(node: Node) {
-  if (node.nodeType === Node.TEXT_NODE && !node.textContent?.trim()) {
-    return
-  }
-  if (node.nodeName.toLowerCase() === 'script') {
-    const source = node as HTMLScriptElement
-    const script = document.createElement('script')
-    Array.from(source.attributes).forEach((attr) => script.setAttribute(attr.name, attr.value))
-    script.text = source.text
-    script.dataset.vpsmonitorCustomerStyle = 'true'
-    script.async = false
-    document.body.appendChild(script)
-    return
-  }
-  const element = node.cloneNode(true) as HTMLElement
-  if (element instanceof HTMLElement) {
-    element.dataset.vpsmonitorCustomerStyle = 'true'
-  }
-  document.body.appendChild(element)
 }

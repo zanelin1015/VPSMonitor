@@ -106,33 +106,86 @@ type CustomerLinkStep struct {
 }
 
 type CustomerLinkView struct {
-	AssignmentID      int64                    `json:"assignment_id"`
-	EntryClientName   string                   `json:"entry_client_name"`
-	InboundTag        string                   `json:"inbound_tag,omitempty"`
-	ClientEmail       string                   `json:"client_email,omitempty"`
-	ClientRemark      string                   `json:"client_remark,omitempty"`
-	ImportURL         string                   `json:"import_url,omitempty"`
-	Remark            string                   `json:"remark,omitempty"`
-	Summary           string                   `json:"summary"`
-	ExitCountryCode   string                   `json:"exit_country_code,omitempty"`
-	ExitCountryName   string                   `json:"exit_country_name,omitempty"`
-	ExitIP            string                   `json:"exit_ip,omitempty"`
-	Resolved          bool                     `json:"resolved"`
-	UnresolvedReason  string                   `json:"unresolved_reason,omitempty"`
-	RevenueAmount     *float64                 `json:"revenue_amount,omitempty"`
-	RevenueCurrency   string                   `json:"revenue_currency,omitempty"`
-	RevenueCycle      string                   `json:"revenue_cycle,omitempty"`
-	TrafficMultiplier float64                  `json:"traffic_multiplier,omitempty"`
-	TrafficUsedBytes  int64                    `json:"traffic_used_bytes,omitempty"`
-	TrafficLimitBytes int64                    `json:"traffic_limit_bytes,omitempty"`
-	NodeExpireTime    int64                    `json:"node_expire_time,omitempty"`
-	StartTime         int64                    `json:"start_time,omitempty"`
-	ExpireTime        int64                    `json:"expire_time,omitempty"`
-	ExpireCycle       string                   `json:"expire_cycle,omitempty"`
-	ExpireAutoRenew   bool                     `json:"expire_auto_renew,omitempty"`
-	Steps             []CustomerLinkStep       `json:"steps"`
-	FrontProxies      []CustomerLinkFrontProxy `json:"front_proxies,omitempty"`
-	UpdatedAt         time.Time                `json:"updated_at"`
+	AssignmentID         int64                    `json:"assignment_id"`
+	EntryClientName      string                   `json:"entry_client_name"`
+	InboundTag           string                   `json:"inbound_tag,omitempty"`
+	ClientEmail          string                   `json:"client_email,omitempty"`
+	ClientRemark         string                   `json:"client_remark,omitempty"`
+	ImportURL            string                   `json:"import_url,omitempty"`
+	Remark               string                   `json:"remark,omitempty"`
+	Summary              string                   `json:"summary"`
+	ExitCountryCode      string                   `json:"exit_country_code,omitempty"`
+	ExitCountryName      string                   `json:"exit_country_name,omitempty"`
+	ExitIP               string                   `json:"exit_ip,omitempty"`
+	Resolved             bool                     `json:"resolved"`
+	UnresolvedReason     string                   `json:"unresolved_reason,omitempty"`
+	RevenueAmount        *float64                 `json:"revenue_amount,omitempty"`
+	RevenueCurrency      string                   `json:"revenue_currency,omitempty"`
+	RevenueCycle         string                   `json:"revenue_cycle,omitempty"`
+	TrafficMultiplier    float64                  `json:"traffic_multiplier,omitempty"`
+	TrafficUploadBytes   int64                    `json:"traffic_upload_bytes,omitempty"`
+	TrafficDownloadBytes int64                    `json:"traffic_download_bytes,omitempty"`
+	TrafficUsedBytes     int64                    `json:"traffic_used_bytes,omitempty"`
+	TrafficLimitBytes    int64                    `json:"traffic_limit_bytes,omitempty"`
+	TrafficResetAt       int64                    `json:"traffic_reset_at,omitempty"`
+	NodeExpireTime       int64                    `json:"node_expire_time,omitempty"`
+	StartTime            int64                    `json:"start_time,omitempty"`
+	ExpireTime           int64                    `json:"expire_time,omitempty"`
+	ExpireCycle          string                   `json:"expire_cycle,omitempty"`
+	ExpireAutoRenew      bool                     `json:"expire_auto_renew,omitempty"`
+	Steps                []CustomerLinkStep       `json:"steps"`
+	FrontProxies         []CustomerLinkFrontProxy `json:"front_proxies,omitempty"`
+	UpdatedAt            time.Time                `json:"updated_at"`
+}
+
+// CustomerTrafficDailyUsage is the raw per-assignment delta collected from
+// the X-UI client counters. The server applies the assignment multiplier when
+// building the customer-facing response.
+type CustomerTrafficDailyUsage struct {
+	AssignmentID  int64  `json:"assignment_id"`
+	Date          string `json:"date"`
+	UploadBytes   uint64 `json:"upload_bytes"`
+	DownloadBytes uint64 `json:"download_bytes"`
+}
+
+type CustomerDailyLinkUsage struct {
+	AssignmentID  int64  `json:"assignment_id"`
+	UploadBytes   uint64 `json:"upload_bytes"`
+	DownloadBytes uint64 `json:"download_bytes"`
+	TotalBytes    uint64 `json:"total_bytes"`
+	CountedBytes  uint64 `json:"counted_bytes"`
+}
+
+type CustomerDailyUsage struct {
+	Date          string                   `json:"date"`
+	UploadBytes   uint64                   `json:"upload_bytes"`
+	DownloadBytes uint64                   `json:"download_bytes"`
+	TotalBytes    uint64                   `json:"total_bytes"`
+	CountedBytes  uint64                   `json:"counted_bytes"`
+	Links         []CustomerDailyLinkUsage `json:"links,omitempty"`
+}
+
+type CustomerTrafficRecord struct {
+	RecordedAt    time.Time `json:"recorded_at"`
+	UploadBytes   uint64    `json:"upload_bytes"`
+	DownloadBytes uint64    `json:"download_bytes"`
+	TotalBytes    uint64    `json:"total_bytes"`
+}
+
+type CustomerUsageResponse struct {
+	GeneratedAt       time.Time               `json:"generated_at"`
+	RangeStart        time.Time               `json:"range_start"`
+	RangeEnd          time.Time               `json:"range_end"`
+	UploadBytes       uint64                  `json:"upload_bytes"`
+	DownloadBytes     uint64                  `json:"download_bytes"`
+	RawTotalBytes     uint64                  `json:"raw_total_bytes"`
+	CountedTotalBytes uint64                  `json:"counted_total_bytes"`
+	QuotaBytes        uint64                  `json:"quota_bytes"`
+	RemainingBytes    uint64                  `json:"remaining_bytes"`
+	NextResetAt       int64                   `json:"next_reset_at,omitempty"`
+	Unlimited         bool                    `json:"unlimited"`
+	Daily             []CustomerDailyUsage    `json:"daily"`
+	Records           []CustomerTrafficRecord `json:"records,omitempty"`
 }
 
 type CustomerLinkFrontProxy struct {

@@ -25,6 +25,24 @@ func TestFilterCustomerSubscriptionLinksByAssignmentSelection(t *testing.T) {
 	}
 }
 
+func TestCustomerSubscriptionNodeNameUsesEntryAndRelayRoute(t *testing.T) {
+	link := model.CustomerLinkView{
+		EntryClientName: "US-优化",
+		Steps: []model.CustomerLinkStep{
+			{Role: "entry", Label: "US-优化"},
+			{Role: "relay", Label: "COX落地"},
+			{Role: "exit", Label: "出口 US"},
+		},
+	}
+	if got := customerSubscriptionNodeName(link); got != "US-优化-COX落地" {
+		t.Fatalf("expected entry and relay route name, got %q", got)
+	}
+	link.Remark = "自定义名称"
+	if got := customerSubscriptionNodeName(link); got != "自定义名称" {
+		t.Fatalf("expected explicit remark to remain an override, got %q", got)
+	}
+}
+
 func TestBuildMihomoSubscriptionConvertsCustomerLinks(t *testing.T) {
 	user := model.CustomerUser{Username: "alice"}
 	links := []model.CustomerLinkView{

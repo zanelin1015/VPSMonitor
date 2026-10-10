@@ -1,12 +1,24 @@
 package server
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 	"time"
 
 	"bridge-core/internal/model"
 )
+
+func TestCustomerCustomStyleRouteRemoved(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodPut} {
+		w := httptest.NewRecorder()
+		(&App{}).handleCustomer(w, httptest.NewRequest(method, "/api/v1/customer/style", nil))
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("removed style endpoint returned %d for %s", w.Code, method)
+		}
+	}
+}
 
 func TestActiveCustomerAnnouncementsFiltersDisabledAndScheduledItems(t *testing.T) {
 	now := time.Date(2026, time.August, 4, 12, 0, 0, 0, time.UTC)
@@ -157,7 +169,7 @@ func TestBuildCustomerLinkViewShowsUnmatchedOutboundRoute(t *testing.T) {
 	if len(link.Steps) < 2 || link.Steps[1].Role != "relay" || link.Steps[1].Label != "COX-Anilam" {
 		t.Fatalf("expected unmatched outbound to appear as relay step, got %#v", link.Steps)
 	}
-	if link.Summary != "US-200M - AnilamVM 转发 COX-Anilam 出口 未知" {
+	if link.Summary != "US-200M - AnilamVM 转发 COX-Anilam" {
 		t.Fatalf("expected summary to include outbound route, got %q", link.Summary)
 	}
 }

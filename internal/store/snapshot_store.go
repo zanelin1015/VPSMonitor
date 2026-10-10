@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"bridge-core/internal/config"
@@ -124,6 +126,9 @@ func (s *SQLiteStore) SaveSnapshot(snapshot model.AgentSnapshot) error {
 	if err = s.saveSnapshotComponentEventsTx(tx, snapshot); err != nil {
 		return err
 	}
+	if err = s.saveCustomerTrafficSamplesTx(tx, snapshot); err != nil {
+		return err
+	}
 
 	nowText := time.Now().UTC().Format(time.RFC3339Nano)
 	emptyXUIJSON, err := s.storedXUIConfigJSON(config.XUIConfig{})
@@ -177,6 +182,141 @@ func (s *SQLiteStore) SaveSnapshot(snapshot model.AgentSnapshot) error {
 		return fmt.Errorf("commit transaction: %w", err)
 	}
 	return nil
+}
+
+type customerTrafficSample struct {
+	agentID       string
+	inboundID     int
+	clientID      string
+	clientEmail   string
+	uploadBytes   uint64
+	downloadBytes uint64
+	reportedAt    string
+}
+
+func (s *SQLiteStore) saveCustomerTrafficSamplesTx(tx *sql.Tx, snapshot model.AgentSnapshot) error {
+	if snapshot.XUI == nil || snapshot.XUI.Error != "" {
+		return nil
+	}
+	for _, sample := range customerTrafficSamples(snapshot) {
+		if _, err := tx.Exec(`
+			INSERT INTO customer_traffic_samples
+			(agent_id, inbound_id, client_id, client_email, upload_bytes, download_bytes, reported_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(agent_id, inbound_id, client_id, client_email, reported_at) DO NOTHING
+		`, sample.agentID, sample.inboundID, sample.clientID, sample.clientEmail,
+			sample.uploadBytes, sample.downloadBytes, sample.reportedAt); err != nil {
+			return fmt.Errorf("save customer traffic sample: %w", err)
+		}
+	}
+	return nil
+}
+
+func customerTrafficSamples(snapshot model.AgentSnapshot) []customerTrafficSample {
+	if snapshot.XUI == nil {
+		return nil
+	}
+	result := make([]customerTrafficSample, 0)
+	reportedAt := snapshot.ReportedAt.UTC().Format(time.RFC3339Nano)
+	for _, inbound := range snapshot.XUI.Inbounds {
+		inboundID := numericInt(inbound["id"])
+		if inboundID <= 0 {
+			continue
+		}
+		for _, stat := range mapSlice(inbound["clientStats"]) {
+			email := strings.TrimSpace(stringValue(stat["email"]))
+			clientID := strings.TrimSpace(firstString(stat, "id", "client_id", "clientId"))
+			if email == "" && clientID == "" {
+				continue
+			}
+			result = append(result, customerTrafficSample{
+				agentID:       snapshot.AgentID,
+				inboundID:     inboundID,
+				clientID:      clientID,
+				clientEmail:   email,
+				uploadBytes:   numericUint64(firstValue(stat, "up", "upload", "uploadBytes")),
+				downloadBytes: numericUint64(firstValue(stat, "down", "download", "downloadBytes")),
+				reportedAt:    reportedAt,
+			})
+		}
+	}
+	return result
+}
+
+func mapSlice(raw any) []map[string]any {
+	switch values := raw.(type) {
+	case []map[string]any:
+		return values
+	case []any:
+		result := make([]map[string]any, 0, len(values))
+		for _, value := range values {
+			if item, ok := value.(map[string]any); ok {
+				result = append(result, item)
+			}
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+func firstValue(values map[string]any, keys ...string) any {
+	for _, key := range keys {
+		if value, ok := values[key]; ok {
+			return value
+		}
+	}
+	return nil
+}
+
+func firstString(values map[string]any, keys ...string) string {
+	return stringValue(firstValue(values, keys...))
+}
+
+func stringValue(value any) string {
+	if value == nil {
+		return ""
+	}
+	switch item := value.(type) {
+	case string:
+		return item
+	case json.Number:
+		return item.String()
+	default:
+		return fmt.Sprint(item)
+	}
+}
+
+func numericInt(value any) int {
+	return int(numericUint64(value))
+}
+
+func numericUint64(value any) uint64 {
+	switch item := value.(type) {
+	case int:
+		if item > 0 {
+			return uint64(item)
+		}
+	case int64:
+		if item > 0 {
+			return uint64(item)
+		}
+	case uint64:
+		return item
+	case float64:
+		if item > 0 {
+			return uint64(item)
+		}
+	case json.Number:
+		if parsed, err := item.Int64(); err == nil && parsed > 0 {
+			return uint64(parsed)
+		}
+	case string:
+		if parsed, err := strconv.ParseUint(strings.TrimSpace(item), 10, 64); err == nil {
+			return parsed
+		}
+	}
+	return 0
 }
 
 func (s *SQLiteStore) ListLatest() []model.AgentSnapshot {
@@ -237,6 +377,12 @@ func (s *SQLiteStore) pruneSnapshotHistoryTx(tx *sql.Tx, agentID string, referen
 			WHERE agent_id = ? AND reported_at < ?
 		`, agentID, cutoff); err != nil {
 			return fmt.Errorf("prune old snapshots: %w", err)
+		}
+		if _, err := tx.Exec(`
+			DELETE FROM customer_traffic_samples
+			WHERE agent_id = ? AND reported_at < ?
+		`, agentID, cutoff); err != nil {
+			return fmt.Errorf("prune old customer traffic samples: %w", err)
 		}
 	}
 	if s.retention.MaxPerAgent > 0 {

@@ -107,6 +107,24 @@ func TestTrafficResetPreparationDispatchAndDedup(t *testing.T) {
 	}
 }
 
+func TestQuarterlyBillingUsesMonthlyTrafficResetCadence(t *testing.T) {
+	start := time.Date(2026, 10, 2, 0, 0, 0, 0, model.TrafficResetLocation)
+	policy := model.TrafficResetPolicy{AgentID: "agent", ClientID: "client", Email: "alice", InboundID: 1, FollowBilling: true, StartTime: start.UnixMilli(), Cycle: "quarter"}
+	candidate := trafficResetCandidate{AgentID: "agent", ClientID: "client", Email: "alice", InboundID: 1, StartTime: start.UnixMilli(), Cycle: "quarter"}
+	resolved, _, err := resolveTrafficResetPolicy(policy, []trafficResetCandidate{candidate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Cycle != "month" {
+		t.Fatalf("billing cycle leaked into reset cadence: %#v", resolved)
+	}
+	now := time.Date(2026, 11, 1, 23, 55, 0, 0, model.TrafficResetLocation)
+	jobs := plannedTrafficResetJobs(resolved, candidate, model.TrafficResetSettings{CatchUpMinutes: 360}, now, true)
+	if len(jobs) == 0 || time.UnixMilli(jobs[0].Boundary).In(model.TrafficResetLocation).Format("2006-01-02 15:04:05") != "2026-11-02 00:00:00" {
+		t.Fatalf("expected monthly 11/2 boundary, got %#v", jobs)
+	}
+}
+
 func TestTrafficResetDoesNotDispatchUnsafeCandidates(t *testing.T) {
 	boundary := time.Date(2026, 10, 2, 0, 0, 0, 0, model.TrafficResetLocation)
 	for _, scenario := range []string{"old-client", "offline", "global-disabled", "policy-disabled", "expired-window", "changed-config"} {

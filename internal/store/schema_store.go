@@ -37,6 +37,18 @@ func (s *SQLiteStore) init() error {
 		 operation TEXT NOT NULL, data_json TEXT NOT NULL, recorded_at TEXT NOT NULL,
 		 UNIQUE(job_id, action_id, operation));`,
 		`CREATE INDEX IF NOT EXISTS idx_traffic_reset_logs_time ON traffic_reset_logs(id DESC);`,
+		`CREATE TABLE IF NOT EXISTS customer_traffic_samples (
+			 id INTEGER PRIMARY KEY AUTOINCREMENT,
+			 agent_id TEXT NOT NULL,
+			 inbound_id INTEGER NOT NULL,
+			 client_id TEXT NOT NULL DEFAULT '',
+			 client_email TEXT NOT NULL DEFAULT '',
+			 upload_bytes INTEGER NOT NULL DEFAULT 0,
+			 download_bytes INTEGER NOT NULL DEFAULT 0,
+			 reported_at TEXT NOT NULL,
+			 UNIQUE(agent_id, inbound_id, client_id, client_email, reported_at)
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_customer_traffic_samples_lookup ON customer_traffic_samples(agent_id, inbound_id, client_email, reported_at);`,
 		`
 		CREATE TABLE IF NOT EXISTS admin_accounts (
 			id INTEGER PRIMARY KEY CHECK (id = 1),

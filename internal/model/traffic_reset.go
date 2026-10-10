@@ -108,12 +108,14 @@ func ClientCycleBoundary(start time.Time, months int) time.Time {
 	return time.Date(first.Year(), first.Month(), day, start.Hour(), start.Minute(), start.Second(), start.Nanosecond(), TrafficResetLocation)
 }
 
-// Only the relevant completed boundary and the next one, never an old backlog.
+// Traffic is reset monthly, independently of the billing cycle. The billing
+// cycle controls price and expiry; the start day anchors each monthly reset.
+// Only the relevant completed boundary and the next one are returned, never an old backlog.
 func TrafficResetBoundaries(startMillis int64, cycle string, now time.Time) (time.Time, time.Time, error) {
-	months, err := TrafficCycleMonths(cycle)
-	if err != nil || startMillis <= 0 {
+	if _, err := TrafficCycleMonths(cycle); err != nil || startMillis <= 0 {
 		return time.Time{}, time.Time{}, fmt.Errorf("valid start time and cycle are required")
 	}
+	months := 1
 	start := time.UnixMilli(startMillis).In(TrafficResetLocation)
 	now = now.In(TrafficResetLocation)
 	index := ((now.Year()-start.Year())*12 + int(now.Month()-start.Month())) / months

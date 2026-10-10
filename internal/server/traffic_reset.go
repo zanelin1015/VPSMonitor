@@ -68,7 +68,6 @@ func (a *App) trafficResetCandidates(now time.Time) ([]trafficResetCandidate, er
 			for _, billing := range agent.Config.Renewal.ClientBillings {
 				if (billing.ClientID != "" && billing.ClientID == client.ClientID) || (billing.ClientID == "" && billing.InboundID == client.InboundID && billing.Email == client.Email) {
 					value.StartTime = billing.StartTime
-					value.Cycle = billing.RevenueCycle
 					break
 				}
 			}
@@ -88,8 +87,10 @@ func resolveTrafficResetPolicy(policy model.TrafficResetPolicy, candidates []tra
 		}
 		if policy.FollowBilling {
 			policy.StartTime = candidate.StartTime
-			policy.Cycle = candidate.Cycle
 		}
+		// Billing can be monthly, quarterly, semiannual, or annual, but traffic
+		// quota resets always run monthly on the billing start day.
+		policy.Cycle = "month"
 		if policy.StartTime <= 0 {
 			return policy, candidate, fmt.Errorf("请先设置客户端开始日期")
 		}
@@ -352,6 +353,11 @@ func (a *App) handleAdminTrafficReset(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			writeError(w, 500, err.Error())
 			return
+		}
+		// Older records may retain the former billing-cycle value. Present the
+		// effective traffic-reset cadence, which is always monthly.
+		for i := range policies {
+			policies[i].Cycle = "month"
 		}
 		jobs, err := a.store.ListTrafficResetJobs(100)
 		if err != nil {

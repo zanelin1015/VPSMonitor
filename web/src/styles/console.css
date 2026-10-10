@@ -227,6 +227,57 @@
 .admin-console-theme .console-login-scene h2 { margin: 20px 0; color: var(--text); font-size: clamp(30px, 4vw, 54px); font-weight: 650; letter-spacing: -1px; line-height: 1.3; }
 .admin-console-theme .console-login-scene p { color: var(--muted); font-size: 14px; }
 
+/* Customer login: calm enterprise entry point with a compact, high-contrast form. */
+.admin-console-theme .customer-login-shell {
+  grid-template-columns: minmax(440px, .9fr) minmax(420px, 1.1fr);
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at 18% 18%, color-mix(in srgb, var(--primary) 7%, transparent), transparent 30%),
+    var(--bg);
+}
+.admin-console-theme .customer-login-shell .console-login-wordmark { top: 28px; left: 40px; }
+.admin-console-theme .customer-login-shell .login-panel {
+  width: min(420px, calc(100% - 48px));
+  margin: auto;
+  padding: 38px 40px;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: var(--card);
+  box-shadow: 0 18px 44px color-mix(in srgb, var(--text) 9%, transparent), 0 2px 8px color-mix(in srgb, var(--text) 5%, transparent);
+}
+.admin-console-theme .customer-login-shell .login-mark {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: var(--green-soft);
+  color: var(--primary);
+  font-size: 21px;
+}
+.admin-console-theme .customer-login-shell .login-brand { gap: 14px; margin-bottom: 30px; }
+.admin-console-theme .customer-login-shell .login-brand h2 { margin: 0 0 5px; font-size: 30px; font-weight: 650; letter-spacing: -.7px; }
+.admin-console-theme .customer-login-shell .login-brand .ant-typography-secondary { font-size: 14px; }
+.admin-console-theme .customer-login-shell label { margin-bottom: 9px; font-size: 13px; font-weight: 600; }
+.admin-console-theme .customer-login-shell :is(.ant-input-lg, .ant-input-affix-wrapper-lg) { min-height: 50px; border-radius: 12px; }
+.admin-console-theme .customer-login-shell .ant-input-affix-wrapper .ant-input { min-height: 0; background: transparent !important; border: 0 !important; }
+.admin-console-theme .customer-login-shell .ant-btn { height: 50px; margin-top: 10px; border-radius: 12px; font-weight: 600; }
+.admin-console-theme .customer-login-shell .console-login-scene {
+  align-self: stretch;
+  margin: 22px 24px 22px 0;
+  border: 1px solid color-mix(in srgb, var(--primary) 14%, var(--border));
+  border-radius: 28px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--primary) 9%, var(--surface)), var(--surface));
+}
+.admin-console-theme .customer-login-shell .console-login-orbit { opacity: .62; }
+.admin-console-theme .customer-login-shell .console-login-scene-copy { inset: auto 12% 13%; max-width: 460px; }
+.admin-console-theme .customer-login-shell .console-login-scene h2 { font-size: clamp(30px, 3.7vw, 50px); }
+
+@media (max-width: 900px) {
+  .admin-console-theme .customer-login-shell { grid-template-columns: 1fr; }
+  .admin-console-theme .customer-login-shell .console-login-scene { display: none; }
+  .admin-console-theme .customer-login-shell .login-panel { margin: 96px auto 32px; }
+}
+
 @media (max-width: 1360px) and (min-width: 981px) {
   .admin-console-theme .admin-oa-sider { width: 196px; flex-basis: 196px; padding-inline: 10px; }
   .admin-console-theme .admin-oa-main { padding-inline: 16px; }
@@ -245,6 +296,8 @@
   .admin-console-theme .console-login-wordmark { left: 24px; top: 24px; }
   .admin-console-theme .console-login-wordmark small { display: none; }
   .admin-console-theme .console-login-shell .login-panel { width: min(380px, calc(100% - 48px)); }
+  .admin-console-theme .customer-login-shell .login-panel { width: min(420px, calc(100% - 32px)); margin: 90px auto 24px; padding: 30px 24px; }
+  .admin-console-theme .customer-login-shell .login-brand h2 { font-size: 27px; }
   .admin-console-theme .admin-mobile-header { background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: 0 1px 0 var(--border); }
   .admin-console-theme .admin-mobile-nav button { border: 0; background: transparent; }
   .admin-console-theme .admin-mobile-nav button.active { color: var(--primary); background: var(--green-soft); }

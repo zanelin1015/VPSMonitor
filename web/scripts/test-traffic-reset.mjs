@@ -29,7 +29,7 @@ try {
   assert.equal(defaultScheduledTaskSettings().traffic_reset.enabled, false)
   assert.deepEqual(normalizeScheduledTaskSettings({}).traffic_reset, { enabled: false, catch_up_minutes: 360 })
   const panel = await readFile(new URL('../src/components/TrafficResetPanel.tsx', import.meta.url), 'utf8')
-  for (const text of ['流量重置日志', '计划执行时间（北京时间）', '详情 / 失败原因', '领取时间，实际执行时间未确认', '结果未确认', '跳过（未执行）']) {
+  for (const text of ['流量重置日志', '计划执行时间（北京时间）', '详情 / 失败原因', '领取时间，实际执行时间未确认', '结果未确认', '跳过（未执行）', '重置周期：每月']) {
     assert.ok(panel.includes(text), `audit log label: ${text}`)
   }
   assert.ok(panel.includes("timeZone: 'Asia/Shanghai'"), 'audit timestamps must display in Beijing time')

@@ -16,9 +16,10 @@ export interface LoginScreenProps {
 
 export function LoginScreen({ loginForm, loginLoading, title = 'ZaneLin', subtitle = '管理员登录', consoleAppearance = false, audience = 'admin', onChange, onLogin }: LoginScreenProps) {
   const canLogin = Boolean(loginForm.username && loginForm.password)
+  const isCustomer = audience === 'customer'
 
   return (
-    <div className={consoleAppearance ? 'login-shell console-login-shell' : 'login-shell'}>
+    <div className={`${consoleAppearance ? 'login-shell console-login-shell' : 'login-shell'}${isCustomer ? ' customer-login-shell' : ''}`}>
       {consoleAppearance ? <div className="console-login-wordmark"><span>Z</span>ZaneLin<small>{audience === 'customer' ? 'CUSTOMER PORTAL' : 'CONTROL CENTER'}</small></div> : null}
       <section className="login-panel">
         <div className="login-brand">
@@ -30,21 +31,24 @@ export function LoginScreen({ loginForm, loginLoading, title = 'ZaneLin', subtit
             {subtitle ? <Text type="secondary">{subtitle}</Text> : null}
           </div>
         </div>
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <form onSubmit={(event) => {
+          event.preventDefault()
+          if (canLogin && !loginLoading) {
+            onLogin()
+          }
+        }}>
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
           <div>
             {consoleAppearance ? <label htmlFor="console-login-username">用户名</label> : <Text type="secondary">用户名</Text>}
             <Input
               id="console-login-username"
               autoComplete="username"
+              aria-required="true"
+              required
               size="large"
               autoFocus
               value={loginForm.username}
               onChange={(event) => onChange({ ...loginForm, username: event.target.value })}
-              onPressEnter={() => {
-                if (canLogin) {
-                  onLogin()
-                }
-              }}
             />
           </div>
           <div>
@@ -52,29 +56,27 @@ export function LoginScreen({ loginForm, loginLoading, title = 'ZaneLin', subtit
             <Input.Password
               id="console-login-password"
               autoComplete="current-password"
+              aria-required="true"
+              required
               size="large"
               value={loginForm.password}
               onChange={(event) => onChange({ ...loginForm, password: event.target.value })}
-              onPressEnter={() => {
-                if (canLogin) {
-                  onLogin()
-                }
-              }}
             />
           </div>
           <Button
             block
             size="large"
             type="primary"
+            htmlType="submit"
             icon={consoleAppearance ? <ArrowRightOutlined /> : <LockOutlined />}
             iconPosition={consoleAppearance ? 'end' : 'start'}
             loading={loginLoading}
             disabled={!canLogin}
-            onClick={onLogin}
           >
             登录
           </Button>
-        </Space>
+          </Space>
+        </form>
       </section>
       {consoleAppearance ? <aside className="console-login-scene" aria-hidden="true">
         <div className="console-login-orbit console-login-orbit-one" />

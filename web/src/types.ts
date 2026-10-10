@@ -529,8 +529,11 @@ export interface CustomerLinkView {
   revenue_currency?: 'CNY' | 'USDT' | string
   revenue_cycle?: 'month' | 'quarter' | 'semiannual' | 'year' | string
   traffic_multiplier?: number
+  traffic_upload_bytes?: number
+  traffic_download_bytes?: number
   traffic_used_bytes?: number
   traffic_limit_bytes?: number
+  traffic_reset_at?: number
   node_expire_time?: number
   start_time?: number
   expire_time?: number
@@ -548,6 +551,46 @@ export interface CustomerOverviewResponse {
   announcements?: CustomerAnnouncement[]
   read_announcement_ids?: string[]
   links: CustomerLinkView[]
+}
+
+export interface CustomerDailyUsage {
+  date: string
+  upload_bytes: number
+  download_bytes: number
+  total_bytes: number
+  counted_bytes: number
+  links?: CustomerDailyLinkUsage[]
+}
+
+export interface CustomerDailyLinkUsage {
+  assignment_id: number
+  upload_bytes: number
+  download_bytes: number
+  total_bytes: number
+  counted_bytes: number
+}
+
+export interface CustomerTrafficRecord {
+  recorded_at: string
+  upload_bytes: number
+  download_bytes: number
+  total_bytes: number
+}
+
+export interface CustomerUsageResponse {
+  generated_at: string
+  range_start: string
+  range_end: string
+  upload_bytes: number
+  download_bytes: number
+  raw_total_bytes: number
+  counted_total_bytes: number
+  quota_bytes: number
+  remaining_bytes: number
+  next_reset_at?: number
+  unlimited: boolean
+  daily: CustomerDailyUsage[]
+  records?: CustomerTrafficRecord[]
 }
 
 export type SupportConversationStatus = 'open' | 'closed'

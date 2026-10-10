@@ -625,7 +625,36 @@ func mihomoTransportObjects(network string, q url.Values) []mihomoObject {
 }
 
 func customerSubscriptionNodeName(link model.CustomerLinkView) string {
-	return firstNonEmptyString(strings.TrimSpace(link.Remark), link.EntryClientName, link.ClientEmail, link.InboundTag, "授权链路")
+	if remark := strings.TrimSpace(link.Remark); remark != "" {
+		return remark
+	}
+	parts := []string{strings.TrimSpace(link.EntryClientName)}
+	for _, step := range link.Steps {
+		if step.Role != "relay" {
+			continue
+		}
+		label := strings.TrimSpace(step.Label)
+		if label == "" {
+			continue
+		}
+		parts = append(parts, label)
+	}
+	seen := make(map[string]struct{}, len(parts))
+	uniqueParts := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		if _, exists := seen[part]; exists {
+			continue
+		}
+		seen[part] = struct{}{}
+		uniqueParts = append(uniqueParts, part)
+	}
+	if routeName := strings.Join(uniqueParts, "-"); routeName != "" {
+		return routeName
+	}
+	return firstNonEmptyString(link.ClientEmail, link.InboundTag, "授权链路")
 }
 
 func uniqueSubscriptionName(name string, seen map[string]int) string {

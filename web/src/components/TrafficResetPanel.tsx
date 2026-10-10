@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Alert, Button, Card, Input, InputNumber, Modal, Select, Space, Switch, Table, Tag, Typography, message } from 'antd'
+import { Alert, Button, Card, Input, InputNumber, Modal, Space, Switch, Table, Tag, Typography, message } from 'antd'
 import type { ScheduledTaskSettings } from '../types'
 import { fetchJSON } from '../lib/api'
 
@@ -19,7 +19,7 @@ interface ResetLog {
 }
 interface Data { clients: Candidate[]; policies: Policy[]; preview: Job[]; jobs: Job[]; logs: ResetLog[] }
 const empty: Data = { clients: [], policies: [], preview: [], jobs: [], logs: [] }
-const cycles = [{ value: 'month', label: '月' }, { value: 'quarter', label: '季' }, { value: 'semiannual', label: '半年' }, { value: 'year', label: '年' }]
+const cycles = [{ value: 'month', label: '月' }]
 const statuses: Record<string, string> = { prepared: '待执行', dispatched: '已下发', succeeded: '完成', failed: '失败', skipped: '已跳过', uncertain: '需人工核查', needs_enable: '接口已确认，需核验结果' }
 const outcomes: Record<string, string> = { succeeded: '成功', failed: '失败', uncertain: '结果未确认', unverified: '清零已确认，核验失败', skipped: '跳过（未执行）' }
 const date = (ms: number) => ms > 0 ? new Date(ms).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '未设置'
@@ -110,9 +110,9 @@ export function TrafficResetPanel({ settings, onChange }: {
         {!draft.follow_billing && <>
           <Typography.Text>重置开始日期（北京时间 00:00:00）</Typography.Text>
           <Input type="date" value={day(draft.start_time)} onChange={(e) => setDraft({ ...draft, start_time: e.target.value ? Date.parse(`${e.target.value}T00:00:00+08:00`) : 0 })} />
-          <Select style={{ width: '100%' }} value={draft.cycle} options={cycles} onChange={(cycle) => setDraft({ ...draft, cycle })} />
+          <Typography.Text>重置周期：每月（按开始日期的同一日）</Typography.Text>
         </>}
-        <Typography.Text type="secondary">未设置开始日期时，请先在客户端配置信息中设置，或关闭跟随并单独指定重置日期。此策略不会修改服务到期时间。</Typography.Text>
+        <Typography.Text type="secondary">无论月付、季付、半年付或年付，流量均按开始日期的同一日每月重置；此策略不会修改服务到期时间。</Typography.Text>
       </Space>}
     </Modal>
   </Card>
