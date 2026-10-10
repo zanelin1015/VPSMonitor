@@ -30,12 +30,26 @@
 .customer-console-theme .customer-board-profile h3 { font-weight: 650; overflow-wrap: anywhere; }
 .customer-console-theme .customer-board-score span { font-weight: 500; }
 .customer-console-theme .customer-stat-card .ant-statistic-content { font-weight: 650; letter-spacing: -.6px; }
+.customer-console-theme .customer-usage-summary-item,
+.customer-console-theme .customer-usage-chart,
+.customer-console-theme .customer-usage-history-list,
+.customer-console-theme .customer-usage-history-row,
+.customer-console-theme .customer-usage-daily-details-row > td { background: var(--surface-soft); }
+.customer-console-theme .customer-usage-daily-details-item { background: var(--surface-strong); }
+.customer-console-theme .customer-usage-summary-item { border-color: var(--border); }
+.customer-console-theme .customer-usage-summary-primary { background: color-mix(in srgb, var(--blue-soft) 72%, var(--surface)); border-color: color-mix(in srgb, var(--primary) 36%, var(--border)); }
+.customer-console-theme .customer-usage-summary-primary strong { color: var(--primary); }
+.customer-console-theme .customer-usage-date-filter { background: var(--surface-soft); border-color: var(--border); }
+.customer-console-theme .customer-usage-date-filter input { color-scheme: light; }
+.customer-console-theme .customer-link-traffic { border-color: color-mix(in srgb, var(--primary) 24%, var(--border)); background: linear-gradient(135deg, color-mix(in srgb, var(--blue-soft) 76%, var(--surface)), var(--surface-soft)); }
+.customer-console-theme .customer-usage-daily-row-expandable:hover > td { background: color-mix(in srgb, var(--blue-soft) 54%, var(--surface)); }
+.customer-console-theme .customer-usage-daily-details-head { color: var(--muted); }
+.customer-console-theme .customer-usage-daily-details-item { border-color: var(--border); }
+:root.dark:where([data-console-theme='soft']) .customer-console-theme .customer-usage-date-filter input { color-scheme: dark; }
 .customer-console-theme .customer-link-card { animation: console-enter .42s var(--console-ease) both; }
 .customer-console-theme .customer-link-head { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; }
 .customer-console-theme .customer-link-title-row h3.ant-typography { font-size: 20px; font-weight: 650; letter-spacing: -.35px; overflow-wrap: anywhere; white-space: normal; }
-.customer-console-theme .customer-link-summary { color: var(--muted); }
 .customer-console-theme .customer-link-main .customer-link-exit-tags { grid-column: auto; grid-row: auto; max-width: none; }
-.customer-console-theme .customer-link-meta-row { grid-column: 1 / -1; grid-row: 2; }
 .customer-console-theme .customer-link-meta-item { background: var(--surface); border-color: var(--border); color: var(--muted-strong); border-radius: 7px; font-weight: 500; font-size: 13px; white-space: normal; overflow-wrap: anywhere; }
 .customer-console-theme .customer-link-meta-expiry { color: var(--amber); }
 :root .customer-console-theme .customer-topology-canvas { min-width: 0; background: var(--surface); border-color: var(--border); border-radius: 16px; scrollbar-color: var(--border-strong) transparent; }

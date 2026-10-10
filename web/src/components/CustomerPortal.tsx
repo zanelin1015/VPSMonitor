@@ -573,7 +573,6 @@ export function CustomerPortal() {
                                 />
                               )}
                             </div>
-                            <Paragraph className="customer-link-summary">{customerLinkSummaryText(link)}</Paragraph>
                             <Space wrap className="customer-link-exit-tags">
                               {link.exit_country_code || link.exit_country_name ? <Tag color="blue">出口 {countryFlag(link.exit_country_code)} {link.exit_country_code || link.exit_country_name}</Tag> : null}
                               {link.exit_ip ? <Tag color="geekblue">{link.exit_ip}</Tag> : null}
@@ -589,15 +588,32 @@ export function CustomerPortal() {
                                 复制链接
                               </Button>
                             </Space>
+                            {billingItems.length ? (
+                              <div className="customer-link-meta-row" aria-label="授权链路费用和过期时间">
+                                {billingItems.map((item) => (
+                                  item.expiry ? (
+                                    <div key={item.key} className={`customer-link-meta-item customer-link-meta-${item.key} customer-link-meta-expiry-detail`}>
+                                      <div className="customer-link-meta-expiry-head">
+                                        <span>{item.text}</span>
+                                        <strong>{item.expiry.label}</strong>
+                                      </div>
+                                      {item.expiry.percent !== undefined ? (
+                                        <Progress
+                                          percent={item.expiry.percent}
+                                          showInfo={false}
+                                          size="small"
+                                          strokeColor={item.expiry.strokeColor}
+                                        />
+                                      ) : null}
+                                    </div>
+                                  ) : (
+                                    <span key={item.key} className={`customer-link-meta-item customer-link-meta-${item.key}`}>{item.text}</span>
+                                  )
+                                ))}
+                              </div>
+                            ) : null}
                           </div>
                           <CustomerLinkTraffic link={link} />
-                          {billingItems.length ? (
-                            <div className="customer-link-meta-row" aria-label="授权链路费用和过期时间">
-                              {billingItems.map((item) => (
-                                <span key={item.key} className={`customer-link-meta-item customer-link-meta-${item.key}`}>{item.text}</span>
-                              ))}
-                            </div>
-                          ) : null}
                         </div>
 
                         <div className="customer-link-visual-row">
@@ -1204,12 +1220,24 @@ function CustomerLinkTraffic({ link }: { link: CustomerLinkView }) {
   )
 }
 
-function customerLinkMetaItems(link: CustomerLinkView): Array<{ key: string; text: string }> {
-  const items: Array<{ key: string; text: string }> = []
+type CustomerLinkMetaItem = {
+  key: string
+  text: string
+  expiry?: {
+    endTime: number
+    label: string
+    percent?: number
+    strokeColor: string
+    source: 'xray' | 'billing'
+  }
+}
+
+function customerLinkMetaItems(link: CustomerLinkView): CustomerLinkMetaItem[] {
+  const items: CustomerLinkMetaItem[] = []
   if (Number(link.traffic_reset_at || 0) > 0) {
     items.push({
       key: 'traffic-reset',
-      text: `下次重置：${formatCustomerResetTime(Number(link.traffic_reset_at || 0))}`,
+      text: `下次流量重置时间：${formatCustomerResetTime(Number(link.traffic_reset_at || 0))}`,
     })
   }
   if (Number(link.revenue_amount || 0) > 0) {
@@ -1218,13 +1246,110 @@ function customerLinkMetaItems(link: CustomerLinkView): Array<{ key: string; tex
       text: `费用：${formatCustomerRecurringPrice(Number(link.revenue_amount || 0), link.revenue_currency || 'CNY', link.revenue_cycle)}`,
     })
   }
-  if (Number(link.expire_time || 0) > 0) {
+  if (Number(link.xray_expire_time || 0) > 0 || Number(link.expire_time || 0) > 0 || (Number(link.start_time || 0) > 0 && customerBillingCycleMonths(link.revenue_cycle || link.expire_cycle) > 0)) {
+    const expiry = customerLinkExpiryProgress(link)
+    const xrayExpiryTime = Number(link.xray_expire_time || 0)
+    const expiryLabel = expiry?.endTime || Number(link.expire_time || 0)
     items.push({
       key: 'expiry',
-      text: `客户端到期：${formatCustomerExpiryTime(Number(link.expire_time || 0))}`,
+      text: `${xrayExpiryTime > 0 ? 'Xray 到期' : '客户端到期'}：${formatCustomerExpiryTime(expiryLabel)}`,
+      expiry,
     })
   }
   return items
+}
+
+function customerLinkExpiryProgress(link: CustomerLinkView): CustomerLinkMetaItem['expiry'] {
+  const xrayExpireTime = Number(link.xray_expire_time || 0)
+  const expireTime = Number(link.expire_time || 0)
+  const now = Date.now()
+  const period = customerBillingPeriod(link, now)
+  const hasXrayExpiry = Number.isFinite(xrayExpireTime) && xrayExpireTime > 0
+  const hasBillingExpiry = Number.isFinite(expireTime) && expireTime > 0
+  if (!hasXrayExpiry && !hasBillingExpiry && !period) return undefined
+  // Xray owns the actual client validity. Billing periods still provide the
+  // reset/progress baseline, but can never extend access past Xray expiry.
+  const effectiveExpireTime = hasXrayExpiry ? xrayExpireTime : (period?.endTime ?? expireTime)
+  const remainingDays = Math.ceil((effectiveExpireTime - now) / 86400000)
+  const label = remainingDays <= 0 ? '已到期' : `剩余 ${remainingDays} 天`
+  const progressEndTime = period && hasXrayExpiry
+    ? Math.min(period.endTime, xrayExpireTime)
+    : period?.endTime
+  const percent = period && progressEndTime && progressEndTime > period.startTime
+    ? Math.min(100, Math.max(0, (now - period.startTime) / (progressEndTime - period.startTime) * 100))
+    : period
+      ? 100
+      : undefined
+
+  return {
+    endTime: effectiveExpireTime,
+    label,
+    percent,
+    strokeColor: remainingDays <= 0 ? '#ef4444' : remainingDays <= 7 ? '#f59e0b' : '#2563eb',
+    source: hasXrayExpiry ? 'xray' : 'billing',
+  }
+}
+
+function customerBillingPeriod(link: CustomerLinkView, now: number): { startTime: number; endTime: number } | undefined {
+  const startTime = Number(link.start_time || 0)
+  const cycleMonths = customerBillingCycleMonths(link.revenue_cycle || link.expire_cycle)
+  if (!Number.isFinite(startTime) || startTime <= 0 || cycleMonths <= 0) return undefined
+
+  const anchor = new Date(startTime)
+  const current = new Date(now)
+  let cycleIndex = Math.max(0, Math.floor(monthDifference(anchor, current) / cycleMonths))
+  let periodStart = addCalendarMonths(anchor, cycleIndex * cycleMonths)
+  let nextPeriodStart = addCalendarMonths(anchor, (cycleIndex + 1) * cycleMonths)
+  while (nextPeriodStart.getTime() <= now) {
+    cycleIndex += 1
+    periodStart = nextPeriodStart
+    nextPeriodStart = addCalendarMonths(anchor, (cycleIndex + 1) * cycleMonths)
+  }
+  while (periodStart.getTime() > now && cycleIndex > 0) {
+    cycleIndex -= 1
+    nextPeriodStart = periodStart
+    periodStart = addCalendarMonths(anchor, cycleIndex * cycleMonths)
+  }
+
+  return {
+    startTime: periodStart.getTime(),
+    // The next period starts at 00:00, so the current billing period ends just before it.
+    endTime: nextPeriodStart.getTime() - 1,
+  }
+}
+
+function customerBillingCycleMonths(cycle?: string): number {
+  switch ((cycle || '').toLowerCase()) {
+    case 'quarter':
+    case 'quarterly':
+      return 3
+    case 'semiannual':
+    case 'halfyear':
+    case 'half-year':
+      return 6
+    case 'year':
+    case 'yearly':
+      return 12
+    case 'month':
+    case 'monthly':
+      return 1
+    default:
+      return 0
+  }
+}
+
+function monthDifference(start: Date, end: Date): number {
+  return (end.getFullYear() - start.getFullYear()) * 12 + end.getMonth() - start.getMonth()
+}
+
+function addCalendarMonths(value: Date, months: number): Date {
+  const result = new Date(value)
+  const day = result.getDate()
+  result.setDate(1)
+  result.setMonth(result.getMonth() + months)
+  const lastDay = new Date(result.getFullYear(), result.getMonth() + 1, 0).getDate()
+  result.setDate(Math.min(day, lastDay))
+  return result
 }
 
 function formatCustomerRecurringPrice(amount: number, currency: string, cycle?: string): string {

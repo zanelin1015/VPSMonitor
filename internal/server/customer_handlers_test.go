@@ -234,6 +234,9 @@ func TestBuildCustomerLinkViewIncludesBillingAndExpiry(t *testing.T) {
 	if link.ExpireTime != 1770000000000 || link.ExpireCycle != "year" || !link.ExpireAutoRenew {
 		t.Fatalf("expected billing expiry to override client expiry, got %#v", link)
 	}
+	if link.XrayExpireTime != 1760000000000 {
+		t.Fatalf("expected Xray expiry to remain authoritative metadata, got %#v", link)
+	}
 	if link.TrafficMultiplier != 2 || link.TrafficUsedBytes != 20*1024*1024*1024 || link.TrafficLimitBytes != 200*1024*1024*1024 {
 		t.Fatalf("expected customer traffic to use configured multiplier, got %#v", link)
 	}

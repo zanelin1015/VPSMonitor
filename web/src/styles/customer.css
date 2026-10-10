@@ -310,7 +310,7 @@ html[data-theme='dark'] .customer-hero {
   padding: 3px 4px 3px 8px;
   border: 1px solid var(--card-border);
   border-radius: 10px;
-  background: rgba(248, 250, 252, 0.72);
+  background: var(--surface-soft);
 }
 
 .customer-usage-date-filter input {
@@ -344,7 +344,7 @@ html[data-theme='dark'] .customer-hero {
   padding: 14px;
   border: 1px solid var(--card-border);
   border-radius: 16px;
-  background: rgba(248, 250, 252, 0.76);
+  background: var(--surface-soft);
 }
 
 .customer-usage-summary-item strong {
@@ -355,7 +355,7 @@ html[data-theme='dark'] .customer-hero {
 
 .customer-usage-summary-primary {
   border-color: rgba(37, 99, 235, 0.28);
-  background: rgba(239, 246, 255, 0.86);
+  background: color-mix(in srgb, var(--blue-soft) 72%, var(--surface));
 }
 
 .customer-usage-summary-primary strong {
@@ -369,7 +369,7 @@ html[data-theme='dark'] .customer-hero {
   padding: 14px;
   border: 1px solid var(--card-border);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.72);
+  background: var(--surface);
 }
 
 .customer-usage-chart-row {
@@ -455,7 +455,7 @@ html[data-theme='dark'] .customer-hero {
 }
 
 .customer-usage-daily-row-expandable:hover > td {
-  background: rgba(239, 246, 255, 0.56);
+  background: color-mix(in srgb, var(--blue-soft) 54%, var(--surface));
 }
 
 .customer-usage-expand-button {
@@ -486,7 +486,7 @@ html[data-theme='dark'] .customer-hero {
 
 .customer-usage-daily-details-row > td {
   padding: 0 !important;
-  background: rgba(248, 250, 252, 0.72);
+  background: var(--surface-soft);
 }
 
 .customer-usage-daily-details {
@@ -524,7 +524,7 @@ html[data-theme='dark'] .customer-hero {
   border: 1px solid var(--card-border);
   border-radius: 10px;
   color: var(--text-main);
-  background: rgba(255, 255, 255, 0.78);
+  background: var(--surface);
 }
 
 .customer-usage-daily-details-head > span:not(:first-child),
@@ -547,7 +547,7 @@ html[data-theme='dark'] .customer-hero {
   padding: 14px;
   border: 1px solid var(--card-border);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.72);
+  background: var(--surface);
 }
 
 .customer-usage-history-row {
@@ -559,7 +559,7 @@ html[data-theme='dark'] .customer-hero {
   padding: 8px 12px;
   border: 1px solid var(--card-border);
   border-radius: 10px;
-  background: rgba(248, 250, 252, 0.72);
+  background: var(--surface-soft);
 }
 
 .customer-usage-history-date {
@@ -596,7 +596,7 @@ html[data-theme='dark'] .customer-hero {
   display: grid;
   grid-template-columns: minmax(260px, 1fr) minmax(320px, auto) minmax(240px, auto);
   gap: 18px;
-  align-items: flex-start;
+  align-items: stretch;
 }
 
 .customer-link-head h3.ant-typography {
@@ -649,18 +649,13 @@ html[data-theme='dark'] .customer-hero {
   color: #2563eb !important;
 }
 
-.customer-link-summary {
-  margin: 0 !important;
-  color: var(--text-muted);
-}
-
 .customer-link-traffic {
   grid-column: 2;
   min-width: 0;
   padding: 10px 12px;
   border: 1px solid rgba(37, 99, 235, 0.16);
   border-radius: 14px;
-  background: linear-gradient(135deg, rgba(239, 246, 255, 0.7), rgba(248, 250, 252, 0.8));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--blue-soft) 76%, var(--surface)), var(--surface-soft));
 }
 
 .customer-link-traffic-head {
@@ -721,7 +716,6 @@ html[data-theme='dark'] .customer-hero {
 }
 
 .customer-link-meta-row {
-  grid-column: 2;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -747,6 +741,32 @@ html[data-theme='dark'] .customer-hero {
 
 .customer-link-meta-expiry {
   background: linear-gradient(135deg, rgba(14, 165, 233, 0.09), rgba(20, 184, 166, 0.08));
+}
+
+.customer-link-meta-expiry-detail {
+  flex: 1 1 260px;
+  min-width: min(260px, 100%);
+  align-items: stretch;
+  gap: 5px;
+  white-space: normal;
+}
+
+.customer-link-meta-expiry-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-start;
+  gap: 12px;
+  width: 100%;
+}
+
+.customer-link-meta-expiry-head strong {
+  color: inherit;
+  white-space: nowrap;
+}
+
+.customer-link-meta-expiry-detail .ant-progress {
+  margin: 0;
+  line-height: 1;
 }
 
 .customer-link-meta-node-expiry {

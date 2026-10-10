@@ -535,6 +535,7 @@ export interface CustomerLinkView {
   traffic_limit_bytes?: number
   traffic_reset_at?: number
   node_expire_time?: number
+  xray_expire_time?: number
   start_time?: number
   expire_time?: number
   expire_cycle?: 'month' | 'quarter' | 'semiannual' | 'year' | string
