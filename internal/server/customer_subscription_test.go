@@ -74,8 +74,15 @@ func TestBuildMihomoSubscriptionConvertsCustomerLinks(t *testing.T) {
 	}
 
 	content := buildMihomoSubscription(user, links)
-	assertContains(t, content, `mixed-port: 7890`)
+	assertContains(t, content, `port: 7890`)
+	assertContains(t, content, `socks-port: 7891`)
 	assertContains(t, content, `allow-lan: true`)
+	assertContains(t, content, `bind-address: "*"`)
+	assertContains(t, content, `external-controller: 127.0.0.1:9090`)
+	assertContains(t, content, `listen: 0.0.0.0:53`)
+	assertContains(t, content, `fake-ip-filter:`)
+	assertContains(t, content, `geosite:geolocation-!cn:`)
+	assertContains(t, content, `fallback:`)
 	assertContains(t, content, `name: 🚀 节点选择`)
 	assertContains(t, content, `name: ♻️ 自动选择`)
 	assertContains(t, content, `name: 🐟 漏网之鱼`)
@@ -163,20 +170,22 @@ func TestBuildMihomoSubscriptionWithoutLinksRemainsUsable(t *testing.T) {
 	}
 }
 
-func TestBuildMihomoSubscriptionIncludesOpenClashFriendlyDNS(t *testing.T) {
+func TestBuildMihomoSubscriptionUsesThirdPartyDNSHeader(t *testing.T) {
 	content := buildMihomoSubscription(model.CustomerUser{Username: "alice"}, nil)
 	assertContains(t, content, "dns:\n  enable: true")
+	assertContains(t, content, "port: 7890")
+	assertContains(t, content, "socks-port: 7891")
+	assertContains(t, content, "bind-address: \"*\"")
+	assertContains(t, content, "external-controller: 127.0.0.1:9090")
+	assertContains(t, content, "listen: 0.0.0.0:53")
+	assertContains(t, content, "fake-ip-filter:")
 	assertContains(t, content, "proxy-server-nameserver:")
 	assertContains(t, content, "nameserver-policy:")
-	assertContains(t, content, `    "+.zanelin.top":`)
-	assertContains(t, content, "    - 223.5.5.5")
-	assertContains(t, content, "    - 119.29.29.29")
-	if strings.Contains(content, "dns.google") {
-		t.Fatalf("customer subscription must not depend on dns.google in mainland OpenClash environments:\n%s", content)
-	}
-	if strings.Contains(content, "8.8.8.8") || strings.Contains(content, "1.1.1.1") {
-		t.Fatalf("customer subscription must not depend on public Google/Cloudflare DNS in mainland OpenClash environments:\n%s", content)
-	}
+	assertContains(t, content, "    geosite:cn:")
+	assertContains(t, content, "    geosite:geolocation-!cn:")
+	assertContains(t, content, "    - tls://1.0.0.1:853")
+	assertContains(t, content, "    - tls://dns.google:853")
+	assertContains(t, content, "  fallback-filter:")
 }
 
 func TestCustomerSubscriptionContentDispositionUsesUsername(t *testing.T) {
