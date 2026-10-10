@@ -182,6 +182,7 @@ func TestBuildMihomoSubscriptionUsesThirdPartyDNSHeader(t *testing.T) {
 	assertContains(t, content, "proxy-server-nameserver:")
 	assertContains(t, content, "nameserver-policy:")
 	assertContains(t, content, "    geosite:cn:")
+	assertContains(t, content, "      - 119.29.29.29\n      - 223.5.5.5")
 	assertContains(t, content, "    geosite:geolocation-!cn:")
 	assertContains(t, content, "    - tls://1.0.0.1:853")
 	assertContains(t, content, "    - tls://dns.google:853")
