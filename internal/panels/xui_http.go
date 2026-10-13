@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -28,20 +29,59 @@ func (c *XUIClient) login(ctx context.Context) error {
 		form.Set("twoFactorCode", c.config.TwoFactorCode)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/login", strings.NewReader(form.Encode()))
-	if err != nil {
-		return fmt.Errorf("build x-ui login request: %w", err)
+	postLogin := func() error {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/login", strings.NewReader(form.Encode()))
+		if err != nil {
+			return fmt.Errorf("build x-ui login request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		var payload xuiEnvelope
+		if err := c.doJSON(req, &payload); err != nil {
+			return fmt.Errorf("x-ui login request failed: %w", err)
+		}
+		if !payload.Success {
+			return fmt.Errorf("x-ui login failed: %s", payload.Msg)
+		}
+		c.authenticated = true
+		return nil
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	err := postLogin()
+	// New panels require the login page's CSRF cookie and token. Probe only
+	// after a rejection so older panels retain their direct-login flow.
+	if isXUIHTTPStatus(err, http.StatusForbidden) {
+		if tokenErr := c.loadLoginCSRFToken(ctx); tokenErr == nil {
+			return postLogin()
+		}
+	}
+	return err
+}
 
-	var payload xuiEnvelope
-	if err := c.doJSON(req, &payload); err != nil {
-		return fmt.Errorf("x-ui login request failed: %w", err)
+var xuiCSRFMetaTag = regexp.MustCompile(`(?i)<meta\b[^>]*\bname\s*=\s*["']csrf-token["'][^>]*>`)
+var xuiCSRFMetaContent = regexp.MustCompile(`(?i)\bcontent\s*=\s*["']([^"']+)["']`)
+
+func (c *XUIClient) loadLoginCSRFToken(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/", nil)
+	if err != nil {
+		return err
 	}
-	if !payload.Success {
-		return fmt.Errorf("x-ui login failed: %s", payload.Msg)
+	response, err := c.client.Do(req)
+	if err != nil {
+		return err
 	}
-	c.authenticated = true
+	defer response.Body.Close()
+	if response.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf("x-ui login page returned http %d", response.StatusCode)
+	}
+	body, err := readPanelResponse(response.Body)
+	if err != nil {
+		return err
+	}
+	tag := xuiCSRFMetaTag.Find(body)
+	match := xuiCSRFMetaContent.FindSubmatch(tag)
+	if len(match) != 2 {
+		return fmt.Errorf("x-ui login page has no CSRF token")
+	}
+	c.csrfToken = string(match[1])
 	return nil
 }
 
@@ -89,6 +129,7 @@ func (c *XUIClient) invalidateSession() {
 }
 
 func (c *XUIClient) resetCookieJar() {
+	c.csrfToken = ""
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		return
@@ -523,6 +564,9 @@ func (c *XUIClient) getJSONObject(ctx context.Context, path string) (map[string]
 func (c *XUIClient) doJSON(req *http.Request, target any) error {
 	if token := strings.TrimSpace(c.config.APIToken); token != "" && req.Header.Get("Authorization") == "" {
 		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	if c.csrfToken != "" && req.Method != http.MethodGet && req.Method != http.MethodHead && req.Header.Get("X-CSRF-Token") == "" {
+		req.Header.Set("X-CSRF-Token", c.csrfToken)
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {

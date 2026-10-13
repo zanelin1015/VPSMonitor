@@ -117,6 +117,10 @@ func (c *XUIClient) getClientUpdateRecord(ctx context.Context, email string, inb
 		raw = objectMap(nested)
 	}
 	client := normalizeClientUpdateRecord(raw)
+	if tunnelIPs, exists := response["tunnelAllowedIPs"]; exists {
+		// Tunnel addresses belong to each inbound, not just the shared row.
+		client["allowedIPsByInbound"] = tunnelIPs
+	}
 	if strings.TrimSpace(stringValue(client["email"])) != email {
 		return nil, fmt.Errorf("x-ui client response does not match requested email")
 	}
@@ -129,13 +133,100 @@ func (c *XUIClient) getClientUpdateRecord(ctx context.Context, email string, inb
 	return nil, fmt.Errorf("client %s is not attached to inbound %d", email, inboundID)
 }
 
+// The GET endpoint returns a database ClientRecord. POST accepts the Client
+// configuration schema, whose allowedIPs and timestamp fields differ.
+func clientUpdateAPIPayload(client map[string]any) (map[string]any, error) {
+	payload := make(map[string]any, len(client))
+	for key, value := range client {
+		payload[key] = value
+	}
+	copyAlias(payload, "created_at", "createdAt")
+	copyAlias(payload, "updated_at", "updatedAt")
+	for _, key := range []string{"uuid", "createdAt", "updatedAt"} {
+		delete(payload, key)
+	}
+	if raw, exists := payload["allowedIPs"]; exists {
+		ips, err := clientUpdateAllowedIPs(raw)
+		if err != nil {
+			return nil, err
+		}
+		payload["allowedIPs"] = ips
+	}
+	if raw, exists := payload["allowedIPsByInbound"]; exists && raw != nil {
+		addresses, ok := raw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("x-ui client allowedIPsByInbound must be an object")
+		}
+		byInbound := make(map[string][]string, len(addresses))
+		for id, value := range addresses {
+			ips, err := clientUpdateAllowedIPs(value)
+			if err != nil {
+				return nil, fmt.Errorf("x-ui client allowedIPsByInbound for inbound %s: %w", id, err)
+			}
+			byInbound[id] = ips
+		}
+		payload["allowedIPsByInbound"] = byInbound
+	}
+	if raw, ok := payload["reverse"].(string); ok {
+		var reverse map[string]any
+		if strings.TrimSpace(raw) != "" {
+			if err := json.Unmarshal([]byte(raw), &reverse); err != nil {
+				return nil, fmt.Errorf("decode x-ui client reverse configuration: %w", err)
+			}
+		}
+		payload["reverse"] = reverse
+	}
+	return payload, nil
+}
+
+func clientUpdateAllowedIPs(raw any) ([]string, error) {
+	var values []string
+	switch value := raw.(type) {
+	case nil:
+	case string:
+		text := strings.TrimSpace(value)
+		if strings.HasPrefix(text, "[") {
+			if err := json.Unmarshal([]byte(text), &values); err != nil {
+				return nil, fmt.Errorf("decode x-ui client allowedIPs: %w", err)
+			}
+		} else {
+			values = strings.FieldsFunc(text, func(r rune) bool { return r == ',' || r == '\n' || r == '\r' })
+		}
+	case []string:
+		values = value
+	case []any:
+		for _, item := range value {
+			text, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("x-ui client allowedIPs must contain only strings")
+			}
+			values = append(values, text)
+		}
+	default:
+		return nil, fmt.Errorf("x-ui client allowedIPs must be text or an array of strings")
+	}
+	ips := make([]string, 0, len(values))
+	for _, value := range values {
+		if text := strings.TrimSpace(value); text != "" {
+			ips = append(ips, text)
+		}
+	}
+	return ips, nil
+}
+
 func (c *XUIClient) saveClientUpdate(ctx context.Context, target *xuiClientUpdateTarget, field string) (map[string]any, error) {
 	inboundID := intValue(target.inbound["id"])
 	email := stringValue(target.client["email"])
 	path := "/panel/api/clients/update/" + url.PathEscape(email)
 	body := target.client
 	method := "client_api"
-	if !target.clientAPI {
+	if target.clientAPI {
+		var err error
+		body, err = clientUpdateAPIPayload(target.client)
+		if err != nil {
+			return nil, err
+		}
+	} else {
 		clients := objectSlice(target.settings["clients"])
 		clients[target.clientIndex] = target.client
 		target.settings["clients"] = clients
@@ -207,7 +298,7 @@ func verifyClientUpdate(expected, actual map[string]any, field string) error {
 	if !matched {
 		return fmt.Errorf("x-ui client update did not persist for %s: %s expected %v, got %v", stringValue(expected["email"]), field, expected[field], value)
 	}
-	for _, key := range []string{"id", "password", "auth", "subId"} {
+	for _, key := range []string{"id", "password", "auth", "subId", "secret", "privateKey", "publicKey", "preSharedKey"} {
 		if original := stringValue(expected[key]); original != "" && stringValue(actual[key]) != original {
 			return fmt.Errorf("x-ui client %s changed during update; verification failed", key)
 		}

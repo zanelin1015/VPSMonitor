@@ -44,8 +44,19 @@ func TestXUIV3ClientUpdatesPreserveFullRecord(t *testing.T) {
 					if req.URL.EscapedPath() != "/panel/api/clients/update/"+url.PathEscape(stringValue(record["email"])) {
 						t.Fatal("client email was not escaped as a path segment")
 					}
+					var apiClient struct {
+						ID         string   `json:"id"`
+						AllowedIPs []string `json:"allowedIPs"`
+					}
+					data, err := readPanelResponse(req.Body)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := json.Unmarshal(data, &apiClient); err != nil {
+						t.Fatalf("request does not match the panel's Client API schema: %v", err)
+					}
 					var body map[string]any
-					if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+					if err := json.Unmarshal(data, &body); err != nil {
 						t.Fatalf("decode update: %v", err)
 					}
 					if stringValue(body["id"]) != "stable-uuid" {
@@ -54,6 +65,19 @@ func TestXUIV3ClientUpdatesPreserveFullRecord(t *testing.T) {
 					for key, value := range original {
 						if key == test.field {
 							continue
+						}
+						switch key {
+						case "uuid":
+							if _, exists := body[key]; exists {
+								t.Error("database-only uuid must not be included in the Client payload")
+							}
+							continue
+						case "allowedIPs":
+							value = []string{}
+						case "createdAt":
+							key = "created_at"
+						case "updatedAt":
+							key = "updated_at"
 						}
 						want, _ := json.Marshal(value)
 						got, _ := json.Marshal(body[key])
@@ -243,6 +267,125 @@ func TestNormalizeClientUpdateRecordDoesNotUseNumericIDAsCredential(t *testing.T
 	}
 }
 
+func TestClientUpdatePayloadMatchesClientSchema(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		ips  any
+		want []string
+	}{
+		{"empty database text", "", []string{}},
+		{"database text", " 10.0.0.2/32, fd00::2/128 \n", []string{"10.0.0.2/32", "fd00::2/128"}},
+		{"encoded array", `["10.0.0.2/32","fd00::2/128"]`, []string{"10.0.0.2/32", "fd00::2/128"}},
+		{"JSON array", []any{"10.0.0.2/32", "fd00::2/128"}, []string{"10.0.0.2/32", "fd00::2/128"}},
+		{"string array", []string{"10.0.0.2/32"}, []string{"10.0.0.2/32"}},
+		{"null", nil, []string{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			record := fullXUIV3UpdateRecord()
+			record["allowedIPs"] = test.ips
+			record["reverse"] = `{"tag":"keep-reverse"}`
+			record["allowedIPsByInbound"] = map[string]any{"7": "10.0.0.2/32", "9": "10.8.0.2/32, fd08::2/128"}
+			before, _ := json.Marshal(record)
+			payload, err := clientUpdateAPIPayload(normalizeClientUpdateRecord(record))
+			if err != nil {
+				t.Fatal(err)
+			}
+			encoded, _ := json.Marshal(payload)
+			var request struct {
+				ID                  string                `json:"id"`
+				AllowedIPs          []string              `json:"allowedIPs"`
+				AllowedIPsByInbound map[int][]string      `json:"allowedIPsByInbound"`
+				Reverse             *struct{ Tag string } `json:"reverse"`
+				CreatedAt           int64                 `json:"created_at"`
+				UpdatedAt           int64                 `json:"updated_at"`
+			}
+			if err := json.Unmarshal(encoded, &request); err != nil {
+				t.Fatalf("payload does not match the documented Client schema: %v", err)
+			}
+			if request.ID != "stable-uuid" || !reflect.DeepEqual(request.AllowedIPs, test.want) ||
+				!reflect.DeepEqual(request.AllowedIPsByInbound, map[int][]string{7: {"10.0.0.2/32"}, 9: {"10.8.0.2/32", "fd08::2/128"}}) ||
+				request.Reverse == nil || request.Reverse.Tag != "keep-reverse" ||
+				request.CreatedAt != 1735689600000 || request.UpdatedAt != 1735776000000 {
+				t.Fatal("client configuration was not preserved in the API payload")
+			}
+			for _, key := range []string{"uuid", "createdAt", "updatedAt"} {
+				if _, exists := payload[key]; exists {
+					t.Errorf("database field %s leaked into API payload", key)
+				}
+			}
+			after, _ := json.Marshal(record)
+			if string(before) != string(after) {
+				t.Fatal("payload conversion changed the source client record")
+			}
+		})
+	}
+}
+
+func TestXUIClientUpdateRejectsInvalidConfigurationBeforeWriting(t *testing.T) {
+	for _, test := range []struct {
+		field string
+		value any
+	}{
+		{"allowedIPs", false},
+		{"allowedIPs", []any{"10.0.0.2/32", 2}},
+		{"allowedIPs", `["10.0.0.2/32",2]`},
+		{"allowedIPsByInbound", "not-an-object"},
+		{"allowedIPsByInbound", map[string]any{"7": false}},
+		{"reverse", `{"tag":`},
+	} {
+		t.Run(test.field+"/"+stringValue(test.value), func(t *testing.T) {
+			record := fullXUIV3UpdateRecord()
+			record[test.field] = test.value
+			client := xuiClientUpdateTestClient(t, func(req *http.Request) (*http.Response, error) {
+				if req.Method != http.MethodGet {
+					t.Fatal("invalid configuration must not reach a write endpoint")
+				}
+				if req.URL.Path == "/panel/api/inbounds/list" {
+					return jsonResponse(t, req, map[string]any{"success": true, "obj": []map[string]any{{"id": 7, "settings": `{"clients":[]}`}}}), nil
+				}
+				return jsonResponse(t, req, map[string]any{"success": true, "obj": map[string]any{"client": record, "inboundIds": []int{7}}}), nil
+			})
+			if _, err := client.ExecuteAction(context.Background(), model.XUIAction{Kind: model.XUIActionUpdateClientTraffic, Payload: map[string]any{
+				"inbound_id": 7, "email": record["email"], "total_bytes": int64(50 * 1024 * 1024 * 1024),
+			}}); err == nil {
+				t.Fatal("invalid stored configuration must fail without writing")
+			}
+		})
+	}
+}
+
+func TestXUIClientUpdatePreservesPerInboundTunnelAddresses(t *testing.T) {
+	record := fullXUIV3UpdateRecord()
+	client := xuiClientUpdateTestClient(t, func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/panel/api/inbounds/list":
+			return jsonResponse(t, req, map[string]any{"success": true, "obj": []map[string]any{{"id": 7, "settings": `{"clients":[]}`}}}), nil
+		case "/panel/api/clients/get/" + stringValue(record["email"]):
+			return jsonResponse(t, req, map[string]any{"success": true, "obj": map[string]any{
+				"client": record, "inboundIds": []int{7, 9}, "tunnelAllowedIPs": map[string]any{"7": "10.0.0.2/32", "9": "10.8.0.2/32"},
+			}}), nil
+		default:
+			var request struct {
+				AllowedIPsByInbound map[int][]string `json:"allowedIPsByInbound"`
+			}
+			if err := json.NewDecoder(req.Body).Decode(&request); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(request.AllowedIPsByInbound, map[int][]string{7: {"10.0.0.2/32"}, 9: {"10.8.0.2/32"}}) {
+				t.Fatal("distinct per-inbound tunnel addresses were lost")
+			}
+			record["totalGB"] = int64(50 * 1024 * 1024 * 1024)
+			return jsonResponse(t, req, map[string]any{"success": true}), nil
+		}
+	})
+	result, err := client.ExecuteAction(context.Background(), model.XUIAction{Kind: model.XUIActionUpdateClientTraffic, Payload: map[string]any{
+		"inbound_id": 7, "email": record["email"], "total_bytes": int64(50 * 1024 * 1024 * 1024),
+	}})
+	if err != nil || result["verified"] != true {
+		t.Fatalf("update failed: %v", err)
+	}
+}
+
 func fullXUIV3UpdateRecord() map[string]any {
 	return map[string]any{
 		"id": 42, "uuid": "stable-uuid", "email": "alice+main@example.com", "enable": true,
@@ -251,6 +394,12 @@ func fullXUIV3UpdateRecord() map[string]any {
 		"limitIp": 2, "limitHwid": 3, "tgId": int64(123), "group": "group-a", "comment": "keep-me",
 		"reset": 30, "resetDay": 0, "resetWeekday": 0, "resetMax": 4, "resetCount": 2,
 		"trafficReset": "never", "trafficResetDay": 1, "reverse": map[string]any{"tag": "keep-reverse"},
+		// The GET endpoint returns a database ClientRecord, not the POST Client
+		// schema: allowedIPs is stored as text even for non-tunnel clients.
+		"allowedIPs": "",
+		"privateKey": "stable-private-key", "publicKey": "stable-public-key", "preSharedKey": "stable-pre-shared-key",
+		"keepAlive": 0, "forwardedPorts": "80,443", "secret": "stable-secret", "adTag": "stable-ad-tag",
+		"createdAt": int64(1735689600000), "updatedAt": int64(1735776000000),
 	}
 }
 

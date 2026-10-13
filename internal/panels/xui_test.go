@@ -1252,7 +1252,7 @@ func TestXUIExecuteFallsBackToLocalDBWhenLoginForbidden(t *testing.T) {
 		Timeout: 5 * time.Second,
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			switch req.URL.Path {
-			case "/login", "/panel/xray/":
+			case "/", "/login", "/panel/xray/":
 				return &http.Response{
 					StatusCode: http.StatusForbidden,
 					Header:     make(http.Header),

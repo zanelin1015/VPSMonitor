@@ -21,6 +21,7 @@ type XUIClient struct {
 	config        config.XUIConfig
 	client        *http.Client
 	authenticated bool
+	csrfToken     string
 	localStatus   localStatusSampler
 }
 
