@@ -334,6 +334,7 @@ function AppContent() {
     executeRemoteCommand,
     restartXUIService,
     saveXUIClientTrafficLimit,
+    saveXUIClientTrafficReset,
     setXUIClientEnabled,
     update3XUI,
   } = useXUIRemoteActions({
@@ -2129,6 +2130,7 @@ function AppContent() {
                 onDeleteXUIClient={(client) => void deleteXUIClient(client, selectedAgentId)}
                 onDeleteRoutingRules={(payload) => deleteRoutingRules(payload, selectedAgentId)}
                 onSaveXUIClientTrafficLimit={(client, totalGB) => void saveXUIClientTrafficLimit(client, totalGB, selectedAgentId)}
+                onSaveXUIClientTrafficReset={(client, period, day) => saveXUIClientTrafficReset(client, period, day, selectedAgentId)}
                 onSetXUIClientEnabled={(client, enabled) => void setXUIClientEnabled(client, enabled, selectedAgentId)}
                 onRefreshCurrentAgent={() => void requestAgentSnapshot(selectedAgentId)}
                 onRestartXUI={() => void restartXUIService(selectedAgentId)}

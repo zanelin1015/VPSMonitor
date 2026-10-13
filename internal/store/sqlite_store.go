@@ -923,7 +923,7 @@ func isValidXUIActionKind(kind string) bool {
 	switch kind {
 	case model.XUIActionResetClientTraffic:
 		return true
-	case model.XUIActionAddOutbound, model.XUIActionAddClient, model.XUIActionAddRoutingRule, model.XUIActionUpsertRoutingRule, model.XUIActionDeleteRoutingRules, model.XUIActionUpdateClientExpiry, model.XUIActionUpdateClientTraffic, model.XUIActionSetClientEnabled, model.XUIActionDeleteClient, model.XUIActionUpdateClient, model.XUIActionRestartXUI, model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI:
+	case model.XUIActionAddOutbound, model.XUIActionAddClient, model.XUIActionAddRoutingRule, model.XUIActionUpsertRoutingRule, model.XUIActionDeleteRoutingRules, model.XUIActionUpdateClientExpiry, model.XUIActionUpdateClientTraffic, model.XUIActionUpdateClientTrafficReset, model.XUIActionSetClientEnabled, model.XUIActionDeleteClient, model.XUIActionUpdateClient, model.XUIActionRestartXUI, model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI:
 		return true
 	default:
 		return false

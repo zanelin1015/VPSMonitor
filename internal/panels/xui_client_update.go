@@ -214,7 +214,7 @@ func clientUpdateAllowedIPs(raw any) ([]string, error) {
 	return ips, nil
 }
 
-func (c *XUIClient) saveClientUpdate(ctx context.Context, target *xuiClientUpdateTarget, field string) (map[string]any, error) {
+func (c *XUIClient) saveClientUpdate(ctx context.Context, target *xuiClientUpdateTarget, fields ...string) (map[string]any, error) {
 	inboundID := intValue(target.inbound["id"])
 	email := stringValue(target.client["email"])
 	path := "/panel/api/clients/update/" + url.PathEscape(email)
@@ -257,8 +257,10 @@ func (c *XUIClient) saveClientUpdate(ctx context.Context, target *xuiClientUpdat
 		// replay it if authentication expires during the verification read.
 		return result, fmt.Errorf("x-ui reported success but client verification failed: %w", err)
 	}
-	if err := verifyClientUpdate(target.client, actual, field); err != nil {
-		return result, err
+	for _, field := range fields {
+		if err := verifyClientUpdate(target.client, actual, field); err != nil {
+			return result, err
+		}
 	}
 	result["verified"] = true
 	if enabled, exists := boolPayloadValue(actual, "enable"); exists {
@@ -294,6 +296,10 @@ func verifyClientUpdate(expected, actual map[string]any, field string) error {
 	if field == "enable" {
 		enabled, valid := boolPayloadValue(actual, field)
 		matched = valid && enabled == expected[field]
+	}
+	if field == "trafficReset" {
+		period, valid := value.(string)
+		matched = exists && valid && period == expected[field]
 	}
 	if !matched {
 		return fmt.Errorf("x-ui client update did not persist for %s: %s expected %v, got %v", stringValue(expected["email"]), field, expected[field], value)

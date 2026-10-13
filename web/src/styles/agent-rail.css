@@ -1191,6 +1191,14 @@
   width: 148px;
 }
 
+.ant-modal.xui-traffic-reset-modal .ant-modal-content {
+  background: var(--bg) !important;
+}
+
+.ant-modal.xui-traffic-reset-modal .ant-modal-header {
+  background: transparent !important;
+}
+
 .client-traffic-limit-editor .ant-input-number {
   min-width: 0;
   width: 108px;

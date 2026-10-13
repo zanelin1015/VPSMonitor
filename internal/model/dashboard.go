@@ -69,31 +69,34 @@ type XUINodeView struct {
 }
 
 type XUIClientView struct {
-	ConfigEnabled *bool         `json:"config_enabled,omitempty"`
-	ClientID      string        `json:"client_id,omitempty"`
-	InboundID     int           `json:"inbound_id"`
-	InboundTag    string        `json:"inbound_tag,omitempty"`
-	InboundRemark string        `json:"inbound_remark,omitempty"`
-	Protocol      string        `json:"protocol,omitempty"`
-	Email         string        `json:"email,omitempty"`
-	Comment       string        `json:"comment,omitempty"`
-	Enabled       bool          `json:"enabled"`
-	AuthUUID      string        `json:"auth_uuid,omitempty"`
-	AuthPassword  string        `json:"auth_password,omitempty"`
-	Flow          string        `json:"flow,omitempty"`
-	ImportURL     string        `json:"import_url,omitempty"`
-	LimitIP       int           `json:"limit_ip,omitempty"`
-	TotalGB       int64         `json:"total_gb,omitempty"`
-	ExpiryTime    int64         `json:"expiry_time,omitempty"`
-	SubID         string        `json:"sub_id,omitempty"`
-	CreatedAt     int64         `json:"created_at,omitempty"`
-	UpdatedAt     int64         `json:"updated_at,omitempty"`
-	Up            int64         `json:"up,omitempty"`
-	Down          int64         `json:"down,omitempty"`
-	AllTime       int64         `json:"all_time,omitempty"`
-	TrafficTotal  int64         `json:"traffic_total,omitempty"`
-	LastOnline    int64         `json:"last_online,omitempty"`
-	Route         XUIRouteTrace `json:"route"`
+	ConfigEnabled         *bool         `json:"config_enabled,omitempty"`
+	ClientID              string        `json:"client_id,omitempty"`
+	InboundID             int           `json:"inbound_id"`
+	InboundTag            string        `json:"inbound_tag,omitempty"`
+	InboundRemark         string        `json:"inbound_remark,omitempty"`
+	Protocol              string        `json:"protocol,omitempty"`
+	Email                 string        `json:"email,omitempty"`
+	Comment               string        `json:"comment,omitempty"`
+	Enabled               bool          `json:"enabled"`
+	AuthUUID              string        `json:"auth_uuid,omitempty"`
+	AuthPassword          string        `json:"auth_password,omitempty"`
+	Flow                  string        `json:"flow,omitempty"`
+	ImportURL             string        `json:"import_url,omitempty"`
+	LimitIP               int           `json:"limit_ip,omitempty"`
+	TotalGB               int64         `json:"total_gb,omitempty"`
+	TrafficReset          string        `json:"traffic_reset,omitempty"`
+	TrafficResetDay       int           `json:"traffic_reset_day,omitempty"`
+	TrafficResetSupported bool          `json:"traffic_reset_supported,omitempty"`
+	ExpiryTime            int64         `json:"expiry_time,omitempty"`
+	SubID                 string        `json:"sub_id,omitempty"`
+	CreatedAt             int64         `json:"created_at,omitempty"`
+	UpdatedAt             int64         `json:"updated_at,omitempty"`
+	Up                    int64         `json:"up,omitempty"`
+	Down                  int64         `json:"down,omitempty"`
+	AllTime               int64         `json:"all_time,omitempty"`
+	TrafficTotal          int64         `json:"traffic_total,omitempty"`
+	LastOnline            int64         `json:"last_online,omitempty"`
+	Route                 XUIRouteTrace `json:"route"`
 
 	ForwardType           string `json:"forward_type,omitempty"`
 	IsRealmForwarded      bool   `json:"is_realm_forwarded,omitempty"`

@@ -231,6 +231,7 @@ func (a *App) xuiActionTimeout(kind string) time.Duration {
 		model.XUIActionDeleteRoutingRules,
 		model.XUIActionUpdateClientExpiry,
 		model.XUIActionUpdateClientTraffic,
+		model.XUIActionUpdateClientTrafficReset,
 		model.XUIActionSetClientEnabled,
 		model.XUIActionDeleteClient:
 		if timeout < 90*time.Second {

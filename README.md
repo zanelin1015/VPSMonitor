@@ -267,6 +267,33 @@ Realm 和 HAProxy 的规则由 Server 下发，Client 负责加载并上报运�
 
 路由规则删除要求 Server 和目标 Client 均升级到 0.3.31 或更高版本。删除前会校验完整规则列表及所选规则，规则发生变化时拒绝删除并要求刷新；多选按索引倒序逐条移除，保存后重载 Xray。系统 API 路由不可删除。如果提示规则已保存但重载失败，请手动重启 x-ui / Xray，不要重复提交删除。
 
+## x-ui 客户端自动流量重置
+
+管理台「Client 详情 → 客户端 → 流量 → 自动重置 → 设置」可配置 x-ui 原生周期：从不、每小时、每日、每周、每月。选择每月时可设置 1–31 号，默认 1 号；不足该日期的月份按月底执行。按 x-ui 面板时区在对应边界执行，每周为周日 00:00，每月为指定日 00:00，与客户端到期日独立。
+
+此设置由 x-ui 执行，保存时不立即清零流量，也不修改总流量上限、到期时间和凭据。同一客户端关联多个入站时同步生效。它与下文的系统周期重置分别配置，同时开启时会分别执行各自的计划。
+
+需升级 Server 和目标 VPSMonitor Client 到 0.3.46 或更高版本，并使用支持客户端重置周期的新版 x-ui。旧 Client 在下发前提示升级，旧面板不会收到无效的入站修改。保存后回读周期和日期，实际写入一致后才报告 `verified: true`。
+
+也可调用现有异步操作接口（使用管理台会话鉴权），在操作记录中查看最终执行结果：
+
+```http
+POST /api/v1/agents/{agent_id}/xui/actions
+Content-Type: application/json
+
+{
+  "kind": "update_client_traffic_reset",
+  "payload": {
+    "inbound_id": 7,
+    "email": "alice",
+    "traffic_reset": "monthly",
+    "traffic_reset_day": 15
+  }
+}
+```
+
+`traffic_reset` 可取 `never`、`hourly`、`daily`、`weekly`、`monthly`；`traffic_reset_day` 为 1–31 的整数，省略时默认 1。
+
 ## 客户端周期流量重置
 
 管理员在「定时任务 → 客户端周期流量重置」配置全局开关和每个实际客户端的策略。新功能默认关闭，需升级 Server 和 Client；旧 Client 不会收到重置指令。支持月、季、半年、年，可跟随客户端开始日期和收费周期，也可独立指定重置基准。

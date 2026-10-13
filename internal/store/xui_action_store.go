@@ -31,6 +31,11 @@ func (s *SQLiteStore) CreateXUIActionWithActor(agentID string, req model.XUIActi
 			return model.XUIAction{}, err
 		}
 	}
+	if req.Kind == model.XUIActionUpdateClientTrafficReset {
+		if _, err := model.ParseXUIClientTrafficResetPayload(req.Payload); err != nil {
+			return model.XUIAction{}, err
+		}
+	}
 	if _, found, err := s.GetAgent(agentID); err != nil {
 		return model.XUIAction{}, err
 	} else if !found {

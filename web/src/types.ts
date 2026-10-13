@@ -879,6 +879,9 @@ export interface XUIClientView {
   import_url?: string
   limit_ip?: number
   total_gb?: number
+  traffic_reset?: 'never' | 'hourly' | 'daily' | 'weekly' | 'monthly' | string
+  traffic_reset_day?: number
+  traffic_reset_supported?: boolean
   expiry_time?: number
   sub_id?: string
   created_at?: number

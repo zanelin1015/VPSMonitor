@@ -61,6 +61,8 @@ import { defaultTerminalShell, FeatureSwitch, RemoteTTYTerminal } from './AgentD
 import { ManagedConfigPanel } from './ManagedConfigPanel'
 import { RouteBadge } from './RouteBadge'
 import { XUINodeList } from './XUINodeList'
+import { XUIClientTrafficResetEditor } from './XUIClientTrafficResetEditor'
+import type { ClientTrafficResetPeriod } from '../lib/clientTrafficReset'
 import {
   type HAProxyForwardClientView,
   type HAProxyForwardNodeView,
@@ -153,6 +155,7 @@ export interface AgentDetailPanelProps {
   onDeleteXUIClient: (client: XUIClientView) => void
   onDeleteRoutingRules: (payload: RoutingRulesDeletePayload) => Promise<XUIAction | null>
   onSaveXUIClientTrafficLimit: (client: XUIClientView, totalGB: number) => void
+  onSaveXUIClientTrafficReset: (client: XUIClientView, period: ClientTrafficResetPeriod, day: number) => Promise<boolean>
   onSetXUIClientEnabled: (client: XUIClientView, enabled: boolean) => void
   onRefreshCurrentAgent: () => void
   onRestartXUI: () => void
@@ -268,6 +271,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onDeleteXUIClient,
     onDeleteRoutingRules,
     onSaveXUIClientTrafficLimit,
+    onSaveXUIClientTrafficReset,
     onSetXUIClientEnabled,
     onRefreshCurrentAgent,
     onRestartXUI,
@@ -664,6 +668,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
                 </Tooltip>
               </Space.Compact>
             ) : null}
+            {!restrictedView ? <XUIClientTrafficResetEditor record={record} canManage={canManageConfig} onSave={onSaveXUIClientTrafficReset} /> : null}
             {!restrictedView ? <span>上传 {formatBytes(up)}</span> : null}
             {!restrictedView ? <span>下载 {formatBytes(down)}</span> : null}
           </div>

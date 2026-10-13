@@ -4,6 +4,8 @@ import { useRef, useState } from 'react'
 import type { AdminUser, XUIAction, XUIClientView } from '../types'
 import { fetchJSON, isUnauthorized } from '../lib/appHelpers'
 import type { RoutingRulesDeletePayload } from '../lib/routingRules'
+import { buildClientTrafficResetAction } from '../lib/clientTrafficReset'
+import type { ClientTrafficResetPeriod } from '../lib/clientTrafficReset'
 
 type LoadOptions = { silent?: boolean }
 type LoadAgentResource = (agentID: string, options?: LoadOptions) => Promise<void>
@@ -244,6 +246,32 @@ export function useXUIRemoteActions(input: {
     }
   }
 
+  async function saveXUIClientTrafficReset(record: XUIClientView, period: ClientTrafficResetPeriod, day: number, agentID = selectedAgentId): Promise<boolean> {
+    let action: XUIAction
+    let targetAgentID: string
+    try {
+      const request = buildClientTrafficResetAction(record, period, day, agentID)
+      targetAgentID = request.agentID
+      action = await fetchJSON<XUIAction>(`/api/v1/agents/${targetAgentID}/xui/actions`, {
+        method: 'POST', body: JSON.stringify(request.request),
+      })
+    } catch (error) {
+      handleUnauthorized(error)
+      message.error(error instanceof Error ? error.message : '下发自动流量重置设置失败')
+      return false
+    }
+    message.success(action.status === 'running'
+      ? '自动流量重置设置已下发，实际执行结果请查看 x-ui 操作记录'
+      : '自动流量重置设置任务已创建，Client 在线后执行，结果请查看操作记录')
+    scheduleXUIActionResultRefresh(targetAgentID)
+    void loadXUIActions(targetAgentID, { silent: true })
+    ;[1000, 3000, 8000, 15000].forEach((delay) => window.setTimeout(() => {
+      void loadOverview(targetAgentID, { silent: true })
+      if (selectedAgentId && targetAgentID !== selectedAgentId) void loadOverview(selectedAgentId, { silent: true })
+    }, delay))
+    return true
+  }
+
   async function executeRemoteCommand(command: string, shell: string, timeoutSeconds: number, agentID = selectedAgentId) {
     if (!agentID) {
       return
@@ -282,6 +310,7 @@ export function useXUIRemoteActions(input: {
     executeRemoteCommand,
     restartXUIService,
     saveXUIClientTrafficLimit,
+    saveXUIClientTrafficReset,
     setXUIClientEnabled,
     update3XUI,
   }

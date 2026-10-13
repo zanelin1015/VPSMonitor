@@ -379,15 +379,33 @@ func appendClientToInbound(inbound map[string]any, rawClient map[string]any) {
 	}
 	clients := objectSlice(settings["clients"])
 	client := normalizeXUIV3ClientForInbound(rawClient)
+	changed := false
 	if !containsXUIClient(clients, client) {
 		clients = append(clients, client)
-		settings["clients"] = clients
-		if settingsText {
-			if data, err := json.Marshal(settings); err == nil {
-				inbound["settings"] = string(data)
+		changed = true
+	} else {
+		for index, existing := range clients {
+			if !containsXUIClient([]map[string]any{existing}, client) {
+				continue
 			}
-		} else {
-			inbound["settings"] = settings
+			merged := make(map[string]any, len(existing)+2)
+			for key, value := range existing {
+				merged[key] = value
+			}
+			for _, key := range []string{"trafficReset", "trafficResetDay"} {
+				if value, exists := client[key]; exists {
+					merged[key] = value
+					changed = true
+				}
+			}
+			clients[index] = merged
+			break
+		}
+	}
+	if changed {
+		settings["clients"] = clients
+		if err := encodeInboundSettings(inbound, settings, settingsText); err != nil {
+			return
 		}
 	}
 	stats := objectSlice(inbound["clientStats"])

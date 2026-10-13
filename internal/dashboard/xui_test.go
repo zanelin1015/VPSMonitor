@@ -11,6 +11,21 @@ import (
 	"bridge-core/internal/model"
 )
 
+func TestBuildXUIOverviewClientTrafficResetSettings(t *testing.T) {
+	snapshot := model.AgentSnapshot{XUI: &model.XUISnapshot{Inbounds: []map[string]any{{
+		"id": 7, "protocol": "vless", "settings": `{"clients":[{"email":"native","enable":true,"trafficReset":"monthly","trafficResetDay":15,"totalGB":100},{"email":"legacy","enable":true}]}`,
+	}}}}
+	clients := BuildXUIOverview(snapshot).Clients
+	byEmail := make(map[string]model.XUIClientView)
+	for _, client := range clients {
+		byEmail[client.Email] = client
+	}
+	native := byEmail["native"]
+	if len(clients) != 2 || !native.TrafficResetSupported || native.TrafficReset != "monthly" || native.TrafficResetDay != 15 || native.TotalGB != 100 || byEmail["legacy"].TrafficResetSupported {
+		t.Fatal("native reset settings or legacy capability were not projected correctly")
+	}
+}
+
 func TestBuildXUIOverview(t *testing.T) {
 	reportedAt := time.Date(2026, 5, 3, 3, 0, 0, 0, time.UTC)
 	lastOnline := reportedAt.Add(-2 * time.Minute).UnixMilli()

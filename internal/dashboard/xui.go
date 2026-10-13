@@ -31,21 +31,24 @@ type inboundRecord struct {
 }
 
 type clientConfig struct {
-	email        string
-	comment      string
-	enable       bool
-	authUUID     string
-	authPassword string
-	auth         string
-	alterID      int
-	security     string
-	flow         string
-	limitIP      int
-	totalGB      int64
-	expiryTime   int64
-	subID        string
-	createdAt    int64
-	updatedAt    int64
+	email                 string
+	comment               string
+	enable                bool
+	authUUID              string
+	authPassword          string
+	auth                  string
+	alterID               int
+	security              string
+	flow                  string
+	limitIP               int
+	totalGB               int64
+	trafficReset          string
+	trafficResetDay       int
+	trafficResetSupported bool
+	expiryTime            int64
+	subID                 string
+	createdAt             int64
+	updatedAt             int64
 }
 
 type inboundStreamMeta struct {
@@ -263,31 +266,34 @@ func normalizeClients(inbounds []inboundRecord, rules []routeRule, defaultOutbou
 			}
 
 			clients = append(clients, model.XUIClientView{
-				ConfigEnabled: &cfg.enable,
-				ClientID:      cfg.authUUID,
-				InboundID:     inbound.view.ID,
-				InboundTag:    inbound.view.Tag,
-				InboundRemark: inbound.view.Remark,
-				Protocol:      inbound.view.Protocol,
-				Email:         cfg.email,
-				Comment:       cfg.comment,
-				Enabled:       enabled,
-				AuthUUID:      cfg.authUUID,
-				AuthPassword:  cfg.authPassword,
-				Flow:          cfg.flow,
-				ImportURL:     buildSingleNodeImportURL(inbound, cfg),
-				LimitIP:       cfg.limitIP,
-				TotalGB:       cfg.totalGB,
-				ExpiryTime:    expiryTime,
-				SubID:         cfg.subID,
-				CreatedAt:     cfg.createdAt,
-				UpdatedAt:     cfg.updatedAt,
-				Up:            stats.up,
-				Down:          stats.down,
-				AllTime:       stats.allTime,
-				TrafficTotal:  stats.up + stats.down,
-				LastOnline:    stats.lastOnline,
-				Route:         resolveRoute(cfg.email, inbound.view.Tag, rules, defaultOutboundTag, globalRuleIndexes),
+				ConfigEnabled:         &cfg.enable,
+				ClientID:              cfg.authUUID,
+				InboundID:             inbound.view.ID,
+				InboundTag:            inbound.view.Tag,
+				InboundRemark:         inbound.view.Remark,
+				Protocol:              inbound.view.Protocol,
+				Email:                 cfg.email,
+				Comment:               cfg.comment,
+				Enabled:               enabled,
+				AuthUUID:              cfg.authUUID,
+				AuthPassword:          cfg.authPassword,
+				Flow:                  cfg.flow,
+				ImportURL:             buildSingleNodeImportURL(inbound, cfg),
+				LimitIP:               cfg.limitIP,
+				TotalGB:               cfg.totalGB,
+				TrafficReset:          cfg.trafficReset,
+				TrafficResetDay:       cfg.trafficResetDay,
+				TrafficResetSupported: cfg.trafficResetSupported,
+				ExpiryTime:            expiryTime,
+				SubID:                 cfg.subID,
+				CreatedAt:             cfg.createdAt,
+				UpdatedAt:             cfg.updatedAt,
+				Up:                    stats.up,
+				Down:                  stats.down,
+				AllTime:               stats.allTime,
+				TrafficTotal:          stats.up + stats.down,
+				LastOnline:            stats.lastOnline,
+				Route:                 resolveRoute(cfg.email, inbound.view.Tag, rules, defaultOutboundTag, globalRuleIndexes),
 			})
 		}
 	}
@@ -741,22 +747,33 @@ func parseInboundClients(raw any, protocol string) []clientConfig {
 		if email == "" {
 			continue
 		}
+		period := defaultString(stringValue(item["trafficReset"]), "never")
+		day := intValue(item["trafficResetDay"])
+		if day < 1 {
+			day = 1
+		}
+		_, hasPeriod := item["trafficReset"]
+		_, hasDay := item["trafficResetDay"]
+		_, resetErr := model.ParseXUIClientTrafficResetPayload(map[string]any{"traffic_reset": period, "traffic_reset_day": day})
 		result = append(result, clientConfig{
-			email:        email,
-			comment:      stringValue(item["comment"]),
-			enable:       boolValue(item["enable"]),
-			authUUID:     stringValue(item["id"]),
-			authPassword: stringValue(item["password"]),
-			auth:         defaultString(stringValue(item["auth"]), stringValue(item["password"])),
-			alterID:      intValue(item["alterId"]),
-			security:     stringValue(item["security"]),
-			flow:         stringValue(item["flow"]),
-			limitIP:      intValue(item["limitIp"]),
-			totalGB:      int64Value(item["totalGB"]),
-			expiryTime:   int64Value(item["expiryTime"]),
-			subID:        stringValue(item["subId"]),
-			createdAt:    int64Value(item["created_at"]),
-			updatedAt:    int64Value(item["updated_at"]),
+			email:                 email,
+			comment:               stringValue(item["comment"]),
+			enable:                boolValue(item["enable"]),
+			authUUID:              stringValue(item["id"]),
+			authPassword:          stringValue(item["password"]),
+			auth:                  defaultString(stringValue(item["auth"]), stringValue(item["password"])),
+			alterID:               intValue(item["alterId"]),
+			security:              stringValue(item["security"]),
+			flow:                  stringValue(item["flow"]),
+			limitIP:               intValue(item["limitIp"]),
+			totalGB:               int64Value(item["totalGB"]),
+			trafficReset:          period,
+			trafficResetDay:       day,
+			trafficResetSupported: hasPeriod && hasDay && resetErr == nil,
+			expiryTime:            int64Value(item["expiryTime"]),
+			subID:                 stringValue(item["subId"]),
+			createdAt:             int64Value(item["created_at"]),
+			updatedAt:             int64Value(item["updated_at"]),
 		})
 	}
 	return result

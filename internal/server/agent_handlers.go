@@ -1150,6 +1150,26 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 					return
 				}
 			}
+			if req.Kind == model.XUIActionUpdateClientTrafficReset {
+				if _, err := model.ParseXUIClientTrafficResetPayload(req.Payload); err != nil {
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				_, found, err := a.store.GetAgent(agentID)
+				if err != nil {
+					writeError(w, http.StatusInternalServerError, err.Error())
+					return
+				}
+				if !found {
+					writeError(w, http.StatusBadRequest, "agent not found")
+					return
+				}
+				snapshot, _ := a.store.GetLatest(agentID)
+				if _, known := parseSemver(snapshot.Version); !known || isVersionNewer(model.XUIClientTrafficResetMinVersion, snapshot.Version) {
+					writeError(w, http.StatusConflict, "请先将目标 VPSMonitor Client 升级到 v"+model.XUIClientTrafficResetMinVersion+" 或更高版本，并刷新采集")
+					return
+				}
+			}
 			if isAreaManager(user) && user.OutboundCreateEnabled {
 				if outboundTag := outboundTagFromPayload(req.Payload); outboundTag != "" {
 					if err := a.store.UpsertAreaManagerOutboundGrant(user.ID, model.AreaManagerOutboundGrantRequest{
@@ -1484,6 +1504,7 @@ func realtimeXUIActionAllowed(kind string) bool {
 		model.XUIActionDeleteRoutingRules,
 		model.XUIActionUpdateClientExpiry,
 		model.XUIActionUpdateClientTraffic,
+		model.XUIActionUpdateClientTrafficReset,
 		model.XUIActionSetClientEnabled,
 		model.XUIActionDeleteClient,
 		model.XUIActionUpdateClient,
@@ -1579,6 +1600,7 @@ func xuiActionUsesPanelAuth(kind string) bool {
 		model.XUIActionDeleteRoutingRules,
 		model.XUIActionUpdateClientExpiry,
 		model.XUIActionUpdateClientTraffic,
+		model.XUIActionUpdateClientTrafficReset,
 		model.XUIActionSetClientEnabled,
 		model.XUIActionDeleteClient:
 		return true

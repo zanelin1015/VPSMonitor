@@ -58,6 +58,8 @@ func (c *XUIClient) executeActionAuthenticated(ctx context.Context, action model
 		return c.updateClientExpiry(ctx, action.Payload)
 	case model.XUIActionUpdateClientTraffic:
 		return c.updateClientTrafficLimit(ctx, action.Payload)
+	case model.XUIActionUpdateClientTrafficReset:
+		return c.updateClientTrafficReset(ctx, action.Payload)
 	case model.XUIActionSetClientEnabled:
 		return c.setClientEnabled(ctx, action.Payload)
 	case model.XUIActionDeleteClient:
@@ -882,6 +884,40 @@ func (c *XUIClient) updateClientTrafficLimit(ctx context.Context, payload map[st
 		return result, err
 	}
 	result["total_bytes"] = totalBytes
+	return result, nil
+}
+
+func (c *XUIClient) updateClientTrafficReset(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	settings, err := model.ParseXUIClientTrafficResetPayload(payload)
+	if err != nil {
+		return nil, err
+	}
+	inboundID := intValue(payload["inbound_id"])
+	inboundTag := strings.TrimSpace(stringFromMap(payload, "inbound_tag"))
+	email := strings.TrimSpace(stringFromMap(payload, "email"))
+	if inboundID <= 0 && inboundTag == "" {
+		return nil, fmt.Errorf("inbound_id or inbound_tag is required")
+	}
+	if email == "" {
+		return nil, fmt.Errorf("email is required")
+	}
+	target, err := c.loadClientUpdateTarget(ctx, inboundID, inboundTag, email, clientIDForUpdate(payload))
+	if err != nil {
+		return nil, err
+	}
+	_, hasPeriod := target.client["trafficReset"]
+	_, hasDay := target.client["trafficResetDay"]
+	if !target.clientAPI || !hasPeriod || !hasDay {
+		return nil, fmt.Errorf("this x-ui panel does not support per-client traffic reset settings; upgrade the panel")
+	}
+	target.client["trafficReset"] = settings.Period
+	target.client["trafficResetDay"] = settings.Day
+	result, err := c.saveClientUpdate(ctx, target, "trafficReset", "trafficResetDay")
+	if err != nil {
+		return result, err
+	}
+	result["traffic_reset"] = settings.Period
+	result["traffic_reset_day"] = settings.Day
 	return result, nil
 }
 
