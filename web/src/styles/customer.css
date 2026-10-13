@@ -1,7 +1,10 @@
 .customer-page-shell .customer-shell {
   width: min(1720px, calc(100vw - 32px));
   margin: 0 auto;
-  padding: 26px 0 42px;
+  /* Keep the sticky header's containing block flush with the scrollport.
+   * Spacing belongs on the header itself; padding here would keep a sticky
+   * header below the top edge and expose a blank strip when returning to top. */
+  padding: 0 0 42px;
 }
 
 .customer-dashboard-shell {
@@ -32,6 +35,7 @@
   position: sticky;
   top: 0;
   z-index: 5;
+  margin-top: 26px;
   margin-bottom: 0;
   backdrop-filter: blur(18px);
 }

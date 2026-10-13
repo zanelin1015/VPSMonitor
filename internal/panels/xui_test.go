@@ -1914,6 +1914,7 @@ func TestXUIExecuteSetClientEnabledUsesFullInboundUpdateAndPreservesUUID(t *test
 		t.Fatalf("NewXUIClient: %v", err)
 	}
 
+	persistedSettings := `{"clients":[{"id":"uuid-1","email":"alice@example.com","enable":true,"expiryTime":1893456000000}]}`
 	updateCalled := false
 	client.client = &http.Client{
 		Timeout: 5 * time.Second,
@@ -1924,6 +1925,10 @@ func TestXUIExecuteSetClientEnabledUsesFullInboundUpdateAndPreservesUUID(t *test
 			case "/panel/api/clients/update/alice@example.com", "/panel/api/inbounds/updateClient/uuid-1":
 				t.Fatalf("must not call single-client update API because some x-ui versions reset UUIDs")
 				return nil, nil
+			case "/panel/api/clients/get/alice@example.com":
+				response := jsonResponse(t, req, map[string]any{"success": false})
+				response.StatusCode = http.StatusNotFound
+				return response, nil
 			case "/panel/api/inbounds/list":
 				return jsonResponse(t, req, map[string]any{
 					"success": true,
@@ -1932,7 +1937,7 @@ func TestXUIExecuteSetClientEnabledUsesFullInboundUpdateAndPreservesUUID(t *test
 							"id":       7,
 							"tag":      "in-vless-443",
 							"protocol": "vless",
-							"settings": `{"clients":[{"id":"uuid-1","email":"alice@example.com","enable":true,"expiryTime":1893456000000}]}`,
+							"settings": persistedSettings,
 						},
 					},
 				}), nil
@@ -1949,6 +1954,7 @@ func TestXUIExecuteSetClientEnabledUsesFullInboundUpdateAndPreservesUUID(t *test
 				if !strings.Contains(settings, `"id":"uuid-1"`) || !strings.Contains(settings, `"email":"alice@example.com"`) || !strings.Contains(settings, `"enable":false`) {
 					t.Fatalf("expected UUID to be preserved and enable=false, got %s", settings)
 				}
+				persistedSettings = settings
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "updated"}), nil
 			default:
 				t.Fatalf("unexpected path: %s", req.URL.Path)
@@ -1987,6 +1993,7 @@ func TestXUIExecuteUpdateClientExpiryUsesFullInboundUpdateAndPreservesUUID(t *te
 		t.Fatalf("NewXUIClient: %v", err)
 	}
 
+	persistedSettings := `{"clients":[{"id":"uuid-1","email":"alice@example.com","enable":true,"expiryTime":1893456000000,"flow":"xtls-rprx-vision","totalGB":107374182400,"limitIp":2,"subId":"stable-sub-id","comment":"keep-me"}]}`
 	updateCalled := false
 	client.client = &http.Client{
 		Timeout: 5 * time.Second,
@@ -1994,6 +2001,10 @@ func TestXUIExecuteUpdateClientExpiryUsesFullInboundUpdateAndPreservesUUID(t *te
 			switch req.URL.Path {
 			case "/login":
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
+			case "/panel/api/clients/get/alice@example.com":
+				response := jsonResponse(t, req, map[string]any{"success": false})
+				response.StatusCode = http.StatusNotFound
+				return response, nil
 			case "/panel/api/inbounds/list":
 				return jsonResponse(t, req, map[string]any{
 					"success": true,
@@ -2002,7 +2013,7 @@ func TestXUIExecuteUpdateClientExpiryUsesFullInboundUpdateAndPreservesUUID(t *te
 							"id":       7,
 							"tag":      "in-vless-443",
 							"protocol": "vless",
-							"settings": `{"clients":[{"id":"uuid-1","email":"alice@example.com","enable":true,"expiryTime":1893456000000,"flow":"xtls-rprx-vision","totalGB":107374182400,"limitIp":2,"subId":"stable-sub-id","comment":"keep-me"}]}`,
+							"settings": persistedSettings,
 						},
 					},
 				}), nil
@@ -2036,6 +2047,7 @@ func TestXUIExecuteUpdateClientExpiryUsesFullInboundUpdateAndPreservesUUID(t *te
 					stringValue(updated["comment"]) != "keep-me" {
 					t.Fatalf("expected expiry-only update with all other fields preserved, got %#v", updated)
 				}
+				persistedSettings = settings
 				return jsonResponse(t, req, map[string]any{"success": true, "msg": "updated"}), nil
 			default:
 				t.Fatalf("unexpected path: %s", req.URL.Path)
@@ -2085,6 +2097,7 @@ func TestXUIExecuteUpdateClientTrafficLimitPreservesOtherClientFields(t *testing
 				t.Fatalf("NewXUIClient: %v", err)
 			}
 
+			persistedSettings := `{"clients":[{"id":"uuid-1","email":"alice@example.com","enable":true,"expiryTime":1893456000000,"flow":"xtls-rprx-vision","totalGB":107374182400,"limitIp":2,"subId":"stable-sub-id","comment":"keep-me"}]}`
 			updateCalled := false
 			client.client = &http.Client{
 				Timeout: 5 * time.Second,
@@ -2092,6 +2105,10 @@ func TestXUIExecuteUpdateClientTrafficLimitPreservesOtherClientFields(t *testing
 					switch req.URL.Path {
 					case "/login":
 						return jsonResponse(t, req, map[string]any{"success": true, "msg": "ok"}), nil
+					case "/panel/api/clients/get/alice@example.com":
+						response := jsonResponse(t, req, map[string]any{"success": false})
+						response.StatusCode = http.StatusNotFound
+						return response, nil
 					case "/panel/api/inbounds/list":
 						return jsonResponse(t, req, map[string]any{
 							"success": true,
@@ -2099,7 +2116,7 @@ func TestXUIExecuteUpdateClientTrafficLimitPreservesOtherClientFields(t *testing
 								"id":       7,
 								"tag":      "in-vless-443",
 								"protocol": "vless",
-								"settings": `{"clients":[{"id":"uuid-1","email":"alice@example.com","enable":true,"expiryTime":1893456000000,"flow":"xtls-rprx-vision","totalGB":107374182400,"limitIp":2,"subId":"stable-sub-id","comment":"keep-me"}]}`,
+								"settings": persistedSettings,
 							}},
 						}), nil
 					case "/panel/api/inbounds/updateClient/uuid-1":
@@ -2132,6 +2149,7 @@ func TestXUIExecuteUpdateClientTrafficLimitPreservesOtherClientFields(t *testing
 							stringValue(updated["comment"]) != "keep-me" {
 							t.Fatalf("expected traffic-only update with all other fields preserved, got %#v", updated)
 						}
+						persistedSettings = settings
 						return jsonResponse(t, req, map[string]any{"success": true, "msg": "updated"}), nil
 					default:
 						t.Fatalf("unexpected path (traffic updates must not restart Xray): %s", req.URL.Path)

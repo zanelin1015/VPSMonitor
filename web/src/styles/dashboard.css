@@ -875,7 +875,8 @@
 
 @media (max-width: 1180px) {
   .admin-workbench-page {
-    overflow: auto;
+    overflow-x: clip;
+    overflow-y: auto;
   }
 
   .admin-workbench {
@@ -901,7 +902,8 @@
 
 @media (max-width: 900px) {
   .admin-workbench-page {
-    overflow: auto;
+    overflow-x: clip;
+    overflow-y: auto;
   }
 
   .admin-workbench {
@@ -967,9 +969,18 @@
     display: none;
   }
 
-  .finance-detail-panel,
-  .ant-table-wrapper {
+  .finance-detail-panel {
     overflow-x: auto;
+  }
+
+  .ant-table-wrapper {
+    overflow-x: clip;
+  }
+
+  .ant-table-wrapper .ant-table-content {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
   }
 
   .finance-detail-panel .ant-table,
@@ -1420,15 +1431,41 @@
 
 .outbound-head {
   display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 12px;
   align-items: flex-start;
+}
+
+.outbound-head > :first-child {
+  min-width: 0;
+  flex: 1 1 180px;
+}
+
+.outbound-head-meta {
+  min-width: 0;
+  max-width: 100%;
+  flex: 0 1 auto;
+  justify-content: flex-end;
+}
+
+.outbound-head-meta .ant-space-item,
+.outbound-head-meta .ant-tag {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.outbound-head-meta .ant-tag {
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .outbound-tag {
   color: var(--text);
   font-size: 15px;
   font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .outbound-target {

@@ -68,6 +68,7 @@ func TestXUIClientForActionUsesEphemeralAuth(t *testing.T) {
 func TestXUIClientForActionSendsLatestEphemeralToken(t *testing.T) {
 	const latestToken = "latest-action-token"
 	requestCount := 0
+	settings := `{"clients":[{"id":"stable-uuid","email":"client@example.com","enable":true,"expiryTime":0}]}`
 	panel := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
 		if got := r.Header.Get("Authorization"); got != "Bearer "+latestToken {
@@ -77,6 +78,8 @@ func TestXUIClientForActionSendsLatestEphemeralToken(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
+		case "/panel/api/clients/get/client@example.com":
+			http.NotFound(w, r)
 		case "/panel/api/inbounds/list":
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"success": true,
@@ -84,10 +87,17 @@ func TestXUIClientForActionSendsLatestEphemeralToken(t *testing.T) {
 					"id":       1,
 					"tag":      "inbound-1",
 					"protocol": "vless",
-					"settings": `{"clients":[{"id":"stable-uuid","email":"client@example.com","enable":true,"expiryTime":0}]}`,
+					"settings": settings,
 				}},
 			})
 		case "/panel/api/inbounds/update/1":
+			var body struct {
+				Settings string `json:"settings"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode update: %v", err)
+			}
+			settings = body.Settings
 			_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "msg": "updated"})
 		default:
 			t.Errorf("unexpected x-ui request path: %s", r.URL.Path)
@@ -113,7 +123,7 @@ func TestXUIClientForActionSendsLatestEphemeralToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute x-ui action: %v", err)
 	}
-	if requestCount != 2 {
-		t.Fatalf("expected list and update requests, got %d", requestCount)
+	if requestCount != 4 {
+		t.Fatalf("expected list, API probe, update and verification requests, got %d", requestCount)
 	}
 }

@@ -114,9 +114,11 @@
   min-height: 0;
   flex: 1 1 auto;
   flex-direction: column;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: scroll;
-  overscroll-behavior: contain;
+  /* Card grids must not pan or rubber-band sideways. */
+  overscroll-behavior-x: none;
+  overscroll-behavior-y: contain;
   padding: 0 4px 8px 0;
   scrollbar-color: rgba(14, 165, 233, 0.48) rgba(255, 255, 255, 0.18);
   scrollbar-gutter: stable both-edges;
@@ -130,6 +132,12 @@
 
 .agent-list-list .ant-spin-container {
   min-width: 980px;
+}
+
+/* Only the wide, full-page row layout needs a horizontal viewport. The
+ * compact rail beside Agent details is clamped by its topology override. */
+.agent-list-list .ant-spin-nested-loading {
+  overflow-x: auto;
 }
 
 .agent-list .ant-list-items {
@@ -262,6 +270,7 @@
 }
 
 .agent-list-item {
+  min-width: 0;
   height: 100%;
   padding: 0 !important;
   border: 0 !important;
@@ -286,6 +295,7 @@
   flex-direction: column;
   gap: 10px;
   width: 100%;
+  min-width: 0;
   height: 100%;
   min-height: 214px;
   padding: 12px 14px;
@@ -1070,8 +1080,93 @@
 }
 
 /* Compact editors raise their inputs on hover/focus; keep them below the pinned identity column. */
+.xui-client-table {
+  min-width: 0;
+  width: 100%;
+}
+
+.client-identity-cell {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.client-protocol-tag {
+  max-width: 100%;
+  margin-inline-end: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.client-status-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.client-status-cell .ant-tag {
+  margin-inline-end: 0;
+}
+
+/* The table lives inside the agent detail's vertical scroller. Keep the
+ * horizontal scroller local to the table so rc-table's sticky offsets remain
+ * relative to the visible table viewport at both horizontal extremes. Do not
+ * add another overflow boundary on the Ant container: rc-table owns the
+ * sticky/scroll geometry here. */
+.xui-client-table .ant-table-container {
+  min-width: 0;
+  scrollbar-gutter: auto;
+}
+
+.xui-client-table .ant-table-content {
+  min-width: 0;
+  overflow-x: auto !important;
+  overflow-y: hidden;
+  /* Keep real table scrolling, but stop the entire sticky layer from
+   * rubber-banding beyond the first/last column on macOS trackpads. */
+  overscroll-behavior-x: none !important;
+}
+
 .xui-client-table .ant-table-cell-fix-left {
   z-index: 5;
+  background: var(--table-cell-bg) !important;
+}
+
+.xui-client-table .ant-table-thead > tr > .ant-table-cell-fix-left {
+  background: var(--table-head-bg) !important;
+}
+
+.xui-client-table .ant-table-tbody > tr:hover > .ant-table-cell-fix-left {
+  background: var(--table-row-hover) !important;
+}
+
+/* Keep the action buttons in two compact rows so the fixed-right column does
+ * not reserve a wide empty area after the last button. */
+.xui-client-table .ant-table-cell-fix-right {
+  z-index: 5;
+  background: var(--table-cell-bg) !important;
+}
+
+.xui-client-table .ant-table-thead > tr > .ant-table-cell-fix-right {
+  background: var(--table-head-bg) !important;
+}
+
+.xui-client-table .ant-table-tbody > tr:hover > .ant-table-cell-fix-right {
+  background: var(--table-row-hover) !important;
+}
+
+.client-action-controls {
+  display: grid;
+  gap: 6px;
+  width: max-content;
+  max-width: 100%;
+}
+
+.client-action-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
 }
 
 .client-billing-price-row,

@@ -1003,10 +1003,23 @@ textarea,
     grid-column: span 1;
   }
 
-  .entry-mapping-list,
-  .ant-table-wrapper {
+  .entry-mapping-list {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+  }
+
+  /* rc-table owns horizontal scrolling on its content element. Keeping the
+   * wrapper scrollable as well creates two nested scrollports on small
+   * screens, so trackpad and touch gestures can move the page instead of the
+   * table and fixed columns lose their expected position. */
+  .ant-table-wrapper {
+    overflow-x: clip;
+  }
+
+  .ant-table-wrapper .ant-table-content {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
   }
 
   .entry-mapping-row {

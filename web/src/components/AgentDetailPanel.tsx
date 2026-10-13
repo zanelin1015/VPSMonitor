@@ -60,6 +60,7 @@ import { renderGlobalOverviewPanel } from './DashboardTopologyPanels'
 import { defaultTerminalShell, FeatureSwitch, RemoteTTYTerminal } from './AgentDetailTerminal'
 import { ManagedConfigPanel } from './ManagedConfigPanel'
 import { RouteBadge } from './RouteBadge'
+import { XUINodeList } from './XUINodeList'
 import {
   type HAProxyForwardClientView,
   type HAProxyForwardNodeView,
@@ -564,10 +565,10 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     {
       title: '客户端',
       key: 'client',
-      width: 260,
+      width: 200,
       fixed: 'left',
       render: (_, record) => (
-        <div>
+        <div className="client-identity-cell">
           <Text strong>{record.email || '-'}</Text>
           <div className="muted-line">{record.comment || record.sub_id || '未备注'}</div>
         </div>
@@ -576,7 +577,9 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     {
       title: '所在节点',
       key: 'inbound',
-      width: 180,
+      // Let this column absorb spare width in the compact account view.
+      // Otherwise table-layout: fixed expands the action column as well.
+      width: restrictedView ? undefined : 180,
       render: (_, record) => (
         <div>
           <Text>{record.inbound_remark || record.inbound_tag || '-'}</Text>
@@ -588,35 +591,36 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       title: '协议',
       dataIndex: 'protocol',
       key: 'protocol',
-      width: 100,
-      render: (value?: string) => <Tag color="geekblue">{value || '-'}</Tag>,
+      width: 84,
+      render: (value?: string) => <Tag color="geekblue" className="client-protocol-tag">{value || '-'}</Tag>,
     },
     {
       title: '状态',
       key: 'status',
-      width: 120,
+      width: 90,
       render: (_, record) => {
         const accountBasedProxy = isAccountBasedProxyClient(record)
+        const online = isClientOnline(record.last_online, overview?.reported_at)
         return (
-          <Space wrap size={[6, 6]}>
-            <Tag color={record.enabled ? 'blue' : 'default'}>{record.enabled ? '启用' : '停用'}</Tag>
-            {accountBasedProxy ? <Tag>节点账号</Tag> : (
-              <>
-                <Tag color={isClientOnline(record.last_online, overview?.reported_at) ? 'processing' : 'default'}>
-                  {isClientOnline(record.last_online, overview?.reported_at) ? '在线' : '离线'}
-                </Tag>
-                <Switch
-                  size="small"
-                  checked={record.enabled}
-                  checkedChildren="开"
-                  unCheckedChildren="关"
-                  disabled={!canManageConfig && !restrictedView}
-                  loading={xuiClientToggleLoadingKey === xuiClientActionKey(record)}
-                  onChange={(checked) => onSetXUIClientEnabled(record, checked)}
-                />
-              </>
+          <div className="client-status-cell">
+            {accountBasedProxy ? (
+              <Tag color={record.enabled ? 'blue' : 'default'}>{record.enabled ? '启用' : '禁用'}</Tag>
+            ) : (
+              <Switch
+                size="small"
+                aria-label={`启用或禁用 ${record.email || '客户端'}`}
+                checked={record.enabled}
+                checkedChildren="启用"
+                unCheckedChildren="禁用"
+                disabled={!canManageConfig && !restrictedView}
+                loading={xuiClientToggleLoadingKey === xuiClientActionKey(record)}
+                onChange={(checked) => onSetXUIClientEnabled(record, checked)}
+              />
             )}
-          </Space>
+            {accountBasedProxy ? <Tag>节点账号</Tag> : (
+              <Tag color={online ? 'processing' : 'default'}>{online ? '在线' : '离线'}</Tag>
+            )}
+          </div>
         )
       },
     },
@@ -787,81 +791,70 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       render: (value?: number) => formatRelativeTime(value),
     },
     {
-      title: '导入',
-      key: 'import',
-      width: 160,
-      render: (_, record) => (
-        <Space wrap size={[6, 6]}>
-          <Button size="small" disabled={!record.import_url} onClick={() => onCopyImportURL(record)}>
-            复制
-          </Button>
-          <Button size="small" disabled={!record.import_url} onClick={() => onOpenImportURL(record)}>
-            URL / 二维码
-          </Button>
-        </Space>
-      ),
-    },
-    {
-      title: '用户授权',
-      key: 'customer',
-      width: 120,
-      render: (_, record) => (
-        <Button
-          size="small"
-          onClick={() => onAuthorizeCustomer({
-            agent_id: selectedAgentId,
-            inbound_id: record.inbound_id,
-            inbound_tag: record.inbound_tag || '',
-            client_id: record.client_id || '',
-            client_email: record.email || '',
-            public_client_name: [selectedAgent.customer_display_name || selectedAgent.agent_name || selectedAgent.agent_id, record.email || record.comment || record.inbound_tag || `Inbound #${record.inbound_id}`].filter(Boolean).join(' - '),
-          })}
-        >
-          授权给用户
-        </Button>
-      ),
-    },
-    {
-      title: '操作',
-      key: 'actions',
-      width: 180,
-      render: (_, record) => (
-        <Space wrap size={[6, 6]}>
-          {restrictedView && !isAccountBasedProxyClient(record) ? (
-            <Button
-              size="small"
-              disabled={!canManageConfig && !restrictedView}
-              loading={xuiClientToggleLoadingKey === xuiClientActionKey(record)}
-              onClick={() => onSetXUIClientEnabled(record, !record.enabled)}
-            >
-              {record.enabled ? '停用' : '启用'}
-            </Button>
-          ) : null}
-          <Popconfirm
-            title="删除这个 Client？"
-            description={`将从 x-ui 入站 ${record.inbound_remark || record.inbound_tag || record.inbound_id} 删除 ${record.email || '该客户端'}，不会重启 Xray。`}
-            okText="删除"
-            cancelText="取消"
-            okButtonProps={{ danger: true }}
-            onConfirm={() => onDeleteXUIClient(record)}
-          >
-            <Button
-              size="small"
-              danger
-              disabled={!canManageConfig && !restrictedView}
-              loading={xuiClientDeleteLoadingKey === xuiClientActionKey(record)}
-            >
-              删除
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
-    {
       title: '路由指向',
       key: 'route',
       width: 280,
       render: (_, record) => <RouteBadge route={record.route} onJumpOutbound={onJumpOutbound} onJumpRule={onJumpRule} />,
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      width: restrictedView ? 230 : 190,
+      fixed: 'right',
+      render: (_, record) => (
+        <div className="client-action-controls">
+          <div className="client-action-row">
+            <Button size="small" disabled={!record.import_url} onClick={() => onCopyImportURL(record)}>
+              复制
+            </Button>
+            <Button size="small" disabled={!record.import_url} onClick={() => onOpenImportURL(record)}>
+              URL / 二维码
+            </Button>
+          </div>
+          <div className="client-action-row">
+            <Button
+              size="small"
+              onClick={() => onAuthorizeCustomer({
+                agent_id: selectedAgentId,
+                inbound_id: record.inbound_id,
+                inbound_tag: record.inbound_tag || '',
+                client_id: record.client_id || '',
+                client_email: record.email || '',
+                public_client_name: [selectedAgent.customer_display_name || selectedAgent.agent_name || selectedAgent.agent_id, record.email || record.comment || record.inbound_tag || `Inbound #${record.inbound_id}`].filter(Boolean).join(' - '),
+              })}
+            >
+              授权给用户
+            </Button>
+            {restrictedView && !isAccountBasedProxyClient(record) ? (
+              <Button
+                size="small"
+                disabled={!canManageConfig && !restrictedView}
+                loading={xuiClientToggleLoadingKey === xuiClientActionKey(record)}
+                onClick={() => onSetXUIClientEnabled(record, !record.enabled)}
+              >
+                {record.enabled ? '停用' : '启用'}
+              </Button>
+            ) : null}
+            <Popconfirm
+              title="删除这个 Client？"
+              description={`将从 x-ui 入站 ${record.inbound_remark || record.inbound_tag || record.inbound_id} 删除 ${record.email || '该客户端'}，不会重启 Xray。`}
+              okText="删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => onDeleteXUIClient(record)}
+            >
+              <Button
+                size="small"
+                danger
+                disabled={!canManageConfig && !restrictedView}
+                loading={xuiClientDeleteLoadingKey === xuiClientActionKey(record)}
+              >
+                删除
+              </Button>
+            </Popconfirm>
+          </div>
+        </div>
+      ),
     },
   ]
   const visibleClientColumns = restrictedView
@@ -1350,18 +1343,26 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       key: 'nodes',
       label: `节点 (${overview?.nodes.length || 0})`,
       children: overview ? (
-        renderNodeClientHierarchySections(
-          overview.nodes,
-          filteredClients,
-          nodeColumns,
-          selectedAgent.customer_display_name || selectedAgent.agent_name || selectedAgent.agent_id,
-          selectedAgentId,
-          selectedNodeAnchor,
-          restrictedView ? 800 : 1600,
-          'clients',
-          onActiveTabChange,
-          onClientSearchChange,
-        )
+        <XUINodeList
+          key={selectedAgentId}
+          nodes={overview.nodes}
+          agentID={selectedAgentId}
+          selectedNodeAnchor={selectedNodeAnchor}
+          active={activeTabKey === 'nodes'}
+        >
+          {(nodes) => renderNodeClientHierarchySections(
+            nodes,
+            filteredClients,
+            nodeColumns,
+            selectedAgent.customer_display_name || selectedAgent.agent_name || selectedAgent.agent_id,
+            selectedAgentId,
+            selectedNodeAnchor,
+            restrictedView ? 800 : 1600,
+            'clients',
+            onActiveTabChange,
+            onClientSearchChange,
+          )}
+        </XUINodeList>
       ) : (
         <Empty description="暂无 x-ui 节点数据" />
       ),
@@ -1379,7 +1380,10 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
             dataSource={filteredClients}
             pagination={false}
             tableLayout="fixed"
-            scroll={{ x: visibleClientColumns.reduce((width, column) => width + Number(column.width || 0), 0) }}
+            // Let rc-table measure the declared column widths intrinsically. A
+            // numeric x value equal to their sum can leave the sticky layer
+            // with a stale scroll range after a fast right-to-left fling.
+            scroll={{ x: 'max-content' }}
           />
         </Space>
       ) : (
@@ -1423,7 +1427,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
                     <Text className="outbound-tag">{outbound.tag || '-'}</Text>
                     <div className="muted-line">{outbound.protocol || '-'}{outbound.is_default ? ' · 默认出口' : ''}</div>
                   </div>
-                  <Space wrap size={[6, 6]}>
+                  <Space wrap size={[6, 6]} className="outbound-head-meta">
                     {outbound.is_default ? <Tag color="success">默认</Tag> : null}
                     {outbound.send_through ? <Tag>sendThrough:{outbound.send_through}</Tag> : null}
                     {linkedClient ? <Tag color="cyan">关联 {linkedClient.target.agent_name || linkedClient.target.agent_id}</Tag> : null}

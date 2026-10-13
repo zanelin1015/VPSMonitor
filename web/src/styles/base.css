@@ -444,9 +444,31 @@ body {
 .admin-content-page {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  /* Keep page scrolling vertical. Ant tables own their horizontal scroll
+   * area; a second horizontal scroll owner breaks sticky/fixed columns at
+   * both scroll extremes. */
+  overflow-x: clip;
+  overflow-y: auto;
+  overscroll-behavior-x: none;
   padding: 2px;
   scrollbar-gutter: stable;
+}
+
+/* Keep every Ant table's horizontal viewport local to the table. This also
+ * covers the fixed-column tables in traffic reset, access logs, customer
+ * management, and update logs, not just the x-ui client table. */
+.admin-content-page .ant-table-wrapper,
+.tabs-card .ant-table-wrapper {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.admin-content-page .ant-table-content,
+.tabs-card .ant-table-content {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: none;
 }
 
 .admin-content-page::-webkit-scrollbar {
@@ -1002,6 +1024,8 @@ body {
   min-height: 0;
   max-height: none;
   overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
   padding-right: 18px;
   scrollbar-color: rgba(14, 165, 233, 0.52) rgba(255, 255, 255, 0.18);
   scrollbar-gutter: stable;
@@ -1027,6 +1051,7 @@ body {
   grid-column: 2;
   grid-row: 2;
   height: 100%;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
 }
@@ -1083,6 +1108,7 @@ body {
 
 .workspace-grid-agent-open .tabs-card {
   display: flex;
+  min-width: 0;
   height: var(--topology-panel-height);
   max-height: var(--topology-panel-height);
   flex-direction: column;
@@ -1091,6 +1117,7 @@ body {
 
 .workspace-grid-agent-open .tabs-card > .ant-card-body {
   display: flex;
+  min-width: 0;
   min-height: 0;
   flex: 1;
   flex-direction: column;
@@ -1099,14 +1126,21 @@ body {
 
 .workspace-grid-agent-open .tabs-card .ant-tabs {
   display: flex;
+  min-width: 0;
   min-height: 0;
   flex: 1;
   flex-direction: column;
 }
 
 .workspace-grid-agent-open .tabs-card .ant-tabs-content-holder {
+  min-width: 0;
   min-height: 0;
+  /* Tables inside agent tabs have their own horizontal scroller. The tab
+   * content holder must not become a competing scroll container because
+   * rc-table positions fixed columns relative to its nearest scroller. */
+  overflow-x: clip;
   overflow-y: auto;
+  overscroll-behavior-x: none;
   padding-right: 8px;
   scrollbar-color: rgba(14, 165, 233, 0.52) rgba(255, 255, 255, 0.18);
   scrollbar-gutter: stable;

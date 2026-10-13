@@ -9,9 +9,10 @@
 
 .customer-console-theme .customer-page-shell { background: var(--bg); }
 .customer-console-theme .customer-page-shell .page-background { display: none; }
-.customer-console-theme .customer-shell { padding-top: 20px; }
+.customer-console-theme .customer-shell { padding-top: 0; }
 :root .customer-console-theme .customer-dashboard-header {
   align-items: center;
+  margin-top: 20px;
   padding: 22px 24px;
   border-color: var(--border);
   border-radius: 20px;

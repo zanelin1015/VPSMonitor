@@ -821,68 +821,34 @@ func (c *XUIClient) updateClientExpiry(ctx context.Context, payload map[string]a
 	inboundID := intValue(payload["inbound_id"])
 	inboundTag := strings.TrimSpace(stringFromMap(payload, "inbound_tag"))
 	email := strings.TrimSpace(stringFromMap(payload, "email"))
-	expiryTime := int64Value(payload["expiry_time"])
+	expiryRaw, hasExpiry := payload["expiry_time"]
 	if inboundID <= 0 && inboundTag == "" {
 		return nil, fmt.Errorf("inbound_id or inbound_tag is required")
 	}
 	if email == "" {
 		return nil, fmt.Errorf("email is required")
 	}
-	if expiryTime <= 0 {
+	if !hasExpiry {
 		return nil, fmt.Errorf("expiry_time is required")
 	}
-	inbounds, err := c.getJSONList(ctx, "/panel/api/inbounds/list")
+	expiryTime, err := clientUpdateInt64(expiryRaw, "expiry_time")
 	if err != nil {
 		return nil, err
 	}
-	var inbound map[string]any
-	for _, item := range inbounds {
-		if inboundID > 0 && intValue(item["id"]) == inboundID {
-			inbound = item
-			break
-		}
-		if inboundTag != "" && stringValue(item["tag"]) == inboundTag {
-			inbound = item
-			break
-		}
+	if expiryTime < 0 {
+		return nil, fmt.Errorf("expiry_time must not be negative")
 	}
-	if inbound == nil {
-		return nil, fmt.Errorf("inbound not found for client %s", email)
-	}
-
-	settings, settingsText, err := decodeInboundSettings(inbound["settings"])
+	target, err := c.loadClientUpdateTarget(ctx, inboundID, inboundTag, email, clientIDForUpdate(payload))
 	if err != nil {
 		return nil, err
 	}
-	clients := objectSlice(settings["clients"])
-	var updatedClient map[string]any
-	for _, client := range clients {
-		if strings.TrimSpace(stringValue(client["email"])) == email {
-			client["expiryTime"] = expiryTime
-			updatedClient = client
-			break
-		}
-	}
-	if updatedClient == nil {
-		return nil, fmt.Errorf("client not found in inbound: %s", email)
-	}
-
-	inboundID = intValue(inbound["id"])
-	settings["clients"] = clients
-	body, err := json.Marshal(settings)
+	target.client["expiryTime"] = expiryTime
+	result, err := c.saveClientUpdate(ctx, target, "expiryTime")
 	if err != nil {
-		return nil, fmt.Errorf("marshal inbound settings: %w", err)
+		return result, err
 	}
-	if settingsText {
-		inbound["settings"] = string(body)
-	} else {
-		inbound["settings"] = settings
-	}
-	result, err := c.postJSON(ctx, fmt.Sprintf("/panel/api/inbounds/update/%d", inboundID), inbound)
-	if err != nil {
-		return nil, err
-	}
-	return map[string]any{"message": result.Msg, "email": email, "expiry_time": expiryTime, "enabled": updatedClient["enable"], "restarted": false}, nil
+	result["expiry_time"] = expiryTime
+	return result, nil
 }
 
 func (c *XUIClient) updateClientTrafficLimit(ctx context.Context, payload map[string]any) (map[string]any, error) {
@@ -890,7 +856,6 @@ func (c *XUIClient) updateClientTrafficLimit(ctx context.Context, payload map[st
 	inboundTag := strings.TrimSpace(stringFromMap(payload, "inbound_tag"))
 	email := strings.TrimSpace(stringFromMap(payload, "email"))
 	totalBytesRaw, hasTotalBytes := payload["total_bytes"]
-	totalBytes := int64Value(totalBytesRaw)
 	if inboundID <= 0 && inboundTag == "" {
 		return nil, fmt.Errorf("inbound_id or inbound_tag is required")
 	}
@@ -900,69 +865,31 @@ func (c *XUIClient) updateClientTrafficLimit(ctx context.Context, payload map[st
 	if !hasTotalBytes {
 		return nil, fmt.Errorf("total_bytes is required")
 	}
+	totalBytes, err := clientUpdateInt64(totalBytesRaw, "total_bytes")
+	if err != nil {
+		return nil, err
+	}
 	if totalBytes < 0 {
 		return nil, fmt.Errorf("total_bytes must not be negative")
 	}
-
-	inbounds, err := c.getJSONList(ctx, "/panel/api/inbounds/list")
+	target, err := c.loadClientUpdateTarget(ctx, inboundID, inboundTag, email, clientIDForUpdate(payload))
 	if err != nil {
 		return nil, err
 	}
-	inbound := findInboundForAction(inbounds, inboundID, inboundTag)
-	if inbound == nil {
-		return nil, fmt.Errorf("inbound not found for client %s", email)
-	}
-
-	settings, settingsText, err := decodeInboundSettings(inbound["settings"])
+	target.client["totalGB"] = totalBytes
+	result, err := c.saveClientUpdate(ctx, target, "totalGB")
 	if err != nil {
-		return nil, err
+		return result, err
 	}
-	clients := objectSlice(settings["clients"])
-	var updatedClient map[string]any
-	for _, client := range clients {
-		if strings.TrimSpace(stringValue(client["email"])) == email {
-			client["totalGB"] = totalBytes
-			updatedClient = client
-			break
-		}
-	}
-	if updatedClient == nil {
-		return nil, fmt.Errorf("client not found in inbound: %s", email)
-	}
-
-	inboundID = intValue(inbound["id"])
-	settings["clients"] = clients
-	body, err := json.Marshal(settings)
-	if err != nil {
-		return nil, fmt.Errorf("marshal inbound settings: %w", err)
-	}
-	if settingsText {
-		inbound["settings"] = string(body)
-	} else {
-		inbound["settings"] = settings
-	}
-	result, err := c.postJSON(ctx, fmt.Sprintf("/panel/api/inbounds/update/%d", inboundID), inbound)
-	if err != nil {
-		return nil, err
-	}
-	return map[string]any{
-		"message":     result.Msg,
-		"email":       email,
-		"inbound_id":  inboundID,
-		"total_bytes": totalBytes,
-		"restarted":   false,
-	}, nil
+	result["total_bytes"] = totalBytes
+	return result, nil
 }
 
 func (c *XUIClient) setClientEnabled(ctx context.Context, payload map[string]any) (map[string]any, error) {
 	inboundID := intValue(payload["inbound_id"])
 	inboundTag := strings.TrimSpace(stringFromMap(payload, "inbound_tag"))
 	email := strings.TrimSpace(stringFromMap(payload, "email"))
-	clientID := strings.TrimSpace(firstNonEmptyString(
-		stringFromMap(payload, "client_id"),
-		stringFromMap(payload, "client_uuid"),
-		stringFromMap(payload, "auth_uuid"),
-	))
+	clientID := clientIDForUpdate(payload)
 	enabled, hasEnabled := boolPayloadValue(payload, "enabled")
 	if value, ok := boolPayloadValue(payload, "enable"); ok {
 		enabled = value
@@ -977,64 +904,16 @@ func (c *XUIClient) setClientEnabled(ctx context.Context, payload map[string]any
 	if !hasEnabled {
 		return nil, fmt.Errorf("enabled is required")
 	}
-	inbounds, err := c.getJSONList(ctx, "/panel/api/inbounds/list")
+	target, err := c.loadClientUpdateTarget(ctx, inboundID, inboundTag, email, clientID)
 	if err != nil {
 		return nil, err
 	}
-	var inbound map[string]any
-	for _, item := range inbounds {
-		if inboundID > 0 && intValue(item["id"]) == inboundID {
-			inbound = item
-			break
-		}
-		if inboundTag != "" && stringValue(item["tag"]) == inboundTag {
-			inbound = item
-			break
-		}
+	target.client["enable"] = enabled
+	result, err := c.saveClientUpdate(ctx, target, "enable")
+	if err == nil {
+		result["client_id"] = clientPrimaryID(target.client)
 	}
-	if inbound == nil {
-		return nil, fmt.Errorf("inbound not found for client %s", firstNonEmptyString(email, clientID))
-	}
-
-	settings, settingsText, err := decodeInboundSettings(inbound["settings"])
-	if err != nil {
-		return nil, err
-	}
-	clients := objectSlice(settings["clients"])
-	var updatedClient map[string]any
-	for _, client := range clients {
-		if clientMatchesDeletePayload(client, email, clientID) {
-			client["enable"] = enabled
-			if email == "" {
-				email = strings.TrimSpace(stringValue(client["email"]))
-			}
-			if clientID == "" {
-				clientID = clientPrimaryID(client)
-			}
-			updatedClient = client
-			break
-		}
-	}
-	if updatedClient == nil {
-		return nil, fmt.Errorf("client not found in inbound: %s", firstNonEmptyString(email, clientID))
-	}
-
-	inboundID = intValue(inbound["id"])
-	settings["clients"] = clients
-	body, err := json.Marshal(settings)
-	if err != nil {
-		return nil, fmt.Errorf("marshal inbound settings: %w", err)
-	}
-	if settingsText {
-		inbound["settings"] = string(body)
-	} else {
-		inbound["settings"] = settings
-	}
-	result, err := c.postJSON(ctx, fmt.Sprintf("/panel/api/inbounds/update/%d", inboundID), inbound)
-	if err != nil {
-		return nil, err
-	}
-	return map[string]any{"message": result.Msg, "email": email, "client_id": clientID, "inbound_id": inboundID, "enabled": updatedClient["enable"], "restarted": false}, nil
+	return result, err
 }
 
 func boolPayloadValue(payload map[string]any, key string) (bool, bool) {
