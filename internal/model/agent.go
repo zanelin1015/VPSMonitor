@@ -186,9 +186,8 @@ type AgentRegisterRequest struct {
 }
 
 type AgentCapabilities struct {
-	TrafficReset bool `json:"traffic_reset,omitempty"`
-	Realm        bool `json:"realm,omitempty"`
-	HAProxy      bool `json:"haproxy,omitempty"`
+	Realm   bool `json:"realm,omitempty"`
+	HAProxy bool `json:"haproxy,omitempty"`
 }
 
 type AgentRegisterResponse struct {

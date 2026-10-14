@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Alert, AutoComplete, Button, Card, Col, Empty, Input, InputNumber, List, Row, Select, Space, Spin, Switch, Typography } from 'antd'
+import { useId, useState } from 'react'
+import { Alert, AutoComplete, Button, Card, Col, Collapse, Empty, Input, InputNumber, List, Row, Select, Space, Spin, Switch, Typography } from 'antd'
 import { DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 
 import type { AgentEntryConfig, AgentEntryMapping, AgentListItem, ConfigAuditLog, ManagedAgentConfig, NetworkPortPolicyRule, RealmForwardRule, VPSRenewalConfig, XUIConfig, XUILocalCertificate } from '../types'
@@ -78,6 +78,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
   } = props
   const [realmCopyTargetAgentID, setRealmCopyTargetAgentID] = useState('')
   const [networkPolicyEditedAgentID, setNetworkPolicyEditedAgentID] = useState('')
+  const xuiFieldID = useId()
 
   if (!selectedAgent) {
     return <Empty description="先选择一个 client" />
@@ -450,79 +451,94 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
         </Row>
       </Card>
 
-      <Card className="config-section-card" bordered={false} style={hiddenSectionStyle('xui')}>
+      <Card className="config-section-card xui-config-card" bordered={false} style={hiddenSectionStyle('xui')}>
         <div className="section-title-row">
           <Title level={4}>X-UI 托管配置</Title>
           {sectionSaveButton('xui', '保存 X-UI 配置')}
         </div>
-        <Row gutter={[16, 16]}>
-          <Col xs={24} md={12}>
-            <div className="switch-row">
-              <span>启用 x-ui 采集</span>
-              <Switch checked={managedConfig.xui.enabled} onChange={(checked) => onXUIChange({ enabled: checked })} />
-            </div>
-          </Col>
-          <Col xs={24} md={12}>
-            <div className="switch-row">
-              <span>跳过 TLS 校验</span>
-              <Switch checked={managedConfig.xui.skip_tls_verify} onChange={(checked) => onXUIChange({ skip_tls_verify: checked })} />
-            </div>
-          </Col>
-          <Col xs={24} md={12}>
-            <Text type="secondary">Base URL</Text>
-            <Input value={managedConfig.xui.base_url || ''} placeholder="用于打开面板/执行操作，例如 https://127.0.0.1:2053/secret/" onChange={(event) => onXUIChange({ base_url: event.target.value })} />
-          </Col>
-          <Col xs={24} md={12}>
-            <Text type="secondary">本地 x-ui 数据库路径</Text>
-            <Input value={managedConfig.xui.db_path || ''} placeholder="默认自动读取 /etc/x-ui/x-ui.db" onChange={(event) => onXUIChange({ db_path: event.target.value })} />
-          </Col>
-          <Col xs={24} md={12}>
-            <Text type="secondary">用户名</Text>
-            <Input value={managedConfig.xui.username || ''} onChange={(event) => onXUIChange({ username: event.target.value })} />
-          </Col>
-          <Col xs={24} md={12}>
-            <Text type="secondary">密码</Text>
-            <Input.Password value={managedConfig.xui.password || ''} onChange={(event) => onXUIChange({ password: event.target.value })} />
-          </Col>
-          <Col xs={24} md={12}>
-            <Text type="secondary">API Token</Text>
-            <Input.Password
-              value={managedConfig.xui.api_token || ''}
-              placeholder="新版 3x-ui：Settings → Security → API Token"
-              onChange={(event) => onXUIChange({ api_token: event.target.value })}
-            />
-          </Col>
-          <Col xs={24} md={12}>
-            <Text type="secondary">二步验证码</Text>
-            <Input value={managedConfig.xui.two_factor_code || ''} onChange={(event) => onXUIChange({ two_factor_code: event.target.value })} />
-          </Col>
-          <Col xs={24} md={12}>
-            <Text type="secondary">节点维护方式</Text>
-            <Input value="节点请直接在 x-ui 前端手动维护；中心只负责出站与转发编排" disabled />
-          </Col>
-          <Col xs={24} md={12}>
-            <div className="switch-row">
-              <span>采集访问日志</span>
-              <Switch checked={Boolean(managedConfig.xui.access_log_enabled)} onChange={(checked) => onXUIChange({ access_log_enabled: checked })} />
-            </div>
-          </Col>
-          <Col xs={24} md={12}>
-            <Text type="secondary">日志保留天数</Text>
-            <InputNumber
-              style={{ width: '100%' }}
-              min={1}
-              max={30}
-              precision={0}
-              value={managedConfig.xui.access_log_retention_days || 7}
-              onChange={(value) => onXUIChange({ access_log_retention_days: Number(value || 7) })}
-            />
-          </Col>
+        <Row gutter={[16, 12]}>
           <Col xs={24}>
-            <Text type="secondary">Xray access.log 路径</Text>
-            <Input
-              value={managedConfig.xui.access_log_path || ''}
-              placeholder="例如 /usr/local/x-ui/bin/access.log；Docker 需填写 client 本机可读取的挂载路径"
-              onChange={(event) => onXUIChange({ access_log_path: event.target.value })}
+            <div className="xui-config-options">
+              <label className="xui-config-option" htmlFor={`${xuiFieldID}-enabled`}>
+                <span>启用 x-ui 采集</span>
+                <Switch id={`${xuiFieldID}-enabled`} aria-label="启用 x-ui 采集" checked={managedConfig.xui.enabled} onChange={(checked) => onXUIChange({ enabled: checked })} />
+              </label>
+              <label className="xui-config-option" htmlFor={`${xuiFieldID}-skip-tls`}>
+                <span>跳过 TLS 校验</span>
+                <Switch id={`${xuiFieldID}-skip-tls`} aria-label="跳过 TLS 校验" checked={managedConfig.xui.skip_tls_verify} onChange={(checked) => onXUIChange({ skip_tls_verify: checked })} />
+              </label>
+              <label className="xui-config-option" htmlFor={`${xuiFieldID}-access-log-enabled`}>
+                <span>采集访问日志</span>
+                <Switch id={`${xuiFieldID}-access-log-enabled`} aria-label="采集访问日志" checked={Boolean(managedConfig.xui.access_log_enabled)} onChange={(checked) => onXUIChange({ access_log_enabled: checked })} />
+              </label>
+              {managedConfig.xui.access_log_enabled && (
+                <div className="xui-config-option xui-config-retention">
+                  <label htmlFor={`${xuiFieldID}-retention-days`}>日志保留天数</label>
+                  <InputNumber
+                    id={`${xuiFieldID}-retention-days`}
+                    min={1}
+                    max={30}
+                    precision={0}
+                    value={managedConfig.xui.access_log_retention_days || 7}
+                    onChange={(value) => onXUIChange({ access_log_retention_days: Number(value || 7) })}
+                  />
+                </div>
+              )}
+            </div>
+          </Col>
+          <Col xs={24} md={12}>
+            <div className="xui-config-field">
+              <label htmlFor={`${xuiFieldID}-base-url`}><Text type="secondary">Base URL</Text></label>
+              <Input id={`${xuiFieldID}-base-url`} value={managedConfig.xui.base_url || ''} placeholder="用于打开面板/执行操作，例如 https://127.0.0.1:2053/secret/" onChange={(event) => onXUIChange({ base_url: event.target.value })} />
+            </div>
+          </Col>
+          <Col xs={24} md={12}>
+            <div className="xui-config-field">
+              <label htmlFor={`${xuiFieldID}-api-token`}><Text type="secondary">API Token</Text></label>
+              <Input.Password
+                id={`${xuiFieldID}-api-token`}
+                value={managedConfig.xui.api_token || ''}
+                placeholder="新版 3x-ui：Settings → Security → API Token"
+                onChange={(event) => onXUIChange({ api_token: event.target.value })}
+              />
+            </div>
+          </Col>
+          {managedConfig.xui.access_log_enabled && (
+            <Col xs={24}>
+              <div className="xui-config-field">
+                <label htmlFor={`${xuiFieldID}-access-log-path`}><Text type="secondary">Xray access.log 路径</Text></label>
+                <Input
+                  id={`${xuiFieldID}-access-log-path`}
+                  value={managedConfig.xui.access_log_path || ''}
+                  placeholder="例如 /usr/local/x-ui/bin/access.log；Docker 需填写 client 本机可读取的挂载路径"
+                  onChange={(event) => onXUIChange({ access_log_path: event.target.value })}
+                />
+              </div>
+            </Col>
+          )}
+          <Col xs={24}>
+            <Collapse
+              className="xui-config-advanced"
+              ghost
+              size="small"
+              items={[{
+                key: 'local-db',
+                label: '高级设置',
+                children: (
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    <div className="xui-config-field">
+                      <label htmlFor={`${xuiFieldID}-db-path`}><Text type="secondary">本地 x-ui 数据库路径</Text></label>
+                      <Input
+                        id={`${xuiFieldID}-db-path`}
+                        value={managedConfig.xui.db_path || ''}
+                        placeholder="默认自动读取 /etc/x-ui/x-ui.db"
+                        onChange={(event) => onXUIChange({ db_path: event.target.value })}
+                      />
+                    </div>
+                    <Text type="secondary">用于本地兜底读取，常规安装无需填写；Docker 或非标准安装可填写 Client 本机可读取的数据库路径。</Text>
+                  </Space>
+                ),
+              }]}
             />
           </Col>
         </Row>

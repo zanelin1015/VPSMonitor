@@ -172,7 +172,6 @@ func (a *App) handleCustomerUsage(w http.ResponseWriter, r *http.Request) {
 	links := make(map[int64]model.CustomerLinkView, len(overview.Links))
 	multipliers := make(map[int64]float64, len(overview.Links))
 	var rawUpload, rawDownload, countedUpload, countedDownload, counted, quota uint64
-	var nextResetAt int64
 	unlimited := false
 	for _, link := range overview.Links {
 		links[link.AssignmentID] = link
@@ -189,9 +188,6 @@ func (a *App) handleCustomerUsage(w http.ResponseWriter, r *http.Request) {
 			unlimited = true
 		} else {
 			quota += nonNegativeTrafficUint(link.TrafficLimitBytes)
-		}
-		if link.TrafficResetAt > 0 && (nextResetAt == 0 || link.TrafficResetAt < nextResetAt) {
-			nextResetAt = link.TrafficResetAt
 		}
 	}
 	// Detailed sampler records are intentionally limited to the latest three
@@ -258,7 +254,6 @@ func (a *App) handleCustomerUsage(w http.ResponseWriter, r *http.Request) {
 		CountedTotalBytes: counted,
 		QuotaBytes:        quota,
 		RemainingBytes:    remaining,
-		NextResetAt:       nextResetAt,
 		Unlimited:         unlimited,
 		Daily:             daily,
 		Records:           records,
@@ -266,7 +261,7 @@ func (a *App) handleCustomerUsage(w http.ResponseWriter, r *http.Request) {
 }
 
 func customerUsageRange(r *http.Request, now time.Time) (time.Time, time.Time, error) {
-	location := model.TrafficResetLocation
+	location := model.BeijingLocation
 	end := now.In(location)
 	if raw := strings.TrimSpace(r.URL.Query().Get("to")); raw != "" {
 		parsed, err := time.ParseInLocation("2006-01-02", raw, location)
@@ -615,6 +610,7 @@ func cloneCustomerOverviewContext(entry customerOverviewCacheEntry) (model.Globa
 type customerClientRef struct {
 	Client            model.XUIClientView
 	TemplateImportURL string
+	XrayVersion       string
 }
 
 func buildCustomerClientMap(snapshots []model.AgentSnapshot, agents []model.AgentRecord) map[string]customerClientRef {
@@ -634,6 +630,7 @@ func buildCustomerClientMap(snapshots []model.AgentSnapshot, agents []model.Agen
 			ref := customerClientRef{
 				Client:            client,
 				TemplateImportURL: templateImportURLs[key],
+				XrayVersion:       snapshot.XUI.ServerStatus.Xray.Version,
 			}
 			result[key] = ref
 			if client.ClientID != "" {
@@ -698,22 +695,18 @@ func buildCustomerLinkView(
 	}
 	if clientFound {
 		link.ImportURL = clientRef.Client.ImportURL
+		link.XrayVersion = clientRef.XrayVersion
 		link.ClientRemark = firstNonEmptyString(clientRef.Client.Comment, clientRef.Client.SubID)
 		if clientRef.Client.ExpiryTime > 0 {
 			// Keep the Xray expiry separate from the billing expiry. Xray is the
 			// source of truth for whether the client is still valid; the billing
-			// expiry is only used for the customer-facing cycle/reset display.
+			// expiry is only used for the customer-facing billing cycle display.
 			link.XrayExpireTime = clientRef.Client.ExpiryTime
 			link.ExpireTime = clientRef.Client.ExpiryTime
 		}
 	}
 	if billing, ok := customerBillingForAssignment(assignment, agentMap); ok {
 		trafficMultiplier = normalizeClientTrafficMultiplier(billing.TrafficMultiplier)
-		if billing.StartTime > 0 {
-			if _, next, err := model.TrafficResetBoundaries(billing.StartTime, "month", time.Now()); err == nil {
-				link.TrafficResetAt = next.UnixMilli()
-			}
-		}
 		if billing.RevenueAmount > 0 {
 			amount := billing.RevenueAmount
 			link.RevenueAmount = &amount

@@ -358,6 +358,7 @@ func TestBuildCustomerLinkViewResolvesFirstRealmHopToFinalClient(t *testing.T) {
 	chainMap := buildCustomerChainMap(chains, links)
 	clientMap := map[string]customerClientRef{
 		customerAssignmentKey("dmit", 1, "xq"): {
+			XrayVersion: "26.10.10",
 			Client: model.XUIClientView{
 				InboundID:  1,
 				InboundTag: "DMIT",
@@ -419,6 +420,10 @@ func TestBuildCustomerLinkViewResolvesFirstRealmHopToFinalClient(t *testing.T) {
 	if link.ClientRemark != "final client" || link.TrafficUsedBytes != 5*1024*1024*1024 || link.TrafficLimitBytes != 100*1024*1024*1024 {
 		t.Fatalf("expected final client metadata and traffic, got %#v", link)
 	}
+	if link.XrayVersion != "26.10.10" {
+		t.Fatalf("Realm entry must retain the final Xray inbound's version, got %q", link.XrayVersion)
+	}
+	assertContains(t, buildMihomoSubscription(model.CustomerUser{}, []model.CustomerLinkView{link}), "support-x25519mlkem768: true")
 
 	unauthorized := assignment
 	unauthorized.ClientEmail = "other-user"

@@ -639,6 +639,8 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         const limit = Math.max(0, Number(record.total_gb || 0))
         const actionKey = xuiClientActionKey(record)
         const limitGB = clientTrafficLimitDrafts[actionKey] ?? limit / (1024 * 1024 * 1024)
+        const billing = findClientBilling(managedConfig?.renewal?.client_billings, record) || defaultClientBilling(record)
+        const startTime = effectiveClientBillingStartTime(billing, record.expiry_time || 0)
         return (
           <div className="client-traffic-cell">
             <span>已用 {formatBytes(total)}{limit > 0 ? ` / 限额 ${formatBytes(limit)}` : ' / 无上限'}</span>
@@ -668,7 +670,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
                 </Tooltip>
               </Space.Compact>
             ) : null}
-            {!restrictedView ? <XUIClientTrafficResetEditor record={record} canManage={canManageConfig} onSave={onSaveXUIClientTrafficReset} /> : null}
+            {!restrictedView ? <XUIClientTrafficResetEditor record={record} startTime={startTime} canManage={canManageConfig} onSave={onSaveXUIClientTrafficReset} /> : null}
             {!restrictedView ? <span>上传 {formatBytes(up)}</span> : null}
             {!restrictedView ? <span>下载 {formatBytes(down)}</span> : null}
           </div>

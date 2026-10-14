@@ -127,7 +127,6 @@ type CustomerLinkView struct {
 	TrafficDownloadBytes int64                    `json:"traffic_download_bytes,omitempty"`
 	TrafficUsedBytes     int64                    `json:"traffic_used_bytes,omitempty"`
 	TrafficLimitBytes    int64                    `json:"traffic_limit_bytes,omitempty"`
-	TrafficResetAt       int64                    `json:"traffic_reset_at,omitempty"`
 	NodeExpireTime       int64                    `json:"node_expire_time,omitempty"`
 	XrayExpireTime       int64                    `json:"xray_expire_time,omitempty"`
 	StartTime            int64                    `json:"start_time,omitempty"`
@@ -137,6 +136,10 @@ type CustomerLinkView struct {
 	Steps                []CustomerLinkStep       `json:"steps"`
 	FrontProxies         []CustomerLinkFrontProxy `json:"front_proxies,omitempty"`
 	UpdatedAt            time.Time                `json:"updated_at"`
+	// XrayVersion belongs to the client-facing Xray inbound, including when
+	// its address is rewritten to a Realm/HAProxy entry. It is server-only
+	// metadata for choosing a compatible Mihomo REALITY handshake.
+	XrayVersion string `json:"-"`
 }
 
 // CustomerTrafficDailyUsage is the raw per-assignment delta collected from
@@ -183,7 +186,6 @@ type CustomerUsageResponse struct {
 	CountedTotalBytes uint64                  `json:"counted_total_bytes"`
 	QuotaBytes        uint64                  `json:"quota_bytes"`
 	RemainingBytes    uint64                  `json:"remaining_bytes"`
-	NextResetAt       int64                   `json:"next_reset_at,omitempty"`
 	Unlimited         bool                    `json:"unlimited"`
 	Daily             []CustomerDailyUsage    `json:"daily"`
 	Records           []CustomerTrafficRecord `json:"records,omitempty"`

@@ -455,7 +455,7 @@ body {
 }
 
 /* Keep every Ant table's horizontal viewport local to the table. This also
- * covers the fixed-column tables in traffic reset, access logs, customer
+ * covers the fixed-column tables in access logs, customer
  * management, and update logs, not just the x-ui client table. */
 .admin-content-page .ant-table-wrapper,
 .tabs-card .ant-table-wrapper {

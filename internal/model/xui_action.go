@@ -3,6 +3,7 @@ package model
 import "time"
 
 const (
+	// Retained only to retire queued actions and reject pre-upgrade requests.
 	XUIActionResetClientTraffic       = "reset_client_traffic"
 	XUIActionAddOutbound              = "add_outbound"
 	XUIActionAddClient                = "add_client"
@@ -23,6 +24,8 @@ const (
 	XUIActionStatusRunning   = "running"
 	XUIActionStatusSucceeded = "succeeded"
 	XUIActionStatusFailed    = "failed"
+
+	LegacyTrafficResetRemovedMessage = "系统周期流量重置已移除，请使用 x-ui 客户端自动重置"
 )
 
 type XUIActionRequest struct {

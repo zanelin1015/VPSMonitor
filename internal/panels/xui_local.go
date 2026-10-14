@@ -97,7 +97,7 @@ func (c *XUIClient) enrichLocalXrayConfig(ctx context.Context, localConfig map[s
 		return localConfig
 	}
 	remoteConfig, err := c.collectXrayConfig(ctx)
-	if isXUIAuthError(err) {
+	if isXUIAuthError(err) && !c.hasAPIToken() {
 		c.invalidateSession()
 		if loginErr := c.login(ctx); loginErr == nil {
 			remoteConfig, err = c.collectXrayConfig(ctx)

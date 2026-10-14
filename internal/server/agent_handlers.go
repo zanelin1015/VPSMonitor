@@ -542,7 +542,11 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 
 	switch parts[1] {
 	case "traffic-reset-validation":
-		a.handleTrafficResetValidation(w, r, agentID)
+		if !a.isAuthorized(agentID, r.Header.Get("X-Agent-Token")) {
+			writeError(w, http.StatusUnauthorized, "invalid agent token")
+			return
+		}
+		writeError(w, http.StatusGone, model.LegacyTrafficResetRemovedMessage)
 	case "replace":
 		if len(parts) != 2 {
 			writeError(w, http.StatusNotFound, "route not found")
@@ -1133,7 +1137,7 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 				return
 			}
 			if req.Kind == model.XUIActionResetClientTraffic {
-				writeError(w, http.StatusForbidden, "traffic reset actions may only be created by the period scheduler")
+				writeError(w, http.StatusGone, model.LegacyTrafficResetRemovedMessage)
 				return
 			}
 			if isAreaManager(user) && !a.areaManagerXUIActionAllowed(user, agentID, req) {
@@ -1488,7 +1492,7 @@ func filterRootOnlyXUIActions(actions []model.XUIAction) []model.XUIAction {
 
 func isRootOnlyXUIActionKind(kind string) bool {
 	switch kind {
-	case model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI, model.XUIActionDeleteRoutingRules, model.XUIActionResetClientTraffic:
+	case model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI, model.XUIActionDeleteRoutingRules:
 		return true
 	default:
 		return false
@@ -1591,8 +1595,6 @@ func (a *App) dispatchXUITrafficCollectionRealtime(agentID string) {
 
 func xuiActionUsesPanelAuth(kind string) bool {
 	switch kind {
-	case model.XUIActionResetClientTraffic:
-		return true
 	case model.XUIActionAddOutbound,
 		model.XUIActionAddClient,
 		model.XUIActionAddRoutingRule,

@@ -869,6 +869,63 @@ html[data-theme='dark'] .customer-hero {
   margin: 0;
 }
 
+.ant-modal.customer-assignment-modal .ant-modal-content {
+  --assignment-modal-inset: 24px;
+  padding: 20px var(--assignment-modal-inset);
+}
+
+.ant-modal.customer-assignment-modal .ant-modal-header {
+  min-height: 44px;
+  margin-bottom: 18px;
+  padding: 0 44px 12px 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none;
+}
+
+.ant-modal.customer-assignment-modal .ant-modal-title {
+  line-height: 32px;
+  overflow-wrap: anywhere;
+}
+
+.ant-modal.customer-assignment-modal .ant-modal-close {
+  top: 20px;
+  inset-inline-end: var(--assignment-modal-inset);
+  width: 32px;
+  height: 32px;
+}
+
+.ant-modal.customer-assignment-modal .customer-admin-card {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.ant-modal.customer-assignment-modal .customer-admin-card > .ant-card-body {
+  padding: 0;
+}
+
+@media (max-width: 600px) {
+  .ant-modal.customer-assignment-modal .ant-modal-content {
+    --assignment-modal-inset: 16px;
+  }
+
+  .ant-modal.customer-assignment-modal .ant-modal-header {
+    padding-inline-end: 56px;
+  }
+
+  .ant-modal.customer-assignment-modal .ant-modal-title {
+    line-height: 44px;
+  }
+
+  .ant-modal.customer-assignment-modal .ant-modal-close {
+    width: 44px;
+    height: 44px;
+  }
+}
+
 .customer-admin-list-item {
   width: 100%;
   display: flex;

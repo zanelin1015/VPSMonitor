@@ -23,7 +23,7 @@ func (c *XUIClient) ExecuteAction(ctx context.Context, action model.XUIAction) (
 	result, err := c.executeActionAuthenticated(ctx, action)
 	// A non-nil result means the action has already saved changes. Never replay
 	// a destructive action because the subsequent restart lost authentication.
-	if err == nil || result != nil || !isXUIAuthError(err) {
+	if err == nil || result != nil || !isXUIAuthError(err) || c.hasAPIToken() {
 		return result, err
 	}
 	c.invalidateSession()

@@ -99,6 +99,7 @@ export function CustomerAssignmentManagerCard(props: CustomerAssignmentManagerCa
       />
       </Card>
       <Modal
+        className="customer-assignment-modal"
         title={editorTitle}
         open={editorOpen}
         onCancel={closeEditor}

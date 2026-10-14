@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import ts from 'typescript'
 
-const dir = await mkdtemp(join(tmpdir(), 'traffic-reset-'))
+const dir = await mkdtemp(join(tmpdir(), 'billing-cycle-'))
 try {
   for (const name of ['currency', 'traffic', 'appHelpersBilling', 'scheduledTasks']) {
     const source = await readFile(new URL(`../src/lib/${name}.ts`, import.meta.url), 'utf8')
@@ -26,14 +26,14 @@ try {
   }
   assert.equal(scaleClientTraffic(200 * 1024 ** 3, 2), 400 * 1024 ** 3)
   assert.equal(scaleClientTraffic(0, 2), 0)
-  assert.equal(defaultScheduledTaskSettings().traffic_reset.enabled, false)
-  assert.deepEqual(normalizeScheduledTaskSettings({}).traffic_reset, { enabled: false, catch_up_minutes: 360 })
-  const panel = await readFile(new URL('../src/components/TrafficResetPanel.tsx', import.meta.url), 'utf8')
-  for (const text of ['流量重置日志', '计划执行时间（北京时间）', '详情 / 失败原因', '领取时间，实际执行时间未确认', '结果未确认', '跳过（未执行）', '重置周期：每月']) {
-    assert.ok(panel.includes(text), `audit log label: ${text}`)
-  }
-  assert.ok(panel.includes("timeZone: 'Asia/Shanghai'"), 'audit timestamps must display in Beijing time')
-  assert.ok(panel.includes('data.logs || []'), 'older servers without logs must still render')
-  console.log('traffic reset timezone, half-year, fixed expiry, defaults and multiplier tests passed')
-  console.log('traffic reset audit log result, actual time/fallback and backward compatibility safeguards passed')
+  assert.deepEqual(Object.keys(defaultScheduledTaskSettings()).sort(), ['alert_sweep', 'daily_traffic_report'])
+  const upgraded = normalizeScheduledTaskSettings({
+    traffic_reset: { enabled: true, catch_up_minutes: 360 },
+    alert_sweep: { enabled: false, interval_minutes: 10 },
+    daily_traffic_report: { enabled: true, time_of_day: '09:00', interval_days: 2 },
+  })
+  assert.ok(!('traffic_reset' in upgraded), 'legacy reset settings must not be re-saved')
+  assert.deepEqual(upgraded.alert_sweep, { enabled: false, interval_minutes: 10 })
+  assert.deepEqual(upgraded.daily_traffic_report, { enabled: true, time_of_day: '09:00', interval_days: 2 })
+  console.log('billing timezone, half-year, fixed expiry, multiplier and scheduled-task upgrade tests passed')
 } finally { await rm(dir, { recursive: true, force: true }) }

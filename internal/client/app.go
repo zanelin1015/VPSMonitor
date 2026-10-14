@@ -162,7 +162,8 @@ func (a *App) executeXUIAction(ctx context.Context, effectiveConfig model.Manage
 	result := model.XUIActionResultRequest{Status: model.XUIActionStatusSucceeded}
 	switch action.Kind {
 	case model.XUIActionResetClientTraffic:
-		return a.executeTrafficReset(ctx, xuiClient, action)
+		result.Status = model.XUIActionStatusFailed
+		result.Error = model.LegacyTrafficResetRemovedMessage
 	case model.XUIActionUpdateClient:
 		output, actionErr := a.startSelfUpdate(action.Payload)
 		if actionErr != nil {

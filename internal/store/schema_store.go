@@ -24,19 +24,6 @@ func (s *SQLiteStore) init() error {
 		 task_error TEXT NOT NULL DEFAULT '', claimed_at TEXT NOT NULL DEFAULT '',
 		 completed_at TEXT NOT NULL DEFAULT '', confirmed_at TEXT NOT NULL DEFAULT '');`,
 		`CREATE INDEX IF NOT EXISTS idx_client_update_logs_action ON client_update_logs(action_id);`,
-		`CREATE TABLE IF NOT EXISTS traffic_reset_policies (
-		 id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, data_json TEXT NOT NULL,
-		 FOREIGN KEY(agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE);`,
-		`CREATE TABLE IF NOT EXISTS traffic_reset_jobs (
-		 id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, status TEXT NOT NULL, action_id INTEGER NOT NULL DEFAULT 0,
-		 data_json TEXT NOT NULL, updated_at TEXT NOT NULL,
-		 FOREIGN KEY(agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE);`,
-		`CREATE INDEX IF NOT EXISTS idx_traffic_reset_jobs ON traffic_reset_jobs(updated_at DESC);`,
-		`CREATE TABLE IF NOT EXISTS traffic_reset_logs (
-		 id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT NOT NULL, action_id INTEGER NOT NULL,
-		 operation TEXT NOT NULL, data_json TEXT NOT NULL, recorded_at TEXT NOT NULL,
-		 UNIQUE(job_id, action_id, operation));`,
-		`CREATE INDEX IF NOT EXISTS idx_traffic_reset_logs_time ON traffic_reset_logs(id DESC);`,
 		`CREATE TABLE IF NOT EXISTS customer_traffic_samples (
 			 id INTEGER PRIMARY KEY AUTOINCREMENT,
 			 agent_id TEXT NOT NULL,
@@ -557,7 +544,7 @@ func (s *SQLiteStore) init() error {
 			return fmt.Errorf("init index: %w", err)
 		}
 	}
-	return nil
+	return s.retireLegacyTrafficResetActions()
 }
 
 func (s *SQLiteStore) ensureAgentSortOrders() error {

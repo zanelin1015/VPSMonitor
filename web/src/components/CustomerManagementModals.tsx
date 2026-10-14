@@ -593,6 +593,7 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
         />
       </Modal>
       <Modal
+        className="customer-assignment-modal"
         title={`管理授权链路 · ${selectedCustomerTitle}`}
         open={assignmentManagerModalOpen}
         onCancel={() => {

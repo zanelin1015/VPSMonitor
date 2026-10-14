@@ -143,6 +143,7 @@ func buildMihomoSubscription(user model.CustomerUser, links []model.CustomerLink
 		if !ok {
 			continue
 		}
+		configureMihomoRealityHandshake(&proxy, link.XrayVersion)
 		frontNames := make([]string, 0, len(link.FrontProxies))
 		for _, frontProxy := range link.FrontProxies {
 			if strings.TrimSpace(frontProxy.ShareURL) == "" {
@@ -227,6 +228,30 @@ type mihomoField struct {
 type mihomoObject struct {
 	Key    string
 	Fields []mihomoField
+}
+
+func configureMihomoRealityHandshake(proxy *mihomoProxy, xrayVersion string) {
+	// Xray 26.9.8 introduced a REALITY server check requiring the
+	// X25519MLKEM768 key share. Mihomo removes it by default for old servers.
+	// Keep that default when the serving core is old or unknown.
+	if _, ok := parseSemver(xrayVersion); !ok || isVersionNewer("26.9.8", xrayVersion) {
+		return
+	}
+	for i := range proxy.Objects {
+		if proxy.Objects[i].Key != "reality-opts" {
+			continue
+		}
+		proxy.Objects[i].Fields = append(proxy.Objects[i].Fields, mihomoField{"support-x25519mlkem768", true})
+		// Chrome's current uTLS fingerprint includes the required key share.
+		for j := range proxy.Fields {
+			if proxy.Fields[j].Key == "client-fingerprint" {
+				proxy.Fields[j].Value = "chrome"
+				return
+			}
+		}
+		proxy.Fields = append(proxy.Fields, mihomoField{"client-fingerprint", "chrome"})
+		return
+	}
 }
 
 type mihomoProxyGroup struct {

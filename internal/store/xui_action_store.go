@@ -12,6 +12,22 @@ import (
 
 const XUIActionExecutionLease = 15 * time.Minute
 
+// Keep historical receipts and legacy policy/log tables, but prevent an
+// offline Client from claiming a queued reset after the Server is upgraded.
+func (s *SQLiteStore) retireLegacyTrafficResetActions() error {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := s.db.Exec(`
+		UPDATE xui_actions
+		SET status = ?, error = ?, updated_at = ?, completed_at = ?
+		WHERE kind = ? AND status = ?
+	`, model.XUIActionStatusFailed, model.LegacyTrafficResetRemovedMessage, now, now,
+		model.XUIActionResetClientTraffic, model.XUIActionStatusPending)
+	if err != nil {
+		return fmt.Errorf("retire legacy traffic reset actions: %w", err)
+	}
+	return nil
+}
+
 func (s *SQLiteStore) CreateXUIAction(agentID string, req model.XUIActionRequest) (model.XUIAction, error) {
 	return s.CreateXUIActionWithActor(agentID, req, model.XUIActionActor{})
 }
@@ -170,10 +186,10 @@ func (s *SQLiteStore) ClaimPendingXUIActions(agentID string, limit int) ([]model
 	rows, err := tx.Query(`
 		SELECT id
 		FROM xui_actions
-		WHERE agent_id = ? AND status = ?
+		WHERE agent_id = ? AND status = ? AND kind <> ?
 		ORDER BY id ASC
 		LIMIT ?
-	`, agentID, model.XUIActionStatusPending, limit)
+	`, agentID, model.XUIActionStatusPending, model.XUIActionResetClientTraffic, limit)
 	if err != nil {
 		return nil, fmt.Errorf("select pending x-ui actions: %w", err)
 	}
@@ -283,8 +299,8 @@ func (s *SQLiteStore) MarkXUIActionRunning(agentID string, id int64) (model.XUIA
 	if _, err := s.db.Exec(`
 		UPDATE xui_actions
 		SET status = ?, updated_at = ?, claimed_at = ?
-		WHERE agent_id = ? AND id = ? AND status = ?
-	`, model.XUIActionStatusRunning, now, now, agentID, id, model.XUIActionStatusPending); err != nil {
+		WHERE agent_id = ? AND id = ? AND status = ? AND kind <> ?
+	`, model.XUIActionStatusRunning, now, now, agentID, id, model.XUIActionStatusPending, model.XUIActionResetClientTraffic); err != nil {
 		return model.XUIAction{}, fmt.Errorf("mark x-ui action running: %w", err)
 	}
 	action, found, err := s.GetXUIAction(agentID, id)
@@ -305,8 +321,8 @@ func (s *SQLiteStore) ClaimXUIAction(agentID string, id int64) (model.XUIAction,
 	result, err := s.db.Exec(`
 		UPDATE xui_actions
 		SET status = ?, updated_at = ?, claimed_at = ?
-		WHERE agent_id = ? AND id = ? AND status = ?
-	`, model.XUIActionStatusRunning, now, now, agentID, id, model.XUIActionStatusPending)
+		WHERE agent_id = ? AND id = ? AND status = ? AND kind <> ?
+	`, model.XUIActionStatusRunning, now, now, agentID, id, model.XUIActionStatusPending, model.XUIActionResetClientTraffic)
 	if err != nil {
 		return model.XUIAction{}, false, fmt.Errorf("claim x-ui action: %w", err)
 	}

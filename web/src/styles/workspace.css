@@ -19,6 +19,69 @@
   margin-bottom: 0;
 }
 
+.xui-config-card .section-title-row {
+  margin-bottom: 8px;
+}
+
+.xui-config-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 24px;
+}
+
+.xui-config-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  color: var(--muted-strong);
+  font-size: 14px;
+}
+
+label.xui-config-option {
+  cursor: pointer;
+}
+
+.xui-config-retention .ant-input-number {
+  width: 80px;
+}
+
+.xui-config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.xui-config-advanced > .ant-collapse-item > .ant-collapse-header {
+  align-items: center;
+  min-height: 32px;
+  padding: 0;
+}
+
+.xui-config-advanced > .ant-collapse-item > .ant-collapse-content > .ant-collapse-content-box {
+  padding: 8px 0 0;
+}
+
+@media (max-width: 600px) {
+  .xui-config-options {
+    gap: 0 12px;
+  }
+
+  .xui-config-option {
+    min-height: 44px;
+  }
+
+  .xui-config-retention .ant-input-number {
+    width: 64px;
+  }
+
+  .xui-config-advanced > .ant-collapse-item > .ant-collapse-header {
+    min-height: 44px;
+  }
+}
+
 .haproxy-runtime-strip {
   width: 100%;
   min-height: 36px;

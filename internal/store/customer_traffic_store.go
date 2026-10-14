@@ -79,7 +79,7 @@ func (s *SQLiteStore) ListCustomerTrafficUsage(customerID int64, from, to time.T
 		for index := range points {
 			current := &points[index]
 			if previous != nil && !current.reportedAt.Before(from) && current.reportedAt.Before(to) {
-				key := dailyKey{assignmentID: assignmentID, date: current.reportedAt.In(model.TrafficResetLocation).Format("2006-01-02")}
+				key := dailyKey{assignmentID: assignmentID, date: current.reportedAt.In(model.BeijingLocation).Format("2006-01-02")}
 				item := daily[key]
 				if item == nil {
 					item = &model.CustomerTrafficDailyUsage{AssignmentID: assignmentID, Date: key.date}
@@ -167,7 +167,7 @@ func (s *SQLiteStore) ListCustomerTrafficRecords(customerID int64, from, to time
 				upload := scaleCustomerTrafficRecord(trafficDelta(previous.upload, current.upload), multipliers[points[0].assignmentID])
 				download := scaleCustomerTrafficRecord(trafficDelta(previous.download, current.download), multipliers[points[0].assignmentID])
 				if upload+download > 0 {
-					recordedAt := current.reportedAt.In(model.TrafficResetLocation).Truncate(time.Minute)
+					recordedAt := current.reportedAt.In(model.BeijingLocation).Truncate(time.Minute)
 					key := recordedAt.Format(time.RFC3339)
 					item := byTimestamp[key]
 					if item == nil {

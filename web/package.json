@@ -12,7 +12,7 @@
     "test:customer-authorization": "node scripts/test-customer-authorization.mjs",
     "test:dev-proxy": "node scripts/test-dev-proxy.mjs",
     "test:client-expiry": "node scripts/test-client-expiry.mjs",
-    "test:traffic-reset": "node scripts/test-traffic-reset.mjs",
+    "test:billing-cycle": "node scripts/test-billing-cycle.mjs",
     "test:client-traffic-reset": "node scripts/test-client-traffic-reset.mjs",
     "test:client-update-logs": "node scripts/test-client-update-logs.mjs",
     "test:client-layout": "node scripts/test-client-layout.mjs",

@@ -28,7 +28,6 @@ import { XUI_ACTION_KINDS, clientInstallCommandByKind, defaultTelegramBotForm } 
 import { ClientInstallCommandBox } from './ClientInstallCommandBox'
 import { AdminHelpHint } from './AdminHelpHint'
 import { TelegramBotPanel } from './TelegramBotPanel'
-import { TrafficResetPanel } from './TrafficResetPanel'
 import { ClientUpdateLogPanel } from './ClientUpdateLogPanel'
 import { renderAddClientActionForm, renderOutboundActionForm, renderRoutingActionForm } from './XUIActionForms'
 
@@ -665,13 +664,12 @@ export function ScheduledTasksPanel(props: {
       <div className="admin-content-title">
         <div>
           <Typography.Title level={3}>定时任务</Typography.Title>
-          <AdminHelpHint title="管理后台任务；流量重置不会自动续期或修改客户端到期时间。" />
+          <AdminHelpHint title="管理告警扫描和每日流量日报；客户端自动流量重置在 Client 详情页设置，由 x-ui 执行。" />
         </div>
         <Button type="primary" loading={saving} onClick={onSave}>保存任务配置</Button>
       </div>
       <Spin spinning={loading}>
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <TrafficResetPanel settings={settings.traffic_reset} onChange={(traffic_reset) => update({ traffic_reset })} />
           <Card bordered={false} className="config-section-card">
             <Space direction="vertical" size="middle" style={{ width: '100%' }}>
               <div className="admin-content-title compact">

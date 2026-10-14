@@ -533,7 +533,6 @@ export interface CustomerLinkView {
   traffic_download_bytes?: number
   traffic_used_bytes?: number
   traffic_limit_bytes?: number
-  traffic_reset_at?: number
   node_expire_time?: number
   xray_expire_time?: number
   start_time?: number
@@ -588,7 +587,6 @@ export interface CustomerUsageResponse {
   counted_total_bytes: number
   quota_bytes: number
   remaining_bytes: number
-  next_reset_at?: number
   unlimited: boolean
   daily: CustomerDailyUsage[]
   records?: CustomerTrafficRecord[]
@@ -789,7 +787,6 @@ export interface CustomerAnnouncementHistory extends CustomerAnnouncement {
 }
 
 export interface ScheduledTaskSettings {
-  traffic_reset: { enabled: boolean; catch_up_minutes: number }
   alert_sweep: ScheduledTaskConfig
   daily_traffic_report: ScheduledTaskConfig
 }

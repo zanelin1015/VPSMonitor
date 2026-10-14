@@ -19,7 +19,7 @@ func (s *SQLiteStore) UpdateAgentConfigWithActor(agentID string, cfg model.Manag
 	}
 
 	// Compute only on an explicit start/cycle edit, never during reads,
-	// unrelated saves or the traffic-reset scheduler. Preserve manual overrides.
+	// or unrelated saves. Preserve manual overrides.
 	for i := range cfg.Renewal.ClientBillings {
 		billing := &cfg.Renewal.ClientBillings[i]
 		var old model.XUIClientBillingConfig

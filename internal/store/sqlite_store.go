@@ -466,11 +466,11 @@ func calculateClientBillingExpireTime(startMillis int64, cycle string, now time.
 	if startMillis <= 0 {
 		return 0
 	}
-	months, err := model.TrafficCycleMonths(cycle)
+	months, err := model.BillingCycleMonths(cycle)
 	if err != nil {
 		months = 1
 	}
-	return model.ClientCycleBoundary(time.UnixMilli(startMillis), months).UnixMilli()
+	return model.ClientBillingCycleBoundary(time.UnixMilli(startMillis), months).UnixMilli()
 }
 
 func addClientBillingCycle(value time.Time, cycle string) time.Time {
@@ -921,8 +921,6 @@ func hasXUIConfig(cfg config.XUIConfig) bool {
 
 func isValidXUIActionKind(kind string) bool {
 	switch kind {
-	case model.XUIActionResetClientTraffic:
-		return true
 	case model.XUIActionAddOutbound, model.XUIActionAddClient, model.XUIActionAddRoutingRule, model.XUIActionUpsertRoutingRule, model.XUIActionDeleteRoutingRules, model.XUIActionUpdateClientExpiry, model.XUIActionUpdateClientTraffic, model.XUIActionUpdateClientTrafficReset, model.XUIActionSetClientEnabled, model.XUIActionDeleteClient, model.XUIActionUpdateClient, model.XUIActionRestartXUI, model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI:
 		return true
 	default:

@@ -1037,7 +1037,6 @@ function customerUsageFallback(overview: CustomerOverviewResponse | null): Custo
   let counted = 0
   let quota = 0
   let unlimited = false
-  let nextResetAt = 0
   for (const link of overview?.links || []) {
     const multiplierValue = Number(link.traffic_multiplier || 1)
     const multiplier = Number.isFinite(multiplierValue) && multiplierValue > 0 ? multiplierValue : 1
@@ -1046,7 +1045,6 @@ function customerUsageFallback(overview: CustomerOverviewResponse | null): Custo
     counted += Math.max(0, Number(link.traffic_used_bytes || 0))
     if (Number(link.traffic_limit_bytes || 0) <= 0) unlimited = true
     else quota += Number(link.traffic_limit_bytes || 0)
-    if (Number(link.traffic_reset_at || 0) > 0 && (!nextResetAt || Number(link.traffic_reset_at) < nextResetAt)) nextResetAt = Number(link.traffic_reset_at)
   }
   return {
     generated_at: overview?.generated_at || new Date().toISOString(),
@@ -1058,7 +1056,6 @@ function customerUsageFallback(overview: CustomerOverviewResponse | null): Custo
     counted_total_bytes: counted,
     quota_bytes: quota,
     remaining_bytes: unlimited ? 0 : Math.max(0, quota - counted),
-    next_reset_at: nextResetAt || undefined,
     unlimited,
     daily: [],
   }
@@ -1234,12 +1231,6 @@ type CustomerLinkMetaItem = {
 
 function customerLinkMetaItems(link: CustomerLinkView): CustomerLinkMetaItem[] {
   const items: CustomerLinkMetaItem[] = []
-  if (Number(link.traffic_reset_at || 0) > 0) {
-    items.push({
-      key: 'traffic-reset',
-      text: `下次流量重置时间：${formatCustomerResetTime(Number(link.traffic_reset_at || 0))}`,
-    })
-  }
   if (Number(link.revenue_amount || 0) > 0) {
     items.push({
       key: 'revenue',
@@ -1384,15 +1375,6 @@ function formatCustomerExpiryTime(value: number): string {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).format(new Date(value))
-}
-
-function formatCustomerResetTime(value: number): string {
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
   }).format(new Date(value))
 }
 

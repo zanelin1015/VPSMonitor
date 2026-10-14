@@ -106,7 +106,10 @@ func (a *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		}
 		a.handleAdminFrontendSettings(w, r)
 	case "traffic-reset":
-		a.handleAdminTrafficReset(w, r)
+		if _, _, ok := a.requireRootAdmin(w, r); !ok {
+			return
+		}
+		writeError(w, http.StatusGone, model.LegacyTrafficResetRemovedMessage)
 	case "scheduled-tasks":
 		if r.Method != http.MethodGet && r.Method != http.MethodPut {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")

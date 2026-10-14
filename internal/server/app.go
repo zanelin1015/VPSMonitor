@@ -22,7 +22,6 @@ type App struct {
 	realtime           *realtimeHub
 	supportPresence    *supportPresenceHub
 	alerts             *alertService
-	trafficResetMu     sync.Mutex
 	demoDataSource     http.Handler
 	exchangeRatesMu    sync.Mutex
 	exchangeRatesCache model.ExchangeRatesResponse
@@ -199,7 +198,6 @@ func New(cfg config.ServerConfig) (*App, error) {
 		loginLimiter:      newLoginRateLimiter(),
 	}
 	app.alerts.Start()
-	app.startTrafficResetScheduler()
 	return app, nil
 }
 
