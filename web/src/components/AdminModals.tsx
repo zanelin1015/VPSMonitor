@@ -27,6 +27,8 @@ import type {
 import { XUI_ACTION_KINDS, clientInstallCommandByKind, defaultTelegramBotForm } from '../lib/appHelpers'
 import { ClientInstallCommandBox } from './ClientInstallCommandBox'
 import { AdminHelpHint } from './AdminHelpHint'
+import { nodeImportURL, type NodeImportTarget } from '../lib/nodeImport'
+import { NodeImportTargetSelector } from './NodeImportTargetSelector'
 import { TelegramBotPanel } from './TelegramBotPanel'
 import { ClientUpdateLogPanel } from './ClientUpdateLogPanel'
 import { renderAddClientActionForm, renderOutboundActionForm, renderRoutingActionForm } from './XUIActionForms'
@@ -877,10 +879,13 @@ export function XUIActionModal(props: {
 
 export function ImportURLModal(props: {
   client: XUIClientView | null
+  target: NodeImportTarget
+  onTargetChange: (target: NodeImportTarget) => void
   onClose: () => void
   onCopy: (client: XUIClientView) => void
 }) {
-  const { client, onClose, onCopy } = props
+  const { client, target, onTargetChange, onClose, onCopy } = props
+  const importURL = client ? nodeImportURL(client, target) : ''
 
   return (
     <Modal
@@ -890,20 +895,21 @@ export function ImportURLModal(props: {
       footer={
         <Space>
           <Button onClick={onClose}>关闭</Button>
-          <Button type="primary" disabled={!client?.import_url} onClick={() => client && onCopy(client)}>复制 URL</Button>
+          <Button type="primary" disabled={!importURL} onClick={() => client && onCopy(client)}>复制 URL</Button>
         </Space>
       }
     >
-      {client?.import_url ? (
+      {client && importURL ? (
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          {client.shadowrocket_import_url ? <NodeImportTargetSelector target={target} onChange={onTargetChange} /> : null}
           <div>
             <Text strong>{client.email || 'anonymous-client'}</Text>
             <div className="muted-line">{client.inbound_remark || client.inbound_tag || '-'}</div>
           </div>
           <div className="import-url-qr">
-            <QRCode value={client.import_url} bordered={false} />
+            <QRCode value={importURL} bordered={false} />
           </div>
-          <Input.TextArea value={client.import_url} readOnly autoSize={{ minRows: 3, maxRows: 6 }} />
+          <Input.TextArea value={importURL} readOnly autoSize={{ minRows: 3, maxRows: 6 }} />
         </Space>
       ) : (
         <Empty description="当前客户端暂不支持生成单节点导入 URL" />

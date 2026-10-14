@@ -518,6 +518,7 @@ export interface CustomerLinkView {
   client_email?: string
   client_remark?: string
   import_url?: string
+  shadowrocket_import_url?: string
   remark?: string
   summary: string
   exit_country_code?: string
@@ -874,6 +875,7 @@ export interface XUIClientView {
   auth_password?: string
   flow?: string
   import_url?: string
+  shadowrocket_import_url?: string
   limit_ip?: number
   total_gb?: number
   traffic_reset?: 'never' | 'hourly' | 'daily' | 'weekly' | 'monthly' | string

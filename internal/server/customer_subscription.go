@@ -234,7 +234,7 @@ func configureMihomoRealityHandshake(proxy *mihomoProxy, xrayVersion string) {
 	// Xray 26.9.8 introduced a REALITY server check requiring the
 	// X25519MLKEM768 key share. Mihomo removes it by default for old servers.
 	// Keep that default when the serving core is old or unknown.
-	if _, ok := parseSemver(xrayVersion); !ok || isVersionNewer("26.9.8", xrayVersion) {
+	if !model.XrayRequiresRealityMLKEM(xrayVersion) {
 		return
 	}
 	for i := range proxy.Objects {

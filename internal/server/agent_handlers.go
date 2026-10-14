@@ -915,6 +915,9 @@ func appendResolvedForwardedClients(overview *model.XUIOverview, context forward
 		}
 		sourceClient := client
 		sourceClient.ImportURL = rewritten
+		if client.ShadowrocketImportURL != "" {
+			sourceClient.ShadowrocketImportURL = rewriteCustomerImportURL(client.ShadowrocketImportURL, host, entry.ListenPort)
+		}
 		sourceClient.InboundID = entry.ListenPort
 		sourceClient.InboundTag = entry.InboundTag(client)
 		sourceClient.InboundRemark = entry.InboundName(client)

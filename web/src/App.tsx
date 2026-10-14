@@ -44,6 +44,7 @@ import {
   readStoredCostCurrency,
 } from './lib/currency'
 import { useCurrentAgentRequest } from './hooks/useCurrentAgentRequest'
+import { nodeImportURL, readNodeImportTarget, saveNodeImportTarget } from './lib/nodeImport'
 import { useAdminSession } from './hooks/useAdminSession'
 import { useAdminSystemTools } from './hooks/useAdminSystemTools'
 import { useAdminRouteSync } from './hooks/useAdminRouteSync'
@@ -255,6 +256,11 @@ function AppContent() {
   const [clientSearch, setClientSearch] = useState('')
   const [agentListSearch, setAgentListSearch] = useState('')
   const [importURLClient, setImportURLClient] = useState<XUIClientView | null>(null)
+  const [nodeImportTarget, setNodeImportTarget] = useState(readNodeImportTarget)
+
+  useEffect(() => {
+    saveNodeImportTarget(nodeImportTarget)
+  }, [nodeImportTarget])
   const deferredClientSearch = useDeferredValue(clientSearch.trim().toLowerCase())
   const deferredAgentListSearch = useDeferredValue(agentListSearch)
   const pendingClientSearchRef = useRef<{ agentID: string; query: string } | null>(null)
@@ -1324,12 +1330,13 @@ function AppContent() {
   }
 
   async function copyImportURL(client: XUIClientView) {
-    if (!client.import_url) {
+    const importURL = nodeImportURL(client, nodeImportTarget)
+    if (!importURL) {
       message.warning('当前客户端暂不支持生成单节点导入 URL')
       return
     }
     try {
-      await navigator.clipboard.writeText(client.import_url)
+      await navigator.clipboard.writeText(importURL)
       message.success('导入 URL 已复制')
     } catch {
       setImportURLClient(client)
@@ -1727,6 +1734,8 @@ function AppContent() {
             frontendSettingsModalOpen={frontendSettingsModalOpen}
             frontendSettingsSaving={frontendSettingsSaving}
             importURLClient={importURLClient}
+            nodeImportTarget={nodeImportTarget}
+            onNodeImportTargetChange={setNodeImportTarget}
             outboundActionForm={outboundActionForm}
             outboundSourceLoading={outboundSourceLoading}
             outboundSourceOverview={outboundSourceOverview}

@@ -106,39 +106,40 @@ type CustomerLinkStep struct {
 }
 
 type CustomerLinkView struct {
-	AssignmentID         int64                    `json:"assignment_id"`
-	EntryClientName      string                   `json:"entry_client_name"`
-	InboundTag           string                   `json:"inbound_tag,omitempty"`
-	ClientEmail          string                   `json:"client_email,omitempty"`
-	ClientRemark         string                   `json:"client_remark,omitempty"`
-	ImportURL            string                   `json:"import_url,omitempty"`
-	Remark               string                   `json:"remark,omitempty"`
-	Summary              string                   `json:"summary"`
-	ExitCountryCode      string                   `json:"exit_country_code,omitempty"`
-	ExitCountryName      string                   `json:"exit_country_name,omitempty"`
-	ExitIP               string                   `json:"exit_ip,omitempty"`
-	Resolved             bool                     `json:"resolved"`
-	UnresolvedReason     string                   `json:"unresolved_reason,omitempty"`
-	RevenueAmount        *float64                 `json:"revenue_amount,omitempty"`
-	RevenueCurrency      string                   `json:"revenue_currency,omitempty"`
-	RevenueCycle         string                   `json:"revenue_cycle,omitempty"`
-	TrafficMultiplier    float64                  `json:"traffic_multiplier,omitempty"`
-	TrafficUploadBytes   int64                    `json:"traffic_upload_bytes,omitempty"`
-	TrafficDownloadBytes int64                    `json:"traffic_download_bytes,omitempty"`
-	TrafficUsedBytes     int64                    `json:"traffic_used_bytes,omitempty"`
-	TrafficLimitBytes    int64                    `json:"traffic_limit_bytes,omitempty"`
-	NodeExpireTime       int64                    `json:"node_expire_time,omitempty"`
-	XrayExpireTime       int64                    `json:"xray_expire_time,omitempty"`
-	StartTime            int64                    `json:"start_time,omitempty"`
-	ExpireTime           int64                    `json:"expire_time,omitempty"`
-	ExpireCycle          string                   `json:"expire_cycle,omitempty"`
-	ExpireAutoRenew      bool                     `json:"expire_auto_renew,omitempty"`
-	Steps                []CustomerLinkStep       `json:"steps"`
-	FrontProxies         []CustomerLinkFrontProxy `json:"front_proxies,omitempty"`
-	UpdatedAt            time.Time                `json:"updated_at"`
+	AssignmentID          int64                    `json:"assignment_id"`
+	EntryClientName       string                   `json:"entry_client_name"`
+	InboundTag            string                   `json:"inbound_tag,omitempty"`
+	ClientEmail           string                   `json:"client_email,omitempty"`
+	ClientRemark          string                   `json:"client_remark,omitempty"`
+	ImportURL             string                   `json:"import_url,omitempty"`
+	ShadowrocketImportURL string                   `json:"shadowrocket_import_url,omitempty"`
+	Remark                string                   `json:"remark,omitempty"`
+	Summary               string                   `json:"summary"`
+	ExitCountryCode       string                   `json:"exit_country_code,omitempty"`
+	ExitCountryName       string                   `json:"exit_country_name,omitempty"`
+	ExitIP                string                   `json:"exit_ip,omitempty"`
+	Resolved              bool                     `json:"resolved"`
+	UnresolvedReason      string                   `json:"unresolved_reason,omitempty"`
+	RevenueAmount         *float64                 `json:"revenue_amount,omitempty"`
+	RevenueCurrency       string                   `json:"revenue_currency,omitempty"`
+	RevenueCycle          string                   `json:"revenue_cycle,omitempty"`
+	TrafficMultiplier     float64                  `json:"traffic_multiplier,omitempty"`
+	TrafficUploadBytes    int64                    `json:"traffic_upload_bytes,omitempty"`
+	TrafficDownloadBytes  int64                    `json:"traffic_download_bytes,omitempty"`
+	TrafficUsedBytes      int64                    `json:"traffic_used_bytes,omitempty"`
+	TrafficLimitBytes     int64                    `json:"traffic_limit_bytes,omitempty"`
+	NodeExpireTime        int64                    `json:"node_expire_time,omitempty"`
+	XrayExpireTime        int64                    `json:"xray_expire_time,omitempty"`
+	StartTime             int64                    `json:"start_time,omitempty"`
+	ExpireTime            int64                    `json:"expire_time,omitempty"`
+	ExpireCycle           string                   `json:"expire_cycle,omitempty"`
+	ExpireAutoRenew       bool                     `json:"expire_auto_renew,omitempty"`
+	Steps                 []CustomerLinkStep       `json:"steps"`
+	FrontProxies          []CustomerLinkFrontProxy `json:"front_proxies,omitempty"`
+	UpdatedAt             time.Time                `json:"updated_at"`
 	// XrayVersion belongs to the client-facing Xray inbound, including when
 	// its address is rewritten to a Realm/HAProxy entry. It is server-only
-	// metadata for choosing a compatible Mihomo REALITY handshake.
+	// metadata for choosing compatible client-specific REALITY exports.
 	XrayVersion string `json:"-"`
 }
 

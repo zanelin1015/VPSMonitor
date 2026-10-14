@@ -275,6 +275,8 @@ Realm 和 HAProxy 的规则由 Server 下发，Client 负责加载并上报运�
 
 客户订阅根据实际承接 VLESS REALITY 入站的 Xray 核心版本生成握手参数。Xray 26.9.8 及更新版本输出 `reality-opts.support-x25519mlkem768: true`，并使用支持该密钥交换的 `client-fingerprint: chrome`；旧版本和核心版本未知时保留原订阅参数。普通 TLS 节点不受影响，Realm/HAProxy 转发链路使用后端 Xray 入站的版本，而不是端口转发机器的版本。未托管的第三方前置代理无法自动判断核心版本。
 
+管理端和客户门户的单节点复制链接、二维码默认选择 Shadowrocket。对于 Xray 26.9.8 及更新版本的 VLESS REALITY 入站，系统自动生成带 `fp=chrome140` 的 Shadowrocket 链接，导入后无需手动修改 TLS 指纹。导入其他软件可在 URL 弹窗或客户授权链路页切换“其他客户端”，浏览器会记住选择；通用链接和 Clash/Mihomo 订阅仍使用各自的参数。旧版核心、未知核心以及普通 TLS 链接保持原样。已有设备需重新导入系统生成的新链接。
+
 升级 Xray 后先刷新该 Client 的信息，再在 Clash Verge 中更新订阅并重新连接。Mihomo v1.19.32 支持此选项，但默认未开启；仅升级连接端核心不会补全旧订阅中缺少的握手参数。
 
 ## x-ui 客户端自动流量重置

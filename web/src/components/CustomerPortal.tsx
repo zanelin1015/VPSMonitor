@@ -9,6 +9,8 @@ import { LoginScreen } from './LoginScreen'
 import { CustomerSupportWidget } from './CustomerSupportWidget'
 import { clearCustomFrontendCode } from './VisualEffects'
 import { CustomerThemeButton } from './CustomerThemeButton'
+import { nodeImportURL, readNodeImportTarget, saveNodeImportTarget, type NodeImportTarget } from '../lib/nodeImport'
+import { NodeImportTargetSelector } from './NodeImportTargetSelector'
 
 const { Paragraph, Text, Title } = Typography
 
@@ -42,7 +44,12 @@ export function CustomerPortal() {
   const [overview, setOverview] = useState<CustomerOverviewResponse | null>(null)
   const [loginForm, setLoginForm] = useState({ username: '', password: '' })
   const [remarkDrafts, setRemarkDrafts] = useState<Record<number, string>>({})
+  const [nodeImportTarget, setNodeImportTarget] = useState(readNodeImportTarget)
   const lastAnnouncementSetRef = useRef('')
+
+  useEffect(() => {
+    saveNodeImportTarget(nodeImportTarget)
+  }, [nodeImportTarget])
 
   useEffect(() => {
     const username = user?.username || ''
@@ -288,7 +295,7 @@ export function CustomerPortal() {
       return
     }
     try {
-      await navigator.clipboard.writeText(customerLinkImportURL(link, remarkDrafts[link.assignment_id]))
+      await navigator.clipboard.writeText(customerLinkImportURL(link, remarkDrafts[link.assignment_id], nodeImportTarget))
       message.success('客户端链接已复制')
     } catch {
       message.error('复制失败，请手动复制')
@@ -519,7 +526,10 @@ export function CustomerPortal() {
                     <Title level={2}>授权链路</Title>
                     <Text type="secondary">查看链路拓扑、复制订阅或点击二维码查看大图</Text>
                   </div>
-                  <Button icon={<CopyOutlined />} onClick={openClashSubscriptionModal}>复制订阅</Button>
+                  <Space wrap>
+                    {overview?.links.some((link) => link.shadowrocket_import_url) ? <NodeImportTargetSelector target={nodeImportTarget} onChange={setNodeImportTarget} /> : null}
+                    <Button icon={<CopyOutlined />} onClick={openClashSubscriptionModal}>复制 Clash 订阅</Button>
+                  </Space>
                 </div>
                 <Spin spinning={overviewLoading}>
                   <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -531,7 +541,7 @@ export function CustomerPortal() {
                     ) : null}
                     {(overview?.links || []).map((link) => {
                       const effectiveName = customerLinkDisplayName(link, remarkDrafts[link.assignment_id])
-                      const effectiveImportURL = customerLinkImportURL(link, remarkDrafts[link.assignment_id])
+                      const effectiveImportURL = customerLinkImportURL(link, remarkDrafts[link.assignment_id], nodeImportTarget)
                       const billingItems = customerLinkMetaItems(link)
                       return (
                       <Card key={link.assignment_id} bordered={false} className="surface-card customer-link-card">
@@ -722,8 +732,9 @@ export function CustomerPortal() {
       >
         {qrLink?.import_url ? (
           <Space direction="vertical" size="middle" style={{ width: '100%', alignItems: 'center' }}>
+            {qrLink.shadowrocket_import_url ? <NodeImportTargetSelector target={nodeImportTarget} onChange={setNodeImportTarget} /> : null}
             <div className="customer-qr-frame">
-              <QRCode value={customerLinkImportURL(qrLink, remarkDrafts[qrLink.assignment_id])} color="#171717" bgColor="#ffffff" size={260} bordered={false} />
+              <QRCode value={customerLinkImportURL(qrLink, remarkDrafts[qrLink.assignment_id], nodeImportTarget)} color="#171717" bgColor="#ffffff" size={260} bordered={false} />
             </div>
             <Text type="secondary">导入名称：{customerLinkDisplayName(qrLink, remarkDrafts[qrLink.assignment_id])}</Text>
           </Space>
@@ -1404,8 +1415,8 @@ function cycleUnitLabel(cycle?: string): string {
   }
 }
 
-function customerLinkImportURL(link: CustomerLinkView, draft?: string): string {
-  const source = link.import_url || ''
+function customerLinkImportURL(link: CustomerLinkView, draft?: string, target: NodeImportTarget = 'shadowrocket'): string {
+  const source = nodeImportURL(link, target)
   if (!source) {
     return ''
   }

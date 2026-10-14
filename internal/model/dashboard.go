@@ -82,6 +82,7 @@ type XUIClientView struct {
 	AuthPassword          string        `json:"auth_password,omitempty"`
 	Flow                  string        `json:"flow,omitempty"`
 	ImportURL             string        `json:"import_url,omitempty"`
+	ShadowrocketImportURL string        `json:"shadowrocket_import_url,omitempty"`
 	LimitIP               int           `json:"limit_ip,omitempty"`
 	TotalGB               int64         `json:"total_gb,omitempty"`
 	TrafficReset          string        `json:"traffic_reset,omitempty"`

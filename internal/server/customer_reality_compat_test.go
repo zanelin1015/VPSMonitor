@@ -87,11 +87,17 @@ func TestCustomerClientMapUsesXrayCoreVersionForSubscription(t *testing.T) {
 		if !found || ref.XrayVersion != "26.10.10" {
 			t.Fatalf("expected serving core version for client key %q, got %#v", key, ref)
 		}
+		if !strings.Contains(ref.Client.ShadowrocketImportURL, "fp=chrome140") {
+			t.Fatal("admin single-node export must include the Shadowrocket companion URL")
+		}
 	}
 	assignment := model.CustomerAssignment{AgentID: "backend", InboundID: 1, ClientID: clientID, ClientEmail: "old-email"}
 	chain := model.ClientChainView{RootAgentID: "backend", RootInboundID: 1, RootClientEmail: "Cranes"}
 	link := buildCustomerLinkView(assignment, map[string]model.ClientChainView{customerAssignmentKey("backend", 1, "old-email"): chain}, clients, nil)
 	if link.XrayVersion != "26.10.10" {
 		t.Fatalf("client-ID lookup must keep the serving Xray version, got %q", link.XrayVersion)
+	}
+	if !strings.Contains(link.ShadowrocketImportURL, "fp=chrome140") {
+		t.Fatal("customer single-node export must include the Shadowrocket companion URL")
 	}
 }

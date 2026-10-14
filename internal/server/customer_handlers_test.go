@@ -423,6 +423,13 @@ func TestBuildCustomerLinkViewResolvesFirstRealmHopToFinalClient(t *testing.T) {
 	if link.XrayVersion != "26.10.10" {
 		t.Fatalf("Realm entry must retain the final Xray inbound's version, got %q", link.XrayVersion)
 	}
+	shadowrocket, err := url.Parse(link.ShadowrocketImportURL)
+	if err != nil || shadowrocket == nil || shadowrocket.Host != parsed.Host || shadowrocket.User.String() != parsed.User.String() || shadowrocket.Query().Get("fp") != "chrome140" {
+		t.Fatalf("Shadowrocket export must use the public Realm entry and backend client, got %q", link.ShadowrocketImportURL)
+	}
+	if parsed.Query().Get("fp") != "chrome" {
+		t.Fatal("generic Realm export must remain compatible with other clients")
+	}
 	assertContains(t, buildMihomoSubscription(model.CustomerUser{}, []model.CustomerLinkView{link}), "support-x25519mlkem768: true")
 
 	unauthorized := assignment

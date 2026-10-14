@@ -727,6 +727,7 @@ func buildCustomerLinkView(
 	link.TrafficLimitBytes = scaleCustomerTraffic(clientRef.Client.TotalGB, trafficMultiplier)
 
 	if !chainFound {
+		link.ShadowrocketImportURL = model.ShadowrocketImportURL(link.ImportURL, link.XrayVersion)
 		link.UnresolvedReason = "当前最新上报中没有找到该用户链路"
 		link.Summary = entryName + " 暂无链路数据"
 		return link
@@ -762,6 +763,7 @@ func buildCustomerLinkView(
 		})
 	}
 	link.Summary = customerLinkSummary(entryName, relays)
+	link.ShadowrocketImportURL = model.ShadowrocketImportURL(link.ImportURL, link.XrayVersion)
 	if chain.UnresolvedReason != "" {
 		link.UnresolvedReason = chain.UnresolvedReason
 	}

@@ -19,7 +19,8 @@
     "test:dashboard-network": "node scripts/test-dashboard-network.mjs",
     "test:finance": "node scripts/test-finance.mjs",
     "test:agent-search": "node scripts/test-agent-search.mjs",
-    "test:routing-delete": "node scripts/test-routing-delete.mjs"
+    "test:routing-delete": "node scripts/test-routing-delete.mjs",
+    "test:node-import": "node scripts/test-node-import.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "5.6.1",

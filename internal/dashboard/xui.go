@@ -24,6 +24,7 @@ type inboundRecord struct {
 	clientStats         map[string]clientStat
 	clients             []clientConfig
 	importHost          string
+	xrayVersion         string
 	vlessEncryption     string
 	shadowsocksMethod   string
 	shadowsocksPassword string
@@ -231,6 +232,7 @@ func normalizeInbounds(rawInbounds []map[string]any, rules []routeRule, defaultO
 			clientStats:         parseClientStats(raw["clientStats"]),
 			clients:             parseInboundClients(raw["settings"], stringValue(raw["protocol"])),
 			importHost:          importHost,
+			xrayVersion:         snapshot.XUI.ServerStatus.Xray.Version,
 			vlessEncryption:     protocolMeta.vlessEncryption,
 			shadowsocksMethod:   protocolMeta.shadowsocksMethod,
 			shadowsocksPassword: protocolMeta.shadowsocksPassword,
@@ -265,6 +267,7 @@ func normalizeClients(inbounds []inboundRecord, rules []routeRule, defaultOutbou
 				expiryTime = stats.expiryTime
 			}
 
+			importURL := buildSingleNodeImportURL(inbound, cfg)
 			clients = append(clients, model.XUIClientView{
 				ConfigEnabled:         &cfg.enable,
 				ClientID:              cfg.authUUID,
@@ -278,7 +281,8 @@ func normalizeClients(inbounds []inboundRecord, rules []routeRule, defaultOutbou
 				AuthUUID:              cfg.authUUID,
 				AuthPassword:          cfg.authPassword,
 				Flow:                  cfg.flow,
-				ImportURL:             buildSingleNodeImportURL(inbound, cfg),
+				ImportURL:             importURL,
+				ShadowrocketImportURL: model.ShadowrocketImportURL(importURL, inbound.xrayVersion),
 				LimitIP:               cfg.limitIP,
 				TotalGB:               cfg.totalGB,
 				TrafficReset:          cfg.trafficReset,

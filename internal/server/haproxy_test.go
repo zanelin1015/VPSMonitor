@@ -161,9 +161,10 @@ func TestAppendForwardedImportURLsMapsHAProxyToFinalClient(t *testing.T) {
 				Nodes:   []model.XUINodeView{{ID: 7, Tag: "dmit-in", Remark: "DMIT VLESS", Protocol: "vless", Port: 443, Enabled: true}},
 				Clients: []model.XUIClientView{{
 					InboundID: 7, InboundTag: "dmit-in", Protocol: "vless", Email: "alice@example.com", Enabled: true,
-					AuthUUID:  "11111111-1111-1111-1111-111111111111",
-					ImportURL: "vless://11111111-1111-1111-1111-111111111111@dmit.example.com:443?security=reality&sni=shop.example.com#DMIT",
-					Up:        100, Down: 200,
+					AuthUUID:              "11111111-1111-1111-1111-111111111111",
+					ImportURL:             "vless://11111111-1111-1111-1111-111111111111@dmit.example.com:443?security=reality&sni=shop.example.com#DMIT",
+					ShadowrocketImportURL: "vless://11111111-1111-1111-1111-111111111111@dmit.example.com:443?security=reality&sni=shop.example.com&fp=chrome140#DMIT",
+					Up:                    100, Down: 200,
 				}},
 			},
 		},
@@ -183,6 +184,10 @@ func TestAppendForwardedImportURLsMapsHAProxyToFinalClient(t *testing.T) {
 	}
 	if parsed.Query().Get("sni") != "shop.example.com" || client.Up != 100 || client.Down != 200 {
 		t.Fatalf("expected Reality parameters and traffic to remain intact, got %#v", client)
+	}
+	shadowrocket, err := url.Parse(client.ShadowrocketImportURL)
+	if err != nil || shadowrocket == nil || shadowrocket.Host != parsed.Host || shadowrocket.Query().Get("fp") != "chrome140" || shadowrocket.Query().Get("sni") != "shop.example.com" {
+		t.Fatalf("expected Shadowrocket export through the same HAProxy entry, got %q", client.ShadowrocketImportURL)
 	}
 }
 

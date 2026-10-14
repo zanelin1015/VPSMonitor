@@ -31,6 +31,7 @@ import {
   XUIActionModal,
 } from './AdminModals'
 import { CustomerManagementModal } from './CustomerManagementModal'
+import type { NodeImportTarget } from '../lib/nodeImport'
 
 interface AccountFormState {
   current_password: string
@@ -63,6 +64,8 @@ export interface ConsoleModalsProps {
   frontendSettingsModalOpen: boolean
   frontendSettingsSaving: boolean
   importURLClient: XUIClientView | null
+  nodeImportTarget: NodeImportTarget
+  onNodeImportTargetChange: (target: NodeImportTarget) => void
   addClientActionForm: XUIAddClientActionForm
   addClientActionInbounds: XUINodeView[]
   outboundActionForm: XUIOutboundActionForm
@@ -146,6 +149,8 @@ export function ConsoleModals(props: ConsoleModalsProps) {
     frontendSettingsModalOpen,
     frontendSettingsSaving,
     importURLClient,
+    nodeImportTarget,
+    onNodeImportTargetChange,
     addClientActionForm,
     addClientActionInbounds,
     outboundActionForm,
@@ -307,7 +312,7 @@ export function ConsoleModals(props: ConsoleModalsProps) {
         onRoutingFormChange={onUpdateRoutingActionForm}
       />
 
-      <ImportURLModal client={importURLClient} onClose={onCloseImportURL} onCopy={onCopyImportURL} />
+      <ImportURLModal client={importURLClient} target={nodeImportTarget} onTargetChange={onNodeImportTargetChange} onClose={onCloseImportURL} onCopy={onCopyImportURL} />
     </>
   )
 }
