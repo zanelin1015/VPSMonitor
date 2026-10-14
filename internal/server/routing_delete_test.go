@@ -15,19 +15,20 @@ import (
 )
 
 func TestRoutingDeletionDispatchAndPermissionPolicy(t *testing.T) {
-	kind := model.XUIActionDeleteRoutingRules
-	if !realtimeXUIActionAllowed(kind) {
-		t.Fatal("routing deletion must dispatch immediately via WS")
-	}
-	if !xuiActionUsesPanelAuth(kind) {
-		t.Fatal("routing deletion requires panel authentication")
-	}
-	if !isRootOnlyXUIActionKind(kind) {
-		t.Fatal("arbitrary route deletion must not be available to area accounts")
-	}
-	visible := filterRootOnlyXUIActions([]model.XUIAction{{Kind: kind}, {Kind: model.XUIActionAddClient}})
-	if len(visible) != 1 || visible[0].Kind != model.XUIActionAddClient {
-		t.Fatalf("root-only action leaked: %#v", visible)
+	for _, kind := range []string{model.XUIActionDeleteRoutingRules, model.XUIActionDeleteOutbounds} {
+		if !realtimeXUIActionAllowed(kind) {
+			t.Fatal("routing deletion must dispatch immediately via WS")
+		}
+		if !xuiActionUsesPanelAuth(kind) {
+			t.Fatal("routing deletion requires panel authentication")
+		}
+		if !isRootOnlyXUIActionKind(kind) {
+			t.Fatal("arbitrary route deletion must not be available to area accounts")
+		}
+		visible := filterRootOnlyXUIActions([]model.XUIAction{{Kind: kind}, {Kind: model.XUIActionAddClient}})
+		if len(visible) != 1 || visible[0].Kind != model.XUIActionAddClient {
+			t.Fatalf("root-only action leaked: %#v", visible)
+		}
 	}
 }
 
@@ -89,10 +90,49 @@ func TestRoutingDeletionHTTPValidationPermissionsAndRedaction(t *testing.T) {
 	}
 	for _, sanitize := range []func(model.AdminUser, *model.XUIOverview){app.sanitizeXUIOverviewForAdmin, app.sanitizeXUIOverviewForAreaAssignment} {
 		views := []model.XUIRoutingRuleView{{Index: 2, Users: []string{"other-user"}, Fingerprint: fingerprint}}
-		overview := &model.XUIOverview{AgentID: "agent-1", EditableRoutingRules: &views, RoutingRulesFingerprint: fingerprint}
+		overview := &model.XUIOverview{AgentID: "agent-1", EditableRoutingRules: &views, RoutingRulesFingerprint: fingerprint, OutboundsFingerprint: fingerprint, Outbounds: []model.XUIOutboundView{{Tag: "direct", Fingerprint: fingerprint, DeleteBlockedReason: "other-account reference"}}}
 		sanitize(model.AdminUser{ID: manager.ID, Role: model.AdminRoleAreaManager, AgentIDs: []string{"agent-1"}}, overview)
 		if overview.EditableRoutingRules != nil || overview.RoutingRulesFingerprint != "" {
 			t.Fatal("unscoped saved rules leaked to an area manager")
 		}
+		if overview.OutboundsFingerprint != "" {
+			t.Fatal("unscoped outbound deletion guard leaked to an area manager")
+		}
+		for _, outbound := range overview.Outbounds {
+			if outbound.Fingerprint != "" || outbound.DeleteBlockedReason != "" {
+				t.Fatal("outbound deletion metadata leaked")
+			}
+		}
+	}
+	validOutbound := map[string]any{"config_fingerprint": fingerprint, "outbounds": []model.OutboundDeleteTarget{{Tag: "old", Fingerprint: fingerprint}}}
+	for _, tc := range []struct {
+		name, token, version string
+		template             bool
+		payload              map[string]any
+		status               int
+	}{
+		{"malformed", rootToken, "0.3.49", true, map[string]any{}, http.StatusBadRequest},
+		{"area forbidden", areaToken, "0.3.49", true, validOutbound, http.StatusForbidden},
+		{"old client", rootToken, "0.3.48", true, validOutbound, http.StatusConflict},
+		{"runtime only", rootToken, "0.3.49", false, validOutbound, http.StatusConflict},
+		{"root queues batch", rootToken, "0.3.49", true, validOutbound, http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			xui := &model.XUISnapshot{}
+			if tc.template {
+				xui.OutboundTemplate = &model.XUIOutboundTemplate{ConfigFingerprint: fingerprint}
+			}
+			if err := s.SaveSnapshot(model.AgentSnapshot{AgentID: "agent-1", Version: tc.version, ReportedAt: time.Now(), XUI: xui}); err != nil {
+				t.Fatal(err)
+			}
+			body, _ := json.Marshal(model.XUIActionRequest{Kind: model.XUIActionDeleteOutbounds, Payload: tc.payload})
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/agent-1/xui/actions", bytes.NewReader(body))
+			req.AddCookie(&http.Cookie{Name: adminSessionCookieName, Value: tc.token})
+			rec := httptest.NewRecorder()
+			app.handleXUIActions(rec, req, "agent-1", nil)
+			if rec.Code != tc.status {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+		})
 	}
 }

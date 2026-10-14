@@ -1065,12 +1065,14 @@
   grid-column: 1 / -1;
 }
 
-.client-traffic-cell {
+.client-traffic-cell,
+.client-config-summary {
   display: grid;
-  gap: 2px;
+  gap: 8px;
   color: var(--text);
   font-size: 12px;
-  line-height: 1.45;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
 }
 
 .client-billing-controls {
@@ -1093,8 +1095,152 @@
 .client-protocol-tag {
   max-width: 100%;
   margin-inline-end: 0;
-  white-space: normal;
+  white-space: nowrap;
+}
+
+.client-traffic-directions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.client-traffic-directions > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: var(--surface-soft);
+  color: var(--muted-strong);
+  white-space: nowrap;
+}
+
+.client-traffic-arrow {
+  color: var(--primary, var(--blue));
+  font-weight: 600;
+}
+
+.client-traffic-usage,
+.client-traffic-reset,
+.client-config-price {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.client-traffic-usage strong,
+.client-config-price strong {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.client-summary-label,
+.client-summary-empty {
+  color: var(--muted);
+}
+
+.client-summary-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-soft);
+  color: var(--muted-strong);
+  font-size: 12px;
   overflow-wrap: anywhere;
+}
+
+.client-config-currency { font-size: 12px; font-weight: 500; }
+
+.client-config-dates {
+  display: grid;
+  gap: 6px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.client-config-date {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+  color: var(--muted-strong);
+  overflow-wrap: anywhere;
+}
+
+.client-config-expiry { color: var(--text); font-weight: 500; }
+
+.client-config-summary .ant-tag { width: max-content; margin-inline-end: 0; }
+
+.routing-validity-cell { display: grid; justify-items: start; gap: 5px; }
+.routing-validity-cell .ant-tag { margin-inline-end: 0; }
+.routing-validity-reason { color: var(--muted-strong); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.routing-validity-help { margin-bottom: 12px; font-size: 12px; }
+.route-row-invalid > td { background: color-mix(in srgb, var(--red) 4%, var(--table-cell-bg)); }
+.outbound-batch-toolbar { margin-bottom: 12px; }
+.outbound-select-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.outbound-card.checked { border-color: var(--blue); background: color-mix(in srgb, var(--blue-soft) 55%, var(--card)); }
+.outbound-delete-reason { font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.outbound-card .outbound-jump { height: auto; padding: 0; text-align: start; white-space: normal; line-height: 1.5; overflow-wrap: anywhere; justify-content: flex-start; }
+
+.ant-modal.xui-delete-modal .ant-modal-content { padding: 20px 24px; }
+.ant-modal.xui-delete-modal .ant-modal-header { padding: 0 44px 12px 0; margin-bottom: 16px; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; box-shadow: none; background: transparent; }
+.ant-modal.xui-delete-modal .ant-modal-title { line-height: 32px; }
+.ant-modal.xui-delete-modal .ant-modal-close { top: 20px; inset-inline-end: 24px; width: 32px; height: 32px; }
+.ant-modal.xui-delete-modal .ant-modal-body { max-height: calc(100dvh - 220px); overflow-y: auto; overflow-wrap: anywhere; }
+.ant-modal.xui-delete-modal .ant-modal-body .ant-tag { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+
+@media (max-width: 600px) {
+  .ant-modal.xui-delete-modal { top: 12px; }
+  .ant-modal.xui-delete-modal .ant-modal-content { padding: 16px; }
+  .ant-modal.xui-delete-modal .ant-modal-close { top: 10px; inset-inline-end: 10px; width: 44px; height: 44px; }
+  .ant-modal.xui-delete-modal .ant-modal-footer .ant-btn,
+  .outbound-batch-toolbar .ant-btn,
+  .outbound-select-row .ant-checkbox-wrapper,
+  .outbound-select-row .ant-btn { min-height: 44px; }
+}
+
+.ant-modal.xui-client-config-modal { top: 32px; }
+.ant-modal.xui-client-config-modal .ant-modal-content { padding: 20px 24px; }
+.ant-modal.xui-client-config-modal .ant-modal-header {
+  padding: 0 44px 12px 0;
+  margin-bottom: 12px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.ant-modal.xui-client-config-modal .ant-modal-title { line-height: 32px; overflow-wrap: anywhere; }
+.ant-modal.xui-client-config-modal .ant-modal-close { top: 20px; inset-inline-end: 24px; width: 32px; height: 32px; }
+.ant-modal.xui-client-config-modal .ant-modal-body { max-height: calc(100dvh - 180px); overflow-y: auto; }
+.ant-modal.xui-client-config-modal .ant-modal-footer { margin-top: 14px; }
+.client-config-context { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 12px; }
+.client-config-section { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid var(--border); }
+.client-config-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+.client-config-grid .ant-form-item { margin-bottom: 12px; }
+.client-config-grid .ant-input-number,
+.client-config-grid .ant-input-number-group-wrapper { width: 100%; }
+.client-config-full { grid-column: 1 / -1; }
+.client-config-expiry-input { display: flex; align-items: center; gap: 8px; }
+.client-config-help { margin: 0 0 12px !important; font-size: 12px; }
+.client-config-feedback { margin-bottom: 12px; overflow-wrap: anywhere; }
+
+@media (max-width: 600px) {
+  .ant-modal.xui-client-config-modal { top: 12px; }
+  .ant-modal.xui-client-config-modal .ant-modal-content { padding: 16px; }
+  .ant-modal.xui-client-config-modal .ant-modal-header { padding-inline-end: 56px; }
+  .ant-modal.xui-client-config-modal .ant-modal-title { line-height: 44px; }
+  .ant-modal.xui-client-config-modal .ant-modal-close { top: 16px; inset-inline-end: 16px; width: 44px; height: 44px; }
+  .ant-modal.xui-client-config-modal .ant-modal-body { max-height: calc(100dvh - 200px); }
+  .client-config-grid { grid-template-columns: minmax(0, 1fr); }
+  .client-config-expiry-input { flex-wrap: wrap; }
+  .ant-modal.xui-client-config-modal .ant-modal-footer .ant-btn { min-height: 44px; }
 }
 
 .client-status-cell {
@@ -1181,10 +1327,6 @@
 .client-billing-price-row > *,
 .client-billing-cycle-row > * {
   flex: 0 0 auto;
-}
-
-.client-traffic-cell span + span {
-  color: var(--muted);
 }
 
 .client-traffic-limit-editor {

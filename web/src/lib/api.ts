@@ -1,5 +1,10 @@
 import type { AgentListItem, AgentRealtimeMetrics, VPSSummary } from '../types'
-import { withAppBasePath } from './appBasePath'
+import { appPathname, withAppBasePath } from './appBasePath'
+
+export const CUSTOMER_SESSION_EXPIRED_EVENT = 'customer-session-expired'
+
+let customerRefreshPromise: Promise<void> | null = null
+let customerAuthGeneration = 0
 
 export class APIError extends Error {
   status: number
@@ -11,7 +16,57 @@ export class APIError extends Error {
 }
 
 export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(withAppBasePath(url), { ...init, credentials: 'same-origin' })
+  const requestURL = withAppBasePath(url)
+  const target = new URL(requestURL, window.location.href)
+  const path = appPathname(target.pathname)
+  const customerRequest = target.origin === window.location.origin && path.startsWith('/api/v1/customer/')
+  const authAction = customerRequest && /^\/api\/v1\/customer\/(login|logout|refresh)$/.test(path)
+  const canRefresh = customerRequest && !authAction && !path.startsWith('/api/v1/customer/subscription/')
+
+  // A login/logout must finish after any pending renewal so it cannot be
+  // overwritten by that renewal's Set-Cookie response.
+  if (authAction && path !== '/api/v1/customer/refresh' && customerRefreshPromise) {
+    await customerRefreshPromise.catch(() => {})
+  }
+  const generation = customerAuthGeneration
+  const request = () => fetch(requestURL, { ...init, credentials: 'same-origin' })
+  let response = await request()
+  if (response.status === 401 && canRefresh && !init?.signal?.aborted) {
+    try {
+      // A late 401 may belong to a request sent before another request renewed
+      // the cookie. Retry it with that cookie instead of refreshing again.
+      if (generation === customerAuthGeneration) await refreshCustomerSession()
+      response = await request()
+    } catch (error) {
+      if (isUnauthorized(error)) customerSessionExpired()
+      throw error
+    }
+  }
+  if (response.status === 401 && canRefresh) customerSessionExpired()
+  const data = await readJSONResponse<T>(response)
+  if (authAction && path !== '/api/v1/customer/refresh') customerAuthGeneration++
+  return data
+}
+
+async function refreshCustomerSession(): Promise<void> {
+  if (!customerRefreshPromise) {
+    customerRefreshPromise = (async () => {
+      const response = await fetch(withAppBasePath('/api/v1/customer/refresh'), {
+        method: 'POST',
+        credentials: 'same-origin',
+      })
+      await readJSONResponse(response)
+      customerAuthGeneration++
+    })().finally(() => { customerRefreshPromise = null })
+  }
+  await customerRefreshPromise
+}
+
+function customerSessionExpired() {
+  window.dispatchEvent(new Event(CUSTOMER_SESSION_EXPIRED_EVENT))
+}
+
+async function readJSONResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let detail = response.statusText
     try {

@@ -45,7 +45,9 @@ const (
 	adminSessionCookieName    = "bridge_core_session"
 	adminSessionTTL           = 24 * time.Hour
 	customerSessionCookieName = "bridge_core_customer_session"
-	customerSessionTTL        = 7 * 24 * time.Hour
+	customerSessionTTL        = 2 * time.Hour
+	customerRefreshCookieName = "bridge_core_customer_refresh"
+	customerRefreshTTL        = 30 * 24 * time.Hour
 	dashboardCacheTTL         = 10 * time.Second
 	topologyCacheTTL          = 45 * time.Second
 	customerOverviewCacheTTL  = 10 * time.Second

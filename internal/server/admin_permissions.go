@@ -180,6 +180,7 @@ func (a *App) sanitizeXUIOverviewForAdmin(user model.AdminUser, overview *model.
 	}
 	overview.EditableRoutingRules = nil
 	overview.RoutingRulesFingerprint = ""
+	sanitizeOutboundDeletionMetadata(overview)
 	a.sanitizeRealmTargetNamesForAreaManager(overview)
 	overview.AgentName = areaManagerDisplayName("", overview.AgentName, overview.AgentID)
 	overview.BaseURL = ""
@@ -240,6 +241,14 @@ func filterOutboundsForAreaManager(outbounds []model.XUIOutboundView, agentID st
 	return filtered
 }
 
+func sanitizeOutboundDeletionMetadata(overview *model.XUIOverview) {
+	overview.OutboundsFingerprint = ""
+	for i := range overview.Outbounds {
+		overview.Outbounds[i].Fingerprint = ""
+		overview.Outbounds[i].DeleteBlockedReason = ""
+	}
+}
+
 func filterRoutingRulesForAreaManager(rules []model.XUIRoutingRuleView, agentID string, visibleClients []model.XUIClientView, visibleNodes []model.XUINodeView, clientScope areaManagerClientScope, outboundScope areaManagerOutboundScope) []model.XUIRoutingRuleView {
 	if len(rules) == 0 {
 		return rules
@@ -266,6 +275,8 @@ func filterRoutingRulesForAreaManager(rules []model.XUIRoutingRuleView, agentID 
 	filtered := make([]model.XUIRoutingRuleView, 0, len(rules))
 	for _, rule := range rules {
 		next := rule
+		// Reasons may contain matchers belonging to another area account.
+		next.ValidityReasons = nil
 		if next.BalancerTag != "" || !outboundScope.allows(agentID, next.OutboundTag) {
 			continue
 		}
@@ -331,6 +342,7 @@ func (a *App) sanitizeXUIOverviewForAreaAssignment(user model.AdminUser, overvie
 	}
 	overview.EditableRoutingRules = nil
 	overview.RoutingRulesFingerprint = ""
+	sanitizeOutboundDeletionMetadata(overview)
 	a.sanitizeRealmTargetNamesForAreaManager(overview)
 	overview.AgentName = areaManagerDisplayName("", overview.AgentName, overview.AgentID)
 	overview.BaseURL = ""

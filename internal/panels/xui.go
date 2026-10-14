@@ -220,6 +220,7 @@ func (c *XUIClient) collectAuthenticated(ctx context.Context, snapshot *model.XU
 	// Deletion must use the saved panel template, never runtime rule indices.
 	if mutable, err := c.getMutableXrayConfig(ctx); err == nil {
 		snapshot.RoutingTemplate = routingTemplateForSnapshot(mutable.config)
+		snapshot.OutboundTemplate = outboundTemplateForSnapshot(mutable.config)
 	}
 
 	outboundTraffic, err := c.getJSONList(ctx, "/panel/xray/getOutboundsTraffic")

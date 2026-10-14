@@ -1414,7 +1414,7 @@
 }
 
 .outbound-card.linked {
-  cursor: pointer;
+  cursor: auto;
 }
 
 .outbound-card.linked:hover,

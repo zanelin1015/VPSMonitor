@@ -609,6 +609,10 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 		}
 		a.handleAgentAccessLogs(w, r, agentID)
 	case "xui":
+		if len(parts) >= 3 && parts[2] == "client-config" {
+			a.handleXUIClientConfig(w, r, agentID, parts[3:])
+			return
+		}
 		if len(parts) >= 3 && parts[2] == "actions" {
 			a.handleXUIActions(w, r, agentID, parts[3:])
 			return
@@ -647,6 +651,13 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 			a.sanitizeXUIOverviewForAreaAssignment(user, overview)
 		} else {
 			a.sanitizeXUIOverviewForAdmin(user, overview)
+		}
+		if isRootAdmin(user) {
+			overview.ClientConfigSaves, err = a.store.LatestXUIClientConfigSaves(agentID)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
 		}
 		writeJSON(w, http.StatusOK, overview)
 	default:
@@ -1143,6 +1154,10 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 				writeError(w, http.StatusGone, model.LegacyTrafficResetRemovedMessage)
 				return
 			}
+			if req.Kind == model.XUIActionUpdateClientConfig {
+				writeError(w, http.StatusBadRequest, "请使用客户端统一配置接口保存")
+				return
+			}
 			if isAreaManager(user) && !a.areaManagerXUIActionAllowed(user, agentID, req) {
 				writeError(w, http.StatusForbidden, "outbound or node is outside the area manager authorization scope")
 				return
@@ -1154,6 +1169,21 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 			if req.Kind == model.XUIActionDeleteRoutingRules {
 				if _, err := model.ParseRoutingRulesDeletePayload(req.Payload); err != nil {
 					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+			}
+			if req.Kind == model.XUIActionDeleteOutbounds {
+				if _, err := model.ParseOutboundsDeletePayload(req.Payload); err != nil {
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				snapshot, found := a.store.GetLatest(agentID)
+				if !found || snapshot.XUI == nil || snapshot.XUI.OutboundTemplate == nil {
+					writeError(w, http.StatusConflict, "请升级目标 VPSMonitor Client 并刷新采集，以读取可编辑出站")
+					return
+				}
+				if _, known := parseSemver(snapshot.Version); !known || isVersionNewer(model.XUIOutboundsDeleteMinVersion, snapshot.Version) {
+					writeError(w, http.StatusConflict, "请先将目标 VPSMonitor Client 升级到 v"+model.XUIOutboundsDeleteMinVersion+" 或更高版本，并刷新采集")
 					return
 				}
 			}
@@ -1239,10 +1269,13 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 			writeError(w, status, err.Error())
 			return
 		}
-		if action.Kind == model.XUIActionDeleteRoutingRules && action.Result["saved"] == true && a.realtime != nil {
+		if (action.Kind == model.XUIActionDeleteRoutingRules || action.Kind == model.XUIActionDeleteOutbounds) && (action.Result["saved"] == true || action.Result["submitted"] == true) && a.realtime != nil {
 			// Refresh the full saved-template snapshot, including partial success
 			// where saving worked but restarting Xray did not.
 			a.realtime.sendAgentControl(agentID, model.AgentControlMessage{Type: model.AgentControlCollectNow})
+		}
+		if action.Kind == model.XUIActionUpdateClientConfig && a.realtime != nil {
+			a.dispatchXUITrafficCollectionRealtime(agentID)
 		}
 		writeJSON(w, http.StatusOK, action)
 		return
@@ -1495,7 +1528,7 @@ func filterRootOnlyXUIActions(actions []model.XUIAction) []model.XUIAction {
 
 func isRootOnlyXUIActionKind(kind string) bool {
 	switch kind {
-	case model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI, model.XUIActionDeleteRoutingRules:
+	case model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI, model.XUIActionDeleteRoutingRules, model.XUIActionDeleteOutbounds, model.XUIActionUpdateClientConfig:
 		return true
 	default:
 		return false
@@ -1509,9 +1542,11 @@ func realtimeXUIActionAllowed(kind string) bool {
 		model.XUIActionAddRoutingRule,
 		model.XUIActionUpsertRoutingRule,
 		model.XUIActionDeleteRoutingRules,
+		model.XUIActionDeleteOutbounds,
 		model.XUIActionUpdateClientExpiry,
 		model.XUIActionUpdateClientTraffic,
 		model.XUIActionUpdateClientTrafficReset,
+		model.XUIActionUpdateClientConfig,
 		model.XUIActionSetClientEnabled,
 		model.XUIActionDeleteClient,
 		model.XUIActionUpdateClient,
@@ -1603,9 +1638,11 @@ func xuiActionUsesPanelAuth(kind string) bool {
 		model.XUIActionAddRoutingRule,
 		model.XUIActionUpsertRoutingRule,
 		model.XUIActionDeleteRoutingRules,
+		model.XUIActionDeleteOutbounds,
 		model.XUIActionUpdateClientExpiry,
 		model.XUIActionUpdateClientTraffic,
 		model.XUIActionUpdateClientTrafficReset,
+		model.XUIActionUpdateClientConfig,
 		model.XUIActionSetClientEnabled,
 		model.XUIActionDeleteClient:
 		return true

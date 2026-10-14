@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import type { AdminUser, XUIAction, XUIClientView } from '../types'
 import { fetchJSON, isUnauthorized } from '../lib/appHelpers'
 import type { RoutingRulesDeletePayload } from '../lib/routingRules'
+import type { OutboundsDeletePayload } from '../lib/outbounds'
 import { buildClientTrafficResetAction } from '../lib/clientTrafficReset'
 import type { ClientTrafficResetPeriod } from '../lib/clientTrafficReset'
 
@@ -37,6 +38,8 @@ export function useXUIRemoteActions(input: {
   const [xuiClientTrafficSavingKey, setXUIClientTrafficSavingKey] = useState('')
   const [routingRuleDeleteLoadingAgentId, setRoutingRuleDeleteLoadingAgentId] = useState('')
   const routingDeleteSubmitting = useRef(false)
+  const [outboundDeleteLoadingAgentId, setOutboundDeleteLoadingAgentId] = useState('')
+  const outboundDeleteSubmitting = useRef(false)
 
   const handleUnauthorized = (error: unknown) => {
     if (isUnauthorized(error)) {
@@ -202,6 +205,32 @@ export function useXUIRemoteActions(input: {
     }
   }
 
+  async function deleteOutbounds(payload: OutboundsDeletePayload, agentID = selectedAgentId): Promise<XUIAction | null> {
+    if (!agentID || outboundDeleteSubmitting.current) return null
+    outboundDeleteSubmitting.current = true
+    setOutboundDeleteLoadingAgentId(agentID)
+    let action: XUIAction
+    try {
+      action = await fetchJSON<XUIAction>(`/api/v1/agents/${agentID}/xui/actions`, {
+        method: 'POST', body: JSON.stringify({ kind: 'delete_outbounds', payload }),
+      })
+    } catch (error) {
+      handleUnauthorized(error)
+      message.error(error instanceof Error ? error.message : '下发删除出站任务失败')
+      return null
+    } finally {
+      outboundDeleteSubmitting.current = false
+      setOutboundDeleteLoadingAgentId('')
+    }
+    message.success(`已下发删除 ${payload.outbounds.length} 个出站的任务，执行结果请查看 x-ui 操作记录`)
+    scheduleXUIActionResultRefresh(agentID)
+    void loadXUIActions(agentID, { silent: true })
+    ;[1000, 3000, 8000, 15000].forEach(delay => {
+      window.setTimeout(() => void loadOverview(agentID, { silent: true }), delay)
+    })
+    return action
+  }
+
   async function saveXUIClientTrafficLimit(record: XUIClientView, totalGB: number, agentID = selectedAgentId) {
     const targetAgentID = record.realm_target_agent_id || agentID
     const targetInboundID = record.realm_target_inbound_id || record.inbound_id
@@ -303,10 +332,12 @@ export function useXUIRemoteActions(input: {
     xuiClientToggleLoadingKey,
     xuiClientTrafficSavingKey,
     routingRuleDeleteLoadingAgentId,
+    outboundDeleteLoadingAgentId,
     xuiRestartLoading,
     xuiUpdateLoading,
     deleteXUIClient,
     deleteRoutingRules,
+    deleteOutbounds,
     executeRemoteCommand,
     restartXUIService,
     saveXUIClientTrafficLimit,

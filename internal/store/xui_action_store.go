@@ -47,6 +47,11 @@ func (s *SQLiteStore) CreateXUIActionWithActor(agentID string, req model.XUIActi
 			return model.XUIAction{}, err
 		}
 	}
+	if req.Kind == model.XUIActionDeleteOutbounds {
+		if _, err := model.ParseOutboundsDeletePayload(req.Payload); err != nil {
+			return model.XUIAction{}, err
+		}
+	}
 	if req.Kind == model.XUIActionUpdateClientTrafficReset {
 		if _, err := model.ParseXUIClientTrafficResetPayload(req.Payload); err != nil {
 			return model.XUIAction{}, err
@@ -378,6 +383,28 @@ func (s *SQLiteStore) CompleteXUIAction(agentID string, id int64, req model.XUIA
 	}
 	if !found || (action.Status != model.XUIActionStatusPending && action.Status != model.XUIActionStatusRunning) {
 		return model.XUIAction{}, fmt.Errorf("x-ui action is not executable or not found")
+	}
+	if action.Kind == model.XUIActionUpdateClientConfig && status == model.XUIActionStatusSucceeded {
+		verified := req.Result["verified"] == true
+		changes, parseErr := model.ParseXUIClientConfigChanges(action.Payload["changes"])
+		fieldResults, _ := req.Result["field_results"].(map[string]any)
+		if parseErr != nil || changes.Empty() {
+			verified = false
+		}
+		for field := range changes.Fields() {
+			result, _ := fieldResults[field].(map[string]any)
+			if result["verified"] != true {
+				verified = false
+			}
+		}
+		if !verified {
+			status = model.XUIActionStatusFailed
+			req.Error = "客户端未提供成功的远端回读核验，配置不能标记为已生效"
+		}
+	}
+	if action.Kind == model.XUIActionDeleteOutbounds && status == model.XUIActionStatusSucceeded && (req.Result["saved"] != true || req.Result["verified"] != true || req.Result["restarted"] != true) {
+		status = model.XUIActionStatusFailed
+		req.Error = "出站删除未完成保存、回读核验或 Xray 重载，不能标记为成功"
 	}
 	// Apply billing changes before publishing a successful action result. If the
 	// configuration write fails, leaving the action executable makes the agent's

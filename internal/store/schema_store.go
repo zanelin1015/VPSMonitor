@@ -18,6 +18,14 @@ func (s *SQLiteStore) init() error {
 	}
 
 	schema := []string{
+		`CREATE TABLE IF NOT EXISTS xui_client_config_saves (
+			request_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, client_key TEXT NOT NULL,
+			actor_role TEXT NOT NULL, actor_id INTEGER NOT NULL, request_json TEXT NOT NULL,
+			billing_json TEXT NOT NULL, action_agent_id TEXT NOT NULL, action_id INTEGER NOT NULL DEFAULT 0,
+			created_at TEXT NOT NULL,
+			FOREIGN KEY(agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_xui_client_config_saves_agent ON xui_client_config_saves(agent_id, client_key);`,
 		`CREATE TABLE IF NOT EXISTS client_update_logs (
 		 id INTEGER PRIMARY KEY AUTOINCREMENT, action_id INTEGER NOT NULL DEFAULT 0,
 		 data_json TEXT NOT NULL, task_status TEXT NOT NULL DEFAULT '',
@@ -162,9 +170,19 @@ func (s *SQLiteStore) init() error {
 		CREATE TABLE IF NOT EXISTS customer_sessions (
 			token_hash TEXT PRIMARY KEY,
 			customer_id INTEGER NOT NULL,
+			refresh_token_hash TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL,
 			expires_at TEXT NOT NULL,
 			last_seen_at TEXT NOT NULL,
+			FOREIGN KEY(customer_id) REFERENCES customer_accounts(id) ON DELETE CASCADE
+		);
+		`,
+		`
+		CREATE TABLE IF NOT EXISTS customer_refresh_sessions (
+			token_hash TEXT PRIMARY KEY,
+			customer_id INTEGER NOT NULL,
+			created_at TEXT NOT NULL,
+			expires_at TEXT NOT NULL,
 			FOREIGN KEY(customer_id) REFERENCES customer_accounts(id) ON DELETE CASCADE
 		);
 		`,
@@ -456,6 +474,9 @@ func (s *SQLiteStore) init() error {
 	if err := s.ensureColumn("customer_accounts", "owner_id", "INTEGER NOT NULL DEFAULT 1"); err != nil {
 		return err
 	}
+	if err := s.ensureColumn("customer_sessions", "refresh_token_hash", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	if err := s.ensureColumn("area_manager_accounts", "billing_enabled", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
@@ -526,6 +547,9 @@ func (s *SQLiteStore) init() error {
 		`CREATE INDEX IF NOT EXISTS idx_customer_accounts_owner ON customer_accounts(owner_type, owner_id, id);`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_accounts_subscription_token ON customer_accounts(subscription_token) WHERE subscription_token <> '';`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_sessions_expires_at ON customer_sessions(expires_at);`,
+		`CREATE INDEX IF NOT EXISTS idx_customer_sessions_refresh ON customer_sessions(refresh_token_hash);`,
+		`CREATE INDEX IF NOT EXISTS idx_customer_refresh_sessions_customer ON customer_refresh_sessions(customer_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_customer_refresh_sessions_expires_at ON customer_refresh_sessions(expires_at);`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_assignments_customer ON customer_assignments(customer_id, enabled, id);`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_assignments_agent ON customer_assignments(agent_id, inbound_id, client_email);`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_assignments_client_id ON customer_assignments(agent_id, client_id);`,

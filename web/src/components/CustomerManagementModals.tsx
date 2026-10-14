@@ -146,6 +146,7 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
     <>
       {canManageAreaManagers ? (
         <Modal
+          className="area-manager-modal"
           title={editingAreaManagerID ? '编辑区域账号' : '新增区域账号'}
           open={areaManagerModalOpen}
           onCancel={onCloseAreaManagerModal}
@@ -158,7 +159,7 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
             </Space>
           )}
           width={920}
-          styles={{ body: { maxHeight: 'calc(100vh - 190px)', overflowY: 'auto', paddingRight: 6 } }}
+          styles={{ body: { maxHeight: 'calc(100vh - 190px)', overflowY: 'auto' } }}
           destroyOnClose
         >
           <Row gutter={[12, 12]}>

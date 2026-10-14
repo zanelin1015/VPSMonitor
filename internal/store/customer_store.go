@@ -352,7 +352,12 @@ func (s *SQLiteStore) UpdateCustomer(id int64, req model.CustomerAccountRequest)
 	}
 
 	now := time.Now().UTC()
-	_, err = s.db.Exec(`
+	tx, err := s.db.Begin()
+	if err != nil {
+		return model.CustomerAdminView{}, fmt.Errorf("begin customer update: %w", err)
+	}
+	defer tx.Rollback()
+	_, err = tx.Exec(`
 		UPDATE customer_accounts
 		SET username = ?, password_hash = ?, display_name = ?, enabled = ?, updated_at = ?
 		WHERE id = ?
@@ -361,7 +366,12 @@ func (s *SQLiteStore) UpdateCustomer(id int64, req model.CustomerAccountRequest)
 		return model.CustomerAdminView{}, fmt.Errorf("update customer: %w", err)
 	}
 	if !enabled || passwordChanged {
-		_, _ = s.db.Exec(`DELETE FROM customer_sessions WHERE customer_id = ?`, id)
+		if err := revokeCustomerSessions(tx, id, ""); err != nil {
+			return model.CustomerAdminView{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return model.CustomerAdminView{}, fmt.Errorf("commit customer update: %w", err)
 	}
 	if req.FrontProxyNodeIDs != nil {
 		if err := s.ReplaceFrontProxyGrants(model.FrontProxyGranteeCustomer, id, req.FrontProxyNodeIDs); err != nil {
@@ -426,11 +436,7 @@ func (s *SQLiteStore) UpdateCustomerPassword(customerID int64, req model.Custome
 	if err != nil {
 		return model.CustomerUser{}, fmt.Errorf("begin customer password update: %w", err)
 	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
+	defer tx.Rollback()
 
 	_, err = tx.Exec(`
 		UPDATE customer_accounts
@@ -441,14 +447,12 @@ func (s *SQLiteStore) UpdateCustomerPassword(customerID int64, req model.Custome
 		return model.CustomerUser{}, fmt.Errorf("update customer password: %w", err)
 	}
 
+	keepSessionHash := ""
 	if keepSessionToken != "" {
-		keepSessionHash := sessionTokenHash(keepSessionToken)
-		_, err = tx.Exec(`DELETE FROM customer_sessions WHERE customer_id = ? AND token_hash <> ?`, customerID, keepSessionHash)
-	} else {
-		_, err = tx.Exec(`DELETE FROM customer_sessions WHERE customer_id = ?`, customerID)
+		keepSessionHash = sessionTokenHash(keepSessionToken)
 	}
-	if err != nil {
-		return model.CustomerUser{}, fmt.Errorf("clear stale customer sessions: %w", err)
+	if err := revokeCustomerSessions(tx, customerID, keepSessionHash); err != nil {
+		return model.CustomerUser{}, err
 	}
 	if err = tx.Commit(); err != nil {
 		return model.CustomerUser{}, fmt.Errorf("commit customer password update: %w", err)
@@ -539,15 +543,17 @@ func (s *SQLiteStore) ValidateCustomerSession(token string) (model.CustomerUser,
 		enabled                        int
 		createdAtText, updatedAtText   string
 		sCreatedAtText, sExpiresAtText string
+		refreshHash, refreshExpiresAt  string
 	)
 	tokenHash := sessionTokenHash(token)
 	err := s.db.QueryRow(`
 		SELECT c.id, c.username, c.display_name, c.style_code, c.owner_type, c.owner_id, c.enabled, c.created_at, c.updated_at,
-		       s.created_at, s.expires_at
+		       s.created_at, s.expires_at, s.refresh_token_hash, COALESCE(f.expires_at, '')
 		FROM customer_sessions s
 		JOIN customer_accounts c ON c.id = s.customer_id
+		LEFT JOIN customer_refresh_sessions f ON f.token_hash = s.refresh_token_hash AND f.customer_id = s.customer_id
 		WHERE s.token_hash = ?
-	`, tokenHash).Scan(&user.ID, &user.Username, &user.DisplayName, &user.StyleCode, &user.OwnerType, &user.OwnerID, &enabled, &createdAtText, &updatedAtText, &sCreatedAtText, &sExpiresAtText)
+	`, tokenHash).Scan(&user.ID, &user.Username, &user.DisplayName, &user.StyleCode, &user.OwnerType, &user.OwnerID, &enabled, &createdAtText, &updatedAtText, &sCreatedAtText, &sExpiresAtText, &refreshHash, &refreshExpiresAt)
 	if err == sql.ErrNoRows {
 		return model.CustomerUser{}, model.CustomerSession{}, false, nil
 	}
@@ -555,7 +561,8 @@ func (s *SQLiteStore) ValidateCustomerSession(token string) (model.CustomerUser,
 		return model.CustomerUser{}, model.CustomerSession{}, false, fmt.Errorf("load customer session: %w", err)
 	}
 	session := model.CustomerSession{CustomerID: user.ID, CreatedAt: parseTime(sCreatedAtText), ExpiresAt: parseTime(sExpiresAtText)}
-	if enabled == 0 || session.ExpiresAt.IsZero() || time.Now().UTC().After(session.ExpiresAt) {
+	now := time.Now().UTC()
+	if enabled == 0 || !now.Before(session.ExpiresAt) || (refreshHash != "" && !now.Before(parseTime(refreshExpiresAt))) {
 		_ = s.DeleteCustomerSession(token)
 		return model.CustomerUser{}, model.CustomerSession{}, false, nil
 	}

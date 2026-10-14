@@ -209,7 +209,6 @@ function AppContent() {
   const [entryAddressInputText, setEntryAddressInputText] = useState('')
   const [configLoading, setConfigLoading] = useState(false)
   const [configSavingSection, setConfigSavingSection] = useState<ConfigSectionKey | null>(null)
-  const [clientBillingSavingKey, setClientBillingSavingKey] = useState('')
   const [configError, setConfigError] = useState('')
   const [configAudits, setConfigAudits] = useState<ConfigAuditLog[]>([])
   const [configAuditsLoading, setConfigAuditsLoading] = useState(false)
@@ -331,16 +330,15 @@ function AppContent() {
     remoteCommandLoading,
     xuiClientDeleteLoadingKey,
     xuiClientToggleLoadingKey,
-    xuiClientTrafficSavingKey,
     routingRuleDeleteLoadingAgentId,
+    outboundDeleteLoadingAgentId,
     xuiRestartLoading,
     xuiUpdateLoading,
     deleteXUIClient,
     deleteRoutingRules,
+    deleteOutbounds,
     executeRemoteCommand,
     restartXUIService,
-    saveXUIClientTrafficLimit,
-    saveXUIClientTrafficReset,
     setXUIClientEnabled,
     update3XUI,
   } = useXUIRemoteActions({
@@ -1421,103 +1419,6 @@ function AppContent() {
     void saveManagedConfigSection('entry', nextDraft)
   }
 
-  async function saveClientBilling(record: XUIClientView) {
-    if (!selectedAgentId || !managedConfig) {
-      return
-    }
-    const savingKey = billingKeyForClient(record)
-    const baseConfig = savedManagedConfig || createEmptyManagedConfig(selectedAgentId, selectedAgent?.agent_name)
-    const billing = findClientBilling(managedConfig.renewal?.client_billings, record) || defaultClientBilling(record)
-    const expiryTime = effectiveClientBillingExpiryTime(billing, record.expiry_time || 0)
-    const previousBilling = findClientBilling(baseConfig.renewal?.client_billings, record)
-    const expiryEdited = Number(billing.expire_time || 0) !== Number(previousBilling?.expire_time || 0)
-    const accountBasedProxy = ['http', 'socks', 'socks5'].includes((record.protocol || '').toLowerCase())
-    const shouldSyncExpiry = expiryEdited && !accountBasedProxy && expiryTime >= 0 && expiryTime !== Math.max(0, Number(record.expiry_time || 0))
-    const targetAgentID = record.realm_target_agent_id || selectedAgentId
-    const targetInboundID = record.realm_target_inbound_id || record.inbound_id
-    const targetInboundTag = record.realm_target_inbound_tag || record.inbound_tag || ''
-    const nextConfig: ManagedAgentConfig = {
-      ...managedConfig,
-      renewal: {
-        ...managedConfig.renewal,
-        client_billings: upsertClientBilling(managedConfig.renewal?.client_billings || [], record, billing),
-      },
-    }
-    const payload = buildSectionSavePayload(baseConfig, nextConfig, 'renewal', selectedAgentId)
-    setConfigSavingSection('renewal')
-    setClientBillingSavingKey(savingKey)
-    setConfigError('')
-    try {
-      const saved = await fetchJSON<ManagedAgentConfig>(`/api/v1/agents/${selectedAgentId}/config`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      const cachedName = cachedCustomerDisplayName(selectedAgentId)
-      const savedWithCustomerName = !hasCustomerDisplayNameField(saved) && cachedName !== undefined
-        ? { ...saved, customer_display_name: cachedName }
-        : saved
-      const normalized = normalizeManagedConfig(savedWithCustomerName, selectedAgentId, saved.agent_name || selectedAgent?.agent_name)
-      rememberCustomerDisplayName(selectedAgentId, normalized.customer_display_name || '')
-      setSavedManagedConfig(normalized)
-      managedConfigDirtyRef.current = false
-      setManagedConfig(normalized)
-      let expirySyncError = ''
-      let expirySyncAction: XUIAction | null = null
-      if (shouldSyncExpiry && targetAgentID && record.email) {
-        try {
-          expirySyncAction = await fetchJSON<XUIAction>(`/api/v1/agents/${targetAgentID}/xui/actions`, {
-            method: 'POST',
-            body: JSON.stringify({
-              kind: 'update_client_expiry',
-              payload: {
-                inbound_id: targetInboundID,
-                inbound_tag: targetInboundTag,
-                email: record.email,
-                expiry_time: expiryTime,
-                persist_billing: false,
-              },
-            }),
-          })
-          await loadXUIActions(targetAgentID, { silent: true })
-          scheduleXUIActionResultRefresh(targetAgentID)
-          window.setTimeout(() => {
-            void loadOverview(targetAgentID, { silent: true })
-            if (selectedAgentId && targetAgentID !== selectedAgentId) {
-              void loadOverview(selectedAgentId, { silent: true })
-            }
-          }, 2500)
-        } catch (error) {
-          if (isUnauthorized(error)) {
-            setAdminUser(null)
-          }
-          expirySyncError = error instanceof Error ? error.message : '下发 x-ui 到期时间失败'
-        }
-      }
-      if (expirySyncError) {
-        message.warning(`客户端收费已保存，但 x-ui 到期时间同步失败：${expirySyncError}`)
-      } else if (expirySyncAction) {
-        message.success(expirySyncAction.status === 'running'
-          ? '客户端收费已保存，x-ui 到期时间已通过 WS 下发'
-          : '客户端收费已保存，x-ui 到期时间同步任务已创建')
-      } else {
-        message.success('客户端收费已保存')
-      }
-      await loadAgents()
-      await loadConfigAudits(selectedAgentId, { silent: true })
-    } catch (error) {
-      if (isUnauthorized(error)) {
-        setAdminUser(null)
-      }
-      const detail = error instanceof Error ? error.message : '保存客户端收费失败'
-      setConfigError(detail)
-      message.error(detail)
-    } finally {
-      setConfigSavingSection(null)
-      setClientBillingSavingKey('')
-    }
-  }
-
   useEffect(() => {
     if (!adminUser) {
       return
@@ -2041,7 +1942,6 @@ function AppContent() {
                 configError={configError}
                 configLoading={configLoading}
                 configSavingSection={configSavingSection}
-                clientBillingSavingKey={clientBillingSavingKey}
                 currencyOptions={currencyOptions}
                 currentAgentLoading={overviewLoading || configLoading || agentRefreshLoading}
                 xuiRestartLoading={xuiRestartLoading}
@@ -2070,7 +1970,7 @@ function AppContent() {
                 xuiActionsLoading={xuiActionsLoading}
                 xuiClientDeleteLoadingKey={xuiClientDeleteLoadingKey}
                 routingRuleDeleteLoading={routingRuleDeleteLoadingAgentId === selectedAgentId}
-                xuiClientTrafficSavingKey={xuiClientTrafficSavingKey}
+                outboundDeleteLoading={outboundDeleteLoadingAgentId === selectedAgentId}
                 xuiClientToggleLoadingKey={xuiClientToggleLoadingKey}
                 agentDeleteLoading={agentDeleteLoading}
                 agentReplaceLoading={agentReplaceLoading}
@@ -2138,8 +2038,7 @@ function AppContent() {
                 onReplaceCurrentAgent={(replacementAgentID) => replaceAgent(replacementAgentID, selectedAgentId)}
                 onDeleteXUIClient={(client) => void deleteXUIClient(client, selectedAgentId)}
                 onDeleteRoutingRules={(payload) => deleteRoutingRules(payload, selectedAgentId)}
-                onSaveXUIClientTrafficLimit={(client, totalGB) => void saveXUIClientTrafficLimit(client, totalGB, selectedAgentId)}
-                onSaveXUIClientTrafficReset={(client, period, day) => saveXUIClientTrafficReset(client, period, day, selectedAgentId)}
+                onDeleteOutbounds={(payload) => deleteOutbounds(payload, selectedAgentId)}
                 onSetXUIClientEnabled={(client, enabled) => void setXUIClientEnabled(client, enabled, selectedAgentId)}
                 onRefreshCurrentAgent={() => void requestAgentSnapshot(selectedAgentId)}
                 onRestartXUI={() => void restartXUIService(selectedAgentId)}
@@ -2148,7 +2047,19 @@ function AppContent() {
                 onRefreshXUIActions={() => void loadXUIActions()}
                 onCopyRealmConfig={(targetAgentID) => void copyRealmConfigToAgent(targetAgentID, selectedAgentId)}
                 onRenewalChange={(patch) => updateManagedConfig((current) => ({ ...current, renewal: { ...current.renewal, ...patch } }))}
-                onSaveClientBilling={(record) => void saveClientBilling(record)}
+                savedClientBillings={savedManagedConfig?.renewal?.client_billings}
+                onClientConfigUnauthorized={() => setAdminUser(null)}
+                onClientConfigSaved={(record, save) => {
+                  if (!isCurrentAgentRequest(selectedAgentId)) return
+                  const mergeBilling = (current: ManagedAgentConfig | null) => current ? { ...current, renewal: { ...current.renewal, client_billings: upsertClientBilling(current.renewal?.client_billings || [], record, save.billing) } } : current
+                  setSavedManagedConfig(mergeBilling)
+                  setManagedConfig(mergeBilling)
+                  void loadAgents({ silent: true })
+                  void loadOverview(selectedAgentId, { silent: true })
+                  void loadConfigAudits(selectedAgentId, { silent: true })
+                  scheduleXUIActionResultRefresh(save.action?.agent_id || selectedAgentId)
+                  ;[1000, 3000, 8000, 15000].forEach(delay => window.setTimeout(() => void loadOverview(selectedAgentId, { silent: true }), delay))
+                }}
                 onSaveManagedConfigSection={(section) => void saveManagedConfigSection(section)}
                 onSavePrimaryDomain={savePrimaryDomain}
                 onSelectTag={selectDashboardTag}
@@ -2157,7 +2068,6 @@ function AppContent() {
                   updateManagedConfig((current) => ({ ...current, tags: values }))
                 }}
                 onSaveAreaTags={(values) => void saveAreaAgentTags(values)}
-                onUpdateClientBillingDraft={updateClientBillingDraft}
                 onXUIChange={(patch) => updateManagedConfig((current) => ({ ...current, xui: { ...current.xui, ...patch } }))}
                 onFeatureChange={(feature, enabled) => updateManagedConfig((current) => {
                   const features = { ...current.features, [feature]: enabled }
@@ -2191,19 +2101,4 @@ function AppContent() {
     })
   }
 
-  function updateClientBillingDraft(record: XUIClientView, patch: Partial<XUIClientBillingConfig>) {
-    updateManagedConfig((current) => {
-      const currentBilling = findClientBilling(current.renewal?.client_billings, record) || defaultClientBilling(record)
-      return {
-        ...current,
-        renewal: {
-          ...current.renewal,
-          client_billings: upsertClientBilling(current.renewal?.client_billings || [], record, {
-            ...currentBilling,
-            ...patch,
-          }),
-        },
-      }
-    })
-  }
 }

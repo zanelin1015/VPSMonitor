@@ -4,6 +4,7 @@ import { BarChartOutlined, CheckCircleOutlined, CheckOutlined, CloseCircleOutlin
 
 import type { CustomerAuthResponse, CustomerDailyLinkUsage, CustomerDailyUsage, CustomerLinkStep, CustomerLinkView, CustomerOverviewResponse, CustomerTrafficRecord, CustomerUsageResponse, CustomerUser } from '../types'
 import { countryFlag, fetchJSON, formatDateTime } from '../lib/appHelpers'
+import { CUSTOMER_SESSION_EXPIRED_EVENT } from '../lib/api'
 import { formatBytes } from '../lib/traffic'
 import { LoginScreen } from './LoginScreen'
 import { CustomerSupportWidget } from './CustomerSupportWidget'
@@ -80,6 +81,21 @@ export function CustomerPortal() {
       document.title = 'ZaneLin'
       clearCustomFrontendCode()
     }
+  }, [])
+
+  useEffect(() => {
+    const onSessionExpired = () => {
+      setUser(null)
+      setOverview(null)
+      setUsage(null)
+      setPasswordModalOpen(false)
+      setSubscriptionModalOpen(false)
+      setQrLink(null)
+      setAnnouncementModalOpen(false)
+      setRemarkDrafts({})
+    }
+    window.addEventListener(CUSTOMER_SESSION_EXPIRED_EVENT, onSessionExpired)
+    return () => window.removeEventListener(CUSTOMER_SESSION_EXPIRED_EVENT, onSessionExpired)
   }, [])
 
   useEffect(() => {

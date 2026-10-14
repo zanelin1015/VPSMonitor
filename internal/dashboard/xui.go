@@ -147,8 +147,30 @@ func BuildXUIOverviewWithOptions(snapshot model.AgentSnapshot, options XUIOvervi
 		}
 		return outbounds[i].Tag < outbounds[j].Tag
 	})
+	runtimeRuleViews := unwrapRules(rules)
+	// Reverse bridges/portals and other generated runtime endpoints are valid
+	// matcher targets even though they are not panel-managed node/outbound cards.
+	validityNodes := append([]model.XUINodeView{}, nodes...)
+	validityOutbounds := append([]model.XUIOutboundView{}, outbounds...)
+	for _, raw := range objectList(snapshot.XUI.RawConfig["inbounds"]) {
+		validityNodes = append(validityNodes, model.XUINodeView{Tag: stringValue(raw["tag"])})
+	}
+	if reverse, ok := snapshot.XUI.RawConfig["reverse"].(map[string]any); ok {
+		for _, bridge := range objectList(reverse["bridges"]) {
+			validityNodes = append(validityNodes, model.XUINodeView{Tag: stringValue(bridge["tag"])})
+		}
+		for _, portal := range objectList(reverse["portals"]) {
+			validityOutbounds = append(validityOutbounds, model.XUIOutboundView{Tag: stringValue(portal["tag"])})
+		}
+	}
+	applyRoutingValidity(runtimeRuleViews, validityNodes, clients, validityOutbounds, balancers)
+	if editableRoutingRules != nil {
+		applyRoutingValidity(*editableRoutingRules, validityNodes, clients, validityOutbounds, balancers)
+	}
+	outboundFingerprint := applyOutboundDeletionView(snapshot.XUI, outbounds)
 
 	return &model.XUIOverview{
+		OutboundsFingerprint:    outboundFingerprint,
 		RoutingRulesFingerprint: routingFingerprint,
 		EditableRoutingRules:    editableRoutingRules,
 		AgentID:                 snapshot.AgentID,
@@ -164,7 +186,7 @@ func BuildXUIOverviewWithOptions(snapshot model.AgentSnapshot, options XUIOvervi
 		Clients:                 clients,
 		Outbounds:               outbounds,
 		Balancers:               balancers,
-		RoutingRules:            unwrapRules(rules),
+		RoutingRules:            runtimeRuleViews,
 		Certificates:            append([]model.XUILocalCertificate{}, certificates...),
 	}
 }

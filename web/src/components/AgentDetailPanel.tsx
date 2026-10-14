@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { App as AntdApp, Alert, AutoComplete, Badge, Button, Card, Empty, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, Tag, Tooltip, Typography } from 'antd'
+import { App as AntdApp, Alert, AutoComplete, Badge, Button, Card, Checkbox, Empty, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, Tag, Tooltip, Typography } from 'antd'
 import type { TabsProps } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { ArrowLeftOutlined, DeleteOutlined, ReloadOutlined, SaveOutlined, SettingOutlined, SwapOutlined } from '@ant-design/icons'
@@ -16,16 +16,20 @@ import type {
   VPSRenewalConfig,
   XUIAction,
   XUIClientBillingConfig,
+  XUIClientConfigSave,
   XUIClientView,
   XUIConfig,
   XUILocalCertificate,
   XUINodeView,
   XUIOverview,
+  XUIOutboundView,
   XUIRoutingRuleView,
 } from '../types'
 import { AdminHelpHint } from './AdminHelpHint'
 import { buildRoutingRulesDeletePayload, isPendingRoutingDeletion, routingRuleDeleteDisabledReason } from '../lib/routingRules'
 import type { RoutingRulesDeletePayload } from '../lib/routingRules'
+import { buildOutboundsDeletePayload, isPendingOutboundDeletion, outboundDeleteDisabledReason } from '../lib/outbounds'
+import type { OutboundsDeletePayload } from '../lib/outbounds'
 import type { ConfigSectionKey } from '../lib/appHelpers'
 import type { CurrencyCode } from '../lib/currency'
 import { REVENUE_CURRENCIES } from '../lib/currency'
@@ -61,8 +65,9 @@ import { defaultTerminalShell, FeatureSwitch, RemoteTTYTerminal } from './AgentD
 import { ManagedConfigPanel } from './ManagedConfigPanel'
 import { RouteBadge } from './RouteBadge'
 import { XUINodeList } from './XUINodeList'
-import { XUIClientTrafficResetEditor } from './XUIClientTrafficResetEditor'
-import type { ClientTrafficResetPeriod } from '../lib/clientTrafficReset'
+import { XUIClientConfigModal } from './XUIClientConfigModal'
+import { beijingDateInput, clientConfigSaveStatus } from '../lib/clientConfig'
+import { clientTrafficResetSummary } from '../lib/clientTrafficReset'
 import {
   type HAProxyForwardClientView,
   type HAProxyForwardNodeView,
@@ -93,7 +98,6 @@ export interface AgentDetailPanelProps {
   configError: string
   configLoading: boolean
   configSavingSection: ConfigSectionKey | null
-  clientBillingSavingKey: string
   currencyOptions: CurrencyCode[]
   dashboardView: GlobalDashboardView | null
   entryAddressInputText: string
@@ -101,6 +105,9 @@ export interface AgentDetailPanelProps {
   filteredClients: XUIClientView[]
   filteredTagLinks: TopologyLinkView[]
   managedConfig: ManagedAgentConfig | null
+  savedClientBillings?: XUIClientBillingConfig[]
+  onClientConfigSaved: (record: XUIClientView, save: XUIClientConfigSave) => void
+  onClientConfigUnauthorized: () => void
   newTagName: string
   overview: XUIOverview | null
   overviewLoading: boolean
@@ -117,7 +124,7 @@ export interface AgentDetailPanelProps {
   xuiActionsLoading: boolean
   xuiClientDeleteLoadingKey: string
   routingRuleDeleteLoading: boolean
-  xuiClientTrafficSavingKey: string
+  outboundDeleteLoading: boolean
   xuiClientToggleLoadingKey: string
   agentDeleteLoading: boolean
   agentReplaceLoading: boolean
@@ -154,8 +161,7 @@ export interface AgentDetailPanelProps {
   onReplaceCurrentAgent: (replacementAgentID: string) => Promise<boolean>
   onDeleteXUIClient: (client: XUIClientView) => void
   onDeleteRoutingRules: (payload: RoutingRulesDeletePayload) => Promise<XUIAction | null>
-  onSaveXUIClientTrafficLimit: (client: XUIClientView, totalGB: number) => void
-  onSaveXUIClientTrafficReset: (client: XUIClientView, period: ClientTrafficResetPeriod, day: number) => Promise<boolean>
+  onDeleteOutbounds: (payload: OutboundsDeletePayload) => Promise<XUIAction | null>
   onSetXUIClientEnabled: (client: XUIClientView, enabled: boolean) => void
   onRefreshCurrentAgent: () => void
   onRestartXUI: () => void
@@ -164,13 +170,11 @@ export interface AgentDetailPanelProps {
   onRefreshXUIActions: () => void
   onCopyRealmConfig: (targetAgentID: string) => void
   onRenewalChange: (patch: Partial<VPSRenewalConfig>) => void
-  onSaveClientBilling: (record: XUIClientView) => void
   onSaveManagedConfigSection: (section: ConfigSectionKey, draftOverride?: ManagedAgentConfig) => void
   onSavePrimaryDomain: (value: string) => void
   onSelectTag: (tag: string) => void
   onTagsChange: (values: string[]) => void
   onSaveAreaTags?: (values: string[]) => void
-  onUpdateClientBillingDraft: (record: XUIClientView, patch: Partial<XUIClientBillingConfig>) => void
   onXUIChange: (patch: Partial<XUIConfig>) => void
   onFeatureChange: (feature: AgentFeatureKey, enabled: boolean) => void
 }
@@ -209,7 +213,6 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     configError,
     configLoading,
     configSavingSection,
-    clientBillingSavingKey,
     currencyOptions,
     dashboardView,
     entryAddressInputText,
@@ -217,6 +220,9 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     filteredClients,
     filteredTagLinks,
     managedConfig,
+    savedClientBillings,
+    onClientConfigSaved,
+    onClientConfigUnauthorized,
     newTagName,
     overview,
     overviewLoading,
@@ -233,7 +239,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     xuiActionsLoading,
     xuiClientDeleteLoadingKey,
     routingRuleDeleteLoading,
-    xuiClientTrafficSavingKey,
+    outboundDeleteLoading,
     xuiClientToggleLoadingKey,
     agentDeleteLoading,
     agentReplaceLoading,
@@ -270,8 +276,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onReplaceCurrentAgent,
     onDeleteXUIClient,
     onDeleteRoutingRules,
-    onSaveXUIClientTrafficLimit,
-    onSaveXUIClientTrafficReset,
+    onDeleteOutbounds,
     onSetXUIClientEnabled,
     onRefreshCurrentAgent,
     onRestartXUI,
@@ -280,23 +285,20 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onRefreshXUIActions,
     onCopyRealmConfig,
     onRenewalChange,
-    onSaveClientBilling,
     onSaveManagedConfigSection,
     onSavePrimaryDomain,
     onSelectTag,
     onTagsChange,
     onSaveAreaTags,
-    onUpdateClientBillingDraft,
     onXUIChange,
     onFeatureChange,
   } = props
   const [remoteCommandOpen, setRemoteCommandOpen] = useState(false)
-  const [clientExpiryEditor, setClientExpiryEditor] = useState<{ client: XUIClientView; value: string } | null>(null)
+  const [clientConfigEditor, setClientConfigEditor] = useState<XUIClientView | null>(null)
   const [remoteCommand, setRemoteCommand] = useState('')
   const [remoteShell, setRemoteShell] = useState('bash')
   const [remoteTimeout, setRemoteTimeout] = useState(120)
   const xuiClientActionKey = (record: XUIClientView) => [record.inbound_id, record.inbound_tag || '', record.client_id || record.auth_uuid || record.auth_password || '', record.email || ''].join(':')
-  const [clientTrafficLimitDrafts, setClientTrafficLimitDrafts] = useState<Record<string, number>>({})
   const [commandOutputAction, setCommandOutputAction] = useState<XUIAction | null>(null)
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [replacementModalOpen, setReplacementModalOpen] = useState(false)
@@ -307,18 +309,38 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const [selectedRoutingRuleKeys, setSelectedRoutingRuleKeys] = useState<number[]>([])
   const [routingDeleteDraft, setRoutingDeleteDraft] = useState<RoutingRulesDeletePayload | null>(null)
   const [submittedRoutingDeleteID, setSubmittedRoutingDeleteID] = useState<number | null>(null)
+  const [selectedOutboundTags, setSelectedOutboundTags] = useState<string[]>([])
+  const [outboundDeleteDraft, setOutboundDeleteDraft] = useState<OutboundsDeletePayload | null>(null)
+  const [submittedOutboundDeleteID, setSubmittedOutboundDeleteID] = useState<number | null>(null)
   const refreshRoutingActionsRef = useRef(onRefreshXUIActions)
   refreshRoutingActionsRef.current = onRefreshXUIActions
   const routingFingerprint = overview?.routing_rules_fingerprint || ''
   const routingRules = overview?.editable_routing_rules ?? overview?.routing_rules ?? []
   const pendingRoutingDelete = submittedRoutingDeleteID !== null
     || xuiActions.some((action) => action.agent_id === selectedAgentId && isPendingRoutingDeletion(action))
-  const routingDeleteBusy = routingRuleDeleteLoading || xuiActionsLoading || pendingRoutingDelete
+  const outboundFingerprint = overview?.outbounds_fingerprint || ''
+  const pendingOutboundDelete = submittedOutboundDeleteID !== null
+    || xuiActions.some(action => action.agent_id === selectedAgentId && isPendingOutboundDeletion(action))
+  const routingDeleteBusy = routingRuleDeleteLoading || outboundDeleteLoading || xuiActionsLoading || pendingRoutingDelete || pendingOutboundDelete
+  const outboundDeleteBusy = routingDeleteBusy
   const canDeleteRoutes = canManageConfig && !restrictedView
+  const canDeleteOutbounds = canDeleteRoutes
+  const deletableOutbounds = overview?.outbounds.filter(outbound => !outboundDeleteDisabledReason(outbound)) || []
+
+  useEffect(() => {
+    setClientConfigEditor(null)
+  }, [selectedAgentId])
 
   useEffect(() => {
     setSelectedRoutingRuleKeys([])
   }, [selectedAgentId, routingFingerprint])
+
+  useEffect(() => { setSelectedOutboundTags([]) }, [selectedAgentId, outboundFingerprint])
+  useEffect(() => { setOutboundDeleteDraft(null); setSubmittedOutboundDeleteID(null) }, [selectedAgentId])
+  useEffect(() => {
+    const action = xuiActions.find(item => item.id === submittedOutboundDeleteID)
+    if (action && !isPendingOutboundDeletion(action)) setSubmittedOutboundDeleteID(null)
+  }, [submittedOutboundDeleteID, xuiActions])
 
   useEffect(() => {
     const action = xuiActions.find((item) => item.id === submittedRoutingDeleteID)
@@ -326,10 +348,26 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   }, [submittedRoutingDeleteID, xuiActions])
 
   useEffect(() => {
-    if (!pendingRoutingDelete) return
+    if (!pendingRoutingDelete && !pendingOutboundDelete) return
     const timer = window.setInterval(() => refreshRoutingActionsRef.current(), 3000)
     return () => window.clearInterval(timer)
-  }, [pendingRoutingDelete, selectedAgentId])
+  }, [pendingRoutingDelete, pendingOutboundDelete, selectedAgentId])
+
+  function confirmOutboundDeletion(outbounds: XUIOutboundView[]) {
+    if (!canDeleteOutbounds || outboundDeleteBusy || !outbounds.length) return
+    try { setOutboundDeleteDraft(buildOutboundsDeletePayload(outbounds, outboundFingerprint)) }
+    catch (error) { message.error(error instanceof Error ? error.message : '请选择可删除的出站') }
+  }
+
+  async function submitOutboundDeletion() {
+    if (!outboundDeleteDraft || !canDeleteOutbounds || outboundDeleteBusy || outboundDeleteDraft.config_fingerprint !== outboundFingerprint) return
+    const action = await onDeleteOutbounds(outboundDeleteDraft)
+    if (action) {
+      if (isPendingOutboundDeletion(action)) setSubmittedOutboundDeleteID(action.id)
+      setOutboundDeleteDraft(null)
+      setSelectedOutboundTags([])
+    }
+  }
 
   function confirmRoutingRuleDeletion(rules: XUIRoutingRuleView[]) {
     if (!canDeleteRoutes || routingDeleteBusy || !rules.length) return
@@ -596,7 +634,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       dataIndex: 'protocol',
       key: 'protocol',
       width: 84,
-      render: (value?: string) => <Tag color="geekblue" className="client-protocol-tag">{value || '-'}</Tag>,
+      render: (value?: string) => <Tooltip title={value}><Tag color="geekblue" className="client-protocol-tag">{value === 'shadowsocks' ? 'SS' : value || '-'}</Tag></Tooltip>,
     },
     {
       title: '状态',
@@ -604,23 +642,11 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       width: 90,
       render: (_, record) => {
         const accountBasedProxy = isAccountBasedProxyClient(record)
+        const configuredEnabled = record.config_enabled ?? record.enabled
         const online = isClientOnline(record.last_online, overview?.reported_at)
         return (
           <div className="client-status-cell">
-            {accountBasedProxy ? (
-              <Tag color={record.enabled ? 'blue' : 'default'}>{record.enabled ? '启用' : '禁用'}</Tag>
-            ) : (
-              <Switch
-                size="small"
-                aria-label={`启用或禁用 ${record.email || '客户端'}`}
-                checked={record.enabled}
-                checkedChildren="启用"
-                unCheckedChildren="禁用"
-                disabled={!canManageConfig && !restrictedView}
-                loading={xuiClientToggleLoadingKey === xuiClientActionKey(record)}
-                onChange={(checked) => onSetXUIClientEnabled(record, checked)}
-              />
-            )}
+            <Tag color={configuredEnabled ? 'blue' : 'default'}>{configuredEnabled ? '启用' : '禁用'}</Tag>
             {accountBasedProxy ? <Tag>节点账号</Tag> : (
               <Tag color={online ? 'processing' : 'default'}>{online ? '在线' : '离线'}</Tag>
             )}
@@ -629,165 +655,53 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       },
     },
     {
-      title: '流量 / 上传 / 下载',
+      title: '流量',
       key: 'traffic',
-      width: 240,
+      width: 210,
       render: (_, record) => {
-        const up = Math.max(0, Number(record.up || 0))
-        const down = Math.max(0, Number(record.down || 0))
         const total = clientBidirectionalTrafficTotal(record)
         const limit = Math.max(0, Number(record.total_gb || 0))
-        const actionKey = xuiClientActionKey(record)
-        const limitGB = clientTrafficLimitDrafts[actionKey] ?? limit / (1024 * 1024 * 1024)
-        const billing = findClientBilling(managedConfig?.renewal?.client_billings, record) || defaultClientBilling(record)
-        const startTime = effectiveClientBillingStartTime(billing, record.expiry_time || 0)
-        return (
-          <div className="client-traffic-cell">
-            <span>已用 {formatBytes(total)}{limit > 0 ? ` / 限额 ${formatBytes(limit)}` : ' / 无上限'}</span>
-            {!restrictedView ? (
-              <Space.Compact size="small" className="client-traffic-limit-editor">
-                <InputNumber
-                  min={0}
-                  precision={2}
-                  step={1}
-                  addonAfter="GB"
-                  disabled={!canManageConfig}
-                  value={limitGB}
-                  onChange={(value) => setClientTrafficLimitDrafts((current) => ({
-                    ...current,
-                    [actionKey]: Math.max(0, Number(value || 0)),
-                  }))}
-                />
-                <Tooltip title="同步到 x-ui；0 GB 表示无上限">
-                  <Button
-                    type="primary"
-                    aria-label="保存流量上限"
-                    icon={<SaveOutlined />}
-                    disabled={!canManageConfig || !record.email}
-                    loading={xuiClientTrafficSavingKey === actionKey}
-                    onClick={() => onSaveXUIClientTrafficLimit(record, limitGB)}
-                  />
-                </Tooltip>
-              </Space.Compact>
-            ) : null}
-            {!restrictedView ? <XUIClientTrafficResetEditor record={record} startTime={startTime} canManage={canManageConfig} onSave={onSaveXUIClientTrafficReset} /> : null}
-            {!restrictedView ? <span>上传 {formatBytes(up)}</span> : null}
-            {!restrictedView ? <span>下载 {formatBytes(down)}</span> : null}
+        return <div className="client-traffic-cell">
+          <div className="client-traffic-usage">
+            <span className="client-summary-label">已用</span>
+            <strong>{formatBytes(total)}</strong>
+            <Tooltip title="流量上限"><span className="client-summary-chip">{limit > 0 ? `/ ${formatBytes(limit)}` : '无上限'}</span></Tooltip>
           </div>
-        )
+          {!restrictedView ? <div className="client-traffic-directions">
+            <Tooltip title="上传"><span aria-label={`上传 ${formatBytes(record.up || 0)}`}><span className="client-traffic-arrow" aria-hidden="true">↑</span>{formatBytes(record.up || 0)}</span></Tooltip>
+            <Tooltip title="下载"><span aria-label={`下载 ${formatBytes(record.down || 0)}`}><span className="client-traffic-arrow" aria-hidden="true">↓</span>{formatBytes(record.down || 0)}</span></Tooltip>
+          </div> : null}
+          {!restrictedView ? <div className="client-traffic-reset">
+            <span className="client-summary-label">重置</span>
+            <span className="client-summary-chip">{clientTrafficResetSummary(record)}</span>
+          </div> : null}
+        </div>
       },
     },
     {
       title: '配置信息',
       key: 'billing',
-      width: 380,
+      width: 250,
       render: (_, record) => {
-        const billing = findClientBilling(managedConfig?.renewal?.client_billings, record) || defaultClientBilling(record)
-        const revenueCycle = normalizeBillingCycle(billing.revenue_cycle || billing.expire_cycle)
-        const effectiveStart = effectiveClientBillingStartTime(billing, record.expiry_time || 0)
-        const saving = clientBillingSavingKey === billingKeyForClient(record)
-        return (
-          <div className="client-billing-controls">
-            <div className="client-billing-price-row">
-              <Text type="secondary">费用</Text>
-              <InputNumber
-                aria-label="收费金额"
-                size="small"
-                min={0}
-                precision={2}
-                disabled={!canManageConfig}
-                style={{ width: 92 }}
-                value={billing.revenue_amount || 0}
-                onChange={(value) => onUpdateClientBillingDraft(record, { revenue_amount: Number(value || 0) })}
-              />
-              <Select
-                aria-label="收费币种"
-                size="small"
-                style={{ width: 78 }}
-                disabled={!canManageConfig}
-                value={billing.revenue_currency || 'CNY'}
-                options={REVENUE_CURRENCIES.map((currency) => ({ value: currency, label: currency }))}
-                onChange={(value) => onUpdateClientBillingDraft(record, { revenue_currency: value as 'CNY' | 'USDT' })}
-              />
-            </div>
-            <div className="client-billing-cycle-row">
-              <Space size={4}>
-                <Text type="secondary">流量倍数</Text>
-                <InputNumber
-                  aria-label="流量倍数"
-                  size="small"
-                  min={0.1}
-                  max={100}
-                  precision={2}
-                  step={0.1}
-                  disabled={!canManageConfig}
-                  style={{ width: 76 }}
-                  value={normalizeClientTrafficMultiplier(billing.traffic_multiplier)}
-                  onChange={(value) => onUpdateClientBillingDraft(record, { traffic_multiplier: Number(value || 1) })}
-                />
-                <Text type="secondary">倍</Text>
-              </Space>
-              <Select
-                aria-label="收费周期"
-                size="small"
-                style={{ width: 78 }}
-                disabled={!canManageConfig}
-                value={revenueCycle}
-                options={[
-                  { value: 'month', label: '月' },
-                  { value: 'quarter', label: '季' },
-                  { value: 'semiannual', label: '半年' },
-                  { value: 'year', label: '年' },
-                ]}
-                onChange={(value) => {
-                  const nextCycle = value as 'month' | 'quarter' | 'semiannual' | 'year'
-                  onUpdateClientBillingDraft(record, {
-                    revenue_cycle: nextCycle,
-                    ...clientBillingPatchFromStart(effectiveStart, nextCycle),
-                  })
-                }}
-              />
-              <Button size="small" type="primary" style={{ width: 64 }} disabled={!canManageConfig} loading={saving} onClick={() => onSaveClientBilling(record)}>
-                保存
-              </Button>
-            </div>
+        const billing = findClientBilling(savedClientBillings || managedConfig?.renewal?.client_billings, record) || defaultClientBilling(record)
+        const start = effectiveClientBillingStartTime(billing, record.expiry_time || 0)
+        const expiry = effectiveClientBillingExpiryTime(billing, record.expiry_time || 0)
+        const save = overview?.client_config_saves?.find(item => item.client_id ? item.client_id === record.client_id : item.inbound_id === record.inbound_id && item.inbound_tag === record.inbound_tag && item.email === record.email)
+        const status = clientConfigSaveStatus(save)
+        return <div className="client-config-summary">
+          <div className="client-config-price">
+            <strong><span className="client-config-currency">{billing.revenue_currency || 'CNY'}</span> {Number(billing.revenue_amount || 0).toFixed(2)}</strong>
+            <span className="client-summary-label">/ {billingCycleLabel(billing.revenue_cycle)}</span>
+            <Tooltip title="流量计费倍率"><span className="client-summary-chip">{normalizeClientTrafficMultiplier(billing.traffic_multiplier)} 倍</span></Tooltip>
           </div>
-        )
-      },
-    },
-    {
-      title: '开始 / 到期',
-      key: 'expiry',
-      width: 410,
-      render: (_, record) => {
-        const billing = findClientBilling(managedConfig?.renewal?.client_billings, record) || defaultClientBilling(record)
-        const effectiveStart = effectiveClientBillingStartTime(billing, record.expiry_time || 0)
-        const effectiveExpiry = effectiveClientBillingExpiryTime(billing, record.expiry_time || 0)
-        const billingCycle = normalizeBillingCycle(billing.revenue_cycle || billing.expire_cycle)
-        const saving = clientBillingSavingKey === billingKeyForClient(record)
-        return (
-          <Space direction="vertical" size={6} className="client-expiry-cell">
-            <Text type="secondary">x-ui 当前：{formatExpiryTime(record.expiry_time)}</Text>
-            <Space wrap={false} size={6}>
-              <Text type="secondary">保存的到期时间：{formatExpiryTime(effectiveExpiry)}</Text>
-              <Button size="small" disabled={!canManageConfig} onClick={() => setClientExpiryEditor({ client: record, value: effectiveExpiry > 0 ? new Date(effectiveExpiry + 8 * 3600000).toISOString().slice(0, 19) : '' })}>修改</Button>
-            </Space>
-            <Space wrap={false} size={[6, 6]}>
-              <Input
-                size="small"
-                type="date"
-                style={{ width: 132 }}
-                disabled={!canManageConfig}
-                value={effectiveStart > 0 ? new Date(effectiveStart + 8 * 3600000).toISOString().slice(0, 10) : ''}
-                onChange={(event) => onUpdateClientBillingDraft(record, clientBillingPatchFromStart(dateInputToStartMillis(event.target.value), billingCycle))}
-              />
-              <Tag color="blue">按收费周期：{billingCycleLabel(billingCycle)}</Tag>
-              <Button size="small" type="primary" style={{ width: 64 }} disabled={!canManageConfig} loading={saving} onClick={() => onSaveClientBilling(record)}>
-                保存
-              </Button>
-            </Space>
-          </Space>
-        )
+          <div className="client-config-dates">
+            <div className="client-config-date"><span className="client-summary-label">开始</span><span className={!start ? 'client-summary-empty' : undefined}>{beijingDateInput(start) || '未设置'}</span></div>
+            <Tooltip title={`北京时间：${formatExpiryTime(expiry)}；x-ui 当前：${formatExpiryTime(record.expiry_time)}`}>
+              <div className="client-config-date"><span className="client-summary-label">到期</span><span className={!expiry ? 'client-summary-empty' : 'client-config-expiry'}>{beijingDateInput(expiry) || '不限期'}</span></div>
+            </Tooltip>
+          </div>
+          {status ? <Tooltip title={save?.action?.error || (save?.action ? '以远端回读核验结果为准' : '本系统收费配置已保存')}><Tag color={status.color}>{status.text}</Tag></Tooltip> : null}
+        </div>
       },
     },
     {
@@ -806,11 +720,12 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     {
       title: '操作',
       key: 'actions',
-      width: restrictedView ? 230 : 190,
+      width: restrictedView ? 230 : 240,
       fixed: 'right',
       render: (_, record) => (
         <div className="client-action-controls">
           <div className="client-action-row">
+            {!restrictedView ? <Button size="small" disabled={!canManageConfig || !record.email} onClick={() => setClientConfigEditor(record)}>编辑</Button> : null}
             <Button size="small" disabled={!record.import_url} onClick={() => onCopyImportURL(record)}>
               复制
             </Button>
@@ -1009,12 +924,27 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       title: '#',
       dataIndex: 'index',
       width: 70,
-      render: (value: number, record) => (
+      render: (value: number) => (
         <span id={ruleElementId(value)} className={selectedRuleIndex === value ? 'route-anchor active' : 'route-anchor'}>
           R{value}
-          {record.enabled === false ? <Tag style={{ marginLeft: 6 }}>停用</Tag> : null}
         </span>
       ),
+    },
+    {
+      title: '有效状态',
+      key: 'validity',
+      width: 230,
+      render: (_, record) => {
+        const state = record.enabled === false ? 'disabled' : record.validity || (!record.inbound_tags?.length && !record.users?.length || record.protected ? 'valid' : 'unknown')
+        const labels = { valid: '有效', partial: '部分有效', invalid: '无效', disabled: '停用', unknown: '待判断' }
+        const colors = { valid: 'success', partial: 'warning', invalid: 'error', disabled: 'default', unknown: 'default' }
+        const reason = record.validity_reasons?.join('；') || (state === 'unknown' ? '请更新 Server 并刷新 Client 信息' : state === 'valid' ? '当前配置可匹配' : '')
+        const visibleReason = (record.validity_reasons?.length || 0) > 2 ? `${record.validity_reasons!.slice(0, 2).join('；')}；另 ${record.validity_reasons!.length - 2} 项` : reason
+        return <div className="routing-validity-cell">
+          <Tag color={colors[state]}>{labels[state]}</Tag>
+          {reason ? <Tooltip title={reason}><span className="routing-validity-reason">{visibleReason}</span></Tooltip> : null}
+        </div>
+      },
     },
     {
       title: '入口匹配',
@@ -1401,34 +1331,38 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       key: 'outbounds',
       label: `出站 (${overview?.outbounds.length || 0})`,
       children: overview ? (
-        <div className="outbound-grid">
+        <>
+          {canDeleteOutbounds ? <Space wrap className="outbound-batch-toolbar">
+            <Button danger icon={<DeleteOutlined />} loading={outboundDeleteLoading} disabled={outboundDeleteBusy || !outboundFingerprint || !selectedOutboundTags.length}
+              onClick={() => confirmOutboundDeletion(overview.outbounds.filter(outbound => selectedOutboundTags.includes(outbound.tag || '')))}>
+              批量删除{selectedOutboundTags.length ? ` (${selectedOutboundTags.length})` : ''}
+            </Button>
+            <Button disabled={outboundDeleteBusy || !outboundFingerprint || !deletableOutbounds.length} onClick={() => setSelectedOutboundTags(deletableOutbounds.map(outbound => outbound.tag!))}>全选可删除</Button>
+            {selectedOutboundTags.length ? <Button type="link" disabled={outboundDeleteBusy} onClick={() => setSelectedOutboundTags([])}>取消选择</Button> : null}
+            <AdminHelpHint title="批量移除所选出站，一次保存完整配置并回读核验，然后重载 Xray。默认出口、被路由/均衡器/代理链引用的出站不可删除；请先调整引用。运行时生成的出站需在来源面板维护。需要目标 VPSMonitor Client v0.3.49 或更高版本。" />
+            {outboundDeleteBusy ? <Text type="secondary">删除任务下发中或执行中，请查看 x-ui 操作记录</Text> : null}
+            {!outboundFingerprint ? <Text type="secondary">请升级目标 VPSMonitor Client 并立即获取 Client 信息</Text> : null}
+          </Space> : null}
+          <div className="outbound-grid">
           {overview.outbounds.map((outbound) => {
             const selected = outbound.tag && outbound.tag === selectedOutboundTag
+            const checked = selectedOutboundTags.includes(outbound.tag || '')
+            const blockedReason = outboundDeleteDisabledReason(outbound)
             const linkedClient = findOutboundLinkedClient(dashboardView, selectedAgentId, outbound.tag)
             const linkedNodeLabel = linkedClient ? linkedClient.target.inbound_name || linkedClient.target.inbound_tag || String(linkedClient.target.inbound_id) : ''
             return (
               <section
                 key={outbound.tag || 'unknown'}
                 id={outboundElementId(outbound.tag || 'unknown')}
-                className={`outbound-card${selected ? ' selected' : ''}${linkedClient ? ' linked' : ''}`}
-                role={linkedClient ? 'button' : undefined}
-                tabIndex={linkedClient ? 0 : undefined}
-                onClick={() => {
-                  if (outbound.tag) {
-                    onJumpOutbound(outbound.tag)
-                  }
-                  if (linkedClient) {
-                    onJumpNode(linkedClient.target.agent_id, linkedNodeLabel)
-                  }
-                }}
-                onKeyDown={(event) => {
-                  if (!linkedClient || (event.key !== 'Enter' && event.key !== ' ')) {
-                    return
-                  }
-                  event.preventDefault()
-                  onJumpNode(linkedClient.target.agent_id, linkedNodeLabel)
-                }}
+                className={`outbound-card${selected ? ' selected' : ''}${checked ? ' checked' : ''}${linkedClient ? ' linked' : ''}`}
               >
+                {canDeleteOutbounds ? <div className="outbound-select-row">
+                  <Tooltip title={blockedReason || undefined}>
+                    <Checkbox aria-label={`选择出站 ${outbound.tag || '-'}`} checked={checked} disabled={outboundDeleteBusy || !outboundFingerprint || Boolean(blockedReason)}
+                      onChange={event => setSelectedOutboundTags(current => event.target.checked ? [...current, outbound.tag!] : current.filter(tag => tag !== outbound.tag))}>选择</Checkbox>
+                  </Tooltip>
+                  <Tooltip title={blockedReason || undefined}><Button size="small" danger icon={<DeleteOutlined />} disabled={outboundDeleteBusy || !outboundFingerprint || Boolean(blockedReason)} onClick={() => confirmOutboundDeletion([outbound])}>删除</Button></Tooltip>
+                </div> : null}
                 <div className="outbound-head">
                   <div>
                     <Text className="outbound-tag">{outbound.tag || '-'}</Text>
@@ -1441,16 +1375,18 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
                   </Space>
                 </div>
                 <div className="outbound-target">{outbound.target || '当前配置未提供远端地址'}</div>
-                {linkedClient ? <div className="muted-line">点击跳转到 {linkedClient.target.agent_name || linkedClient.target.agent_id} / {linkedNodeLabel}</div> : null}
+                {linkedClient ? <Button type="link" className="outbound-jump" onClick={() => onJumpNode(linkedClient.target.agent_id, linkedNodeLabel)}>跳转到 {linkedClient.target.agent_name || linkedClient.target.agent_id} / {linkedNodeLabel}</Button> : null}
                 <div className="outbound-metrics">
                   <span>上行 {formatBytes(outbound.up || 0)}</span>
                   <span>下行 {formatBytes(outbound.down || 0)}</span>
                   <span>累计 {formatBytes(outbound.total || 0)}</span>
                 </div>
+                {canDeleteOutbounds && blockedReason ? <Text type="secondary" className="outbound-delete-reason">{blockedReason}</Text> : null}
               </section>
             )
           })}
-        </div>
+          </div>
+        </>
       ) : (
         <Empty description="暂无出站数据" />
       ),
@@ -1460,6 +1396,9 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       label: `路由规则 (${routingRules.length})`,
       children: overview ? (
         <>
+          <div className="routing-validity-help">
+            <Text type="secondary">按当前入站、客户端及出站引用判断，全局条件与系统 API 路由视为有效；不依据在线状态或流量。</Text>
+          </div>
           {canDeleteRoutes ? (
             <Space wrap style={{ marginBottom: 12 }}>
               <Button
@@ -1479,8 +1418,8 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
             columns={routingColumns}
             dataSource={routingRules}
             pagination={false}
-            scroll={{ x: 1100 }}
-            rowClassName={(record) => (selectedRuleIndex === record.index ? 'route-row-selected' : '')}
+            scroll={{ x: 1280 }}
+            rowClassName={(record) => [selectedRuleIndex === record.index ? 'route-row-selected' : '', record.validity === 'invalid' ? 'route-row-invalid' : ''].filter(Boolean).join(' ')}
             rowSelection={canDeleteRoutes ? {
               selectedRowKeys: selectedRoutingRuleKeys,
               onChange: (keys) => setSelectedRoutingRuleKeys(keys.map(Number)),
@@ -1756,18 +1695,29 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
           items={detailTabs}
         />
       </Card>
-      <Modal title={`手动修改到期时间 · ${clientExpiryEditor?.client.email || ''}`} open={!!clientExpiryEditor}
-        onCancel={() => setClientExpiryEditor(null)} okText="应用到表单" cancelText="取消"
-        onOk={() => {
-          if (clientExpiryEditor) onUpdateClientBillingDraft(clientExpiryEditor.client, { expire_time: clientExpiryEditor.value ? Date.parse(`${clientExpiryEditor.value}+08:00`) : 0, expire_auto_renew: false })
-          setClientExpiryEditor(null)
-        }}>
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <Text type="secondary">北京时间，精确到秒。留空表示不限期。应用后请点击该客户端的保存按钮；不会自动续期。</Text>
-          <Input type="datetime-local" step={1} value={clientExpiryEditor?.value || ''} onChange={(event) => setClientExpiryEditor((current) => current ? { ...current, value: event.target.value } : null)} />
-        </Space>
+      {clientConfigEditor ? <XUIClientConfigModal key={`${selectedAgentId}:${billingKeyForClient(clientConfigEditor)}`} agentID={selectedAgentId} record={overview?.clients.find(item => item.inbound_id === clientConfigEditor.inbound_id && item.inbound_tag === clientConfigEditor.inbound_tag && item.email === clientConfigEditor.email && item.realm_target_agent_id === clientConfigEditor.realm_target_agent_id) || clientConfigEditor}
+        billing={findClientBilling(savedClientBillings || managedConfig?.renewal?.client_billings, clientConfigEditor)}
+        initialSave={overview?.client_config_saves?.find(item => item.client_id ? item.client_id === clientConfigEditor.client_id : item.inbound_id === clientConfigEditor.inbound_id && item.inbound_tag === clientConfigEditor.inbound_tag && item.email === clientConfigEditor.email)}
+        onClose={() => setClientConfigEditor(null)} onSaved={save => onClientConfigSaved(clientConfigEditor, save)} onUnauthorized={onClientConfigUnauthorized} /> : null}
+      <Modal
+        className="xui-delete-modal"
+        title={`删除 ${outboundDeleteDraft?.outbounds.length || 0} 个出站？`}
+        open={outboundDeleteDraft !== null}
+        okText="确认删除"
+        cancelText="取消"
+        okButtonProps={{ danger: true, disabled: outboundDeleteBusy || outboundDeleteDraft?.config_fingerprint !== outboundFingerprint }}
+        confirmLoading={outboundDeleteLoading}
+        closable={!outboundDeleteLoading}
+        maskClosable={!outboundDeleteLoading}
+        onCancel={() => { if (!outboundDeleteLoading) setOutboundDeleteDraft(null) }}
+        onOk={() => void submitOutboundDeletion()}
+      >
+        <Space wrap>{outboundDeleteDraft?.outbounds.map(outbound => <Tag key={outbound.tag}>{outbound.tag}</Tag>)}</Space>
+        <p>将一次保存所选出站的删除并回读核验，随后重载 Xray，可能短暂影响连接。不会删除客户端或路由规则。此操作不能直接撤销。</p>
+        {outboundDeleteDraft?.config_fingerprint !== outboundFingerprint ? <Alert type="warning" showIcon message="Xray 配置已变化，请取消并重新选择。" /> : null}
       </Modal>
       <Modal
+        className="xui-delete-modal"
         title={`删除 ${routingDeleteDraft?.rules.length || 0} 条路由规则？`}
         open={routingDeleteDraft !== null}
         okText="确认删除"

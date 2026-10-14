@@ -20,6 +20,8 @@ type routingDeletePanel struct {
 	updates, restarts, reads, logins int
 	apiPathOnly                      bool
 	updateError, restartError        string
+	ignoreUpdate                     bool
+	updatePersistError               string
 	outboundTestURL                  *string
 }
 
@@ -58,8 +60,14 @@ func (p *routingDeletePanel) client(t *testing.T) *XUIClient {
 			if p.outboundTestURL != nil && req.Form.Get("outboundTestUrl") != *p.outboundTestURL {
 				t.Fatalf("unrelated panel test URL changed: %q", req.Form.Get("outboundTestUrl"))
 			}
+			if p.ignoreUpdate {
+				return jsonResponse(t, req, map[string]any{"success": true}), nil
+			}
 			if err := json.Unmarshal([]byte(req.Form.Get("xraySetting")), &p.config); err != nil {
 				t.Fatal(err)
+			}
+			if p.updatePersistError != "" {
+				return nil, fmt.Errorf("%s", p.updatePersistError)
 			}
 			return jsonResponse(t, req, map[string]any{"success": true}), nil
 		case "/panel/api/server/restartXrayService":

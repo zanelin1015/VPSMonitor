@@ -675,6 +675,8 @@ export function actionKindLabel(kind: string): string {
       return '新增转发 / 路由规则'
     case 'delete_routing_rules':
       return '删除路由规则（单条 / 批量）'
+    case 'delete_outbounds':
+      return '删除出站（单条 / 批量）'
     case 'restart_xui':
       return '重启 x-ui / Xray'
     case 'execute_command':
@@ -689,6 +691,8 @@ export function actionKindLabel(kind: string): string {
       return '修改 Client 流量上限'
     case 'update_client_traffic_reset':
       return '修改 Client 自动流量重置'
+    case 'update_client_config':
+      return '统一修改客户端配置'
     default:
       return kind
   }

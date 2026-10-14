@@ -863,6 +863,7 @@ export interface XUINodeView {
 }
 
 export interface XUIClientView {
+  config_enabled?: boolean
   client_id?: string
   inbound_id: number
   inbound_tag?: string
@@ -903,6 +904,8 @@ export interface XUIClientView {
 }
 
 export interface XUIOutboundView {
+  fingerprint?: string
+  delete_blocked_reason?: string
   tag?: string
   protocol?: string
   target?: string
@@ -939,6 +942,8 @@ export interface XUIBalancerView {
 }
 
 export interface XUIRoutingRuleView {
+  validity?: 'valid' | 'partial' | 'invalid' | 'disabled'
+  validity_reasons?: string[]
   index: number
   fingerprint?: string
   protected?: boolean
@@ -984,11 +989,13 @@ export interface XUIOverview {
   nodes: XUINodeView[]
   clients: XUIClientView[]
   outbounds: XUIOutboundView[]
+  outbounds_fingerprint?: string
   balancers?: XUIBalancerView[]
   routing_rules: XUIRoutingRuleView[]
   routing_rules_fingerprint?: string
   editable_routing_rules?: XUIRoutingRuleView[]
   certificates: XUILocalCertificate[]
+  client_config_saves?: XUIClientConfigSave[]
 }
 
 export interface XUIAction {
@@ -1003,6 +1010,37 @@ export interface XUIAction {
   updated_at: string
   claimed_at?: string
   completed_at?: string
+}
+
+export interface XUIClientConfigChanges {
+  enabled?: boolean
+  total_bytes?: number
+  expiry_time?: number
+  traffic_reset?: string
+  traffic_reset_day?: number
+}
+
+export interface XUIClientConfigRequest {
+  request_id: string
+  client_id?: string
+  inbound_id: number
+  inbound_tag?: string
+  email: string
+  billing: XUIClientBillingConfig
+  previous_billing: XUIClientBillingConfig | null
+  changes: XUIClientConfigChanges
+  expected: XUIClientConfigChanges
+}
+
+export interface XUIClientConfigSave {
+  request_id: string
+  client_id?: string
+  inbound_id: number
+  inbound_tag?: string
+  email: string
+  billing: XUIClientBillingConfig
+  billing_saved: boolean
+  action?: XUIAction
 }
 
 export interface DashboardTotals {

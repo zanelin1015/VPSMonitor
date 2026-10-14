@@ -244,8 +244,13 @@ func (c *XUIClient) saveClientUpdate(ctx context.Context, target *xuiClientUpdat
 	result := map[string]any{
 		"message": envelope.Msg, "email": email, "inbound_id": inboundID,
 		"update_method": method,
-		"verified":      false, "restarted": false,
+		"verified":      false, "restarted": false, "saved": true,
 	}
+	fieldResults := map[string]any{}
+	for _, field := range fields {
+		fieldResults[field] = map[string]any{"verified": false, "error": "尚未完成回读核验"}
+	}
+	result["field_results"] = fieldResults
 	var actual map[string]any
 	if target.clientAPI {
 		actual, err = c.getClientUpdateRecord(ctx, email, inboundID)
@@ -257,10 +262,20 @@ func (c *XUIClient) saveClientUpdate(ctx context.Context, target *xuiClientUpdat
 		// replay it if authentication expires during the verification read.
 		return result, fmt.Errorf("x-ui reported success but client verification failed: %w", err)
 	}
+	var verificationErrors []string
+	verifiedCount := 0
 	for _, field := range fields {
 		if err := verifyClientUpdate(target.client, actual, field); err != nil {
-			return result, err
+			fieldResults[field] = map[string]any{"verified": false, "error": err.Error()}
+			verificationErrors = append(verificationErrors, err.Error())
+		} else {
+			fieldResults[field] = map[string]any{"verified": true}
+			verifiedCount++
 		}
+	}
+	if len(verificationErrors) > 0 {
+		result["partial"] = verifiedCount > 0
+		return result, fmt.Errorf("%s", strings.Join(verificationErrors, "; "))
 	}
 	result["verified"] = true
 	if enabled, exists := boolPayloadValue(actual, "enable"); exists {

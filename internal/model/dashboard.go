@@ -15,11 +15,13 @@ type XUIOverview struct {
 	Nodes                   []XUINodeView         `json:"nodes"`
 	Clients                 []XUIClientView       `json:"clients"`
 	Outbounds               []XUIOutboundView     `json:"outbounds"`
+	OutboundsFingerprint    string                `json:"outbounds_fingerprint,omitempty"`
 	Balancers               []XUIBalancerView     `json:"balancers,omitempty"`
 	RoutingRules            []XUIRoutingRuleView  `json:"routing_rules"`
 	RoutingRulesFingerprint string                `json:"routing_rules_fingerprint,omitempty"`
 	EditableRoutingRules    *[]XUIRoutingRuleView `json:"editable_routing_rules,omitempty"`
 	Certificates            []XUILocalCertificate `json:"certificates"`
+	ClientConfigSaves       []XUIClientConfigSave `json:"client_config_saves,omitempty"`
 }
 
 type XUIRouteTrace struct {
@@ -111,22 +113,24 @@ type XUIClientView struct {
 }
 
 type XUIOutboundView struct {
-	Tag           string   `json:"tag,omitempty"`
-	Protocol      string   `json:"protocol,omitempty"`
-	Target        string   `json:"target,omitempty"`
-	Address       string   `json:"address,omitempty"`
-	Port          int      `json:"port,omitempty"`
-	SendThrough   string   `json:"send_through,omitempty"`
-	Network       string   `json:"network,omitempty"`
-	Security      string   `json:"security,omitempty"`
-	TLSServerName string   `json:"tls_server_name,omitempty"`
-	WSPath        string   `json:"ws_path,omitempty"`
-	WSHost        string   `json:"ws_host,omitempty"`
-	Up            int64    `json:"up,omitempty"`
-	Down          int64    `json:"down,omitempty"`
-	Total         int64    `json:"total,omitempty"`
-	IsDefault     bool     `json:"is_default,omitempty"`
-	AuthKeys      []string `json:"-"`
+	Fingerprint         string   `json:"fingerprint,omitempty"`
+	DeleteBlockedReason string   `json:"delete_blocked_reason,omitempty"`
+	Tag                 string   `json:"tag,omitempty"`
+	Protocol            string   `json:"protocol,omitempty"`
+	Target              string   `json:"target,omitempty"`
+	Address             string   `json:"address,omitempty"`
+	Port                int      `json:"port,omitempty"`
+	SendThrough         string   `json:"send_through,omitempty"`
+	Network             string   `json:"network,omitempty"`
+	Security            string   `json:"security,omitempty"`
+	TLSServerName       string   `json:"tls_server_name,omitempty"`
+	WSPath              string   `json:"ws_path,omitempty"`
+	WSHost              string   `json:"ws_host,omitempty"`
+	Up                  int64    `json:"up,omitempty"`
+	Down                int64    `json:"down,omitempty"`
+	Total               int64    `json:"total,omitempty"`
+	IsDefault           bool     `json:"is_default,omitempty"`
+	AuthKeys            []string `json:"-"`
 }
 
 type XUIBalancerView struct {
@@ -138,22 +142,24 @@ type XUIBalancerView struct {
 }
 
 type XUIRoutingRuleView struct {
-	Index       int      `json:"index"`
-	Fingerprint string   `json:"fingerprint,omitempty"`
-	Protected   bool     `json:"protected,omitempty"`
-	Enabled     *bool    `json:"enabled,omitempty"`
-	Type        string   `json:"type,omitempty"`
-	InboundTags []string `json:"inbound_tags,omitempty"`
-	Users       []string `json:"users,omitempty"`
-	OutboundTag string   `json:"outbound_tag,omitempty"`
-	BalancerTag string   `json:"balancer_tag,omitempty"`
-	Domain      []string `json:"domain,omitempty"`
-	IP          []string `json:"ip,omitempty"`
-	Port        []string `json:"port,omitempty"`
-	SourcePort  []string `json:"source_port,omitempty"`
-	SourceIP    []string `json:"source_ip,omitempty"`
-	Network     []string `json:"network,omitempty"`
-	Protocol    []string `json:"protocol,omitempty"`
-	VLESSRoute  []string `json:"vless_route,omitempty"`
-	Summary     string   `json:"summary,omitempty"`
+	Validity        string   `json:"validity,omitempty"`
+	ValidityReasons []string `json:"validity_reasons,omitempty"`
+	Index           int      `json:"index"`
+	Fingerprint     string   `json:"fingerprint,omitempty"`
+	Protected       bool     `json:"protected,omitempty"`
+	Enabled         *bool    `json:"enabled,omitempty"`
+	Type            string   `json:"type,omitempty"`
+	InboundTags     []string `json:"inbound_tags,omitempty"`
+	Users           []string `json:"users,omitempty"`
+	OutboundTag     string   `json:"outbound_tag,omitempty"`
+	BalancerTag     string   `json:"balancer_tag,omitempty"`
+	Domain          []string `json:"domain,omitempty"`
+	IP              []string `json:"ip,omitempty"`
+	Port            []string `json:"port,omitempty"`
+	SourcePort      []string `json:"source_port,omitempty"`
+	SourceIP        []string `json:"source_ip,omitempty"`
+	Network         []string `json:"network,omitempty"`
+	Protocol        []string `json:"protocol,omitempty"`
+	VLESSRoute      []string `json:"vless_route,omitempty"`
+	Summary         string   `json:"summary,omitempty"`
 }
