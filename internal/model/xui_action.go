@@ -9,6 +9,7 @@ const (
 	XUIActionAddClient                = "add_client"
 	XUIActionAddRoutingRule           = "add_routing_rule"
 	XUIActionUpsertRoutingRule        = "upsert_routing_rule"
+	XUIActionUpdateRoutingRule        = "update_routing_rule"
 	XUIActionDeleteRoutingRules       = "delete_routing_rules"
 	XUIActionDeleteOutbounds          = "delete_outbounds"
 	XUIActionUpdateClientExpiry       = "update_client_expiry"

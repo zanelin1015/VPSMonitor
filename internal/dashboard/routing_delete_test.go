@@ -23,6 +23,9 @@ func TestRoutingOverviewProvidesDeletionGuards(t *testing.T) {
 		if rule.Index != index+1 || rule.Fingerprint != model.RoutingFingerprint(rules[index]) {
 			t.Fatalf("bad rule guard: %#v", rule)
 		}
+		if model.RoutingFingerprint(rule.RawRule) != model.RoutingFingerprint(rules[index]) {
+			t.Fatal("editing must receive every original rule field")
+		}
 	}
 	if !(*overview.EditableRoutingRules)[0].Protected || (*overview.EditableRoutingRules)[1].Protected {
 		t.Fatalf("bad API rule protection: %#v", overview.RoutingRules)

@@ -229,6 +229,7 @@ func (a *App) xuiActionTimeout(kind string) time.Duration {
 		model.XUIActionAddClient,
 		model.XUIActionAddRoutingRule,
 		model.XUIActionUpsertRoutingRule,
+		model.XUIActionUpdateRoutingRule,
 		model.XUIActionDeleteRoutingRules,
 		model.XUIActionDeleteOutbounds,
 		model.XUIActionUpdateClientExpiry,

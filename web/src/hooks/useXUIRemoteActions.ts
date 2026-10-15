@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import type { AdminUser, XUIAction, XUIClientView } from '../types'
 import { fetchJSON, isUnauthorized } from '../lib/appHelpers'
 import type { RoutingRulesDeletePayload } from '../lib/routingRules'
+import type { RoutingRuleUpdatePayload } from '../lib/routingRuleEditor'
 import type { OutboundsDeletePayload } from '../lib/outbounds'
 import { buildClientTrafficResetAction } from '../lib/clientTrafficReset'
 import type { ClientTrafficResetPeriod } from '../lib/clientTrafficReset'
@@ -35,9 +36,12 @@ export function useXUIRemoteActions(input: {
   const [xuiUpdateLoading, setXUIUpdateLoading] = useState(false)
   const [xuiClientDeleteLoadingKey, setXUIClientDeleteLoadingKey] = useState('')
   const [xuiClientToggleLoadingKey, setXUIClientToggleLoadingKey] = useState('')
+  const xuiClientToggleSubmitting = useRef(false)
   const [xuiClientTrafficSavingKey, setXUIClientTrafficSavingKey] = useState('')
   const [routingRuleDeleteLoadingAgentId, setRoutingRuleDeleteLoadingAgentId] = useState('')
   const routingDeleteSubmitting = useRef(false)
+  const [routingRuleUpdateLoadingAgentId, setRoutingRuleUpdateLoadingAgentId] = useState('')
+  const routingUpdateSubmitting = useRef(false)
   const [outboundDeleteLoadingAgentId, setOutboundDeleteLoadingAgentId] = useState('')
   const outboundDeleteSubmitting = useRef(false)
 
@@ -163,14 +167,38 @@ export function useXUIRemoteActions(input: {
     return action
   }
 
+  async function updateRoutingRule(payload: RoutingRuleUpdatePayload, agentID = selectedAgentId): Promise<XUIAction | null> {
+    if (!agentID || routingUpdateSubmitting.current) return null
+    routingUpdateSubmitting.current = true
+    setRoutingRuleUpdateLoadingAgentId(agentID)
+    let action: XUIAction
+    try {
+      action = await fetchJSON<XUIAction>(`/api/v1/agents/${agentID}/xui/actions`, {
+        method: 'POST', body: JSON.stringify({ kind: 'update_routing_rule', payload }),
+      })
+    } catch (error) {
+      handleUnauthorized(error)
+      // The editor keeps the draft and shows the error next to its fields.
+      throw error
+    } finally {
+      routingUpdateSubmitting.current = false
+      setRoutingRuleUpdateLoadingAgentId('')
+    }
+    scheduleXUIActionResultRefresh(agentID)
+    void loadXUIActions(agentID, { silent: true })
+    ;[1000, 3000, 8000, 15000].forEach(delay => window.setTimeout(() => void loadOverview(agentID, { silent: true }), delay))
+    return action
+  }
+
   async function setXUIClientEnabled(record: XUIClientView, enabled: boolean, agentID = selectedAgentId) {
     const targetAgentID = record.realm_target_agent_id || agentID
     const targetInboundID = record.realm_target_inbound_id || record.inbound_id
     const targetInboundTag = record.realm_target_inbound_tag || record.inbound_tag || ''
-    if (!targetAgentID) {
+    if (!targetAgentID || xuiClientToggleSubmitting.current) {
       return
     }
     const key = xuiClientActionKey(record)
+    xuiClientToggleSubmitting.current = true
     setXUIClientToggleLoadingKey(key)
     try {
       const action = await fetchJSON<XUIAction>(`/api/v1/agents/${targetAgentID}/xui/actions`, {
@@ -188,19 +216,21 @@ export function useXUIRemoteActions(input: {
         }),
       })
       message.success(action.status === 'running' ? `已通过 WS 下发${enabled ? '启用' : '停用'} Client 任务，结果会回传到操作记录` : `已创建${enabled ? '启用' : '停用'} Client 任务，Client 不在线时会等待轮询执行`)
-      await loadXUIActions(targetAgentID, { silent: true })
       scheduleXUIActionResultRefresh(targetAgentID)
-      window.setTimeout(() => {
-        void loadOverview(targetAgentID, { silent: true })
-        if (selectedAgentId && targetAgentID !== selectedAgentId) {
-          void loadOverview(selectedAgentId, { silent: true })
-        }
-        void loadAgents({ silent: true })
-      }, 2500)
+      await loadXUIActions(targetAgentID, { silent: true })
+      // Keep the button busy through the first read-back so stale row data
+      // cannot immediately dispatch the same state change a second time.
+      await new Promise<void>(resolve => window.setTimeout(resolve, 2500))
+      await Promise.all([
+        loadOverview(targetAgentID, { silent: true }),
+        ...(selectedAgentId && targetAgentID !== selectedAgentId ? [loadOverview(selectedAgentId, { silent: true })] : []),
+        loadAgents({ silent: true }),
+      ])
     } catch (error) {
       handleUnauthorized(error)
       message.error(error instanceof Error ? error.message : `${enabled ? '启用' : '停用'} Client 失败`)
     } finally {
+      xuiClientToggleSubmitting.current = false
       setXUIClientToggleLoadingKey('')
     }
   }
@@ -332,11 +362,13 @@ export function useXUIRemoteActions(input: {
     xuiClientToggleLoadingKey,
     xuiClientTrafficSavingKey,
     routingRuleDeleteLoadingAgentId,
+    routingRuleUpdateLoadingAgentId,
     outboundDeleteLoadingAgentId,
     xuiRestartLoading,
     xuiUpdateLoading,
     deleteXUIClient,
     deleteRoutingRules,
+    updateRoutingRule,
     deleteOutbounds,
     executeRemoteCommand,
     restartXUIService,

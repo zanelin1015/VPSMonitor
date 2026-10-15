@@ -13,6 +13,7 @@ func routingDeletionView(snapshot *model.XUISnapshot, runtimeRules []routeRule) 
 	apiConfig := map[string]any{"api": map[string]any{"tag": template.APITag}}
 	anchors := make(map[string]int, len(template.Rules))
 	for index, raw := range template.Rules {
+		saved[index].view.RawRule = raw
 		saved[index].view.Protected = model.IsProtectedRoutingRule(raw, apiConfig)
 		if enabled, ok := raw["enabled"].(bool); ok && !enabled {
 			continue

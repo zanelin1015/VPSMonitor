@@ -942,6 +942,7 @@ export interface XUIBalancerView {
 }
 
 export interface XUIRoutingRuleView {
+  raw_rule?: Record<string, unknown>
   validity?: 'valid' | 'partial' | 'invalid' | 'disabled'
   validity_reasons?: string[]
   index: number

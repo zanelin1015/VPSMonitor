@@ -142,24 +142,25 @@ type XUIBalancerView struct {
 }
 
 type XUIRoutingRuleView struct {
-	Validity        string   `json:"validity,omitempty"`
-	ValidityReasons []string `json:"validity_reasons,omitempty"`
-	Index           int      `json:"index"`
-	Fingerprint     string   `json:"fingerprint,omitempty"`
-	Protected       bool     `json:"protected,omitempty"`
-	Enabled         *bool    `json:"enabled,omitempty"`
-	Type            string   `json:"type,omitempty"`
-	InboundTags     []string `json:"inbound_tags,omitempty"`
-	Users           []string `json:"users,omitempty"`
-	OutboundTag     string   `json:"outbound_tag,omitempty"`
-	BalancerTag     string   `json:"balancer_tag,omitempty"`
-	Domain          []string `json:"domain,omitempty"`
-	IP              []string `json:"ip,omitempty"`
-	Port            []string `json:"port,omitempty"`
-	SourcePort      []string `json:"source_port,omitempty"`
-	SourceIP        []string `json:"source_ip,omitempty"`
-	Network         []string `json:"network,omitempty"`
-	Protocol        []string `json:"protocol,omitempty"`
-	VLESSRoute      []string `json:"vless_route,omitempty"`
-	Summary         string   `json:"summary,omitempty"`
+	RawRule         map[string]any `json:"raw_rule,omitempty"`
+	Validity        string         `json:"validity,omitempty"`
+	ValidityReasons []string       `json:"validity_reasons,omitempty"`
+	Index           int            `json:"index"`
+	Fingerprint     string         `json:"fingerprint,omitempty"`
+	Protected       bool           `json:"protected,omitempty"`
+	Enabled         *bool          `json:"enabled,omitempty"`
+	Type            string         `json:"type,omitempty"`
+	InboundTags     []string       `json:"inbound_tags,omitempty"`
+	Users           []string       `json:"users,omitempty"`
+	OutboundTag     string         `json:"outbound_tag,omitempty"`
+	BalancerTag     string         `json:"balancer_tag,omitempty"`
+	Domain          []string       `json:"domain,omitempty"`
+	IP              []string       `json:"ip,omitempty"`
+	Port            []string       `json:"port,omitempty"`
+	SourcePort      []string       `json:"source_port,omitempty"`
+	SourceIP        []string       `json:"source_ip,omitempty"`
+	Network         []string       `json:"network,omitempty"`
+	Protocol        []string       `json:"protocol,omitempty"`
+	VLESSRoute      []string       `json:"vless_route,omitempty"`
+	Summary         string         `json:"summary,omitempty"`
 }

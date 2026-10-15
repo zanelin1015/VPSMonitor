@@ -1172,6 +1172,21 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 					return
 				}
 			}
+			if req.Kind == model.XUIActionUpdateRoutingRule {
+				if _, err := model.ParseRoutingRuleUpdatePayload(req.Payload); err != nil {
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				snapshot, found := a.store.GetLatest(agentID)
+				if !found || snapshot.XUI == nil || snapshot.XUI.RoutingTemplate == nil {
+					writeError(w, http.StatusConflict, "请升级目标 VPSMonitor Client 并刷新采集，以读取面板保存的路由规则")
+					return
+				}
+				if _, known := parseSemver(snapshot.Version); !known || isVersionNewer(model.XUIRoutingRuleUpdateMinVersion, snapshot.Version) {
+					writeError(w, http.StatusConflict, "请先将目标 VPSMonitor Client 升级到 v"+model.XUIRoutingRuleUpdateMinVersion+" 或更高版本，并刷新采集")
+					return
+				}
+			}
 			if req.Kind == model.XUIActionDeleteOutbounds {
 				if _, err := model.ParseOutboundsDeletePayload(req.Payload); err != nil {
 					writeError(w, http.StatusBadRequest, err.Error())
@@ -1269,7 +1284,7 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 			writeError(w, status, err.Error())
 			return
 		}
-		if (action.Kind == model.XUIActionDeleteRoutingRules || action.Kind == model.XUIActionDeleteOutbounds) && (action.Result["saved"] == true || action.Result["submitted"] == true) && a.realtime != nil {
+		if (action.Kind == model.XUIActionDeleteRoutingRules || action.Kind == model.XUIActionDeleteOutbounds || action.Kind == model.XUIActionUpdateRoutingRule) && (action.Result["saved"] == true || action.Result["submitted"] == true) && a.realtime != nil {
 			// Refresh the full saved-template snapshot, including partial success
 			// where saving worked but restarting Xray did not.
 			a.realtime.sendAgentControl(agentID, model.AgentControlMessage{Type: model.AgentControlCollectNow})
@@ -1528,7 +1543,7 @@ func filterRootOnlyXUIActions(actions []model.XUIAction) []model.XUIAction {
 
 func isRootOnlyXUIActionKind(kind string) bool {
 	switch kind {
-	case model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI, model.XUIActionDeleteRoutingRules, model.XUIActionDeleteOutbounds, model.XUIActionUpdateClientConfig:
+	case model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI, model.XUIActionDeleteRoutingRules, model.XUIActionDeleteOutbounds, model.XUIActionUpdateRoutingRule, model.XUIActionUpdateClientConfig:
 		return true
 	default:
 		return false
@@ -1541,6 +1556,7 @@ func realtimeXUIActionAllowed(kind string) bool {
 		model.XUIActionAddClient,
 		model.XUIActionAddRoutingRule,
 		model.XUIActionUpsertRoutingRule,
+		model.XUIActionUpdateRoutingRule,
 		model.XUIActionDeleteRoutingRules,
 		model.XUIActionDeleteOutbounds,
 		model.XUIActionUpdateClientExpiry,
@@ -1637,6 +1653,7 @@ func xuiActionUsesPanelAuth(kind string) bool {
 		model.XUIActionAddClient,
 		model.XUIActionAddRoutingRule,
 		model.XUIActionUpsertRoutingRule,
+		model.XUIActionUpdateRoutingRule,
 		model.XUIActionDeleteRoutingRules,
 		model.XUIActionDeleteOutbounds,
 		model.XUIActionUpdateClientExpiry,

@@ -675,6 +675,8 @@ export function actionKindLabel(kind: string): string {
       return '新增转发 / 路由规则'
     case 'delete_routing_rules':
       return '删除路由规则（单条 / 批量）'
+    case 'update_routing_rule':
+      return '修改路由规则'
     case 'delete_outbounds':
       return '删除出站（单条 / 批量）'
     case 'restart_xui':

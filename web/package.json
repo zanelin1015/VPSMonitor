@@ -8,6 +8,7 @@
     "build": "tsc --project tsconfig.app.json && tsc --project tsconfig.node.json && vite build",
     "preview": "vite preview",
     "test:app-base": "node scripts/test-app-base.mjs",
+    "test:app-recovery": "node scripts/test-app-recovery.mjs",
     "test:console-theme": "node scripts/test-console-theme.mjs",
     "test:customer-authorization": "node scripts/test-customer-authorization.mjs",
     "test:customer-session": "node scripts/test-customer-session.mjs",
@@ -22,6 +23,8 @@
     "test:finance": "node scripts/test-finance.mjs",
     "test:agent-search": "node scripts/test-agent-search.mjs",
     "test:routing-delete": "node scripts/test-routing-delete.mjs",
+    "test:routing-editor": "node scripts/test-routing-editor.mjs",
+    "test:outbound-references": "node scripts/test-outbound-references.mjs",
     "test:node-import": "node scripts/test-node-import.mjs"
   },
   "dependencies": {

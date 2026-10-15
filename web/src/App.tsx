@@ -1,3 +1,6 @@
+// @refresh reset
+// Plain .ts custom hooks are not instrumented by Fast Refresh. Remount this
+// development entry on updates instead of reusing an incompatible hook queue.
 import { lazy, startTransition, Suspense, useCallback, useDeferredValue, useEffect, useRef, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import {
@@ -331,11 +334,13 @@ function AppContent() {
     xuiClientDeleteLoadingKey,
     xuiClientToggleLoadingKey,
     routingRuleDeleteLoadingAgentId,
+    routingRuleUpdateLoadingAgentId,
     outboundDeleteLoadingAgentId,
     xuiRestartLoading,
     xuiUpdateLoading,
     deleteXUIClient,
     deleteRoutingRules,
+    updateRoutingRule,
     deleteOutbounds,
     executeRemoteCommand,
     restartXUIService,
@@ -1970,6 +1975,7 @@ function AppContent() {
                 xuiActionsLoading={xuiActionsLoading}
                 xuiClientDeleteLoadingKey={xuiClientDeleteLoadingKey}
                 routingRuleDeleteLoading={routingRuleDeleteLoadingAgentId === selectedAgentId}
+                routingRuleUpdateLoading={routingRuleUpdateLoadingAgentId === selectedAgentId}
                 outboundDeleteLoading={outboundDeleteLoadingAgentId === selectedAgentId}
                 xuiClientToggleLoadingKey={xuiClientToggleLoadingKey}
                 agentDeleteLoading={agentDeleteLoading}
@@ -2038,6 +2044,10 @@ function AppContent() {
                 onReplaceCurrentAgent={(replacementAgentID) => replaceAgent(replacementAgentID, selectedAgentId)}
                 onDeleteXUIClient={(client) => void deleteXUIClient(client, selectedAgentId)}
                 onDeleteRoutingRules={(payload) => deleteRoutingRules(payload, selectedAgentId)}
+                onUpdateRoutingRule={(payload) => updateRoutingRule(payload, selectedAgentId)}
+                onRoutingRuleUpdated={() => {
+                  ;[0, 1000, 3000].forEach(delay => window.setTimeout(() => void loadOverview(selectedAgentId, { silent: true }), delay))
+                }}
                 onDeleteOutbounds={(payload) => deleteOutbounds(payload, selectedAgentId)}
                 onSetXUIClientEnabled={(client, enabled) => void setXUIClientEnabled(client, enabled, selectedAgentId)}
                 onRefreshCurrentAgent={() => void requestAgentSnapshot(selectedAgentId)}

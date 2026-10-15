@@ -35,7 +35,7 @@ func (c *XUIClient) ExecuteAction(ctx context.Context, action model.XUIAction) (
 
 func actionCanUseLocalXrayFallback(kind string) bool {
 	switch kind {
-	case model.XUIActionAddOutbound, model.XUIActionAddRoutingRule, model.XUIActionUpsertRoutingRule, model.XUIActionDeleteRoutingRules, model.XUIActionDeleteOutbounds:
+	case model.XUIActionAddOutbound, model.XUIActionAddRoutingRule, model.XUIActionUpsertRoutingRule, model.XUIActionUpdateRoutingRule, model.XUIActionDeleteRoutingRules, model.XUIActionDeleteOutbounds:
 		return true
 	default:
 		return false
@@ -52,6 +52,8 @@ func (c *XUIClient) executeActionAuthenticated(ctx context.Context, action model
 		return c.addRoutingRule(ctx, action.Payload)
 	case model.XUIActionUpsertRoutingRule:
 		return c.upsertRoutingRule(ctx, action.Payload)
+	case model.XUIActionUpdateRoutingRule:
+		return c.updateRoutingRule(ctx, action.Payload)
 	case model.XUIActionDeleteRoutingRules:
 		return c.deleteRoutingRules(ctx, action.Payload)
 	case model.XUIActionDeleteOutbounds:

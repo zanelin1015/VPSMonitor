@@ -47,6 +47,11 @@ func (s *SQLiteStore) CreateXUIActionWithActor(agentID string, req model.XUIActi
 			return model.XUIAction{}, err
 		}
 	}
+	if req.Kind == model.XUIActionUpdateRoutingRule {
+		if _, err := model.ParseRoutingRuleUpdatePayload(req.Payload); err != nil {
+			return model.XUIAction{}, err
+		}
+	}
 	if req.Kind == model.XUIActionDeleteOutbounds {
 		if _, err := model.ParseOutboundsDeletePayload(req.Payload); err != nil {
 			return model.XUIAction{}, err
@@ -405,6 +410,10 @@ func (s *SQLiteStore) CompleteXUIAction(agentID string, id int64, req model.XUIA
 	if action.Kind == model.XUIActionDeleteOutbounds && status == model.XUIActionStatusSucceeded && (req.Result["saved"] != true || req.Result["verified"] != true || req.Result["restarted"] != true) {
 		status = model.XUIActionStatusFailed
 		req.Error = "出站删除未完成保存、回读核验或 Xray 重载，不能标记为成功"
+	}
+	if action.Kind == model.XUIActionUpdateRoutingRule && status == model.XUIActionStatusSucceeded && (req.Result["saved"] != true || req.Result["verified"] != true || req.Result["restarted"] != true) {
+		status = model.XUIActionStatusFailed
+		req.Error = "路由修改未完成保存、回读核验或 Xray 重载，不能标记为成功"
 	}
 	// Apply billing changes before publishing a successful action result. If the
 	// configuration write fails, leaving the action executable makes the agent's

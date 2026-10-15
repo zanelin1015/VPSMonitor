@@ -16,6 +16,7 @@ import (
 )
 
 type routingDeletePanel struct {
+	readErrorAfter                   int
 	config                           map[string]any
 	updates, restarts, reads, logins int
 	apiPathOnly                      bool
@@ -41,6 +42,9 @@ func (p *routingDeletePanel) client(t *testing.T) *XUIClient {
 				return nil, xuiHTTPError{StatusCode: http.StatusNotFound}
 			}
 			p.reads++
+			if p.readErrorAfter > 0 && p.reads > p.readErrorAfter {
+				return nil, fmt.Errorf("readback unavailable")
+			}
 			wrapper := map[string]any{"xraySetting": p.config}
 			if p.outboundTestURL != nil {
 				wrapper["outboundTestUrl"] = *p.outboundTestURL

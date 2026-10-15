@@ -15,7 +15,7 @@ import (
 )
 
 func TestRoutingDeletionDispatchAndPermissionPolicy(t *testing.T) {
-	for _, kind := range []string{model.XUIActionDeleteRoutingRules, model.XUIActionDeleteOutbounds} {
+	for _, kind := range []string{model.XUIActionDeleteRoutingRules, model.XUIActionDeleteOutbounds, model.XUIActionUpdateRoutingRule} {
 		if !realtimeXUIActionAllowed(kind) {
 			t.Fatal("routing deletion must dispatch immediately via WS")
 		}
@@ -89,7 +89,7 @@ func TestRoutingDeletionHTTPValidationPermissionsAndRedaction(t *testing.T) {
 		})
 	}
 	for _, sanitize := range []func(model.AdminUser, *model.XUIOverview){app.sanitizeXUIOverviewForAdmin, app.sanitizeXUIOverviewForAreaAssignment} {
-		views := []model.XUIRoutingRuleView{{Index: 2, Users: []string{"other-user"}, Fingerprint: fingerprint}}
+		views := []model.XUIRoutingRuleView{{Index: 2, Users: []string{"other-user"}, Fingerprint: fingerprint, RawRule: map[string]any{"user": []string{"other-user"}}}}
 		overview := &model.XUIOverview{AgentID: "agent-1", EditableRoutingRules: &views, RoutingRulesFingerprint: fingerprint, OutboundsFingerprint: fingerprint, Outbounds: []model.XUIOutboundView{{Tag: "direct", Fingerprint: fingerprint, DeleteBlockedReason: "other-account reference"}}}
 		sanitize(model.AdminUser{ID: manager.ID, Role: model.AdminRoleAreaManager, AgentIDs: []string{"agent-1"}}, overview)
 		if overview.EditableRoutingRules != nil || overview.RoutingRulesFingerprint != "" {

@@ -1188,6 +1188,56 @@
 .outbound-delete-reason { font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .outbound-card .outbound-jump { height: auto; padding: 0; text-align: start; white-space: normal; line-height: 1.5; overflow-wrap: anywhere; justify-content: flex-start; }
 
+.xui-collection-toolbar { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
+.xui-collection-toolbar > .ant-space { flex: 1 1 480px; }
+.xui-collection-toolbar .outbound-batch-toolbar { margin-bottom: 0; }
+.xui-collection-toolbar > .ant-segmented { flex-shrink: 0; margin-inline-start: auto; }
+.outbound-identity, .outbound-target-cell, .outbound-traffic-cell { display: grid; justify-items: start; gap: 7px; min-width: 0; }
+.outbound-identity .ant-tag, .outbound-target-cell .ant-tag { margin-inline-end: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.outbound-identity { scroll-margin-top: 90px; }
+.outbound-target-cell .outbound-jump { height: auto; padding: 0; text-align: start; white-space: normal; line-height: 1.5; overflow-wrap: anywhere; justify-content: flex-start; }
+.outbound-rule-association { display: grid; justify-items: start; gap: 6px; }
+.outbound-rule-association > .ant-typography { font-size: 12px; }
+.outbound-unreferenced { color: var(--muted-strong); margin-inline-end: 0; }
+.outbound-card-rules { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-top: 1px solid var(--border); padding-top: 12px; }
+.outbound-card-rules > .ant-typography { font-size: 12px; }
+.outbound-row-selected > td { background: var(--amber-soft) !important; }
+.xui-outbound-table .ant-table-cell { overflow-wrap: anywhere; }
+.routing-rule-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 14px; }
+.routing-rule-card { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+.routing-rule-card.checked { border-color: var(--blue); background: color-mix(in srgb, var(--blue-soft) 45%, var(--card)); }
+.routing-rule-card.selected { border-color: var(--amber); background: var(--amber-soft); }
+.routing-rule-card-head, .outbound-reference-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; }
+.routing-rule-card-field { display: grid; gap: 6px; min-width: 0; }
+.routing-rule-card-field .ant-space, .routing-rule-card-field .ant-space-item { min-width: 0; max-width: 100%; }
+.routing-rule-card-field > .ant-typography { font-size: 12px; }
+.routing-rule-card .ant-tag, .outbound-reference-item .ant-tag { max-width: 100%; white-space: normal; overflow-wrap: anywhere; margin-inline-end: 0; }
+.routing-rule-card .route-anchor { scroll-margin-top: 90px; }
+.routing-rule-card .route-link { white-space: normal; overflow-wrap: anywhere; height: auto; text-align: start; }
+.routing-rule-card-summary { padding: 10px 12px; border-radius: 8px; background: var(--surface-soft); color: var(--muted-strong); font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
+.ant-modal.xui-reference-modal { top: 32px; }
+.ant-modal.xui-reference-modal .ant-modal-header { padding: 0 40px 12px 0; margin-bottom: 16px; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; box-shadow: none; background: transparent; }
+.ant-modal.xui-reference-modal .ant-modal-title { overflow-wrap: anywhere; }
+.ant-modal.xui-reference-modal .ant-modal-close { top: 20px; inset-inline-end: 20px; }
+.ant-modal.xui-reference-modal .ant-modal-body { max-height: calc(100dvh - 240px); overflow-y: auto; }
+.outbound-reference-list { display: grid; gap: 12px; }
+.outbound-reference-item { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-soft); min-width: 0; }
+
+@media (max-width: 600px) {
+  .xui-collection-toolbar > .ant-space { flex-basis: 100%; }
+  .xui-collection-toolbar .ant-btn, .xui-collection-toolbar .ant-segmented-item-label,
+  .outbound-rule-association .ant-btn, .xui-outbound-table .ant-btn,
+  .routing-rule-card .ant-checkbox-wrapper, .outbound-reference-head .ant-btn,
+  .ant-modal.xui-reference-modal .ant-modal-footer .ant-btn { min-height: 44px; }
+  .xui-collection-toolbar .ant-segmented-item-label { display: flex; align-items: center; gap: 6px; }
+  .routing-rule-card .ant-checkbox-wrapper { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; }
+  .ant-modal.xui-reference-modal { top: 12px; }
+  .ant-modal.xui-reference-modal .ant-modal-content { padding: 16px; }
+  .ant-modal.xui-reference-modal .ant-modal-header { padding-inline-end: 44px; }
+  .ant-modal.xui-reference-modal .ant-modal-close { top: 10px; inset-inline-end: 10px; width: 44px; height: 44px; }
+  .ant-modal.xui-reference-modal .ant-modal-body { max-height: calc(100dvh - 220px); }
+}
+
 .ant-modal.xui-delete-modal .ant-modal-content { padding: 20px 24px; }
 .ant-modal.xui-delete-modal .ant-modal-header { padding: 0 44px 12px 0; margin-bottom: 16px; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; box-shadow: none; background: transparent; }
 .ant-modal.xui-delete-modal .ant-modal-title { line-height: 32px; }
@@ -1250,8 +1300,67 @@
   gap: 6px;
 }
 
+.ant-modal.xui-routing-editor-modal { top: 32px; }
+.ant-modal.xui-routing-editor-modal .ant-modal-header {
+  margin-bottom: 16px;
+  padding: 0 40px 0 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.ant-modal.xui-routing-editor-modal .ant-modal-close { top: 20px; inset-inline-end: 20px; }
+.ant-modal.xui-routing-editor-modal .ant-modal-body { max-height: calc(100dvh - 240px); overflow-y: auto; padding-inline-end: 4px; }
+.ant-modal.xui-routing-editor-modal .ant-modal-footer { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.routing-editor-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 16px; }
+.routing-editor-grid .ant-form-item { min-width: 0; margin-bottom: 14px; }
+.routing-editor-full { grid-column: 1 / -1; }
+.routing-editor-grid .ant-select { width: 100%; }
+.routing-editor-help { margin-bottom: 12px !important; line-height: 1.7; }
+.routing-editor-feedback { margin-bottom: 12px; overflow-wrap: anywhere; }
+.routing-editor-json { font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.6; tab-size: 2; }
+
+@media (max-width: 600px) {
+  .ant-modal.xui-routing-editor-modal { top: 12px; }
+  .ant-modal.xui-routing-editor-modal .ant-modal-content { padding: 16px; }
+  .ant-modal.xui-routing-editor-modal .ant-modal-header { padding-inline-end: 56px; }
+  .ant-modal.xui-routing-editor-modal .ant-modal-title { line-height: 44px; }
+  .ant-modal.xui-routing-editor-modal .ant-modal-close { top: 16px; inset-inline-end: 16px; width: 44px; height: 44px; }
+  .ant-modal.xui-routing-editor-modal .ant-modal-body { max-height: calc(100dvh - 220px); }
+  .ant-modal.xui-routing-editor-modal .ant-modal-footer .ant-btn,
+  .routing-rule-actions .ant-btn { min-height: 44px; }
+  .routing-editor-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
 .client-status-cell .ant-tag {
   margin-inline-end: 0;
+}
+
+.client-status-cell .client-enabled-button {
+  min-width: 62px;
+  height: 28px;
+  padding-inline: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.client-status-cell .client-enabled-button.is-enabled:not(:disabled) {
+  border-color: color-mix(in srgb, var(--blue) 35%, var(--border));
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.client-status-cell .client-enabled-button.is-enabled:not(:disabled):hover {
+  border-color: var(--blue);
+  background: color-mix(in srgb, var(--blue-soft) 75%, var(--card));
+}
+
+.client-status-cell .client-enabled-button:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .client-status-cell .client-enabled-button { min-height: 44px; }
 }
 
 /* The table lives inside the agent detail's vertical scroller. Keep the
