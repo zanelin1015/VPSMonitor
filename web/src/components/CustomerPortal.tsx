@@ -3,7 +3,8 @@ import { Alert, App as AntdApp, Button, Card, Checkbox, Empty, Input, Modal, Pag
 import { BarChartOutlined, CheckCircleOutlined, CheckOutlined, CloseCircleOutlined, CloseOutlined, CopyOutlined, DashboardOutlined, DownOutlined, EditOutlined, InfoCircleOutlined, LinkOutlined, LockOutlined, LogoutOutlined, ReloadOutlined, RightOutlined, UnorderedListOutlined, WarningOutlined } from '@ant-design/icons'
 
 import type { CustomerAuthResponse, CustomerDailyLinkUsage, CustomerDailyUsage, CustomerLinkStep, CustomerLinkView, CustomerOverviewResponse, CustomerTrafficRecord, CustomerUsageResponse, CustomerUser } from '../types'
-import { countryFlag, fetchJSON, formatDateTime } from '../lib/appHelpers'
+import { fetchJSON, formatDateTime } from '../lib/appHelpers'
+import { CountryFlag } from './CountryFlag'
 import { CUSTOMER_SESSION_EXPIRED_EVENT } from '../lib/api'
 import { formatBytes } from '../lib/traffic'
 import { LoginScreen } from './LoginScreen'
@@ -600,7 +601,7 @@ export function CustomerPortal() {
                               )}
                             </div>
                             <Space wrap className="customer-link-exit-tags">
-                              {link.exit_country_code || link.exit_country_name ? <Tag color="blue">出口 {countryFlag(link.exit_country_code)} {link.exit_country_code || link.exit_country_name}</Tag> : null}
+                              {link.exit_country_code || link.exit_country_name ? <Tag color="blue">出口 <CountryFlag code={link.exit_country_code} label={link.exit_country_name} /> {link.exit_country_code || link.exit_country_name}</Tag> : null}
                               {link.exit_ip ? <Tag color="geekblue">{link.exit_ip}</Tag> : null}
                               {!link.resolved ? <Tag color="orange">待解析</Tag> : null}
                               <Button
@@ -1147,7 +1148,7 @@ function CustomerTopologyMap({ steps }: { steps: CustomerLinkStep[] }) {
               <div className={`customer-topology-node customer-topology-node-${step.role}`}>
                 <span className="customer-topology-node-icon">
                   {topologyNodeIcon(step.role)}
-                  {step.role === 'exit' ? <span className="customer-topology-node-flag">{countryFlag(step.country_code)}</span> : null}
+                  {step.role === 'exit' ? <span className="customer-topology-node-flag"><CountryFlag code={step.country_code} /></span> : null}
                 </span>
                 <span className="customer-topology-node-label">{displayLabel}</span>
                 {showExitIP ? <span className="customer-topology-node-meta">{step.exit_ip}</span> : null}

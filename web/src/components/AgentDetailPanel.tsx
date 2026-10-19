@@ -131,6 +131,7 @@ export interface AgentDetailPanelProps {
   routingRuleUpdateLoading: boolean
   outboundDeleteLoading: boolean
   xuiClientToggleLoadingKey: string
+  xuiClientResetLoadingKey: string
   agentDeleteLoading: boolean
   agentReplaceLoading: boolean
   replacementAgents: DashboardAgentView[]
@@ -170,6 +171,7 @@ export interface AgentDetailPanelProps {
   onRoutingRuleUpdated?: () => void
   onDeleteOutbounds: (payload: OutboundsDeletePayload) => Promise<XUIAction | null>
   onSetXUIClientEnabled: (client: XUIClientView, enabled: boolean) => void
+  onManualResetXUIClientTraffic: (client: XUIClientView) => Promise<void>
   onRefreshCurrentAgent: () => void
   onRestartXUI: () => void
   onUpdate3XUI: () => void
@@ -249,6 +251,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     routingRuleUpdateLoading,
     outboundDeleteLoading,
     xuiClientToggleLoadingKey,
+    xuiClientResetLoadingKey,
     agentDeleteLoading,
     agentReplaceLoading,
     replacementAgents,
@@ -288,6 +291,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onRoutingRuleUpdated,
     onDeleteOutbounds,
     onSetXUIClientEnabled,
+    onManualResetXUIClientTraffic,
     onRefreshCurrentAgent,
     onRestartXUI,
     onUpdate3XUI,
@@ -661,6 +665,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         <div>
           <Text>{record.inbound_remark || record.inbound_tag || '-'}</Text>
           <div className="muted-line">{record.inbound_tag || '-'}</div>
+          {record.export_endpoint?.error && <Tooltip title={record.export_endpoint.error}><Tag color="warning">连接映射待配置</Tag></Tooltip>}
         </div>
       ),
     },
@@ -682,18 +687,19 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         return (
           <div className="client-status-cell">
             <Tooltip title={accountBasedProxy ? '节点账号请在 x-ui 入站中维护' : !canManageConfig ? '当前账号没有修改权限' : `点击${configuredEnabled ? '禁用' : '启用'}客户端`}>
-              <Button
-                size="small"
-                className={`client-enabled-button${configuredEnabled ? ' is-enabled' : ''}`}
-                disabled={!canManageConfig || accountBasedProxy || Boolean(xuiClientToggleLoadingKey && xuiClientToggleLoadingKey !== xuiClientActionKey(record))}
-                loading={xuiClientToggleLoadingKey === xuiClientActionKey(record)}
-                aria-label={`${record.email || record.comment || '客户端'}：点击${configuredEnabled ? '禁用' : '启用'}`}
-                aria-pressed={configuredEnabled}
-                aria-busy={xuiClientToggleLoadingKey === xuiClientActionKey(record)}
-                onClick={() => onSetXUIClientEnabled(record, !configuredEnabled)}
-              >
-                {configuredEnabled ? '启用' : '禁用'}
-              </Button>
+              <span className="client-enabled-control">
+                <Switch
+                  className="client-enabled-switch"
+                  checked={configuredEnabled}
+                  checkedChildren="启用"
+                  unCheckedChildren="禁用"
+                  disabled={!canManageConfig || accountBasedProxy || Boolean(xuiClientResetLoadingKey) || Boolean(xuiClientToggleLoadingKey && xuiClientToggleLoadingKey !== xuiClientActionKey(record))}
+                  loading={xuiClientToggleLoadingKey === xuiClientActionKey(record)}
+                  aria-label={`${record.email || record.comment || '客户端'}：启用状态`}
+                  aria-busy={xuiClientToggleLoadingKey === xuiClientActionKey(record)}
+                  onChange={(checked) => onSetXUIClientEnabled(record, checked)}
+                />
+              </span>
             </Tooltip>
             {accountBasedProxy ? <Tag>节点账号</Tag> : (
               <Tag color={online ? 'processing' : 'default'}>{online ? '在线' : '离线'}</Tag>
@@ -709,6 +715,12 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       render: (_, record) => {
         const total = clientBidirectionalTrafficTotal(record)
         const limit = Math.max(0, Number(record.total_gb || 0))
+        const billing = findClientBilling(savedClientBillings || managedConfig?.renewal?.client_billings, record) || defaultClientBilling(record)
+        const resetPending = xuiActions.some(action => action.kind === 'manual_reset_client_traffic'
+          && action.agent_id === (record.realm_target_agent_id || selectedAgentId)
+          && action.payload?.email === record.email
+          && ['pending', 'running'].includes(action.status))
+        const resetLoading = resetPending || xuiClientResetLoadingKey === xuiClientActionKey(record)
         return <div className="client-traffic-cell">
           <div className="client-traffic-usage">
             <span className="client-summary-label">已用</span>
@@ -722,6 +734,28 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
           {!restrictedView ? <div className="client-traffic-reset">
             <span className="client-summary-label">重置</span>
             <span className="client-summary-chip">{clientTrafficResetSummary(record)}</span>
+            <Tooltip title="流量计费倍率"><span className="client-summary-chip">{normalizeClientTrafficMultiplier(billing.traffic_multiplier)} 倍</span></Tooltip>
+            {canManageConfig && !isAccountBasedProxyClient(record) ? (
+              <Popconfirm
+                title={`重置「${record.email || '客户端'}」的流量？`}
+                description={<div className="client-traffic-reset-confirm">清空该客户端的已用上传、下载流量；不修改流量上限、到期时间和自动重置周期。若同一客户端关联多个入站，其共享流量会一并重置。此操作无法撤销。</div>}
+                okText="确认重置"
+                cancelText="取消"
+                okButtonProps={{ danger: true }}
+                cancelButtonProps={{ disabled: Boolean(xuiClientResetLoadingKey) }}
+                disabled={Boolean(xuiClientResetLoadingKey || xuiClientToggleLoadingKey) || resetPending || !record.email || !(record.client_id || record.auth_uuid || record.auth_password)}
+                onConfirm={() => onManualResetXUIClientTraffic(record)}
+              >
+                <Button
+                  size="small"
+                  className="client-manual-reset-button"
+                  icon={<ReloadOutlined />}
+                  loading={resetLoading}
+                  disabled={Boolean(xuiClientResetLoadingKey && xuiClientResetLoadingKey !== xuiClientActionKey(record)) || Boolean(xuiClientToggleLoadingKey) || !record.email || !(record.client_id || record.auth_uuid || record.auth_password)}
+                  aria-label={`手动重置 ${record.email || '客户端'} 的流量`}
+                >手动重置</Button>
+              </Popconfirm>
+            ) : null}
           </div> : null}
         </div>
       },
@@ -740,7 +774,6 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
           <div className="client-config-price">
             <strong><span className="client-config-currency">{billing.revenue_currency || 'CNY'}</span> {Number(billing.revenue_amount || 0).toFixed(2)}</strong>
             <span className="client-summary-label">/ {billingCycleLabel(billing.revenue_cycle)}</span>
-            <Tooltip title="流量计费倍率"><span className="client-summary-chip">{normalizeClientTrafficMultiplier(billing.traffic_multiplier)} 倍</span></Tooltip>
           </div>
           <div className="client-config-dates">
             <div className="client-config-date"><span className="client-summary-label">开始</span><span className={!start ? 'client-summary-empty' : undefined}>{beijingDateInput(start) || '未设置'}</span></div>
@@ -1257,6 +1290,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         agents={dashboardView?.agents || filteredAgents}
         managedConfig={managedConfig}
         certificates={overview?.certificates || []}
+        nodes={overview?.nodes || []}
         configLoading={configLoading}
         configSavingSection={configSavingSection}
         configError={configError}
@@ -1598,9 +1632,9 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     },
   ] : []
 
-  const natTabs: TabsProps['items'] = featureEnabled.nat && canManageConfig ? [{
+  const natTabs: TabsProps['items'] = (featureEnabled.nat || featureEnabled.xui || featureEnabled.realm || featureEnabled.haproxy) && canManageConfig ? [{
     key: 'entry-nat',
-    label: `NAT 映射 (${natMappingCount})`,
+    label: `连接与端口 (${natMappingCount})`,
     children: renderManagedConfigSection('nat'),
   }] : []
 

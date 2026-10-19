@@ -766,11 +766,22 @@ func buildCustomerLinkView(
 		return link
 	}
 	link.Resolved = true
+	endpointError := ""
+	if clientRef.Client.ExportEndpoint != nil {
+		endpointError = clientRef.Client.ExportEndpoint.Error
+	}
 	if publicEntry, ok := customerForwardingPublicEntry(assignment, chain, agentMap); ok {
-		sourceURL := firstNonEmptyString(link.ImportURL, clientRef.TemplateImportURL)
-		if rewritten := rewriteCustomerImportURL(sourceURL, publicEntry.Host, publicEntry.Port); rewritten != "" {
-			link.ImportURL = rewritten
+		endpointError = publicEntry.Error
+		link.ImportURL = ""
+		if endpointError == "" {
+			sourceURL := firstNonEmptyString(clientRef.Client.ImportURL, clientRef.TemplateImportURL)
+			link.ImportURL = rewriteCustomerImportURL(sourceURL, publicEntry.Host, publicEntry.Port)
 		}
+	}
+	if endpointError != "" {
+		link.ImportURL = ""
+		link.Resolved = false
+		link.UnresolvedReason = endpointError
 	}
 	if link.ClientRemark == "" {
 		link.ClientRemark = chain.RootClientRemark
@@ -797,7 +808,7 @@ func buildCustomerLinkView(
 	}
 	link.Summary = customerLinkSummary(entryName, relays)
 	link.ShadowrocketImportURL = model.ShadowrocketImportURL(link.ImportURL, link.XrayVersion)
-	if chain.UnresolvedReason != "" {
+	if chain.UnresolvedReason != "" && link.UnresolvedReason == "" {
 		link.UnresolvedReason = chain.UnresolvedReason
 	}
 	return link
@@ -860,8 +871,25 @@ func customerNodeExpireTime(agentID string, agentMap map[string]model.DashboardA
 }
 
 type customerPublicEntry struct {
-	Host string
-	Port int
+	Host  string
+	Port  int
+	Error string
+}
+
+func resolveForwardPublicEntry(agent model.DashboardAgentView, kind, id string, port int, network, host string) customerPublicEntry {
+	endpoint := model.ResolveEntryEndpoint(agent.Entry, model.EntryTarget{Type: kind, ID: id, Port: port, Transport: forwardEntryTransport(network)}, host)
+	return customerPublicEntry{Host: endpoint.Address, Port: endpoint.Port, Error: endpoint.Error}
+}
+
+func forwardEntryTransport(network string) string {
+	switch strings.ToLower(network) {
+	case "udp":
+		return "udp"
+	case "both", "tcp+udp":
+		return "both"
+	default:
+		return "tcp"
+	}
 }
 
 func customerForwardingPublicEntry(assignment model.CustomerAssignment, chain model.ClientChainView, agentMap map[string]model.DashboardAgentView) (customerPublicEntry, bool) {
@@ -874,14 +902,10 @@ func customerForwardingPublicEntry(assignment model.CustomerAssignment, chain mo
 	}
 	if !strings.EqualFold(chain.RootAgentID, assignment.AgentID) {
 		if rule, found := haProxyRuleListeningOnPort(assignmentAgent.Entry.HAProxy.Rules, assignment.InboundID); assignmentAgent.Entry.HAProxy.Enabled && found {
-			if host := customerHAProxySourceHost(assignmentAgent, rule); host != "" {
-				return customerPublicEntry{Host: host, Port: rule.ListenPort}, true
-			}
+			return resolveForwardPublicEntry(assignmentAgent, "haproxy", rule.ID, rule.ListenPort, "tcp", customerHAProxySourceHost(assignmentAgent, rule)), true
 		}
 		if rule, found := realmRuleListeningOnPort(assignmentAgent.Entry.PortForwarding.Rules, assignment.InboundID); realmForwardingActive(assignmentAgent.Entry.PortForwarding) && found {
-			if host := customerRealmSourceHost(assignmentAgent, rule); host != "" {
-				return customerPublicEntry{Host: host, Port: rule.ListenPort}, true
-			}
+			return resolveForwardPublicEntry(assignmentAgent, "realm", rule.ID, rule.ListenPort, rule.Network, customerRealmSourceHost(assignmentAgent, rule)), true
 		}
 	}
 	inboundPort := customerChainRootInboundPort(assignment, chain)
@@ -925,17 +949,13 @@ func customerOutermostForwardingEntry(
 			realmRules = nil
 		}
 		for _, rule := range realmRules {
-			if !rule.Enabled || rule.ListenPort <= 0 || rule.TargetPort != targetPort {
+			if !rule.Enabled || rule.ListenPort <= 0 || !customerTargetPortMatches(targetAgent.Entry, targetPort, rule.TargetPort) {
 				continue
 			}
 			if !customerRealmRuleTargetsAgent(rule, targetAgentID, targetAddresses) {
 				continue
 			}
-			host := customerRealmSourceHost(sourceAgent, rule)
-			if host == "" {
-				continue
-			}
-			candidate := customerPublicEntry{Host: host, Port: rule.ListenPort}
+			candidate := resolveForwardPublicEntry(sourceAgent, "realm", rule.ID, rule.ListenPort, rule.Network, customerRealmSourceHost(sourceAgent, rule))
 			depth := 1
 			if upstream, upstreamDepth, found := customerOutermostForwardingEntry(sourceAgentID, rule.ListenPort, agentMap, visited); found {
 				candidate = upstream
@@ -948,14 +968,10 @@ func customerOutermostForwardingEntry(
 		}
 		for _, rule := range sourceAgent.Entry.HAProxy.Rules {
 			if !sourceAgent.Entry.HAProxy.Enabled || !rule.Enabled || rule.ListenPort <= 0 ||
-				!customerHAProxyRuleTargetsEndpoint(rule, targetAgentID, targetPort) {
+				!customerHAProxyRuleTargetsMappedEndpoint(rule, targetAgentID, targetPort, targetAgent.Entry) {
 				continue
 			}
-			host := customerHAProxySourceHost(sourceAgent, rule)
-			if host == "" {
-				continue
-			}
-			candidate := customerPublicEntry{Host: host, Port: rule.ListenPort}
+			candidate := resolveForwardPublicEntry(sourceAgent, "haproxy", rule.ID, rule.ListenPort, "tcp", customerHAProxySourceHost(sourceAgent, rule))
 			depth := 1
 			if upstream, upstreamDepth, found := customerOutermostForwardingEntry(sourceAgentID, rule.ListenPort, agentMap, visited); found {
 				candidate = upstream
@@ -980,10 +996,24 @@ func haProxyRuleListeningOnPort(rules []model.HAProxyRule, port int) (model.HAPr
 	return model.HAProxyRule{}, false
 }
 
-func customerHAProxyRuleTargetsEndpoint(rule model.HAProxyRule, targetAgentID string, targetPort int) bool {
-	targets := append([]model.HAProxyRealmTarget{rule.Primary}, rule.Backups...)
-	for _, target := range targets {
-		if target.Port == targetPort && strings.EqualFold(strings.TrimSpace(target.AgentID), strings.TrimSpace(targetAgentID)) {
+func customerTargetPortMatches(entry model.AgentEntryConfig, internalPort, destinationPort int) bool {
+	if internalPort == destinationPort {
+		return true
+	}
+	for _, m := range entry.Mappings {
+		if !m.UseForExport || m.InternalPort != internalPort {
+			continue
+		}
+		if entryTargetMatchesPublicPort(entry, model.EntryTarget{Type: m.TargetType, ID: m.TargetID, Port: internalPort, Transport: m.Transport}, destinationPort) {
+			return true
+		}
+	}
+	return false
+}
+
+func customerHAProxyRuleTargetsMappedEndpoint(rule model.HAProxyRule, agentID string, port int, entry model.AgentEntryConfig) bool {
+	for _, target := range append([]model.HAProxyRealmTarget{rule.Primary}, rule.Backups...) {
+		if strings.EqualFold(strings.TrimSpace(target.AgentID), agentID) && customerTargetPortMatches(entry, port, target.Port) {
 			return true
 		}
 	}
@@ -1016,7 +1046,10 @@ func customerRealmRuleTargetsAgent(rule model.RealmForwardRule, targetAgentID st
 
 func customerAgentAddressSet(agent model.DashboardAgentView) map[string]struct{} {
 	values := append([]string{}, agent.Entry.Addresses...)
-	values = append(values, agent.Entry.ImportDomain)
+	values = append(values, agent.Entry.ImportDomain, agent.Entry.Connection.PublicAddress)
+	for _, mapping := range agent.Entry.Mappings {
+		values = append(values, mapping.Address)
+	}
 	values = append(values, agent.Summary.ObservedIP, agent.Summary.PublicIPv4, agent.Summary.PublicIPv6)
 	result := make(map[string]struct{}, len(values))
 	for _, value := range values {
@@ -1038,7 +1071,7 @@ func customerHAProxySourceHost(agent model.DashboardAgentView, rule model.HAProx
 }
 
 func customerForwardSourceHost(agent model.DashboardAgentView, listenAddress string) string {
-	for _, candidate := range []string{agent.Entry.ImportDomain} {
+	for _, candidate := range []string{agent.Entry.Connection.PublicAddress, agent.Entry.ImportDomain} {
 		if host := normalizeCustomerShareHost(candidate); host != "" && !isWildcardListenAddress(host) {
 			return host
 		}

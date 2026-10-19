@@ -193,6 +193,7 @@ export interface AgentFeatureConfig {
 }
 
 export interface AgentEntryConfig {
+  connection?: EntryConnectionConfig
   addresses?: string[]
   import_domain?: string
   mappings?: AgentEntryMapping[]
@@ -202,11 +203,34 @@ export interface AgentEntryConfig {
 }
 
 export interface AgentEntryMapping {
+  use_for_export?: boolean
+  target_type?: 'xui' | 'realm' | 'haproxy'
+  target_id?: string
+  host_port?: number
+  transport?: 'tcp' | 'udp' | 'both'
+  default_export?: boolean
   address?: string
   external_port?: number
   internal_port?: number
-  protocol?: 'vless' | 'vmess' | 'http' | 'socks' | ''
+  protocol?: string
   note?: string
+}
+
+export interface EntryConnectionConfig {
+  deployment?: 'native' | 'docker'
+  docker_network?: 'host' | 'bridge'
+  public_access?: 'direct' | 'nat'
+  public_address?: string
+}
+
+export interface EntryEndpoint {
+  address?: string
+  port?: number
+  internal_port?: number
+  host_port?: number
+  transport?: string
+  mapped?: boolean
+  error?: string
 }
 
 export interface NetworkPolicyConfig {
@@ -829,6 +853,7 @@ export interface XUIRouteTrace {
 }
 
 export interface XUINodeView {
+  export_endpoint?: EntryEndpoint
   id: number
   tag?: string
   remark?: string
@@ -863,6 +888,7 @@ export interface XUINodeView {
 }
 
 export interface XUIClientView {
+  export_endpoint?: EntryEndpoint
   config_enabled?: boolean
   client_id?: string
   inbound_id: number

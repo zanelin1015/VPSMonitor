@@ -9,7 +9,7 @@ const output = ts.transpileModule(source, { compilerOptions: { target: ts.Script
 const dir = await mkdtemp(join(tmpdir(), 'vpsmonitor-native-reset-'))
 try {
   await writeFile(join(dir, 'clientTrafficReset.mjs'), output)
-  const { buildClientTrafficResetAction, clientTrafficResetSummary, clientTrafficResetStartDay, clientTrafficResetOptions, resolveClientTrafficResetChoice, CLIENT_TRAFFIC_RESET_OPTIONS } = await import(`file://${join(dir, 'clientTrafficReset.mjs')}`)
+  const { buildManualClientTrafficResetAction, buildClientTrafficResetAction, clientTrafficResetSummary, clientTrafficResetStartDay, clientTrafficResetOptions, resolveClientTrafficResetChoice, CLIENT_TRAFFIC_RESET_OPTIONS } = await import(`file://${join(dir, 'clientTrafficReset.mjs')}`)
   const record = { inbound_id: 7, inbound_tag: 'node-7', email: 'alice', client_id: 'stable-id', traffic_reset_supported: true, traffic_reset: 'monthly', traffic_reset_day: 15 }
   assert.equal(clientTrafficResetSummary(record), '每月 15 号')
   assert.equal(clientTrafficResetSummary({ ...record, traffic_reset_day: 0 }), '每月 1 号')
@@ -55,6 +55,15 @@ try {
   assert.deepEqual(resolveClientTrafficResetChoice('daily', null), { period: 'daily', day: 1 })
   assert.equal(resolveClientTrafficResetChoice('month', 10), null)
   assert.throws(() => buildClientTrafficResetAction(record, 'monthly_from_start', 31, 'agent'), 'UI shortcut must never be sent as an API period')
+  const manual = buildManualClientTrafficResetAction(record, 'agent-source')
+  assert.deepEqual(manual, { agentID: 'agent-source', request: { kind: 'manual_reset_client_traffic', payload: { inbound_id: 7, inbound_tag: 'node-7', email: 'alice', client_id: 'stable-id' } } })
+  const manualForwarded = buildManualClientTrafficResetAction({ ...record, realm_target_agent_id: 'agent-target', realm_target_inbound_id: 9, realm_target_inbound_tag: 'node-9' }, 'agent-source')
+  assert.equal(manualForwarded.agentID, 'agent-target')
+  assert.equal(manualForwarded.request.payload.inbound_id, 9)
+  assert.equal(manualForwarded.request.payload.inbound_tag, 'node-9')
+  for (const patch of [{ email: '' }, { client_id: '' }, { inbound_id: 0 }, { inbound_id: 1.5 }, { protocol: 'socks' }, { protocol: 'http' }]) {
+    assert.throws(() => buildManualClientTrafficResetAction({ ...record, ...patch }, 'agent-source'))
+  }
   console.log('native client traffic reset payload, summary and forwarding tests passed')
   console.log('start-day shortcut, timezone, original day retention, missing start and native API compatibility tests passed')
 } finally {

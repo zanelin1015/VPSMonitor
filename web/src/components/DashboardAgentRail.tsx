@@ -8,7 +8,6 @@ import {
   agentCountryCode,
   agentDisplayStatus,
   calculateRenewalStatus,
-  countryFlag,
   formatAgentLocation,
   formatDateTime,
   tagChipStyle,
@@ -27,6 +26,7 @@ import {
   metricLevel,
 } from '../lib/traffic'
 import { MiniProgress } from './MiniProgress'
+import { CountryFlag } from './CountryFlag'
 import { agentHealthFilterLabel, normalizeAgentHealthFilter, type AgentHealthFilter } from '../lib/agentHealth'
 import { matchingAgentClients } from '../lib/agentSearch'
 
@@ -369,7 +369,7 @@ function AgentRailHeader(props: {
       <div className="agent-title-line">
         {!restrictedView ? <span className={`agent-state-dot agent-state-${statusLevel}`} /> : null}
         <span className="agent-order-chip">#{displaySortOrder}</span>
-        {!restrictedView ? <span className="agent-flag" title={locationText || countryCode || '未知地区'}>{countryFlag(countryCode)}</span> : null}
+        {!restrictedView ? <span className="agent-flag"><CountryFlag code={countryCode} label={locationText || countryCode || '未知地区'} /></span> : null}
         <span className="agent-name">{item.agent_name || item.agent_id}</span>
       </div>
       {showStatus ? <span className={`agent-status-pill agent-status-${statusLevel}`}>{statusLabel}</span> : null}

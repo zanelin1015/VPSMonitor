@@ -128,7 +128,6 @@ export {
   isClientOnline,
   xrayIssueLabel,
   agentDisplayStatus,
-  countryFlag,
   agentCountryCode,
   explicitAgentCountryCode,
   explicitCountryCodeFromText,

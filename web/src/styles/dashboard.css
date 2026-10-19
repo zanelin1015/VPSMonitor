@@ -379,7 +379,14 @@
 }
 
 .workbench-client-expiry-list {
-  grid-template-rows: repeat(5, minmax(0, 1fr));
+  grid-auto-rows: max-content;
+  align-content: start;
+  max-height: 360px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  padding: 2px;
 }
 
 .workbench-client-expiry-list button {
@@ -407,7 +414,11 @@
 }
 
 .workbench-client-expiry-identity strong,
-.workbench-client-expiry-identity small,
+.workbench-client-expiry-identity small {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .workbench-client-expiry-status strong,
 .workbench-client-expiry-status small {
   overflow: hidden;
@@ -443,6 +454,85 @@
 
 .workbench-client-expiry-status strong.finance-negative {
   color: var(--red);
+}
+
+.workbench-client-expiry-list button:hover {
+  border-color: var(--blue);
+  background: var(--surface-soft);
+}
+
+.workbench-client-expiry-list button:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+
+.workbench-client-expiry-footer {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.workbench-client-expiry-footer .ant-typography {
+  font-size: 12px;
+}
+
+.workbench-client-expiry-footer .ant-btn {
+  height: 32px;
+}
+
+.ant-modal.workbench-client-expiry-modal .ant-modal-header {
+  padding: 0 44px 12px 0;
+  margin-bottom: 12px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+.ant-modal.workbench-client-expiry-modal .ant-modal-body {
+  max-height: calc(100dvh - 220px);
+  overflow-y: auto;
+}
+
+.workbench-client-expiry-summary {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.workbench-client-expiry-modal .workbench-client-expiry-list {
+  max-height: none;
+  overflow: visible;
+}
+
+.workbench-client-expiry-modal .workbench-client-expiry-list button {
+  padding: 8px 12px;
+}
+
+.workbench-client-expiry-modal .workbench-client-expiry-status {
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.workbench-client-expiry-modal .workbench-client-expiry-status small {
+  grid-column: 1 / -1;
+}
+
+.workbench-client-expiry-modal .workbench-client-expiry-identity strong {
+  font-size: 14px;
+}
+
+.workbench-client-expiry-modal .workbench-client-expiry-identity small,
+.workbench-client-expiry-modal .workbench-client-expiry-status small,
+.workbench-client-expiry-modal .workbench-client-expiry-status strong {
+  font-size: 12px;
 }
 
 .workbench-speed-list {
@@ -966,6 +1056,10 @@
   }
 
   .admin-workbench-grid {
+    display: grid;
+  }
+
+  .admin-workbench-grid > :not(.workbench-client-expiry-card) {
     display: none;
   }
 

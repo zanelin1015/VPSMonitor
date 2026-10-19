@@ -77,3 +77,29 @@ export function buildClientTrafficResetAction(record: XUIClientView, period: Cli
     },
   }
 }
+
+// Separate from automatic scheduling and from the retired reset_client_traffic task.
+export function buildManualClientTrafficResetAction(record: XUIClientView, agentID: string) {
+  const targetAgentID = record.realm_target_agent_id || agentID
+  const inboundID = record.realm_target_inbound_id || record.inbound_id
+  const email = record.email?.trim() || ''
+  const clientID = record.client_id || record.auth_uuid || record.auth_password || ''
+  if (!targetAgentID || !Number.isInteger(inboundID) || inboundID <= 0 || !email || !clientID) {
+    throw new Error('客户端或入站信息不完整，请刷新采集')
+  }
+  if (['http', 'socks', 'mixed'].includes(record.protocol?.toLowerCase() || '')) {
+    throw new Error('节点账号不支持单客户端流量重置')
+  }
+  return {
+    agentID: targetAgentID,
+    request: {
+      kind: 'manual_reset_client_traffic',
+      payload: {
+        inbound_id: inboundID,
+        inbound_tag: record.realm_target_inbound_tag || record.inbound_tag || '',
+        email,
+        client_id: clientID,
+      },
+    },
+  }
+}

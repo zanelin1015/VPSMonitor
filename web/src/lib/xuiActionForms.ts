@@ -691,6 +691,8 @@ export function actionKindLabel(kind: string): string {
       return '启用 / 停用 Client'
     case 'update_client_traffic_limit':
       return '修改 Client 流量上限'
+    case 'manual_reset_client_traffic':
+      return '手动重置客户端流量'
     case 'update_client_traffic_reset':
       return '修改 Client 自动流量重置'
     case 'update_client_config':

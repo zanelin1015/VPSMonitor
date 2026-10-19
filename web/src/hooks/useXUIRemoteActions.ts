@@ -6,7 +6,7 @@ import { fetchJSON, isUnauthorized } from '../lib/appHelpers'
 import type { RoutingRulesDeletePayload } from '../lib/routingRules'
 import type { RoutingRuleUpdatePayload } from '../lib/routingRuleEditor'
 import type { OutboundsDeletePayload } from '../lib/outbounds'
-import { buildClientTrafficResetAction } from '../lib/clientTrafficReset'
+import { buildClientTrafficResetAction, buildManualClientTrafficResetAction } from '../lib/clientTrafficReset'
 import type { ClientTrafficResetPeriod } from '../lib/clientTrafficReset'
 
 type LoadOptions = { silent?: boolean }
@@ -37,6 +37,8 @@ export function useXUIRemoteActions(input: {
   const [xuiClientDeleteLoadingKey, setXUIClientDeleteLoadingKey] = useState('')
   const [xuiClientToggleLoadingKey, setXUIClientToggleLoadingKey] = useState('')
   const xuiClientToggleSubmitting = useRef(false)
+  const [xuiClientResetLoadingKey, setXUIClientResetLoadingKey] = useState('')
+  const xuiClientResetSubmitting = useRef(false)
   const [xuiClientTrafficSavingKey, setXUIClientTrafficSavingKey] = useState('')
   const [routingRuleDeleteLoadingAgentId, setRoutingRuleDeleteLoadingAgentId] = useState('')
   const routingDeleteSubmitting = useRef(false)
@@ -235,6 +237,57 @@ export function useXUIRemoteActions(input: {
     }
   }
 
+  async function manualResetXUIClientTraffic(record: XUIClientView, agentID = selectedAgentId) {
+    if (xuiClientResetSubmitting.current) return
+    xuiClientResetSubmitting.current = true
+    setXUIClientResetLoadingKey(xuiClientActionKey(record))
+    let submitted = false
+    let targetAgentID = ''
+    try {
+      const target = buildManualClientTrafficResetAction(record, agentID)
+      targetAgentID = target.agentID
+      let action = await fetchJSON<XUIAction>(`/api/v1/agents/${targetAgentID}/xui/actions`, {
+        method: 'POST', body: JSON.stringify(target.request),
+      })
+      submitted = true
+      message.info(`已提交「${record.email}」的流量重置，正在等待执行结果`)
+      scheduleXUIActionResultRefresh(targetAgentID)
+      // Poll receipts, never resend the destructive request. Offline agents
+      // retain a pending action; the server also rejects duplicate submissions.
+      const deadline = Date.now() + 90_000
+      while (['pending', 'running'].includes(action.status) && Date.now() < deadline) {
+        await new Promise<void>(resolve => window.setTimeout(resolve, 2000))
+        const actions = await fetchJSON<XUIAction[]>(`/api/v1/agents/${targetAgentID}/xui/actions?limit=100`)
+        action = actions.find(item => item.id === action.id) || action
+      }
+      if (action.status === 'succeeded' && action.result?.verified === true && action.result?.reset_done === true) {
+        message.success(`「${record.email}」的已用流量已重置并核验`)
+      } else if (action.status === 'failed') {
+        message.error(action.error || '重置未完成，请查看 x-ui 操作记录')
+      } else {
+        message.warning('重置尚未确认完成，请在 x-ui 操作记录查看结果，勿重复提交')
+      }
+    } catch (error) {
+      handleUnauthorized(error)
+      message.error(submitted ? '任务已提交，但暂时无法读取结果，请查看 x-ui 操作记录，勿重复提交' : error instanceof Error ? error.message : '提交流量重置失败，请先查看操作记录')
+    } finally {
+      if (targetAgentID) {
+        await Promise.allSettled([
+          loadXUIActions(targetAgentID, { silent: true }),
+          loadOverview(targetAgentID, { silent: true }),
+          ...(agentID && targetAgentID !== agentID ? [loadOverview(agentID, { silent: true })] : []),
+        ])
+        // The result can arrive just before the agent's refreshed snapshot.
+        ;[1500, 4000].forEach(delay => window.setTimeout(() => {
+          void loadOverview(targetAgentID, { silent: true })
+          if (agentID && targetAgentID !== agentID) void loadOverview(agentID, { silent: true })
+        }, delay))
+      }
+      xuiClientResetSubmitting.current = false
+      setXUIClientResetLoadingKey('')
+    }
+  }
+
   async function deleteOutbounds(payload: OutboundsDeletePayload, agentID = selectedAgentId): Promise<XUIAction | null> {
     if (!agentID || outboundDeleteSubmitting.current) return null
     outboundDeleteSubmitting.current = true
@@ -360,6 +413,7 @@ export function useXUIRemoteActions(input: {
     remoteCommandLoading,
     xuiClientDeleteLoadingKey,
     xuiClientToggleLoadingKey,
+    xuiClientResetLoadingKey,
     xuiClientTrafficSavingKey,
     routingRuleDeleteLoadingAgentId,
     routingRuleUpdateLoadingAgentId,
@@ -375,6 +429,7 @@ export function useXUIRemoteActions(input: {
     saveXUIClientTrafficLimit,
     saveXUIClientTrafficReset,
     setXUIClientEnabled,
+    manualResetXUIClientTraffic,
     update3XUI,
   }
 }

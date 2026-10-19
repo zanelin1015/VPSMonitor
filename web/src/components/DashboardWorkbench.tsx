@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Button, Card, Empty, Tag, Typography } from 'antd'
+import { Button, Card, Empty, Modal, Tag, Typography } from 'antd'
 import { EyeInvisibleOutlined, EyeOutlined } from '@ant-design/icons'
 import { Line } from '@ant-design/plots'
 import type { LineConfig } from '@ant-design/plots'
@@ -92,6 +92,7 @@ export function AdminWorkbenchDashboard(props: {
 }) {
   const { agents, dashboardView, scopedNetwork, monthlyFinance, costCurrency, restrictedView = false, onSelectAgent, onOpenHealthFilter, onOpenTopology } = props
   const [profitVisible, setProfitVisible] = useState(readFinanceVisibilityPreference)
+  const [clientExpiryOpen, setClientExpiryOpen] = useState(false)
   const statusRows = useMemo<WorkbenchMetricRow[]>(() => agents.map((agent) => {
     const renewal = calculateRenewalStatus(agent.renewal)
     return {
@@ -137,6 +138,7 @@ export function AdminWorkbenchDashboard(props: {
   const renewalWithin30Count = renewalRows.filter((row) => row.renewalDays !== null && row.renewalDays <= 30).length
   const clientExpiryRows = useMemo(() => buildClientExpiryRows(agents), [agents])
   const expiredClientCount = clientExpiryRows.filter((row) => row.remainingDays < 0).length
+  const clientExpirySummary = `已过期 ${expiredClientCount} 个 · ${CLIENT_EXPIRY_WARNING_DAYS} 天内到期 ${clientExpiryRows.length - expiredClientCount} 个`
 
   const alertRows = buildWorkbenchAlerts({
     offlineRows,
@@ -244,10 +246,14 @@ export function AdminWorkbenchDashboard(props: {
           <div className="admin-workbench-card-title">
             <Text strong>客户端即将到期</Text>
             <Tag color={expiredClientCount ? 'red' : clientExpiryRows.length ? 'orange' : 'green'}>
-              {CLIENT_EXPIRY_WARNING_DAYS} 天内 {clientExpiryRows.length}
+              共 {clientExpiryRows.length} 个
             </Tag>
           </div>
-          <WorkbenchClientExpiryList rows={clientExpiryRows.slice(0, 5)} onSelectAgent={onSelectAgent} />
+          <WorkbenchClientExpiryList rows={clientExpiryRows} onSelectAgent={onSelectAgent} />
+          {clientExpiryRows.length ? <div className="workbench-client-expiry-footer">
+            <Text type="secondary">{clientExpirySummary}</Text>
+            <Button size="small" onClick={() => setClientExpiryOpen(true)}>查看全部（{clientExpiryRows.length}）</Button>
+          </div> : null}
         </Card> : null}
 
         {!restrictedView ? <Card bordered={false} className="surface-card admin-workbench-card workbench-finance-card">
@@ -304,6 +310,21 @@ export function AdminWorkbenchDashboard(props: {
           </div>
         </Card> : null}
       </div>
+      {!restrictedView ? <Modal
+        className="workbench-client-expiry-modal"
+        title={`客户端到期提醒（${clientExpiryRows.length}）`}
+        open={clientExpiryOpen}
+        onCancel={() => setClientExpiryOpen(false)}
+        footer={<Button onClick={() => setClientExpiryOpen(false)}>关闭</Button>}
+        width={760}
+        centered
+      >
+        <p className="workbench-client-expiry-summary">{clientExpirySummary}，按到期时间排序。点击条目查看所属 Client。</p>
+        <WorkbenchClientExpiryList rows={clientExpiryRows} onSelectAgent={(agentID) => {
+          setClientExpiryOpen(false)
+          onSelectAgent(agentID)
+        }} />
+      </Modal> : null}
     </section>
   )
 }

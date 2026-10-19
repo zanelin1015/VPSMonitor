@@ -85,20 +85,27 @@ type XUIClientBillingConfig struct {
 }
 
 type AgentEntryConfig struct {
-	Addresses      []string            `json:"addresses,omitempty"`
-	ImportDomain   string              `json:"import_domain,omitempty"`
-	Mappings       []AgentEntryMapping `json:"mappings,omitempty"`
-	NetworkPolicy  NetworkPolicyConfig `json:"network_policy,omitempty"`
-	PortForwarding RealmForwardConfig  `json:"port_forwarding,omitempty"`
-	HAProxy        HAProxyConfig       `json:"haproxy,omitempty"`
+	Connection     EntryConnectionConfig `json:"connection,omitempty"`
+	Addresses      []string              `json:"addresses,omitempty"`
+	ImportDomain   string                `json:"import_domain,omitempty"`
+	Mappings       []AgentEntryMapping   `json:"mappings,omitempty"`
+	NetworkPolicy  NetworkPolicyConfig   `json:"network_policy,omitempty"`
+	PortForwarding RealmForwardConfig    `json:"port_forwarding,omitempty"`
+	HAProxy        HAProxyConfig         `json:"haproxy,omitempty"`
 }
 
 type AgentEntryMapping struct {
-	Address      string `json:"address,omitempty"`
-	ExternalPort int    `json:"external_port,omitempty"`
-	InternalPort int    `json:"internal_port,omitempty"`
-	Protocol     string `json:"protocol,omitempty"`
-	Note         string `json:"note,omitempty"`
+	UseForExport  bool   `json:"use_for_export,omitempty"`
+	TargetType    string `json:"target_type,omitempty"`
+	TargetID      string `json:"target_id,omitempty"`
+	HostPort      int    `json:"host_port,omitempty"`
+	Transport     string `json:"transport,omitempty"`
+	DefaultExport bool   `json:"default_export,omitempty"`
+	Address       string `json:"address,omitempty"`
+	ExternalPort  int    `json:"external_port,omitempty"`
+	InternalPort  int    `json:"internal_port,omitempty"`
+	Protocol      string `json:"protocol,omitempty"`
+	Note          string `json:"note,omitempty"`
 }
 
 type NetworkPolicyConfig struct {

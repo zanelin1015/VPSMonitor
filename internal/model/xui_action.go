@@ -5,6 +5,7 @@ import "time"
 const (
 	// Retained only to retire queued actions and reject pre-upgrade requests.
 	XUIActionResetClientTraffic       = "reset_client_traffic"
+	XUIActionManualResetClientTraffic = "manual_reset_client_traffic"
 	XUIActionAddOutbound              = "add_outbound"
 	XUIActionAddClient                = "add_client"
 	XUIActionAddRoutingRule           = "add_routing_rule"

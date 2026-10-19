@@ -1,13 +1,14 @@
 import { useId, useState } from 'react'
-import { Alert, AutoComplete, Button, Card, Col, Collapse, Empty, Input, InputNumber, List, Row, Select, Space, Spin, Switch, Typography } from 'antd'
+import { Alert, Button, Card, Col, Collapse, Empty, Input, InputNumber, List, Row, Select, Space, Spin, Switch, Typography } from 'antd'
 import { DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 
-import type { AgentEntryConfig, AgentEntryMapping, AgentListItem, ConfigAuditLog, ManagedAgentConfig, NetworkPortPolicyRule, RealmForwardRule, VPSRenewalConfig, XUIConfig, XUILocalCertificate } from '../types'
+import type { AgentEntryConfig, AgentListItem, ConfigAuditLog, ManagedAgentConfig, NetworkPortPolicyRule, RealmForwardRule, VPSRenewalConfig, XUIConfig, XUILocalCertificate, XUINodeView } from '../types'
 import { DEFAULT_COST_CURRENCY, type CurrencyCode } from '../lib/currency'
 import { bytesToGB, gbToBytes } from '../lib/traffic'
 import type { ConfigSectionKey } from '../lib/appHelpers'
 import { AdminHelpHint } from './AdminHelpHint'
 import { formatDateTime, formatRenewalHint, summarizeConfigAudit } from '../lib/appHelpers'
+import { EntryConnectionSection } from './EntryConnectionSection'
 import { HAProxyConfigSection } from './HAProxyConfigSection'
 
 const { Text, Title } = Typography
@@ -18,6 +19,7 @@ export interface ConfigPanelProps {
   selectedAgent?: AgentListItem
   agents?: AgentListItem[]
   managedConfig: ManagedAgentConfig | null
+  nodes?: XUINodeView[]
   certificates: XUILocalCertificate[]
   configLoading: boolean
   configSavingSection: ConfigSectionKey | null
@@ -51,6 +53,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
     agents = [],
     managedConfig,
     certificates,
+    nodes = [],
     configLoading,
     configSavingSection,
     configError,
@@ -97,6 +100,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
   }
 
   const entryConfig: AgentEntryConfig = {
+    connection: managedConfig.entry?.connection,
     addresses: managedConfig.entry?.addresses || [],
     import_domain: managedConfig.entry?.import_domain || '',
     mappings: managedConfig.entry?.mappings || [],
@@ -131,28 +135,6 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
     .map((agent) => ({ value: agent.agent_id, label: `${agent.agent_name || agent.agent_id} · ${bestAgentAddress(agent) || '未上报 IP'}` }))
   const canCopyRealmConfig = Boolean(onCopyRealmConfig && realmCopyTargetAgentID && (portForwarding.rules || []).length)
   const domainOptions = buildCertificateDomainOptions(certificates)
-  const defaultImportDomain = domainOptions.find((option) => !option.value.startsWith('*.'))?.value || ''
-  const updateEntryMapping = (index: number, patch: Partial<AgentEntryMapping>) => {
-    const mappings = (entryConfig.mappings || []).map((mapping, currentIndex) => (currentIndex === index ? { ...mapping, ...patch } : mapping))
-    onEntryChange({ mappings })
-  }
-  const addEntryMapping = () => {
-    onEntryChange({
-      mappings: [
-        ...(entryConfig.mappings || []),
-        {
-          address: entryConfig.addresses?.[0] || managedConfig.xui.base_url || '',
-          external_port: 0,
-          internal_port: 0,
-          protocol: 'vless',
-          note: '',
-        },
-      ],
-    })
-  }
-  const removeEntryMapping = (index: number) => {
-    onEntryChange({ mappings: (entryConfig.mappings || []).filter((_, currentIndex) => currentIndex !== index) })
-  }
   const updateNetworkPolicy = (patch: Partial<NonNullable<AgentEntryConfig['network_policy']>>) => {
     setNetworkPolicyEditedAgentID(selectedAgent.agent_id)
     onEntryChange({ network_policy: { ...networkPolicy, ...patch } })
@@ -544,102 +526,19 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
         </Row>
       </Card>
 
-      <Card className="config-section-card" bordered={false} style={hiddenSectionStyle('nat')}>
-        <div className="section-title-row">
-          <Title level={4}>入口地址 / NAT 映射</Title>
-          <Space wrap>
-            <Button size="small" icon={<PlusOutlined />} onClick={addEntryMapping}>
-              添加映射
-            </Button>
-            {sectionSaveButton('entry', '保存入口/NAT')}
-          </Space>
-        </div>
-        <Alert
-          type="info"
-          showIcon
-          className="compact-alert"
-          message="用于 NAT/家宽落地匹配"
-          description="当转发配置里填写的是连接 IP/域名，但 Client 查询到的公网 IP 不同，可以在这里配置入口地址和外部端口到内部节点端口的映射。拓扑会优先按入口地址 + 外部端口 + 节点类型匹配。"
+      <div style={hiddenSectionStyle('nat')}>
+        <EntryConnectionSection
+          entry={entryConfig}
+          nodes={nodes}
+          fallbackHost={entryConfig.import_domain || domainOptions.find((option) => !option.value.startsWith('*.'))?.value || entryConfig.addresses?.[0] || bestAgentAddress(selectedAgent) || ''}
+          domainOptions={domainOptions}
+          addressText={entryAddressInputText}
+          saving={configSavingSection === 'entry'}
+          onChange={onEntryChange}
+          onAddressTextChange={onEntryAddressesTextChange}
+          onSave={() => onSave('entry')}
         />
-        <Row gutter={[16, 16]}>
-          <Col xs={24} md={12}>
-            <Text type="secondary">VPS 主域名 / 导入链接域名</Text>
-            <AutoComplete
-              allowClear
-              value={entryConfig.import_domain || ''}
-              options={domainOptions}
-              placeholder={defaultImportDomain ? `可选择证书域名：${defaultImportDomain}` : '无域名证书也可以手动输入域名'}
-              onChange={(value) => onEntryChange({ import_domain: value })}
-              filterOption={(inputValue, option) => String(option?.value || '').toLowerCase().includes(inputValue.toLowerCase())}
-              style={{ width: '100%' }}
-            />
-            <Text type="secondary">
-              {entryConfig.import_domain
-                ? '生成 VLESS/VMess/Trojan/SS 等导入链接时固定使用该域名；Realm 转发导出时也使用入口 VPS 的主域名和监听端口。'
-                : defaultImportDomain
-                  ? '未填写时后端会自动使用第一个可连接的域名证书；建议显式选择主域名，避免多证书时选错。'
-                  : '未填写且没有域名证书时会回退到入口地址或公网 IP；需要固定域名时请手动输入后保存。'}
-            </Text>
-          </Col>
-          <Col xs={24}>
-            <Text type="secondary">入口地址</Text>
-            <Input.TextArea
-              value={entryAddressInputText}
-              autoSize={{ minRows: 2, maxRows: 5 }}
-              placeholder="每行一个入口域名/IP，例如 att.kynbbz.top 或 1.2.3.4"
-              onChange={(event) => onEntryAddressesTextChange(event.target.value)}
-            />
-            <AdminHelpHint title="这些地址会加入该 Client 的可匹配入口；映射可以进一步指定端口转换。" />
-          </Col>
-        </Row>
-        <Space direction="vertical" size="small" className="entry-mapping-list">
-          {(entryConfig.mappings || []).length ? (
-            (entryConfig.mappings || []).map((mapping, index) => (
-              <div key={`entry-mapping-${index}`} className="entry-mapping-row">
-                <Input
-                  value={mapping.address || ''}
-                  placeholder="入口域名/IP"
-                  onChange={(event) => updateEntryMapping(index, { address: event.target.value })}
-                />
-                <InputNumber
-                  min={0}
-                  precision={0}
-                  value={mapping.external_port || 0}
-                  placeholder="外部端口"
-                  onChange={(value) => updateEntryMapping(index, { external_port: Number(value || 0) })}
-                />
-                <InputNumber
-                  min={0}
-                  precision={0}
-                  value={mapping.internal_port || 0}
-                  placeholder="内部端口"
-                  onChange={(value) => updateEntryMapping(index, { internal_port: Number(value || 0) })}
-                />
-                <Select
-                  value={mapping.protocol || 'vless'}
-                  options={[
-                    { value: 'vless', label: 'VLESS' },
-                    { value: 'vmess', label: 'VMess' },
-                    { value: 'http', label: 'HTTP' },
-                    { value: 'socks', label: 'Socks' },
-                  ]}
-                  onChange={(value) => updateEntryMapping(index, { protocol: value })}
-                />
-                <Input
-                  value={mapping.note || ''}
-                  placeholder="备注"
-                  onChange={(event) => updateEntryMapping(index, { note: event.target.value })}
-                />
-                <Button danger icon={<DeleteOutlined />} onClick={() => removeEntryMapping(index)}>
-                  删除
-                </Button>
-              </div>
-            ))
-          ) : (
-            <Empty description="暂无端口映射；如果连接 IP 与出口 IP 不同，建议添加一条 NAT 映射" />
-          )}
-        </Space>
-      </Card>
+      </div>
 
       <Card className="config-section-card" bordered={false} style={hiddenSectionStyle('network')}>
         <div className="section-title-row">

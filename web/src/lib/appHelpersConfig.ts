@@ -6,13 +6,15 @@ import { parseAddressInput, parseTagInput } from './appHelpersTags'
 
 export function normalizeEntryConfig(config?: AgentEntryConfig): AgentEntryConfig {
   return {
+    connection: { ...(config?.connection || {}), public_address: (config?.connection?.public_address || "").trim() },
     addresses: parseAddressInput((config?.addresses || []).join('\n')),
     import_domain: normalizeImportDomain(config?.import_domain),
     mappings: (config?.mappings || []).map((mapping) => ({
+      ...mapping,
       address: mapping.address || '',
       external_port: Math.max(0, Number(mapping.external_port || 0)),
       internal_port: Math.max(0, Number(mapping.internal_port || 0)),
-      protocol: normalizeEntryProtocol(mapping.protocol),
+      protocol: mapping.use_for_export ? (mapping.protocol || '') : normalizeEntryProtocol(mapping.protocol),
       note: mapping.note || '',
     })),
     network_policy: normalizeNetworkPolicyConfig(config?.network_policy),
@@ -61,6 +63,7 @@ export function buildSectionSavePayload(base: ManagedAgentConfig, draft: Managed
     features: { ...(base.features || {}) },
     renewal: { ...(base.renewal || {}) },
     entry: {
+      connection: { ...(base.entry?.connection || {}) },
       addresses: [...(base.entry?.addresses || [])],
       import_domain: base.entry?.import_domain || '',
       mappings: (base.entry?.mappings || []).map((mapping) => ({ ...mapping })),
@@ -93,6 +96,7 @@ export function buildSectionSavePayload(base: ManagedAgentConfig, draft: Managed
       break
     case 'entry':
       payload.entry = {
+        connection: { ...(draft.entry?.connection || {}) },
         addresses: [...(draft.entry?.addresses || [])],
         import_domain: draft.entry?.import_domain || '',
         mappings: (draft.entry?.mappings || []).map((mapping) => ({ ...mapping })),
@@ -126,6 +130,7 @@ export function mergeSavedSectionIntoDraft(draft: ManagedAgentConfig, saved: Man
       break
     case 'entry':
       next.entry = {
+        connection: { ...(saved.entry?.connection || {}) },
         addresses: [...(saved.entry?.addresses || [])],
         import_domain: saved.entry?.import_domain || '',
         mappings: (saved.entry?.mappings || []).map((mapping) => ({ ...mapping })),
@@ -147,7 +152,7 @@ export function configSectionLabel(section: ConfigSectionKey): string {
     case 'xui':
       return 'X-UI 配置'
     case 'entry':
-      return '入口/NAT 配置'
+      return '连接与端口'
   }
 }
 
@@ -343,7 +348,7 @@ function normalizeAgentFeatures(features: ManagedAgentConfig['features'], config
     xui: features?.xui ?? Boolean(xui?.enabled || xui?.base_url || xui?.db_path || xui?.api_token),
     realm: features?.realm ?? Boolean(entry?.port_forwarding?.enabled || (entry?.port_forwarding?.rules || []).length),
     haproxy: features?.haproxy ?? Boolean(entry?.haproxy?.enabled || (entry?.haproxy?.rules || []).length),
-    nat: features?.nat ?? Boolean((entry?.mappings || []).length || (entry?.addresses || []).length || entry?.import_domain),
+    nat: features?.nat ?? Boolean((entry?.mappings || []).length || (entry?.addresses || []).length || entry?.import_domain || Object.keys(entry?.connection || {}).length),
     port_policy: features?.port_policy ?? Boolean(entry?.network_policy?.enabled || (entry?.network_policy?.rules || []).length),
   }
 }

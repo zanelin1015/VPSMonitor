@@ -770,6 +770,8 @@ func (a *App) appendForwardedImportURLs(agentID string, overview *model.XUIOverv
 type forwardedOverviewContext struct {
 	agentMap              map[string]model.DashboardAgentView
 	targetOverviewByAgent map[string]*model.XUIOverview
+	templateURLs          map[string]map[string]string
+	xrayVersions          map[string]string
 }
 
 func buildForwardedOverviewContext(agents []model.AgentRecord, snapshots []model.AgentSnapshot) forwardedOverviewContext {
@@ -783,12 +785,27 @@ func buildForwardedOverviewContext(agents []model.AgentRecord, snapshots []model
 		entryByAgent[agentID] = agent.Entry
 	}
 	targetOverviewByAgent := make(map[string]*model.XUIOverview, len(snapshotMap))
+	templateURLs := make(map[string]map[string]string, len(snapshotMap))
+	xrayVersions := make(map[string]string, len(snapshotMap))
 	for targetAgentID, targetSnapshot := range snapshotMap {
 		targetOverviewByAgent[targetAgentID] = dashboard.BuildXUIOverviewWithOptions(targetSnapshot, dashboard.XUIOverviewOptions{Entry: entryByAgent[targetAgentID]})
+		if targetSnapshot.XUI != nil {
+			xrayVersions[targetAgentID] = targetSnapshot.XUI.ServerStatus.Xray.Version
+		}
+		if target := targetOverviewByAgent[targetAgentID]; target != nil {
+			for _, client := range target.Clients {
+				if client.ImportURL == "" {
+					templateURLs[targetAgentID] = customerTemplateImportURLs(targetSnapshot)
+					break
+				}
+			}
+		}
 	}
 	return forwardedOverviewContext{
 		agentMap:              agentMap,
 		targetOverviewByAgent: targetOverviewByAgent,
+		templateURLs:          templateURLs,
+		xrayVersions:          xrayVersions,
 	}
 }
 
@@ -803,6 +820,7 @@ func cloneForwardedBaseOverview(overview *model.XUIOverview) *model.XUIOverview 
 }
 
 type forwardedXUIEntry struct {
+	RuleID      string
 	ForwardType string
 	SourceAgent model.DashboardAgentView
 	ListenPort  int
@@ -846,6 +864,7 @@ func appendForwardedImportURLsWithContext(agentID string, overview *model.XUIOve
 		}
 		added += appendResolvedForwardedClients(overview, context, forwardedNodes, forwardedXUIEntry{
 			ForwardType: "realm",
+			RuleID:      rule.ID,
 			SourceAgent: sourceAgent,
 			ListenPort:  rule.ListenPort,
 			Listen:      rule.ListenAddress,
@@ -876,6 +895,7 @@ func appendForwardedImportURLsWithContext(agentID string, overview *model.XUIOve
 		resolution := paths[0].Resolution
 		added += appendResolvedForwardedClients(overview, context, forwardedNodes, forwardedXUIEntry{
 			ForwardType: "haproxy",
+			RuleID:      rule.ID,
 			SourceAgent: sourceAgent,
 			ListenPort:  rule.ListenPort,
 			Listen:      rule.ListenAddress,
@@ -911,23 +931,21 @@ func appendResolvedForwardedClients(overview *model.XUIOverview, context forward
 	if targetOverview == nil || entry.ListenPort <= 0 {
 		return 0
 	}
-	host := customerForwardSourceHost(entry.SourceAgent, entry.Listen)
-	if host == "" {
-		return 0
-	}
+	endpoint := model.ResolveEntryEndpoint(entry.SourceAgent.Entry, model.EntryTarget{Type: entry.ForwardType, ID: entry.RuleID, Port: entry.ListenPort, Transport: forwardEntryTransport(entry.Network)}, customerForwardSourceHost(entry.SourceAgent, entry.Listen))
 	added := 0
 	for _, client := range targetOverview.Clients {
 		if !realmClientMatchesNode(client, entry.Resolution.FinalNode) {
 			continue
 		}
-		rewritten := rewriteCustomerImportURL(client.ImportURL, host, entry.ListenPort)
-		if rewritten == "" {
-			continue
-		}
+		sourceURL := firstNonEmptyString(client.ImportURL, context.templateURLs[targetAgentID][customerAssignmentKey(targetAgentID, client.InboundID, client.Email)])
 		sourceClient := client
-		sourceClient.ImportURL = rewritten
-		if client.ShadowrocketImportURL != "" {
-			sourceClient.ShadowrocketImportURL = rewriteCustomerImportURL(client.ShadowrocketImportURL, host, entry.ListenPort)
+		sourceClient.ExportEndpoint = &endpoint
+		sourceClient.ImportURL = ""
+		sourceClient.ShadowrocketImportURL = ""
+		if endpoint.Error == "" {
+			sourceClient.ImportURL = rewriteCustomerImportURL(sourceURL, endpoint.Address, endpoint.Port)
+			shadowURL := firstNonEmptyString(client.ShadowrocketImportURL, model.ShadowrocketImportURL(sourceURL, context.xrayVersions[targetAgentID]))
+			sourceClient.ShadowrocketImportURL = rewriteCustomerImportURL(shadowURL, endpoint.Address, endpoint.Port)
 		}
 		sourceClient.InboundID = entry.ListenPort
 		sourceClient.InboundTag = entry.InboundTag(client)
@@ -1004,10 +1022,29 @@ func findRealmTargetAgentID(rule model.RealmForwardRule, agentMap map[string]mod
 		}
 		return ""
 	}
+	var mappedMatches, hostMatches []string
 	for _, agent := range agentMap {
-		if customerRealmRuleTargetsAgent(rule, agent.AgentID, customerAgentAddressSet(agent)) {
-			return agent.AgentID
+		for _, mapping := range agent.Entry.Mappings {
+			if !mapping.UseForExport {
+				continue
+			}
+			single := agent.Entry
+			single.Mappings = []model.AgentEntryMapping{mapping}
+			endpoint := model.ResolveEntryEndpoint(single, model.EntryTarget{Type: mapping.TargetType, ID: mapping.TargetID, Port: mapping.InternalPort, Transport: mapping.Transport}, "")
+			if endpoint.Error == "" && endpoint.Port == rule.TargetPort && strings.EqualFold(normalizeCustomerShareHost(endpoint.Address), normalizeCustomerShareHost(rule.TargetAddress)) {
+				mappedMatches = append(mappedMatches, agent.AgentID)
+				break
+			}
 		}
+		if customerRealmRuleTargetsAgent(rule, agent.AgentID, customerAgentAddressSet(agent)) {
+			hostMatches = append(hostMatches, agent.AgentID)
+		}
+	}
+	if len(mappedMatches) == 1 {
+		return mappedMatches[0]
+	}
+	if len(mappedMatches) == 0 && len(hostMatches) == 1 {
+		return hostMatches[0]
 	}
 	return ""
 }
@@ -1025,6 +1062,7 @@ func forwardedNodeView(client model.XUIClientView, entry forwardedXUIEntry) mode
 	route.MatchScope = firstNonEmptyString(entry.ForwardType, route.MatchScope)
 	route.Note = firstNonEmptyString(entry.RouteNote, route.Note)
 	return model.XUINodeView{
+		ExportEndpoint:        client.ExportEndpoint,
 		ID:                    entry.ListenPort,
 		Tag:                   client.InboundTag,
 		Remark:                firstNonEmptyString(client.InboundRemark, client.InboundTag),
@@ -1166,6 +1204,17 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 				writeError(w, http.StatusForbidden, "only root admin can create this x-ui action")
 				return
 			}
+			if req.Kind == model.XUIActionManualResetClientTraffic {
+				if _, err := model.ParseXUIManualTrafficResetPayload(req.Payload); err != nil {
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				snapshot, found := a.store.GetLatest(agentID)
+				if _, known := parseSemver(snapshot.Version); !found || !known || isVersionNewer(model.XUIManualTrafficResetMinVersion, snapshot.Version) {
+					writeError(w, http.StatusConflict, "请先将目标 VPSMonitor Client 升级到 v"+model.XUIManualTrafficResetMinVersion+" 或更高版本，并刷新采集")
+					return
+				}
+			}
 			if req.Kind == model.XUIActionDeleteRoutingRules {
 				if _, err := model.ParseRoutingRulesDeletePayload(req.Payload); err != nil {
 					writeError(w, http.StatusBadRequest, err.Error())
@@ -1240,7 +1289,9 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 			})
 			if err != nil {
 				status := http.StatusInternalServerError
-				if err.Error() == "agent not found" || strings.Contains(err.Error(), "unsupported") {
+				if strings.Contains(err.Error(), "traffic reset is already pending") {
+					status = http.StatusConflict
+				} else if err.Error() == "agent not found" || strings.Contains(err.Error(), "unsupported") {
 					status = http.StatusBadRequest
 				}
 				writeError(w, status, err.Error())
@@ -1289,7 +1340,7 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 			// where saving worked but restarting Xray did not.
 			a.realtime.sendAgentControl(agentID, model.AgentControlMessage{Type: model.AgentControlCollectNow})
 		}
-		if action.Kind == model.XUIActionUpdateClientConfig && a.realtime != nil {
+		if (action.Kind == model.XUIActionUpdateClientConfig || action.Kind == model.XUIActionManualResetClientTraffic) && a.realtime != nil {
 			a.dispatchXUITrafficCollectionRealtime(agentID)
 		}
 		writeJSON(w, http.StatusOK, action)
@@ -1400,6 +1451,10 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 			cfg.CustomerDisplayName = existing.CustomerDisplayName
 		}
 		cfg = disableXUIAutoInstall(cfg)
+		if err := model.ValidateEntryConnection(cfg.Entry); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		cfg = a.hydrateRealmForwardTargets(cfg)
 		if featuresRaw, ok := raw["features"]; ok {
 			var featureFields map[string]json.RawMessage
@@ -1470,7 +1525,7 @@ func inferLegacyAgentFeatures(cfg model.ManagedAgentConfig, snapshot *model.Agen
 			len(entry.HAProxy.Rules) > 0 ||
 			strings.TrimSpace(entry.HAProxy.ConfigPath) != "" ||
 			strings.TrimSpace(entry.HAProxy.ServiceName) != "",
-		NAT: len(entry.Mappings) > 0 ||
+		NAT: entry.Connection != (model.EntryConnectionConfig{}) || len(entry.Mappings) > 0 ||
 			len(entry.Addresses) > 0 ||
 			strings.TrimSpace(entry.ImportDomain) != "",
 		PortPolicy: entry.NetworkPolicy.Enabled ||
@@ -1543,7 +1598,7 @@ func filterRootOnlyXUIActions(actions []model.XUIAction) []model.XUIAction {
 
 func isRootOnlyXUIActionKind(kind string) bool {
 	switch kind {
-	case model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI, model.XUIActionDeleteRoutingRules, model.XUIActionDeleteOutbounds, model.XUIActionUpdateRoutingRule, model.XUIActionUpdateClientConfig:
+	case model.XUIActionManualResetClientTraffic, model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI, model.XUIActionDeleteRoutingRules, model.XUIActionDeleteOutbounds, model.XUIActionUpdateRoutingRule, model.XUIActionUpdateClientConfig:
 		return true
 	default:
 		return false
@@ -1562,6 +1617,7 @@ func realtimeXUIActionAllowed(kind string) bool {
 		model.XUIActionUpdateClientExpiry,
 		model.XUIActionUpdateClientTraffic,
 		model.XUIActionUpdateClientTrafficReset,
+		model.XUIActionManualResetClientTraffic,
 		model.XUIActionUpdateClientConfig,
 		model.XUIActionSetClientEnabled,
 		model.XUIActionDeleteClient,
@@ -1659,6 +1715,7 @@ func xuiActionUsesPanelAuth(kind string) bool {
 		model.XUIActionUpdateClientExpiry,
 		model.XUIActionUpdateClientTraffic,
 		model.XUIActionUpdateClientTrafficReset,
+		model.XUIActionManualResetClientTraffic,
 		model.XUIActionUpdateClientConfig,
 		model.XUIActionSetClientEnabled,
 		model.XUIActionDeleteClient:

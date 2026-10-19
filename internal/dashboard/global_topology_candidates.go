@@ -3,6 +3,7 @@ package dashboard
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"bridge-core/internal/model"
@@ -142,6 +143,7 @@ func buildInboundCandidates(agentViews map[string]model.DashboardAgentView, over
 				EntryAddresses: mergeStringSets(agentView.Entry.Addresses, []string{agentView.Entry.ImportDomain}),
 				EntryIPs:       collectEntryIPs(agentView.Entry),
 			}
+			ref.EntryMappings = exportEntryMappingsForTarget(agentView.Entry, model.EntryTarget{Type: "realm", ID: rule.ID, Port: rule.ListenPort, Transport: normalizeRealmForwardNetworkForTopology(rule.Network)}, "realm", resolver)
 			result[inboundTopologyKey(agentID, ref.InboundID, ref.InboundTag)] = topologyInboundCandidate{
 				ref: ref,
 				route: model.XUIRouteTrace{
@@ -169,6 +171,7 @@ func buildInboundCandidates(agentViews map[string]model.DashboardAgentView, over
 				EntryAddresses: mergeStringSets(agentView.Entry.Addresses, []string{agentView.Entry.ImportDomain}),
 				EntryIPs:       collectEntryIPs(agentView.Entry),
 			}
+			ref.EntryMappings = exportEntryMappingsForTarget(agentView.Entry, model.EntryTarget{Type: "haproxy", ID: rule.ID, Port: rule.ListenPort, Transport: "tcp"}, "haproxy", resolver)
 			result[inboundTopologyKey(agentID, ref.InboundID, ref.InboundTag)] = topologyInboundCandidate{
 				ref: ref,
 				route: model.XUIRouteTrace{
@@ -583,6 +586,9 @@ func collectAgentIPs(overview *model.XUIOverview) []string {
 
 func collectEntryDomains(entry model.AgentEntryConfig) []string {
 	result := make([]string, 0, len(entry.Addresses)+len(entry.Mappings)+1)
+	if normalizeIP(extractEndpointHost(entry.Connection.PublicAddress)) == "" {
+		result = append(result, entry.Connection.PublicAddress)
+	}
 	if normalizeIP(extractEndpointHost(entry.ImportDomain)) == "" {
 		result = append(result, entry.ImportDomain)
 	}
@@ -601,6 +607,9 @@ func collectEntryDomains(entry model.AgentEntryConfig) []string {
 
 func collectEntryIPs(entry model.AgentEntryConfig) []string {
 	result := make([]string, 0, len(entry.Addresses)+len(entry.Mappings)+1)
+	if ip := normalizeIP(extractEndpointHost(entry.Connection.PublicAddress)); ip != "" {
+		result = append(result, ip)
+	}
 	if ip := normalizeIP(extractEndpointHost(entry.ImportDomain)); ip != "" {
 		result = append(result, ip)
 	}
@@ -617,13 +626,37 @@ func collectEntryIPs(entry model.AgentEntryConfig) []string {
 	return uniqueNormalizedIPs(result)
 }
 
+func exportEntryMappingsForTarget(entry model.AgentEntryConfig, target model.EntryTarget, protocol string, resolver *topologyResolver) []model.TopologyEntryMapping {
+	if model.ValidateEntryConnection(entry) != nil {
+		return nil
+	}
+	var result []model.TopologyEntryMapping
+	for _, mapping := range entry.Mappings {
+		if !mapping.UseForExport || mapping.TargetType != target.Type || mapping.TargetID != target.ID {
+			continue
+		}
+		// Topology considers every valid entrance; user exports select one default.
+		single := entry
+		single.Mappings = []model.AgentEntryMapping{mapping}
+		endpoint := model.ResolveEntryEndpoint(single, target, "")
+		if endpoint.Error == "" {
+			result = append(result, model.TopologyEntryMapping{Address: endpoint.Address, ExternalPort: endpoint.Port, InternalPort: target.Port, Protocol: protocol, ResolvedIPs: resolver.lookupHost(endpoint.Address)})
+		}
+	}
+	return result
+}
+
 func entryMappingsForInbound(entry model.AgentEntryConfig, node model.XUINodeView, resolver *topologyResolver) []model.TopologyEntryMapping {
 	if len(entry.Mappings) == 0 {
 		return nil
 	}
 	result := make([]model.TopologyEntryMapping, 0, len(entry.Mappings))
 	nodeProtocol := normalizedTopologyProtocol(node.Protocol)
+	result = append(result, exportEntryMappingsForTarget(entry, model.EntryTarget{Type: "xui", ID: strconv.Itoa(node.ID), Port: node.Port, Transport: model.XUIEntryTransport(node)}, nodeProtocol, resolver)...)
 	for _, mapping := range entry.Mappings {
+		if mapping.UseForExport {
+			continue
+		}
 		if mapping.Address == "" || mapping.ExternalPort == 0 {
 			continue
 		}

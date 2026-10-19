@@ -1,0 +1,11 @@
+.entry-connection label { display: block; margin-bottom: 6px; color: var(--muted); }
+.entry-connection .ant-select, .entry-connection .ant-input-number { width: 100%; }
+.entry-connection-hint { display: block; margin-top: 8px; font-size: 12px; }
+.entry-connection-note { padding: 12px 16px; margin: 20px 0; border-radius: 10px; background: var(--surface-soft, rgba(86, 76, 255, .05)); color: var(--muted); }
+.entry-connection-mappings { display: grid; gap: 16px; margin-bottom: 16px; }
+.entry-connection-mapping { border: 1px solid var(--border, rgba(128, 128, 150, .25)); border-radius: 12px; padding: 16px; min-width: 0; }
+.entry-connection-mapping-head, .entry-connection-legacy { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.entry-connection-mapping-head { margin-bottom: 16px; }
+.entry-connection-preview { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border, rgba(128, 128, 150, .2)); overflow-wrap: anywhere; }
+.entry-connection-preview-table { margin: 24px 0; }
+@media (max-width: 600px) { .entry-connection-mapping { padding: 12px; } }

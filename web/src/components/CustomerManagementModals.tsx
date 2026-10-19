@@ -394,6 +394,7 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
         </Modal>
       ) : null}
       <Modal
+        className="customer-account-modal"
         title="新增普通账号"
         open={customerCreateModalOpen}
         onCancel={() => {
@@ -517,6 +518,7 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
         ) : <Empty description="请选择一个用户" />}
       </Modal>
       <Modal
+        className="customer-account-modal"
         title="编辑普通账号"
         open={customerEditModalOpen}
         onCancel={() => {

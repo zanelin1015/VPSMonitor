@@ -492,6 +492,7 @@ func hasRenewalConfig(cfg model.VPSRenewalConfig) bool {
 }
 
 func normalizeEntryConfig(cfg model.AgentEntryConfig) model.AgentEntryConfig {
+	cfg.Connection.PublicAddress = strings.TrimSpace(cfg.Connection.PublicAddress)
 	cfg.Addresses = normalizeEntryAddresses(cfg.Addresses)
 	cfg.ImportDomain = normalizeEntryImportDomain(cfg.ImportDomain)
 	cfg.NetworkPolicy = normalizeNetworkPolicyConfig(cfg.NetworkPolicy)
@@ -501,8 +502,14 @@ func normalizeEntryConfig(cfg model.AgentEntryConfig) model.AgentEntryConfig {
 	seen := make(map[string]struct{}, len(cfg.Mappings))
 	for _, mapping := range cfg.Mappings {
 		mapping.Address = strings.TrimSpace(mapping.Address)
-		mapping.Protocol = normalizeEntryProtocol(mapping.Protocol)
 		mapping.Note = strings.TrimSpace(mapping.Note)
+		if mapping.UseForExport {
+			mapping.Protocol = strings.ToLower(strings.TrimSpace(mapping.Protocol))
+			mapping.TargetID = strings.TrimSpace(mapping.TargetID)
+			mappings = append(mappings, mapping)
+			continue
+		}
+		mapping.Protocol = normalizeEntryProtocol(mapping.Protocol)
 		if mapping.ExternalPort < 0 {
 			mapping.ExternalPort = 0
 		}
@@ -600,7 +607,7 @@ func normalizeEntryProtocol(protocol string) string {
 
 func hasEntryConfig(cfg model.AgentEntryConfig) bool {
 	cfg = normalizeEntryConfig(cfg)
-	return len(cfg.Addresses) > 0 || cfg.ImportDomain != "" || len(cfg.Mappings) > 0 || hasNetworkPolicyConfig(cfg.NetworkPolicy) || hasRealmForwardConfig(cfg.PortForwarding) || hasHAProxyConfig(cfg.HAProxy)
+	return cfg.Connection != (model.EntryConnectionConfig{}) || len(cfg.Addresses) > 0 || cfg.ImportDomain != "" || len(cfg.Mappings) > 0 || hasNetworkPolicyConfig(cfg.NetworkPolicy) || hasRealmForwardConfig(cfg.PortForwarding) || hasHAProxyConfig(cfg.HAProxy)
 }
 
 func normalizeHAProxyConfig(cfg model.HAProxyConfig) model.HAProxyConfig {
@@ -921,7 +928,7 @@ func hasXUIConfig(cfg config.XUIConfig) bool {
 
 func isValidXUIActionKind(kind string) bool {
 	switch kind {
-	case model.XUIActionAddOutbound, model.XUIActionAddClient, model.XUIActionAddRoutingRule, model.XUIActionUpsertRoutingRule, model.XUIActionUpdateRoutingRule, model.XUIActionDeleteRoutingRules, model.XUIActionDeleteOutbounds, model.XUIActionUpdateClientExpiry, model.XUIActionUpdateClientTraffic, model.XUIActionUpdateClientTrafficReset, model.XUIActionUpdateClientConfig, model.XUIActionSetClientEnabled, model.XUIActionDeleteClient, model.XUIActionUpdateClient, model.XUIActionRestartXUI, model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI:
+	case model.XUIActionManualResetClientTraffic, model.XUIActionAddOutbound, model.XUIActionAddClient, model.XUIActionAddRoutingRule, model.XUIActionUpsertRoutingRule, model.XUIActionUpdateRoutingRule, model.XUIActionDeleteRoutingRules, model.XUIActionDeleteOutbounds, model.XUIActionUpdateClientExpiry, model.XUIActionUpdateClientTraffic, model.XUIActionUpdateClientTrafficReset, model.XUIActionUpdateClientConfig, model.XUIActionSetClientEnabled, model.XUIActionDeleteClient, model.XUIActionUpdateClient, model.XUIActionRestartXUI, model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI:
 		return true
 	default:
 		return false

@@ -333,6 +333,7 @@ function AppContent() {
     remoteCommandLoading,
     xuiClientDeleteLoadingKey,
     xuiClientToggleLoadingKey,
+    xuiClientResetLoadingKey,
     routingRuleDeleteLoadingAgentId,
     routingRuleUpdateLoadingAgentId,
     outboundDeleteLoadingAgentId,
@@ -345,6 +346,7 @@ function AppContent() {
     executeRemoteCommand,
     restartXUIService,
     setXUIClientEnabled,
+    manualResetXUIClientTraffic,
     update3XUI,
   } = useXUIRemoteActions({
     selectedAgentId,
@@ -1387,6 +1389,7 @@ function AppContent() {
       }
       if (section === 'entry') {
         setEntryAddressInputText(formatAddressInput(normalized.entry?.addresses))
+        await loadOverview(selectedAgentId, { silent: true })
       }
       if (savedMissingCustomerDisplayName && payload.customer_display_name) {
         message.warning('用户展示名称已保留在当前页面；用户侧显示需要后端服务更新到新版后生效')
@@ -1978,6 +1981,7 @@ function AppContent() {
                 routingRuleUpdateLoading={routingRuleUpdateLoadingAgentId === selectedAgentId}
                 outboundDeleteLoading={outboundDeleteLoadingAgentId === selectedAgentId}
                 xuiClientToggleLoadingKey={xuiClientToggleLoadingKey}
+                xuiClientResetLoadingKey={xuiClientResetLoadingKey}
                 agentDeleteLoading={agentDeleteLoading}
                 agentReplaceLoading={agentReplaceLoading}
                 replacementAgents={agents.filter((agent) => agent.agent_id !== selectedAgentId)}
@@ -2050,6 +2054,7 @@ function AppContent() {
                 }}
                 onDeleteOutbounds={(payload) => deleteOutbounds(payload, selectedAgentId)}
                 onSetXUIClientEnabled={(client, enabled) => void setXUIClientEnabled(client, enabled, selectedAgentId)}
+                onManualResetXUIClientTraffic={(client) => manualResetXUIClientTraffic(client, selectedAgentId)}
                 onRefreshCurrentAgent={() => void requestAgentSnapshot(selectedAgentId)}
                 onRestartXUI={() => void restartXUIService(selectedAgentId)}
                 onUpdate3XUI={() => void update3XUI(selectedAgentId)}

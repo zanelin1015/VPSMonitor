@@ -160,7 +160,8 @@ function XUIOutboundActionFormPanel(props: {
                       value={form.source_client_key || undefined}
                       options={sourceClientOptions.map(({ key, client }) => ({
                         value: key,
-                        label: sourceClientOptionLabel(client, activeSourceOverview, authorizedClientNodesOnly),
+                        label: sourceClientOptionLabel(client, activeSourceOverview, authorizedClientNodesOnly) + (client.export_endpoint?.error ? ` · ${client.export_endpoint.error}` : ""),
+                        disabled: Boolean(client.export_endpoint?.error),
                       }))}
                       onChange={(value) => {
                         const nextKey = value || ''
@@ -179,7 +180,12 @@ function XUIOutboundActionFormPanel(props: {
                           patch.source_inbound_id = nextClient.inbound_id || nextNode.id || 0
                           patch.source_inbound_tag = nextClient.inbound_tag || nextNode.tag || ''
                           patch.source_client_email = nextClient.email || ''
-                          Object.assign(patch, buildOutboundImportPatch(activeSourceOverview, nextNode, nextClient as XUIClientView, form))
+                          try {
+                            Object.assign(patch, buildOutboundImportPatch(activeSourceOverview, nextNode, nextClient as XUIClientView, form))
+                          } catch (error) {
+                            message.error(error instanceof Error ? error.message : "连接映射无效")
+                            return
+                          }
                         }
                         update(patch)
                       }}

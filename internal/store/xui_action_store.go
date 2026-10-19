@@ -42,6 +42,14 @@ func (s *SQLiteStore) CreateXUIActionWithActor(agentID string, req model.XUIActi
 	if req.Payload == nil {
 		req.Payload = map[string]any{}
 	}
+	if req.Kind == model.XUIActionManualResetClientTraffic {
+		target, err := model.ParseXUIManualTrafficResetPayload(req.Payload)
+		if err != nil {
+			return model.XUIAction{}, err
+		}
+		// Canonical email makes the pending-action guard cover whitespace variants.
+		req.Payload["email"] = target.Email
+	}
 	if req.Kind == model.XUIActionDeleteRoutingRules {
 		if _, err := model.ParseRoutingRulesDeletePayload(req.Payload); err != nil {
 			return model.XUIAction{}, err
@@ -73,16 +81,28 @@ func (s *SQLiteStore) CreateXUIActionWithActor(agentID string, req model.XUIActi
 	if err != nil {
 		return model.XUIAction{}, fmt.Errorf("marshal action payload: %w", err)
 	}
+	email, _ := req.Payload["email"].(string)
 	result, err := s.db.Exec(`
 		INSERT INTO xui_actions (
 			agent_id, kind, status, created_by_role, created_by_account_id, created_by_username,
 			payload_json, result_json, error, created_at, updated_at, claimed_at, completed_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, '{}', '', ?, ?, '', '')
+		SELECT ?, ?, ?, ?, ?, ?, ?, '{}', '', ?, ?, '', ''
+		WHERE ? <> ? OR NOT EXISTS (
+			SELECT 1 FROM xui_actions WHERE agent_id = ? AND kind = ?
+			AND status IN (?, ?) AND json_extract(payload_json, '$.email') = ?
+		)
 	`, agentID, req.Kind, model.XUIActionStatusPending, strings.TrimSpace(actor.Role), actor.AccountID,
-		strings.TrimSpace(actor.Username), string(payloadJSON), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
+		strings.TrimSpace(actor.Username), string(payloadJSON), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano),
+		req.Kind, model.XUIActionManualResetClientTraffic, agentID, model.XUIActionManualResetClientTraffic,
+		model.XUIActionStatusPending, model.XUIActionStatusRunning, email)
 	if err != nil {
 		return model.XUIAction{}, fmt.Errorf("create x-ui action: %w", err)
+	}
+	if count, err := result.RowsAffected(); err != nil {
+		return model.XUIAction{}, fmt.Errorf("read x-ui action insert count: %w", err)
+	} else if count == 0 {
+		return model.XUIAction{}, fmt.Errorf("client traffic reset is already pending：该客户端正在重置，请查看操作记录")
 	}
 	id, err := result.LastInsertId()
 	if err != nil {
@@ -388,6 +408,10 @@ func (s *SQLiteStore) CompleteXUIAction(agentID string, id int64, req model.XUIA
 	}
 	if !found || (action.Status != model.XUIActionStatusPending && action.Status != model.XUIActionStatusRunning) {
 		return model.XUIAction{}, fmt.Errorf("x-ui action is not executable or not found")
+	}
+	if action.Kind == model.XUIActionManualResetClientTraffic && status == model.XUIActionStatusSucceeded && (req.Result["reset_done"] != true || req.Result["verified"] != true) {
+		status = model.XUIActionStatusFailed
+		req.Error = "流量重置未完成远端回读核验，不能标记为成功"
 	}
 	if action.Kind == model.XUIActionUpdateClientConfig && status == model.XUIActionStatusSucceeded {
 		verified := req.Result["verified"] == true

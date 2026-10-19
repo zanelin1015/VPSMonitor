@@ -97,12 +97,13 @@ func hydrateHAProxyRealmTarget(sourceAgentID, ruleLabel, targetLabel string, tar
 		return target, fmt.Errorf("HAProxy %s 的%s引用了仅 UDP 的 Realm 规则，HAProxy 主备仅支持 TCP", ruleLabel, targetLabel)
 	}
 	address := preferredRealmForwardTargetAddress(agent)
-	if address == "" {
-		return target, fmt.Errorf("HAProxy %s 的%s Client %q 没有可用的主域名或公网 IP", ruleLabel, targetLabel, firstNonEmptyString(agent.AgentName, agent.AgentID))
+	endpoint := model.ResolveEntryEndpoint(agent.Config.Entry, model.EntryTarget{Type: "realm", ID: realmRule.ID, Port: realmRule.ListenPort, Transport: "tcp"}, address)
+	if endpoint.Error != "" {
+		return target, fmt.Errorf("HAProxy %s 的%s Client %q：%s", ruleLabel, targetLabel, firstNonEmptyString(agent.AgentName, agent.AgentID), endpoint.Error)
 	}
 	target.RealmRuleID = realmRule.ID
-	target.Address = address
-	target.Port = realmRule.ListenPort
+	target.Address = endpoint.Address
+	target.Port = endpoint.Port
 	return target, nil
 }
 

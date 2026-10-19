@@ -90,16 +90,6 @@ export function agentDisplayStatus(agent: AgentListItem): { label: string; level
   return { label: 'running', level: 'ok' }
 }
 
-export function countryFlag(code?: string): string {
-  const normalized = (code || '').trim().toUpperCase()
-  if (!/^[A-Z]{2}$/.test(normalized)) {
-    return '🌐'
-  }
-  return Array.from(normalized)
-    .map((char) => String.fromCodePoint(127397 + char.charCodeAt(0)))
-    .join('')
-}
-
 export function agentCountryCode(agent: AgentListItem): string {
   const explicitCode = explicitAgentCountryCode(agent)
   if (explicitCode) {

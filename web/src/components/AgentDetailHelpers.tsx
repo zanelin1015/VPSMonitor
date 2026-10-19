@@ -1,4 +1,5 @@
-import { Card, Empty, Space, Table } from 'antd'
+import { Card, Empty, Space, Table, Typography } from 'antd'
+import { formatEntryEndpoint } from '../lib/entryConnection'
 import type { ColumnsType } from 'antd/es/table'
 
 import type { GlobalDashboardView, TopologyLinkView, XUIClientView, XUILocalCertificate, XUINodeView } from '../types'
@@ -281,6 +282,7 @@ export function renderNodeClientHierarchySections(
               scroll={{ x: scrollX }}
               rowClassName={() => (selectedNodeAnchor === anchor ? 'node-row-selected' : '')}
             />
+            {node.export_endpoint && <div style={{ padding: '10px 8px 0' }}><Typography.Text type={node.export_endpoint.error ? 'warning' : 'secondary'}>{node.export_endpoint.error ? `暂不可导出：${node.export_endpoint.error}` : `对外连接：${formatEntryEndpoint(node.export_endpoint)}`}</Typography.Text></div>}
           </Card>
         )
       })}

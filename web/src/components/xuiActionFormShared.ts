@@ -22,8 +22,11 @@ export function buildOutboundImportPatch(
   sourceClient: XUIClientView,
   currentForm: XUIOutboundActionForm,
 ): Partial<XUIOutboundActionForm> {
+  const endpoint = sourceClient.export_endpoint || sourceNode.export_endpoint
+  if (endpoint?.error) throw new Error(endpoint.error)
   const importEndpoint = parseImportEndpoint(sourceClient.import_url)
   const address =
+    usableEndpointValue(endpoint?.address) ||
     usableEndpointValue(importEndpoint.address) ||
     usableEndpointValue(sourceOverview.summary.observed_ip) ||
     usableEndpointValue(sourceOverview.summary.public_ipv4) ||
@@ -31,7 +34,7 @@ export function buildOutboundImportPatch(
     hostnameFromURL(sourceOverview.base_url) ||
     ''
   const protocol = normalizeOutboundProtocol(sourceNode.protocol || sourceClient.protocol || currentForm.protocol || 'freedom')
-  const port = validPort(sourceNode.port) || validPort(importEndpoint.port) || parsePortFromText(sourceNode.tag, sourceNode.remark, sourceClient.inbound_tag, sourceClient.inbound_remark) || validPort(currentForm.port)
+  const port = validPort(endpoint?.port) || validPort(importEndpoint.port) || validPort(sourceNode.port) || parsePortFromText(sourceNode.tag, sourceNode.remark, sourceClient.inbound_tag, sourceClient.inbound_remark) || validPort(currentForm.port)
   return {
     source_type: 'registered_client',
     tag: defaultOutboundTagForSourceClient(sourceOverview, sourceClient),

@@ -3,6 +3,7 @@ package dashboard
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -261,6 +262,8 @@ func normalizeInbounds(rawInbounds []map[string]any, rules []routeRule, defaultO
 			hysteriaVersion:     protocolMeta.hysteriaVersion,
 		}
 		record.view.ClientCount = len(record.clients)
+		endpoint := model.ResolveEntryEndpoint(entry, model.EntryTarget{Type: "xui", ID: strconv.Itoa(record.view.ID), Port: record.view.Port, Transport: model.XUIEntryTransport(record.view)}, importHost)
+		record.view.ExportEndpoint = &endpoint
 		record.view.OnlineCount = countOnlineClients(record.clientStats, snapshot.ReportedAt)
 		record.view.Route = resolveRoute("", record.view.Tag, rules, defaultOutboundTag, globalRuleIndexes)
 		result = append(result, record)
@@ -291,6 +294,7 @@ func normalizeClients(inbounds []inboundRecord, rules []routeRule, defaultOutbou
 
 			importURL := buildSingleNodeImportURL(inbound, cfg)
 			clients = append(clients, model.XUIClientView{
+				ExportEndpoint:        inbound.view.ExportEndpoint,
 				ConfigEnabled:         &cfg.enable,
 				ClientID:              cfg.authUUID,
 				InboundID:             inbound.view.ID,

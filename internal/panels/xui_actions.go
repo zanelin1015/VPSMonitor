@@ -44,6 +44,8 @@ func actionCanUseLocalXrayFallback(kind string) bool {
 
 func (c *XUIClient) executeActionAuthenticated(ctx context.Context, action model.XUIAction) (map[string]any, error) {
 	switch action.Kind {
+	case model.XUIActionManualResetClientTraffic:
+		return c.manualResetClientTraffic(ctx, action.Payload)
 	case model.XUIActionAddClient:
 		return c.addClient(ctx, action.Payload)
 	case model.XUIActionAddOutbound:

@@ -25,7 +25,8 @@
     "test:routing-delete": "node scripts/test-routing-delete.mjs",
     "test:routing-editor": "node scripts/test-routing-editor.mjs",
     "test:outbound-references": "node scripts/test-outbound-references.mjs",
-    "test:node-import": "node scripts/test-node-import.mjs"
+    "test:node-import": "node scripts/test-node-import.mjs",
+    "test:entry-connection": "node scripts/test-entry-connection.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "5.6.1",

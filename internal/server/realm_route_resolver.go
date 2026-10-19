@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"bridge-core/internal/model"
@@ -52,7 +53,7 @@ func resolveRealmForwardTarget(
 		visited[targetKey] = struct{}{}
 
 		if targetOverview := overviewByAgent[targetAgentID]; targetOverview != nil {
-			if node, ok := realmTargetNode(targetOverview.Nodes, currentRule.TargetPort); ok {
+			if node, ok := realmTargetNode(targetOverview.Nodes, currentRule.TargetPort, agentMap[targetAgentID].Entry); ok {
 				resolution.Resolved = true
 				resolution.FinalAgentID = targetAgentID
 				resolution.FinalPort = currentRule.TargetPort
@@ -71,6 +72,15 @@ func resolveRealmForwardTarget(
 			return resolution
 		}
 		nextRule, ok := realmRuleListeningOnPort(targetAgent.Entry.PortForwarding.Rules, currentRule.TargetPort)
+		if !ok {
+			for _, candidate := range targetAgent.Entry.PortForwarding.Rules {
+				if candidate.Enabled && entryTargetMatchesPublicPort(targetAgent.Entry, model.EntryTarget{Type: "realm", ID: candidate.ID, Port: candidate.ListenPort, Transport: forwardEntryTransport(candidate.Network)}, currentRule.TargetPort) {
+					nextRule = candidate
+					ok = true
+					break
+				}
+			}
+		}
 		if !ok {
 			resolution.UnresolvedReason = fmt.Sprintf("%s:%d is neither an x-ui inbound nor an enabled Realm listener", firstNonEmptyString(targetAgent.AgentName, targetAgentID), currentRule.TargetPort)
 			return resolution
@@ -100,7 +110,19 @@ func realmRuleListeningOnPort(rules []model.RealmForwardRule, port int) (model.R
 	return model.RealmForwardRule{}, false
 }
 
-func realmTargetNode(nodes []model.XUINodeView, port int) (model.XUINodeView, bool) {
+func realmTargetNode(nodes []model.XUINodeView, port int, entries ...model.AgentEntryConfig) (model.XUINodeView, bool) {
+	for _, entry := range entries {
+		for _, node := range nodes {
+			if entryTargetMatchesPublicPort(entry, model.EntryTarget{Type: "xui", ID: strconv.Itoa(node.ID), Port: node.Port, Transport: model.XUIEntryTransport(node)}, port) {
+				return node, true
+			}
+		}
+	}
+	for _, node := range nodes {
+		if node.ExportEndpoint != nil && node.ExportEndpoint.Error == "" && node.ExportEndpoint.Port == port {
+			return node, true
+		}
+	}
 	for _, node := range nodes {
 		if node.Port == port {
 			return node, true
@@ -112,6 +134,24 @@ func realmTargetNode(nodes []model.XUINodeView, port int) (model.XUINodeView, bo
 		}
 	}
 	return model.XUINodeView{}, false
+}
+
+func entryTargetMatchesPublicPort(entry model.AgentEntryConfig, target model.EntryTarget, port int) bool {
+	if model.ValidateEntryConnection(entry) != nil {
+		return false
+	}
+	for _, mapping := range entry.Mappings {
+		if !mapping.UseForExport || mapping.TargetType != target.Type || mapping.TargetID != target.ID {
+			continue
+		}
+		single := entry
+		single.Mappings = []model.AgentEntryMapping{mapping}
+		endpoint := model.ResolveEntryEndpoint(single, target, "")
+		if endpoint.Error == "" && endpoint.Port == port {
+			return true
+		}
+	}
+	return false
 }
 
 func realmClientMatchesNode(client model.XUIClientView, node model.XUINodeView) bool {

@@ -319,6 +319,9 @@ func (s *SQLiteStore) UpdateAgentConfig(agentID string, cfg model.ManagedAgentCo
 }
 
 func (s *SQLiteStore) updateAgentConfig(agentID string, cfg model.ManagedAgentConfig) (model.AgentRecord, error) {
+	if err := model.ValidateEntryConnection(cfg.Entry); err != nil {
+		return model.AgentRecord{}, err
+	}
 	record, found, err := s.GetAgent(agentID)
 	if err != nil {
 		return model.AgentRecord{}, err

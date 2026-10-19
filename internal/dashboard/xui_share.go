@@ -149,6 +149,15 @@ func xuiBaseURLHost(snapshot *model.XUISnapshot) string {
 }
 
 func buildSingleNodeImportURL(inbound inboundRecord, cfg clientConfig) string {
+	// Only the local export copy uses the public endpoint. The reported node and
+	// its internal listening port remain intact for management and topology.
+	if endpoint := inbound.view.ExportEndpoint; endpoint != nil {
+		if endpoint.Error != "" {
+			return ""
+		}
+		inbound.importHost = endpoint.Address
+		inbound.view.Port = endpoint.Port
+	}
 	protocol := strings.ToLower(strings.TrimSpace(inbound.view.Protocol))
 	if inbound.importHost == "" || inbound.view.Port == 0 {
 		return ""

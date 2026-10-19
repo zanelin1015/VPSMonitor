@@ -1335,32 +1335,31 @@
   margin-inline-end: 0;
 }
 
-.client-status-cell .client-enabled-button {
+.client-enabled-control {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+}
+
+.client-status-cell .client-enabled-switch {
   min-width: 62px;
-  height: 28px;
-  padding-inline: 8px;
-  font-size: 12px;
-  font-weight: 600;
 }
 
-.client-status-cell .client-enabled-button.is-enabled:not(:disabled) {
-  border-color: color-mix(in srgb, var(--blue) 35%, var(--border));
-  background: var(--blue-soft);
-  color: var(--blue);
-}
-
-.client-status-cell .client-enabled-button.is-enabled:not(:disabled):hover {
-  border-color: var(--blue);
-  background: color-mix(in srgb, var(--blue-soft) 75%, var(--card));
-}
-
-.client-status-cell .client-enabled-button:focus-visible {
+.client-status-cell .client-enabled-switch:focus-visible {
   outline: 2px solid var(--blue);
   outline-offset: 2px;
 }
 
 @media (pointer: coarse) {
-  .client-status-cell .client-enabled-button { min-height: 44px; }
+  .client-enabled-control { min-height: 44px; }
+  .client-status-cell .client-enabled-switch::before {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    top: 50%;
+    height: 44px;
+    transform: translateY(-50%);
+  }
 }
 
 /* The table lives inside the agent detail's vertical scroller. Keep the
@@ -1544,4 +1543,24 @@
 
 .traffic-bad {
   color: var(--red);
+}
+
+.client-manual-reset-button.ant-btn {
+  font-size: 12px;
+}
+
+.client-manual-reset-button.ant-btn:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.client-traffic-reset-confirm {
+  max-width: min(320px, calc(100vw - 96px));
+  line-height: 1.65;
+}
+
+@media (pointer: coarse) {
+  .client-manual-reset-button.ant-btn {
+    min-height: 44px;
+  }
 }

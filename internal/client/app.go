@@ -235,6 +235,7 @@ func (a *App) xuiActionTimeout(kind string) time.Duration {
 		model.XUIActionUpdateClientExpiry,
 		model.XUIActionUpdateClientTraffic,
 		model.XUIActionUpdateClientTrafficReset,
+		model.XUIActionManualResetClientTraffic,
 		model.XUIActionUpdateClientConfig,
 		model.XUIActionSetClientEnabled,
 		model.XUIActionDeleteClient:
