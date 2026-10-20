@@ -83,8 +83,8 @@
 }
 
 .admin-console-theme .admin-oa-sider {
-  width: 220px;
-  flex-basis: 220px;
+  width: clamp(176px, 16vw, 220px);
+  flex-basis: clamp(176px, 16vw, 220px);
   gap: 22px;
   padding: 24px 14px 18px;
   border-color: color-mix(in srgb, var(--border) 60%, transparent);
@@ -106,7 +106,9 @@
 .admin-console-theme .admin-oa-sider-foot { border: 0; background: var(--console-input); border-radius: 14px; padding: 16px; }
 :root:not(.dark):where([data-console-theme='soft']) .admin-console-theme .admin-oa-sider-foot { border: 1px solid var(--border); background: var(--card); }
 .admin-console-theme .admin-oa-sider-foot strong { font-size: 28px; font-weight: 650; letter-spacing: -.8px; }
-.admin-console-theme .admin-oa-main { padding: 16px 24px 24px; }
+.admin-console-theme .admin-oa-main {
+  padding: 16px clamp(12px, 1.5vw, 24px) 24px;
+}
 
 .admin-console-theme .admin-oa-topbar {
   display: flex;
@@ -278,9 +280,93 @@
   .admin-console-theme .customer-login-shell .login-panel { margin: 96px auto 32px; }
 }
 
+/*
+ * Fluid desktop layout
+ *
+ * A 13-inch MacBook Air commonly exposes a 1280px-ish CSS viewport after
+ * browser chrome and display scaling. Use a fluid rail and grid track at
+ * that width, while retaining a sensible minimum for readable controls.
+ */
 @media (max-width: 1360px) and (min-width: 981px) {
-  .admin-console-theme .admin-oa-sider { width: 196px; flex-basis: 196px; padding-inline: 10px; }
-  .admin-console-theme .admin-oa-main { padding-inline: 16px; }
+  .admin-console-theme .admin-oa-sider {
+    padding-inline: 10px;
+  }
+
+  .admin-console-theme .admin-oa-main {
+    padding-inline: clamp(12px, 1.25vw, 16px);
+  }
+
+  .admin-console-theme .workspace-grid-topology {
+    grid-template-columns:
+      minmax(clamp(220px, 22%, 300px), clamp(280px, 28%, 360px))
+      minmax(0, 1fr);
+  }
+
+  .admin-console-theme .workspace-grid-agent-open .selected-agent-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .admin-console-theme .workspace-grid-agent-open .selected-agent-toolbar > .ant-space {
+    width: 100%;
+  }
+
+  .admin-console-theme .workspace-grid-agent-open .tabs-card .ant-tabs-nav-wrap {
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .admin-console-theme .workspace-grid-agent-open .tabs-card .ant-tabs-nav-list {
+    min-width: max-content;
+  }
+}
+
+@media (max-width: 1240px) and (min-width: 981px) {
+  .admin-console-theme .admin-oa-shell,
+  .admin-console-theme .admin-oa-main,
+  .admin-console-theme .workspace-grid,
+  .admin-console-theme .workspace-grid-topology,
+  .admin-console-theme .workspace-grid-agent-open {
+    min-width: 0;
+  }
+
+  .admin-console-theme .admin-oa-main {
+    padding: 12px clamp(10px, 1vw, 12px) 16px;
+  }
+
+  .admin-console-theme .admin-oa-topbar {
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .admin-console-theme .admin-oa-topbar .hero-actions-column {
+    flex-wrap: wrap;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .admin-console-theme .admin-oa-topbar .theme-mode-row {
+    flex: 0 1 auto;
+  }
+
+  .admin-console-theme .workspace-grid-topology {
+    gap: 12px;
+  }
+
+  .admin-console-theme .workspace-grid-topology .sidebar-card .ant-card-head {
+    padding-inline: 12px;
+  }
+
+  .admin-console-theme .workspace-grid-topology .sidebar-card .ant-card-body {
+    padding-inline: 12px;
+  }
+
+  .admin-console-theme .workspace-grid-agent-open .tabs-card > .ant-card-body {
+    padding: 12px;
+  }
+
 }
 @media (max-width: 980px) {
   .admin-console-theme .admin-oa-sider { width: 100%; flex-basis: auto; padding: 16px; gap: 12px; }

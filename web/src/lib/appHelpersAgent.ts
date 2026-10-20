@@ -40,12 +40,12 @@ export function chainMatchesSelectedTag(chain: ClientChainView, selectedTag: str
   return (chain.root_agent_tags || []).includes(selectedTag)
 }
 
-export function readStoredAgentViewMode(username: string): AgentViewMode {
+export function readStoredAgentViewMode(username: string, fallback: AgentViewMode = 'card'): AgentViewMode {
   try {
     const value = window.localStorage.getItem(agentViewModeStorageKey(username))
-    return value === 'list' ? 'list' : 'card'
+    return value === 'list' || value === 'card' ? value : fallback
   } catch {
-    return 'card'
+    return fallback
   }
 }
 

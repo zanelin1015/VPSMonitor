@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Alert, Button, Card, Empty, Input, List, Segmented, Space, Tag } from 'antd'
-import { ApartmentOutlined, BarsOutlined, CloudServerOutlined, ReloadOutlined } from '@ant-design/icons'
+import { ApartmentOutlined, BarsOutlined, CloudServerOutlined, FilterOutlined, ReloadOutlined } from '@ant-design/icons'
 
 import type { DashboardAgentView, DashboardTagView } from '../types'
 import type { AgentViewMode } from '../lib/appHelpers'
@@ -53,8 +53,10 @@ export function AgentRail(props: {
 }) {
   const { agents, loading, error, selectedTag, healthFilter, selectedAgentId, tagFilterOptions, viewMode, panelExpanded, topologyVisible, restrictedView = false, searchText, onToggleViewMode, onToggleTopology, onRefresh, onSelectTag, onHealthFilterChange, onSelectAgent, onSearchTextChange } = props
   const effectiveViewMode: AgentViewMode = panelExpanded ? 'list' : viewMode
+  const [compactFiltersOpen, setCompactFiltersOpen] = useState(false)
   const [agentPage, setAgentPage] = useState(1)
   const [agentPageSize, setAgentPageSize] = useState(10)
+  const filtersVisible = !panelExpanded || compactFiltersOpen
 
   useEffect(() => {
     setAgentPage(1)
@@ -121,29 +123,44 @@ export function AgentRail(props: {
             placeholder={restrictedView ? '搜索 Client 名称 / 标签' : '搜索节点、客户端名称 / 邮箱 / 备注'}
             onChange={(event) => onSearchTextChange(event.target.value)}
           />
+          {panelExpanded ? (
+            <Button
+              size="small"
+              className={`agent-filter-toggle${compactFiltersOpen ? ' active' : ''}`}
+              icon={<FilterOutlined />}
+              aria-expanded={compactFiltersOpen}
+              onClick={() => setCompactFiltersOpen((open) => !open)}
+            >
+              筛选
+            </Button>
+          ) : null}
           {searchText.trim() ? <span className="agent-search-count" aria-live="polite">匹配 {agents.length} 台 VPS</span> : null}
         </div>
-        <Segmented
-          block
-          size="small"
-          className="agent-health-filter"
-          value={healthFilter}
-          options={(['all', 'healthy', 'warning', 'offline'] as AgentHealthFilter[]).map((value) => ({
-            value,
-            label: agentHealthFilterLabel(value),
-          }))}
-          onChange={(value) => onHealthFilterChange(normalizeAgentHealthFilter(String(value)))}
-        />
-        <div className="agent-filter-strip">
-          <Space wrap>
-            <Tag color={!selectedTag ? 'blue' : 'default'} className="tag-filter-chip" onClick={() => onSelectTag('')}>全部</Tag>
-            {tagFilterOptions.map((tag) => (
-              <Tag key={tag.tag} className="tag-filter-chip" style={tagChipStyle(tag.tag, selectedTag === tag.tag)} onClick={() => onSelectTag(tag.tag)}>
-                {tag.tag} · {tag.agent_count}
-              </Tag>
-            ))}
-          </Space>
-        </div>
+        {filtersVisible ? (
+          <>
+            <Segmented
+              block
+              size="small"
+              className="agent-health-filter"
+              value={healthFilter}
+              options={(['all', 'healthy', 'warning', 'offline'] as AgentHealthFilter[]).map((value) => ({
+                value,
+                label: agentHealthFilterLabel(value),
+              }))}
+              onChange={(value) => onHealthFilterChange(normalizeAgentHealthFilter(String(value)))}
+            />
+            <div className="agent-filter-strip">
+              <Space wrap>
+                <Tag color={!selectedTag ? 'blue' : 'default'} className="tag-filter-chip" onClick={() => onSelectTag('')}>全部</Tag>
+                {tagFilterOptions.map((tag) => (
+                  <Tag key={tag.tag} className="tag-filter-chip" style={tagChipStyle(tag.tag, selectedTag === tag.tag)} onClick={() => onSelectTag(tag.tag)}>
+                    {tag.tag} · {tag.agent_count}
+                  </Tag>
+                ))}
+              </Space>
+            </div>
+          </>
+        ) : null}
         <div className="agent-list-wrap">
           <List
             className={`agent-list agent-list-${effectiveViewMode}`}

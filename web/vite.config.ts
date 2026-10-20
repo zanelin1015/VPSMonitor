@@ -1,7 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-const apiTarget = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.VPSMONITOR_API_TARGET || 'http://127.0.0.1:8090'
+// The local UI normally talks to the deployed VPSMonitor API. Set
+// VPSMONITOR_API_TARGET=http://127.0.0.1:8090 when developing the API locally.
+const apiTarget = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.VPSMONITOR_API_TARGET || 'https://vpsmonitor.stoneluna.top'
 const apiOrigin = new URL(apiTarget).origin
 
 export default defineConfig({

@@ -278,10 +278,18 @@
 
 .agent-list-card .ant-list-items {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  grid-auto-rows: 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  grid-auto-rows: minmax(214px, auto);
   gap: 12px;
   align-items: stretch;
+  align-content: start;
+}
+
+.agent-list-card .agent-list-item,
+.agent-list-card .agent-button-card {
+  align-self: stretch;
+  margin: 0 !important;
+  height: auto;
 }
 
 .agent-list-list .ant-list-items {
@@ -636,6 +644,28 @@
   gap: 6px !important;
 }
 
+.workspace-grid-topology .agent-search-row {
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.workspace-grid-topology .agent-search-row .ant-input-search {
+  flex: 1 1 auto;
+  max-width: none;
+}
+
+.workspace-grid-topology .agent-filter-toggle.ant-btn {
+  flex: 0 0 auto;
+  min-width: 58px;
+  padding-inline: 8px;
+}
+
+.workspace-grid-topology .agent-filter-toggle.ant-btn.active {
+  border-color: color-mix(in srgb, var(--blue) 42%, var(--border));
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
 .workspace-grid-topology .agent-filter-strip {
   max-height: 78px;
   overflow-x: hidden;
@@ -652,6 +682,21 @@
 
 .workspace-grid-topology .agent-list-list .ant-spin-container {
   min-width: 0;
+}
+
+.workspace-grid-topology .agent-button-compact {
+  min-height: 84px;
+  gap: 5px;
+  padding: 8px 10px;
+}
+
+.workspace-grid-topology .agent-compact-location {
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.workspace-grid-topology .agent-compact-footer {
+  display: none;
 }
 
 .workspace-grid-topology .topology-toggle-button.ant-btn {

@@ -143,6 +143,13 @@ function exchangeRateNotice(data: ExchangeRatesResponse): string {
   return '汇率接口暂不可用，已使用缓存汇率'
 }
 
+function defaultAgentViewMode(): AgentViewMode {
+  if (typeof window === 'undefined') {
+    return 'card'
+  }
+  return window.matchMedia('(max-width: 1680px)').matches ? 'list' : 'card'
+}
+
 const AgentDetailPanel = lazy(() => import('./components/AgentDetailPanel').then((module) => ({ default: module.AgentDetailPanel })))
 const ConsoleModals = lazy(() => import('./components/ConsoleModals').then((module) => ({ default: module.ConsoleModals })))
 const CustomerManagementModal = lazy(() => import('./components/CustomerManagementModal').then((module) => ({ default: module.CustomerManagementModal })))
@@ -431,8 +438,9 @@ function AppContent() {
       setAgentViewMode('card')
       return
     }
-    setAgentViewMode(readStoredAgentViewMode(adminUser.username))
-  }, [adminUser?.username])
+    const fallbackViewMode: AgentViewMode = activeAdminPage === 'assets' ? 'list' : defaultAgentViewMode()
+    setAgentViewMode(readStoredAgentViewMode(adminUser.username, fallbackViewMode))
+  }, [activeAdminPage, adminUser?.username])
 
   useEffect(() => {
     setFinanceAccountsLoaded(false)
@@ -1820,7 +1828,7 @@ function AppContent() {
             financeAreaManagers={scopedFinanceAreaManagers}
             exchangeRates={exchangeRates}
             selectedTag={selectedTag}
-            compact={centerPanelOpen}
+            compact={activeAdminPage === 'assets' || centerPanelOpen}
             restrictedView={isAreaManagerAccount}
             onCostCurrencyChange={setCostCurrency}
           />
