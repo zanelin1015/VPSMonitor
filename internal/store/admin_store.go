@@ -63,6 +63,9 @@ func (s *SQLiteStore) AuthenticateAdmin(username, password string) (model.AdminU
 		return model.AdminUser{}, false, fmt.Errorf("load admin account: %w", err)
 	}
 	if subtle.ConstantTimeCompare([]byte(username), []byte(storedUsername)) != 1 {
+		if operator, ok, err := s.authenticateOperator(username, password); err != nil || ok {
+			return operator, ok, err
+		}
 		return s.authenticateAreaManager(username, password)
 	}
 	ok, err := verifyPassword(password, passwordHash)
@@ -161,22 +164,17 @@ func (s *SQLiteStore) ValidateAdminSession(token string) (model.AdminUser, model
 	role := normalizeAdminRole(sessionRole)
 	if role == model.AdminRoleAreaManager {
 		user, ok, err = s.loadAreaManagerAdminUser(sessionAccountID)
-		if err != nil {
-			return model.AdminUser{}, model.AdminSession{}, false, err
-		}
-		if !ok {
-			_ = s.DeleteAdminSession(token)
-			return model.AdminUser{}, model.AdminSession{}, false, nil
-		}
+	} else if role == model.AdminRoleOperator {
+		user, ok, err = s.loadOperatorAdminUser(sessionAccountID)
 	} else {
 		user, ok, err = s.loadRootAdminUser()
-		if err != nil {
-			return model.AdminUser{}, model.AdminSession{}, false, err
-		}
-		if !ok {
-			_ = s.DeleteAdminSession(token)
-			return model.AdminUser{}, model.AdminSession{}, false, nil
-		}
+	}
+	if err != nil {
+		return model.AdminUser{}, model.AdminSession{}, false, err
+	}
+	if !ok {
+		_ = s.DeleteAdminSession(token)
+		return model.AdminUser{}, model.AdminSession{}, false, nil
 	}
 
 	_, _ = s.db.Exec(`UPDATE admin_sessions SET last_seen_at = ? WHERE token_hash = ?`, time.Now().UTC().Format(time.RFC3339Nano), tokenHash)
@@ -384,6 +382,8 @@ func (s *SQLiteStore) loadAreaManagerAdminUser(id int64) (model.AdminUser, bool,
 
 func normalizeAdminRole(role string) string {
 	switch strings.ToLower(strings.TrimSpace(role)) {
+	case model.AdminRoleOperator:
+		return model.AdminRoleOperator
 	case model.AdminRoleAreaManager:
 		return model.AdminRoleAreaManager
 	default:

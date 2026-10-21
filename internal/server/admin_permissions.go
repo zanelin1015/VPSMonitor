@@ -32,7 +32,7 @@ func (a *App) adminCanAccessAgent(user model.AdminUser, agentID string) bool {
 	if agentID == "" {
 		return false
 	}
-	if isRootAdmin(user) {
+	if isRootAdmin(user) || isOperatorAdmin(user) {
 		return true
 	}
 	for _, allowed := range user.AgentIDs {
@@ -49,7 +49,7 @@ func (a *App) adminCanAccessAgent(user model.AdminUser, agentID string) bool {
 }
 
 func (a *App) filterAgentRecordsForAdmin(user model.AdminUser, agents []model.AgentRecord) []model.AgentRecord {
-	if isRootAdmin(user) {
+	if isRootAdmin(user) || isOperatorAdmin(user) {
 		return agents
 	}
 	allowed := a.adminVisibleAgentSet(user)
@@ -63,7 +63,7 @@ func (a *App) filterAgentRecordsForAdmin(user model.AdminUser, agents []model.Ag
 }
 
 func (a *App) filterSnapshotsForAdmin(user model.AdminUser, snapshots []model.AgentSnapshot) []model.AgentSnapshot {
-	if isRootAdmin(user) {
+	if isRootAdmin(user) || isOperatorAdmin(user) {
 		return snapshots
 	}
 	allowed := a.adminVisibleAgentSet(user)
@@ -77,7 +77,7 @@ func (a *App) filterSnapshotsForAdmin(user model.AdminUser, snapshots []model.Ag
 }
 
 func (a *App) filterRealtimeMetricsForAdmin(user model.AdminUser, metrics []model.AgentRealtimeMetrics) []model.AgentRealtimeMetrics {
-	if isRootAdmin(user) {
+	if isRootAdmin(user) || isOperatorAdmin(user) {
 		filtered := make([]model.AgentRealtimeMetrics, 0, len(metrics))
 		for _, metric := range metrics {
 			filtered = append(filtered, sanitizeRealtimeMetricForBrowser(metric))
@@ -139,6 +139,19 @@ func (a *App) sanitizeAgentListItemsForAdmin(user model.AdminUser, items []model
 	if isRootAdmin(user) {
 		return items
 	}
+	if isOperatorAdmin(user) {
+		for index := range items {
+			items[index].ClientVersion = ""
+			items[index].ClientOS = ""
+			items[index].ClientArch = ""
+			items[index].SystemVersion = ""
+			items[index].Entry = model.AgentEntryConfig{}
+			items[index].Realm = nil
+			items[index].HAProxy = nil
+			items[index].NetworkPolicy = nil
+		}
+		return items
+	}
 	tagMap, _ := a.store.ListAreaManagerAgentTags(user.ID)
 	for index := range items {
 		items[index] = sanitizeAgentListItemForAreaManager(items[index], tagMap)
@@ -148,6 +161,10 @@ func (a *App) sanitizeAgentListItemsForAdmin(user model.AdminUser, items []model
 
 func (a *App) sanitizeDashboardForAdmin(user model.AdminUser, view *model.GlobalDashboardView) {
 	if view == nil || isRootAdmin(user) {
+		return
+	}
+	if isOperatorAdmin(user) {
+		sanitizeDashboardForOperator(view)
 		return
 	}
 	tagMap, _ := a.store.ListAreaManagerAgentTags(user.ID)
@@ -174,8 +191,66 @@ func (a *App) sanitizeDashboardForAdmin(user model.AdminUser, view *model.Global
 	rebuildAreaManagerDashboardStats(view)
 }
 
+func sanitizeDashboardForOperator(view *model.GlobalDashboardView) {
+	if view == nil {
+		return
+	}
+	view.Links = nil
+	view.ClientChains = nil
+	view.Tags = nil
+	view.Totals.LinkCount = 0
+	view.Totals.ChainCount = 0
+	for index := range view.Agents {
+		agent := &view.Agents[index]
+		agent.ClientVersion = ""
+		agent.ClientOS = ""
+		agent.ClientArch = ""
+		agent.SystemVersion = ""
+		agent.Entry = model.AgentEntryConfig{}
+		agent.Realm = nil
+		agent.HAProxy = nil
+		agent.NetworkPolicy = nil
+		agent.Geo = nil
+		agent.FinanceClients = nil
+		agent.FinanceClientsReady = false
+	}
+}
+
+func sanitizeXUIOverviewForOperator(overview *model.XUIOverview) {
+	if overview == nil {
+		return
+	}
+	overview.BaseURL = ""
+	overview.EditableRoutingRules = nil
+	overview.Outbounds = nil
+	overview.Balancers = nil
+	overview.RoutingRules = nil
+	overview.Certificates = nil
+	overview.OutboundsFingerprint = ""
+	overview.RoutingRulesFingerprint = ""
+	for index := range overview.Clients {
+		client := &overview.Clients[index]
+		client.ExportEndpoint = nil
+		client.ImportURL = ""
+		client.ShadowrocketImportURL = ""
+		client.AuthUUID = ""
+		client.AuthPassword = ""
+		client.Route = model.XUIRouteTrace{}
+	}
+	for index := range overview.Nodes {
+		node := &overview.Nodes[index]
+		node.ExportEndpoint = nil
+		node.Route = model.XUIRouteTrace{}
+		node.AuthKeys = nil
+	}
+}
+
 func (a *App) sanitizeXUIOverviewForAdmin(user model.AdminUser, overview *model.XUIOverview) {
 	if overview == nil || isRootAdmin(user) {
+		return
+	}
+	if isOperatorAdmin(user) {
+		sanitizeXUIOverviewForOperator(overview)
 		return
 	}
 	overview.EditableRoutingRules = nil
@@ -1299,7 +1374,7 @@ func endpointHost(value string) string {
 }
 
 func (a *App) customerVisibleToAdmin(user model.AdminUser, customerID int64) (bool, error) {
-	if isRootAdmin(user) {
+	if isRootAdmin(user) || isOperatorAdmin(user) {
 		_, found, err := a.store.GetCustomer(customerID)
 		return found, err
 	}

@@ -709,8 +709,8 @@ func (a *App) handleAgentRefresh(w http.ResponseWriter, r *http.Request, agentID
 		writeError(w, http.StatusNotFound, "agent not found")
 		return
 	}
-	if isAreaManager(user) {
-		writeError(w, http.StatusForbidden, "area manager cannot trigger client refresh")
+	if isAreaManager(user) || isOperatorAdmin(user) {
+		writeError(w, http.StatusForbidden, "当前账号不能触发 Client 立即刷新")
 		return
 	}
 	if !a.realtime.sendAgentControl(agentID, model.AgentControlMessage{Type: model.AgentControlCollectNow}) {
@@ -1160,7 +1160,7 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 					writeError(w, http.StatusInternalServerError, err.Error())
 					return
 				}
-				if !isRootAdmin(user) {
+				if !isRootAdmin(user) && !isOperatorAdmin(user) {
 					actions = filterRootOnlyXUIActions(actions)
 				}
 				writeJSON(w, http.StatusOK, actions)
@@ -1200,7 +1200,7 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 				writeError(w, http.StatusForbidden, "outbound or node is outside the area manager authorization scope")
 				return
 			}
-			if isRootOnlyXUIActionKind(req.Kind) && !isRootAdmin(user) {
+			if isRootOnlyXUIActionKind(req.Kind) && !isRootAdmin(user) && (!isOperatorAdmin(user) || !isOperatorXUIActionKind(req.Kind)) {
 				writeError(w, http.StatusForbidden, "only root admin can create this x-ui action")
 				return
 			}
@@ -1599,6 +1599,15 @@ func filterRootOnlyXUIActions(actions []model.XUIAction) []model.XUIAction {
 func isRootOnlyXUIActionKind(kind string) bool {
 	switch kind {
 	case model.XUIActionManualResetClientTraffic, model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI, model.XUIActionDeleteRoutingRules, model.XUIActionDeleteOutbounds, model.XUIActionUpdateRoutingRule, model.XUIActionUpdateClientConfig:
+		return true
+	default:
+		return false
+	}
+}
+
+func isOperatorXUIActionKind(kind string) bool {
+	switch kind {
+	case model.XUIActionManualResetClientTraffic, model.XUIActionUpdateClientConfig:
 		return true
 	default:
 		return false

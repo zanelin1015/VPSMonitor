@@ -22,7 +22,7 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 				customers []model.CustomerAdminView
 				err       error
 			)
-			if isRootAdmin(user) {
+			if isRootAdmin(user) || isOperatorAdmin(user) {
 				customers, err = a.store.ListCustomers()
 			} else {
 				customers, err = a.store.ListCustomersForOwner(model.AdminRoleAreaManager, user.ID)
@@ -235,7 +235,7 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 				writeError(w, http.StatusForbidden, "front proxy is outside this account authorization scope")
 				return
 			}
-			if isAreaManager(user) {
+			if isAreaManager(user) || isOperatorAdmin(user) {
 				req.PriceMode = "inherit"
 				req.RevenueAmount = nil
 				req.RevenueCurrency = ""
@@ -247,7 +247,7 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			if isRootAdmin(user) && legacyPriceSync {
+			if (isRootAdmin(user) || isOperatorAdmin(user)) && legacyPriceSync {
 				if err := a.syncCustomerAssignmentRevenue(req, user.Username); err != nil {
 					writeError(w, http.StatusBadRequest, err.Error())
 					return
@@ -342,7 +342,7 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 			writeError(w, http.StatusForbidden, "front proxy is outside this account authorization scope")
 			return
 		}
-		if isAreaManager(user) {
+		if isAreaManager(user) || isOperatorAdmin(user) {
 			req.PriceMode = "inherit"
 			req.RevenueAmount = nil
 			req.RevenueCurrency = ""
@@ -358,7 +358,7 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 			writeError(w, status, err.Error())
 			return
 		}
-		if isRootAdmin(user) && legacyPriceSync {
+		if (isRootAdmin(user) || isOperatorAdmin(user)) && legacyPriceSync {
 			if err := a.syncCustomerAssignmentRevenue(req, user.Username); err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
@@ -394,7 +394,7 @@ func (a *App) customerAssignmentSourcesForAdmin(user model.AdminUser) ([]model.C
 		return nil, err
 	}
 	eligible := make(map[string]struct{}, len(view.Agents))
-	if isRootAdmin(user) {
+	if isRootAdmin(user) || isOperatorAdmin(user) {
 		for _, agent := range view.Agents {
 			eligible[agent.AgentID] = struct{}{}
 		}
@@ -458,6 +458,9 @@ func (a *App) areaManagerCustomerAssignmentAgentTargetsForwarding(user model.Adm
 
 func (a *App) adminCanUseFrontProxyNodes(user model.AdminUser, nodeIDs []int64) bool {
 	if len(nodeIDs) == 0 || isRootAdmin(user) {
+		return true
+	}
+	if isOperatorAdmin(user) {
 		return true
 	}
 	if !isAreaManager(user) {

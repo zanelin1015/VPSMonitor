@@ -16,7 +16,7 @@ func (a *App) customerBillingReconciliationForAdmin(user model.AdminUser) (model
 		customers []model.CustomerAdminView
 		err       error
 	)
-	if isRootAdmin(user) {
+	if isRootAdmin(user) || isOperatorAdmin(user) {
 		customers, err = a.store.ListCustomers()
 	} else {
 		customers, err = a.store.ListCustomersForOwner(model.AdminRoleAreaManager, user.ID)

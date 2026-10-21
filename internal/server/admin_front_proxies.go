@@ -24,6 +24,9 @@ func (a *App) handleAdminFrontProxies(w http.ResponseWriter, r *http.Request, pa
 			)
 			if isRootAdmin(user) {
 				items, err = a.store.ListFrontProxyNodes()
+			} else if isOperatorAdmin(user) {
+				items, err = a.store.ListFrontProxyNodes()
+				items = redactFrontProxyShareURLs(items)
 			} else {
 				items, err = a.store.ListFrontProxyNodesForGrantee(model.FrontProxyGranteeAreaManager, user.ID)
 				// Area managers can use granted proxies, but upstream share URLs

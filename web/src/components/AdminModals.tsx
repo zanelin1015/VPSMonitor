@@ -64,11 +64,12 @@ export function PersonalCenterDropdown(props: {
         <div className="personal-center-menu-profile">
           <AdminAvatar user={adminUser} size={52} className="personal-center-menu-avatar" />
           <div>
-            <Text type="secondary">{adminUser.role === 'area_manager' ? '当前区域账号' : '当前管理员'}</Text>
+          <Text type="secondary">{adminUser.role === 'area_manager' ? '当前区域账号' : adminUser.role === 'operator' ? '当前运营管理员' : '当前管理员'}</Text>
             <div className="personal-center-menu-name">{adminUser.username}</div>
             <Space wrap size={6}>
               <Tag color="success">已登录</Tag>
               {adminUser.role === 'area_manager' ? <Tag color="gold">区域管理</Tag> : null}
+              {adminUser.role === 'operator' ? <Tag color="blue">运营管理</Tag> : null}
               {systemInfo?.version ? <Tag color="blue">Server v{systemInfo.version}</Tag> : null}
             </Space>
           </div>

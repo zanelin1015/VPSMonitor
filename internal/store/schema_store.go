@@ -66,6 +66,17 @@ func (s *SQLiteStore) init() error {
 		);
 		`,
 		`
+		CREATE TABLE IF NOT EXISTS operator_accounts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+			password_hash TEXT NOT NULL,
+			display_name TEXT NOT NULL DEFAULT '',
+			enabled INTEGER NOT NULL DEFAULT 1,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+		`,
+		`
 		CREATE TABLE IF NOT EXISTS area_manager_accounts (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			username TEXT NOT NULL COLLATE NOCASE UNIQUE,

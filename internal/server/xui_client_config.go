@@ -16,7 +16,7 @@ func (a *App) handleXUIClientConfig(w http.ResponseWriter, r *http.Request, agen
 	if !ok {
 		return
 	}
-	if !isRootAdmin(user) {
+	if !isRootAdmin(user) && !isOperatorAdmin(user) {
 		writeError(w, http.StatusForbidden, "当前账号没有客户端配置管理权限")
 		return
 	}

@@ -364,9 +364,18 @@ export interface AdminUser {
   username: string
   display_name?: string
   avatar_url?: string
-  role?: 'admin' | 'area_manager'
+  role?: 'admin' | 'operator' | 'area_manager'
   agent_ids?: string[]
   outbound_create_enabled?: boolean
+  updated_at: string
+}
+
+export interface OperatorAdminView {
+  id: number
+  username: string
+  display_name?: string
+  enabled: boolean
+  created_at: string
   updated_at: string
 }
 

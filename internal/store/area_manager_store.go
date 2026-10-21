@@ -714,6 +714,14 @@ func (s *SQLiteStore) ensureAreaManagerUsernameAvailable(username string, except
 	if strings.EqualFold(strings.TrimSpace(username), strings.TrimSpace(rootUsername)) {
 		return fmt.Errorf("username already exists")
 	}
+	var operatorID int64
+	err = s.db.QueryRow(`SELECT id FROM operator_accounts WHERE username = ?`, username).Scan(&operatorID)
+	if err == nil {
+		return fmt.Errorf("username already exists")
+	}
+	if err != sql.ErrNoRows {
+		return fmt.Errorf("check operator username: %w", err)
+	}
 
 	var existingID int64
 	err = s.db.QueryRow(`SELECT id FROM area_manager_accounts WHERE username = ?`, username).Scan(&existingID)

@@ -14,6 +14,14 @@ export function sanitizeAreaRealtimeMetric(metric: AgentRealtimeMetrics): AgentR
   }
 }
 
+export function isRootAdminUser(user: AdminUser | null): boolean {
+  return Boolean(user && (!user.role || user.role === 'admin'))
+}
+
+export function isOperatorAdminUser(user: AdminUser | null): boolean {
+  return user?.role === 'operator'
+}
+
 export function isAreaManagerAdminUser(user: AdminUser | null): boolean {
   if (!user) {
     return false

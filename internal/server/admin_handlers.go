@@ -26,6 +26,10 @@ func (a *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		a.handleAdminAreaManagers(w, r, strings.Split(path, "/")[1:])
 		return
 	}
+	if path == "operators" || strings.HasPrefix(path, "operators/") {
+		a.handleAdminOperators(w, r, strings.Split(path, "/")[1:])
+		return
+	}
 	if path == "customers" || strings.HasPrefix(path, "customers/") {
 		a.handleAdminCustomers(w, r, strings.Split(path, "/")[1:])
 		return

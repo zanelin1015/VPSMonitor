@@ -204,6 +204,10 @@ func isRootAdmin(user model.AdminUser) bool {
 	return user.Role == "" || user.Role == model.AdminRoleRoot
 }
 
+func isOperatorAdmin(user model.AdminUser) bool {
+	return user.Role == model.AdminRoleOperator
+}
+
 func isAreaManager(user model.AdminUser) bool {
 	return user.Role == model.AdminRoleAreaManager
 }

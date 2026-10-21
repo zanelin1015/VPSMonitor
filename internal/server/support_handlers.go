@@ -255,7 +255,7 @@ func (a *App) supportConversationForAdmin(user model.AdminUser, conversationID i
 	if err != nil || !found {
 		return model.SupportConversation{}, found, err
 	}
-	if isRootAdmin(user) {
+	if isRootAdmin(user) || isOperatorAdmin(user) {
 		return conversation, true, nil
 	}
 	if conversation.OwnerType != model.AdminRoleAreaManager || conversation.OwnerID != user.ID {

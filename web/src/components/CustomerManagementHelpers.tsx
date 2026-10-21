@@ -6,7 +6,7 @@ const { Text } = Typography
 
 export const DEFAULT_ACCOUNT_PASSWORD = '12345678'
 
-export type ManagementTabKey = 'area' | 'customers'
+export type ManagementTabKey = 'area' | 'customers' | 'operators'
 
 export interface CustomerFormState {
   username: string

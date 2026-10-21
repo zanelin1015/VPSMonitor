@@ -3,7 +3,7 @@ import { Alert, App as AntdApp, Button, Card, Col, Empty, Input, Modal, Popconfi
 import type { ColumnsType } from 'antd/es/table'
 import { CopyOutlined, DeleteOutlined, EditOutlined, ExportOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SyncOutlined } from '@ant-design/icons'
 
-import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, CustomerAssignmentSourceView, CustomerBillingDiagnostic, CustomerBillingReconciliationResponse, CustomerSubscriptionURLResponse, DashboardAgentView, FrontProxyNode, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
+import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, CustomerAssignmentSourceView, CustomerBillingDiagnostic, CustomerBillingReconciliationResponse, CustomerSubscriptionURLResponse, DashboardAgentView, FrontProxyNode, OperatorAdminView, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
 import { fetchJSON, formatDateTime } from '../lib/appHelpers'
 import { CustomerAssignmentManagerCard } from './CustomerAssignmentManagerCard'
 import { AdminHelpHint } from './AdminHelpHint'
@@ -44,7 +44,6 @@ import {
   findRealmTargetNode,
   firstRealmAssignmentAgentID,
   firstXUIAssignmentAgentID,
-  isAreaManagerAdminUser,
   isRealmAssignmentDraft,
   nodeKey,
   nodeLabel,
@@ -57,6 +56,7 @@ import {
   uniqueStrings,
 } from './CustomerManagementHelpers'
 import { CustomerManagementModals } from './CustomerManagementModals'
+import { OperatorManagementPanel, type OperatorDraft } from './OperatorManagementPanel'
 
 const { Text, Title } = Typography
 
@@ -83,16 +83,18 @@ export function CustomerManagementModal(props: {
     embedded = false,
   } = props
   const active = embedded || open
-  const canManageAreaManagers = !isAreaManagerAdminUser(adminUser)
+  const canManageAreaManagers = adminUser?.role === 'admin'
   const canViewFinance = canManageAreaManagers
   const { message } = AntdApp.useApp()
   const [activeManagementTab, setActiveManagementTab] = useState<ManagementTabKey>(canManageAreaManagers ? 'area' : 'customers')
   const [customers, setCustomers] = useState<CustomerAdminView[]>([])
   const [customerAssignmentSources, setCustomerAssignmentSources] = useState<CustomerAssignmentSourceView[]>([])
   const [areaManagers, setAreaManagers] = useState<AreaManagerAdminView[]>([])
+  const [operators, setOperators] = useState<OperatorAdminView[]>([])
   const [frontProxies, setFrontProxies] = useState<FrontProxyNode[]>([])
   const [loading, setLoading] = useState(false)
   const [areaManagersLoading, setAreaManagersLoading] = useState(false)
+  const [operatorsLoading, setOperatorsLoading] = useState(false)
   const [savingCustomer, setSavingCustomer] = useState(false)
   const [changingCustomerStatusIDs, setChangingCustomerStatusIDs] = useState<number[]>([])
   const customerStatusPendingRef = useRef(new Set<number>())
@@ -101,6 +103,8 @@ export function CustomerManagementModal(props: {
   const [savingAssignment, setSavingAssignment] = useState(false)
   const [savingAreaManager, setSavingAreaManager] = useState(false)
   const [resettingAreaManagerID, setResettingAreaManagerID] = useState<number | null>(null)
+  const [resettingOperatorID, setResettingOperatorID] = useState<number | null>(null)
+  const [savingOperator, setSavingOperator] = useState(false)
   const [savingAreaBatchAssignment, setSavingAreaBatchAssignment] = useState(false)
   const [areaBatchModalOpen, setAreaBatchModalOpen] = useState(false)
   const [areaManagerModalOpen, setAreaManagerModalOpen] = useState(false)
@@ -232,6 +236,7 @@ export function CustomerManagementModal(props: {
       void loadFrontProxies()
       if (canManageAreaManagers) {
         void loadAreaManagers()
+        void loadOperators()
       } else {
         void loadCustomerAssignmentSources()
       }
@@ -810,6 +815,21 @@ export function CustomerManagementModal(props: {
     }
   }
 
+  async function loadOperators() {
+    if (!canManageAreaManagers) {
+      return
+    }
+    setOperatorsLoading(true)
+    try {
+      const data = await fetchJSON<OperatorAdminView[]>('/api/v1/admin/operators')
+      setOperators(Array.isArray(data) ? data : [])
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '加载运营管理员失败')
+    } finally {
+      setOperatorsLoading(false)
+    }
+  }
+
   async function loadFrontProxies() {
     try {
       const data = await fetchJSON<FrontProxyNode[]>('/api/v1/admin/front-proxies')
@@ -817,6 +837,66 @@ export function CustomerManagementModal(props: {
     } catch (error) {
       setFrontProxies([])
       message.error(error instanceof Error ? error.message : '加载前置代理失败')
+    }
+  }
+
+  async function saveOperator(draft: OperatorDraft): Promise<boolean> {
+    setSavingOperator(true)
+    try {
+      const payload = {
+        username: draft.username.trim(),
+        display_name: draft.display_name.trim(),
+        password: draft.password,
+        enabled: draft.enabled,
+      }
+      if (draft.id) {
+        await fetchJSON<OperatorAdminView>(`/api/v1/admin/operators/${draft.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        message.success('运营管理员已更新')
+      } else {
+        await fetchJSON<OperatorAdminView>('/api/v1/admin/operators', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        message.success('运营管理员已创建')
+      }
+      await loadOperators()
+      return true
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '保存运营管理员失败')
+      return false
+    } finally {
+      setSavingOperator(false)
+    }
+  }
+
+  async function deleteOperator(id: number) {
+    setSavingOperator(true)
+    try {
+      await fetchJSON(`/api/v1/admin/operators/${id}`, { method: 'DELETE' })
+      message.success('运营管理员已删除')
+      await loadOperators()
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '删除运营管理员失败')
+    } finally {
+      setSavingOperator(false)
+    }
+  }
+
+  async function resetOperatorPassword(id: number) {
+    setResettingOperatorID(id)
+    try {
+      await fetchJSON<OperatorAdminView>(`/api/v1/admin/operators/${id}/reset-password`, { method: 'POST' })
+      message.success(`运营管理员密码已初始化为 ${DEFAULT_ACCOUNT_PASSWORD}`)
+      await loadOperators()
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '初始化运营管理员密码失败')
+    } finally {
+      setResettingOperatorID(null)
     }
   }
 
@@ -1898,11 +1978,27 @@ export function CustomerManagementModal(props: {
 
   const managementTabs = [
     ...(canManageAreaManagers && areaManagersPanel ? [{ key: 'area', label: '区域账号', children: areaManagersPanel }] : []),
+    ...(canManageAreaManagers ? [{
+      key: 'operators',
+      label: '运营管理员',
+      children: (
+        <OperatorManagementPanel
+          operators={operators}
+          loading={operatorsLoading}
+          saving={savingOperator}
+          resettingID={resettingOperatorID}
+          onReload={() => void loadOperators()}
+          onSave={saveOperator}
+          onDelete={(id) => void deleteOperator(id)}
+          onResetPassword={(id) => void resetOperatorPassword(id)}
+        />
+      ),
+    }] : []),
     { key: 'customers', label: '用户账号', children: customersPanel },
   ]
 
   const content = (
-    <Spin spinning={loading || areaManagersLoading}>
+    <Spin spinning={loading || areaManagersLoading || operatorsLoading}>
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Tabs
           className="customer-admin-tabs"

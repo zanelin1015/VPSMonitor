@@ -47,6 +47,30 @@ func TestRedactFrontProxyShareURLs(t *testing.T) {
 	}
 }
 
+func TestSanitizeXUIOverviewForOperatorKeepsClientManagementFields(t *testing.T) {
+	overview := &model.XUIOverview{
+		BaseURL: "https://panel.example",
+		Clients: []model.XUIClientView{{
+			InboundID: 7, InboundTag: "inbound", Email: "alice@example.com", ClientID: "stable-id",
+			ImportURL: "vless://secret", AuthUUID: "uuid", AuthPassword: "password",
+			TotalGB: 100, TrafficReset: "monthly", TrafficResetDay: 15,
+		}},
+		Outbounds:    []model.XUIOutboundView{{Tag: "proxy"}},
+		RoutingRules: []model.XUIRoutingRuleView{{OutboundTag: "rule"}},
+	}
+	sanitizeXUIOverviewForOperator(overview)
+	if overview.BaseURL != "" || len(overview.Outbounds) != 0 || len(overview.RoutingRules) != 0 {
+		t.Fatalf("operator should not receive panel or infrastructure details: %#v", overview)
+	}
+	client := overview.Clients[0]
+	if client.Email != "alice@example.com" || client.ClientID != "stable-id" || client.TrafficReset != "monthly" || client.TrafficResetDay != 15 {
+		t.Fatalf("operator lost client management fields: %#v", client)
+	}
+	if client.ImportURL != "" || client.AuthUUID != "" || client.AuthPassword != "" {
+		t.Fatalf("operator received client credentials: %#v", client)
+	}
+}
+
 func TestFilterRootOnlyXUIActionsHidesRemoteCommands(t *testing.T) {
 	actions := []model.XUIAction{
 		{ID: 1, Kind: model.XUIActionUpsertRoutingRule},

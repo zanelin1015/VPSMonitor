@@ -4,6 +4,7 @@ import "time"
 
 const (
 	AdminRoleRoot          = "admin"
+	AdminRoleOperator      = "operator"
 	AdminRoleAreaManager   = "area_manager"
 	DefaultAccountPassword = "12345678"
 
@@ -67,6 +68,22 @@ type AreaManagerAccountRequest struct {
 	OutboundCreateEnabled *bool                             `json:"outbound_create_enabled,omitempty"`
 	OutboundGrants        []AreaManagerOutboundGrantRequest `json:"outbound_grants,omitempty"`
 	FrontProxyNodeIDs     []int64                           `json:"front_proxy_node_ids,omitempty"`
+}
+
+type OperatorAccountRequest struct {
+	Username    string `json:"username"`
+	Password    string `json:"password,omitempty"`
+	DisplayName string `json:"display_name,omitempty"`
+	Enabled     *bool  `json:"enabled,omitempty"`
+}
+
+type OperatorAdminView struct {
+	ID          int64     `json:"id"`
+	Username    string    `json:"username"`
+	DisplayName string    `json:"display_name,omitempty"`
+	Enabled     bool      `json:"enabled"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type FrontProxyNodeRequest struct {

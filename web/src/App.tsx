@@ -54,7 +54,7 @@ import { useAdminRouteSync } from './hooks/useAdminRouteSync'
 import { useXUIRemoteActions } from './hooks/useXUIRemoteActions'
 import type { AdminPageKey } from './lib/adminRoute'
 import { appPathname } from './lib/appBasePath'
-import { isAreaManagerAdminUser, sanitizeAreaRealtimeMetric } from './lib/adminUsers'
+import { isAreaManagerAdminUser, isOperatorAdminUser, isRootAdminUser, sanitizeAreaRealtimeMetric } from './lib/adminUsers'
 import { createAppNavigationHandlers } from './lib/appNavigation'
 import { normalizeScheduledTaskSettings } from './lib/scheduledTasks'
 import { buildDashboardScope } from './lib/appDashboardScope'
@@ -407,7 +407,9 @@ function AppContent() {
   const customerMode = normalizedPath === '/customer'
   const publicSiteMode = normalizedPath === '/site' || normalizedPath === '/official' || new URLSearchParams(window.location.search).get('page') === 'site'
   const isAreaManagerAccount = isAreaManagerAdminUser(adminUser)
-  const canManageSystem = Boolean(adminUser && !isAreaManagerAccount)
+  const isOperatorAccount = isOperatorAdminUser(adminUser)
+  const canManageSystem = isRootAdminUser(adminUser)
+  const canViewInfrastructure = canManageSystem || isAreaManagerAccount
   useAdminRouteSync({
     enabled: Boolean(!customerMode && !publicSiteMode && !sessionLoading && adminUser),
     sessionIdentity: adminUser,
@@ -505,13 +507,23 @@ function AppContent() {
     if (!adminUser || canManageSystem) {
       return
     }
+    if (isOperatorAccount) {
+      if (activeAdminPage !== 'customers' && activeAdminPage !== 'support') {
+        setActiveAdminPage('customers')
+        setTopologyVisible(false)
+      }
+      if (['config', 'logs', 'certificates'].includes(activeTabKey)) {
+        setActiveTabKey('overview')
+      }
+      return
+    }
     if (activeAdminPage === 'settings' || activeAdminPage === 'schedules' || activeAdminPage === 'access-logs' || activeAdminPage === 'finance') {
       setActiveAdminPage('dashboard')
     }
     if (['config', 'logs', 'certificates'].includes(activeTabKey)) {
       setActiveTabKey('overview')
     }
-  }, [activeAdminPage, activeTabKey, adminUser, canManageSystem])
+  }, [activeAdminPage, activeTabKey, adminUser, canManageSystem, isOperatorAccount])
 
   useEffect(() => {
     if (adminUser && canManageSystem && activeAdminPage === 'schedules') {
@@ -1579,6 +1591,8 @@ function AppContent() {
     systemInfo,
     canManageSystem,
     isAreaManagerAccount,
+    isOperatorAccount,
+    canViewInfrastructure,
     activeAdminPage,
     topologyVisible,
     onlineAgentCount,

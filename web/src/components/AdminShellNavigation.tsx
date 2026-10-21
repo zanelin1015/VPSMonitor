@@ -25,6 +25,8 @@ export interface AdminShellNavigationProps {
   systemInfo: SystemInfo | null
   canManageSystem: boolean
   isAreaManagerAccount: boolean
+  isOperatorAccount: boolean
+  canViewInfrastructure: boolean
   activeAdminPage: AdminPageKey
   topologyVisible: boolean
   onlineAgentCount: number
@@ -60,6 +62,8 @@ export function AdminShellNavigation(props: AdminShellNavigationProps) {
     systemInfo,
     canManageSystem,
     isAreaManagerAccount,
+    isOperatorAccount,
+    canViewInfrastructure,
     activeAdminPage,
     topologyVisible,
     onlineAgentCount,
@@ -116,22 +120,22 @@ export function AdminShellNavigation(props: AdminShellNavigationProps) {
           />
         </div>
         <nav className="admin-mobile-nav" aria-label="移动端管理导航">
-          <button type="button" className={activeAdminPage === 'dashboard' && !topologyVisible ? 'active' : ''} onClick={onOpenWorkbench}>
+          {canViewInfrastructure ? <button type="button" className={activeAdminPage === 'dashboard' && !topologyVisible ? 'active' : ''} onClick={onOpenWorkbench}>
             <DashboardOutlined />
             <span>工作台</span>
-          </button>
-          <button type="button" className={activeAdminPage === 'assets' ? 'active' : ''} onClick={onOpenAssets}>
+          </button> : null}
+          {canViewInfrastructure ? <button type="button" className={activeAdminPage === 'assets' ? 'active' : ''} onClick={onOpenAssets}>
             <CloudServerOutlined />
             <span>资产</span>
-          </button>
+          </button> : null}
           {canManageSystem ? <button type="button" className={activeAdminPage === 'finance' ? 'active' : ''} onClick={onOpenFinance}>
             <DollarOutlined />
             <span>财务</span>
           </button> : null}
-          <button type="button" className={activeAdminPage === 'dashboard' && topologyVisible ? 'active' : ''} onClick={onOpenTopology}>
+          {canViewInfrastructure ? <button type="button" className={activeAdminPage === 'dashboard' && topologyVisible ? 'active' : ''} onClick={onOpenTopology}>
             <ApartmentOutlined />
             <span>拓扑</span>
-          </button>
+          </button> : null}
           <button type="button" className={activeAdminPage === 'customers' ? 'active' : ''} onClick={onOpenCustomers}>
             <TeamOutlined />
             <span>用户</span>
@@ -181,26 +185,26 @@ export function AdminShellNavigation(props: AdminShellNavigationProps) {
           </div>
         </div>
         <nav className="admin-oa-nav" aria-label="管理端导航">
-          <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'dashboard' && !topologyVisible ? ' active' : ''}`} onClick={onOpenWorkbench}>
+          {canViewInfrastructure ? <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'dashboard' && !topologyVisible ? ' active' : ''}`} onClick={onOpenWorkbench}>
             <DashboardOutlined />
             <span>工作台</span>
-            <small>{isAreaManagerAccount ? '授权总览' : '总览与财务'}</small>
-          </button>
-          <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'assets' ? ' active' : ''}`} onClick={onOpenAssets}>
+            <small>{isAreaManagerAccount ? '授权总览' : isOperatorAccount ? '客户运营' : '总览与财务'}</small>
+          </button> : null}
+          {canViewInfrastructure ? <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'assets' ? ' active' : ''}`} onClick={onOpenAssets}>
             <CloudServerOutlined />
             <span>Client 资产</span>
             <small>节点列表</small>
-          </button>
+          </button> : null}
           {canManageSystem ? <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'finance' ? ' active' : ''}`} onClick={onOpenFinance}>
             <DollarOutlined />
             <span>财务总览</span>
             <small>收入与成本</small>
           </button> : null}
-          <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'dashboard' && topologyVisible ? ' active' : ''}`} onClick={onOpenTopology}>
+          {canViewInfrastructure ? <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'dashboard' && topologyVisible ? ' active' : ''}`} onClick={onOpenTopology}>
             <ApartmentOutlined />
             <span>拓扑图</span>
             <small>链路联动</small>
-          </button>
+          </button> : null}
           <button type="button" className={`admin-oa-nav-item${activeAdminPage === 'customers' ? ' active' : ''}`} onClick={onOpenCustomers}>
             <TeamOutlined />
             <span>用户管理</span>
