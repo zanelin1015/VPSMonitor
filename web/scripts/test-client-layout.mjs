@@ -56,6 +56,8 @@ assert.doesNotMatch(clientColumnSource, /key: 'customer'/, 'client authorization
 assert.match(css, /\.xui-client-table \.ant-table-cell-fix-right\s*\{[^}]*z-index: 5;/, 'right action columns paint above scrolling cells')
 assert.match(baseCSS, /\.admin-content-page\s*\{[\s\S]*?overflow-x: clip;[\s\S]*?overflow-y: auto;/, 'admin pages keep horizontal scrolling inside each table')
 assert.match(baseCSS, /\.admin-content-page \.ant-table-content,[\s\S]*?overflow-x: auto;[\s\S]*?overflow-y: hidden;/, 'all admin tables own their horizontal scroll viewport')
+assert.match(baseCSS, /\.customer-management-content-page\s*\{[^}]*overflow: hidden;/, 'customer management keeps the page viewport fixed')
+assert.match(baseCSS, /\.customer-management-content-page[\s\S]*?\.ant-table-body\s*\{[\s\S]*?overflow-y: auto !important;/, 'customer management table owns vertical scrolling')
 assert.match(baseCSS, /\.workspace-grid-agent-open \.tabs-card \.ant-tabs-content-holder\s*\{[\s\S]*?overflow-x: clip;[\s\S]*?overflow-y: auto;/, 'agent tabs do not compete with table horizontal scrolling')
 assert.match(dashboardCSS, /\.admin-workbench-page\s*\{[\s\S]*?overflow-x: clip;[\s\S]*?overflow-y: auto;/, 'responsive dashboard keeps horizontal scrolling inside tables')
 assert.match(workspaceCSS, /\.ant-table-wrapper\s*\{\s*overflow-x: clip;/, 'small-screen table wrappers do not become a second scrollport')

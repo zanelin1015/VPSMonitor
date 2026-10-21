@@ -602,6 +602,114 @@ body {
   padding: 0 0 16px;
 }
 
+@media (min-width: 981px) {
+  .customer-management-content-page {
+    display: flex;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .customer-management-content-page > #customer-management-panel,
+  .customer-management-content-page #customer-management-panel > .ant-spin-nested-loading,
+  .customer-management-content-page #customer-management-panel > .ant-spin-nested-loading > .ant-spin-container {
+    display: flex;
+    min-height: 0;
+    height: 100%;
+    flex-direction: column;
+  }
+
+  .customer-management-content-page #customer-management-panel > .ant-spin-nested-loading,
+  .customer-management-content-page #customer-management-panel > .ant-spin-nested-loading > .ant-spin-container {
+    flex: 1 1 auto;
+  }
+
+  .customer-management-content-page #customer-management-panel > .ant-spin-nested-loading {
+    padding-bottom: 0;
+  }
+
+  .customer-management-content-page #customer-management-panel > .ant-spin-nested-loading > .ant-spin-container > .ant-space {
+    display: flex;
+    min-height: 0;
+    height: 100%;
+    flex: 1 1 auto;
+    flex-direction: column;
+  }
+
+  .customer-management-content-page .customer-admin-tabs {
+    display: flex;
+    min-height: 0;
+    height: 100%;
+    flex: 1 1 auto;
+    flex-direction: column;
+  }
+
+  .customer-management-content-page .customer-admin-tabs > .ant-tabs-nav {
+    flex: 0 0 auto;
+  }
+
+  .customer-management-content-page .customer-admin-tabs > .ant-tabs-content-holder,
+  .customer-management-content-page .customer-admin-tabs > .ant-tabs-content-holder > .ant-tabs-content,
+  .customer-management-content-page .customer-admin-tabs .ant-tabs-tabpane-active {
+    display: flex;
+    min-height: 0;
+    height: 100%;
+    flex: 1 1 auto;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .customer-management-content-page .customer-admin-card {
+    display: flex;
+    min-height: 0;
+    height: 100%;
+    flex: 1 1 auto;
+    flex-direction: column;
+  }
+
+  .customer-management-content-page .customer-admin-card > .ant-card-body {
+    display: flex;
+    min-height: 0;
+    height: 100%;
+    flex: 1 1 auto;
+    flex-direction: column;
+  }
+
+  .customer-management-content-page .customer-admin-card-head,
+  .customer-management-content-page .customer-admin-card > .ant-card-body > .ant-space {
+    flex: 0 0 auto;
+  }
+
+  .customer-management-content-page .customer-admin-card > .ant-card-body > .ant-table-wrapper {
+    display: flex;
+    min-height: 0;
+    height: 100%;
+    flex: 1 1 auto;
+    flex-direction: column;
+  }
+
+  .customer-management-content-page .customer-admin-card > .ant-card-body > .ant-table-wrapper > .ant-spin-nested-loading,
+  .customer-management-content-page .customer-admin-card > .ant-card-body > .ant-table-wrapper > .ant-spin-nested-loading > .ant-spin-container,
+  .customer-management-content-page .customer-admin-card > .ant-card-body > .ant-table-wrapper .ant-table,
+  .customer-management-content-page .customer-admin-card > .ant-card-body > .ant-table-wrapper .ant-table-container {
+    display: flex;
+    min-height: 0;
+    height: 100%;
+    flex: 1 1 auto;
+    flex-direction: column;
+  }
+
+  .customer-management-content-page .customer-admin-card > .ant-card-body > .ant-table-wrapper .ant-table-body {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-y: auto !important;
+    overscroll-behavior-y: contain;
+  }
+
+  .customer-management-content-page .customer-admin-card > .ant-card-body > .ant-table-wrapper .ant-pagination {
+    flex: 0 0 auto;
+  }
+}
+
 .admin-settings-section-heading {
   display: flex;
   align-items: flex-start;

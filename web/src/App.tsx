@@ -1735,7 +1735,7 @@ function AppContent() {
         </Suspense> : null}
 
         {activeAdminPage === 'customers' ? (
-          <main className="admin-content-page">
+          <main className="admin-content-page customer-management-content-page">
             <Suspense fallback={<Spin size="large" />}>
               <CustomerManagementModal
                 embedded
