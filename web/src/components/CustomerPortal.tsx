@@ -1259,6 +1259,12 @@ type CustomerLinkMetaItem = {
 
 function customerLinkMetaItems(link: CustomerLinkView): CustomerLinkMetaItem[] {
   const items: CustomerLinkMetaItem[] = []
+  if (link.traffic_reset_supported) {
+    items.push({
+      key: 'traffic-reset',
+      text: `流量重置：${customerTrafficResetLabel(link.traffic_reset, link.traffic_reset_day)}`,
+    })
+  }
   if (Number(link.revenue_amount || 0) > 0) {
     items.push({
       key: 'revenue',
@@ -1276,6 +1282,26 @@ function customerLinkMetaItems(link: CustomerLinkView): CustomerLinkMetaItem[] {
     })
   }
   return items
+}
+
+function customerTrafficResetLabel(period?: string, day?: number): string {
+  switch ((period || '').toLowerCase()) {
+    case 'hourly':
+      return '每小时'
+    case 'daily':
+      return '每日'
+    case 'weekly':
+      return '每周日'
+    case 'monthly': {
+      const value = Number(day)
+      const normalizedDay = Number.isInteger(value) && value >= 1 && value <= 31 ? value : 1
+      return `每月 ${normalizedDay} 号`
+    }
+    case 'never':
+      return '从不'
+    default:
+      return '未上报'
+  }
 }
 
 function customerLinkExpiryProgress(link: CustomerLinkView): CustomerLinkMetaItem['expiry'] {

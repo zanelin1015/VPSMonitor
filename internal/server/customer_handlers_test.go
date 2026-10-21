@@ -196,6 +196,7 @@ func TestBuildCustomerLinkViewIncludesBillingAndExpiry(t *testing.T) {
 			Client: model.XUIClientView{
 				InboundID: 1001, InboundTag: "vless-in", Email: "alice@example.com", ExpiryTime: 1760000000000,
 				TotalGB: 100 * 1024 * 1024 * 1024, Up: 4 * 1024 * 1024 * 1024, Down: 6 * 1024 * 1024 * 1024,
+				TrafficReset: "monthly", TrafficResetDay: 15, TrafficResetSupported: true,
 			},
 		},
 	}
@@ -239,6 +240,9 @@ func TestBuildCustomerLinkViewIncludesBillingAndExpiry(t *testing.T) {
 	}
 	if link.TrafficMultiplier != 2 || link.TrafficUsedBytes != 20*1024*1024*1024 || link.TrafficLimitBytes != 200*1024*1024*1024 {
 		t.Fatalf("expected customer traffic to use configured multiplier, got %#v", link)
+	}
+	if link.TrafficReset != "monthly" || link.TrafficResetDay != 15 || !link.TrafficResetSupported {
+		t.Fatalf("expected customer link to include client traffic reset settings, got %#v", link)
 	}
 }
 

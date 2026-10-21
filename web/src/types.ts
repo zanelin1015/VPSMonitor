@@ -558,6 +558,9 @@ export interface CustomerLinkView {
   traffic_download_bytes?: number
   traffic_used_bytes?: number
   traffic_limit_bytes?: number
+  traffic_reset?: 'never' | 'hourly' | 'daily' | 'weekly' | 'monthly' | string
+  traffic_reset_day?: number
+  traffic_reset_supported?: boolean
   node_expire_time?: number
   xray_expire_time?: number
   start_time?: number

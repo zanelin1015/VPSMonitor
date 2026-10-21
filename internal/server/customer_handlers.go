@@ -730,6 +730,9 @@ func buildCustomerLinkView(
 		link.ImportURL = clientRef.Client.ImportURL
 		link.XrayVersion = clientRef.XrayVersion
 		link.ClientRemark = firstNonEmptyString(clientRef.Client.Comment, clientRef.Client.SubID)
+		link.TrafficReset = clientRef.Client.TrafficReset
+		link.TrafficResetDay = clientRef.Client.TrafficResetDay
+		link.TrafficResetSupported = clientRef.Client.TrafficResetSupported
 		if clientRef.Client.ExpiryTime > 0 {
 			// Keep the Xray expiry separate from the billing expiry. Xray is the
 			// source of truth for whether the client is still valid; the billing

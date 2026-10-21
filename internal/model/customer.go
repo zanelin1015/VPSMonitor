@@ -128,6 +128,9 @@ type CustomerLinkView struct {
 	TrafficDownloadBytes  int64                    `json:"traffic_download_bytes,omitempty"`
 	TrafficUsedBytes      int64                    `json:"traffic_used_bytes,omitempty"`
 	TrafficLimitBytes     int64                    `json:"traffic_limit_bytes,omitempty"`
+	TrafficReset          string                   `json:"traffic_reset,omitempty"`
+	TrafficResetDay       int                      `json:"traffic_reset_day,omitempty"`
+	TrafficResetSupported bool                     `json:"traffic_reset_supported,omitempty"`
 	NodeExpireTime        int64                    `json:"node_expire_time,omitempty"`
 	XrayExpireTime        int64                    `json:"xray_expire_time,omitempty"`
 	StartTime             int64                    `json:"start_time,omitempty"`
