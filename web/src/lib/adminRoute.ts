@@ -1,7 +1,16 @@
 import { normalizeAgentHealthFilter, type AgentHealthFilter } from './agentHealth'
 import { adminEntryPath, appPathname } from './appBasePath'
 
-export type AdminPageKey = 'dashboard' | 'assets' | 'finance' | 'customers' | 'front-proxies' | 'support' | 'access-logs' | 'settings' | 'schedules'
+export type AdminPageKey =
+  | 'dashboard'
+  | 'assets'
+  | 'finance'
+  | 'customers'
+  | 'front-proxies'
+  | 'support'
+  | 'access-logs'
+  | 'settings'
+  | 'schedules'
 
 export interface AdminRouteState {
   page: AdminPageKey
@@ -16,17 +25,28 @@ export interface AdminRouteState {
   topologySearch: string
 }
 
-export function parseAdminRouteState(canManageSystem: boolean, canViewFrontProxies = canManageSystem): AdminRouteState {
+export function parseAdminRouteState(
+  canManageSystem: boolean,
+  canViewFrontProxies = canManageSystem,
+  canViewInfrastructure = true,
+): AdminRouteState {
   const params = new URLSearchParams(window.location.search)
   const path = appPathname()
   const rawPage = (params.get('page') || pageFromAdminPath(path)).toLowerCase()
-  const topology = rawPage === 'topology' || params.get('topology') === '1'
+  let topology = rawPage === 'topology' || params.get('topology') === '1'
   let page: AdminPageKey = topology ? 'dashboard' : normalizeAdminPage(rawPage)
-  if ((page === 'settings' || page === 'schedules' || page === 'access-logs' || page === 'finance') && !canManageSystem) {
+  if (
+    (page === 'settings' || page === 'schedules' || page === 'access-logs' || page === 'finance') &&
+    !canManageSystem
+  ) {
     page = 'dashboard'
   }
   if (page === 'front-proxies' && !canViewFrontProxies) {
     page = 'dashboard'
+  }
+  if (!canViewInfrastructure && (page === 'dashboard' || page === 'assets' || topology)) {
+    page = 'customers'
+    topology = false
   }
 
   const ruleParam = Number(params.get('rule') || '')

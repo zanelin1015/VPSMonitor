@@ -67,7 +67,7 @@ export function AppThemeProvider(props: { children: ReactNode }) {
           token: {
             colorPrimary: '#2563eb',
             colorInfo: '#2563eb',
-            colorSuccess: '#2563eb',
+            colorSuccess: '#178753',
             colorWarning: '#f59e0b',
             colorError: '#ef4444',
             colorBgLayout: isDark ? '#07111f' : '#fafafa',

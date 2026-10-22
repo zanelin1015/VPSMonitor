@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { GlobalOutlined } from '@ant-design/icons'
-import '../styles/country-flag.css'
 
 // Bundle the images with the app: flag emoji depend on the OS font and locale.
 const flagImages = import.meta.glob<string>('../assets/flags/*.svg', {

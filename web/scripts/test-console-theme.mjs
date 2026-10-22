@@ -1,12 +1,9 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import ts from 'typescript'
+import { build } from 'esbuild'
 
-const source = await readFile(new URL('../src/lib/adminConsoleTheme.ts', import.meta.url), 'utf8')
-const compiled = ts.transpileModule(source, {
-  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
-}).outputText
-const { adminConsoleTheme, consolePalette, isInternalConsoleRoute, isConsoleThemeRoute } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`)
+const bundled = await build({ entryPoints: [new URL('../src/lib/adminConsoleTheme.ts', import.meta.url).pathname], bundle: true, write: false, format: 'esm', platform: 'node', packages: 'external' })
+const { adminConsoleTheme, consolePalette, consoleCSSVariables, isInternalConsoleRoute, isConsoleThemeRoute } = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString('base64')}`)
 
 for (const route of ['/', '/admin/assets', '/monitor']) assert.equal(isInternalConsoleRoute(route), true)
 for (const route of ['/customer', '/site', '/official']) assert.equal(isInternalConsoleRoute(route), false)
@@ -32,8 +29,8 @@ for (const dark of [false, true]) {
   assert.equal(theme.token.colorBgLayout, palette.background)
   assert.equal(theme.token.colorPrimary, palette.accent)
   assert.notEqual(theme.token.colorSuccess, theme.token.colorPrimary)
-  assert.equal(theme.token.borderRadiusLG, 20)
-  assert.equal(theme.token.controlHeightSM, 26)
+  assert.equal(theme.token.borderRadiusLG, 12)
+  assert.equal(theme.token.controlHeightSM, 28)
   assert.equal(theme.token.motion, true)
   assert.equal(adminConsoleTheme(dark, true).token.motion, false)
   for (const color of [palette.text, palette.secondary, palette.muted]) {
@@ -41,22 +38,24 @@ for (const dark of [false, true]) {
   }
   assert.ok(contrast(theme.components.Button.primaryColor, palette.accent) >= 4.5, 'primary button text contrast')
   assert.ok(contrast(theme.components.Button.dangerColor, palette.error) >= 4.5, 'danger button text contrast')
-  assert.ok(contrast(palette.accent, dark ? '#2b2b44' : '#e9e9ff') >= 4.5, 'selected navigation text contrast')
+  assert.ok(contrast(palette.accent, consoleCSSVariables(dark)['--blue-soft']) >= 4.5, 'selected navigation text contrast')
 }
 
 const css = await readFile(new URL('../src/styles/console.css', import.meta.url), 'utf8')
 assert.equal(consolePalette.light.background, '#f7f8fa', 'light page backdrop stays near-white')
 assert.equal(consolePalette.light.surface, '#f8fafc', 'secondary surfaces retain a light cool tint')
 assert.equal(consolePalette.light.sunken, '#f1f5f9', 'filled controls avoid dark gray slabs')
-const lightCSS = css.slice(0, css.indexOf(':root.dark:'))
-assert.match(lightCSS, /--bg: #f7f8fa;/)
-assert.match(lightCSS, /--surface: #ffffff;/)
-assert.match(lightCSS, /--surface-soft: #f8fafc;/)
-assert.doesNotMatch(lightCSS, /#efefee|#f7f7f6|#e7e7e6/)
-assert.match(css, /:root:not\(\.dark\):where\(\[data-console-theme='soft'\]\) \.admin-console-theme \.admin-oa-sider-foot \{[^}]*background: var\(--card\)/, 'light sidebar footer stays white without changing dark mode')
-const darkCSS = css.slice(css.indexOf(':root.dark:'), css.indexOf('.admin-console-theme {'))
-assert.match(darkCSS, /--console-input: #121216;/)
-assert.match(darkCSS, /--page-overlay-strong: linear-gradient\(var\(--bg\), var\(--bg\)\);/, 'near-white light gradient cannot leak into dark mode')
+for (const dark of [false, true]) {
+  const palette = dark ? consolePalette.dark : consolePalette.light
+  const variables = consoleCSSVariables(dark)
+  assert.equal(variables['--bg'], palette.background)
+  assert.equal(variables['--blue'], palette.accent)
+  assert.equal(variables['--green'], palette.success)
+  assert.notEqual(variables['--blue'], variables['--green'], 'status and interaction colors remain distinct')
+  assert.equal(variables['--console-input'], palette.sunken)
+  assert.equal(variables['--page-overlay-strong'], `linear-gradient(${palette.background}, ${palette.background})`)
+}
+assert.doesNotMatch(css, /--bg:|--blue:|--green:/, 'the console stylesheet cannot override shared theme values')
 const provider = await readFile(new URL('../src/components/AdminConsoleTheme.tsx', import.meta.url), 'utf8')
 const login = await readFile(new URL('../src/components/LoginScreen.tsx', import.meta.url), 'utf8')
 const customer = await readFile(new URL('../src/components/CustomerPortal.tsx', import.meta.url), 'utf8')
@@ -68,7 +67,8 @@ assert.match(detail, /record\.enabled \? 'blue' : 'default'/, 'account enablemen
 assert.doesNotMatch(detail, /record\.enabled \? 'success'/, 'account enablement is not a financial success color')
 const navigation = await readFile(new URL('../src/components/AdminShellNavigation.tsx', import.meta.url), 'utf8')
 assert.doesNotMatch(navigation, /<span>ZaneLin \//, 'topbar has no redundant console breadcrumb')
-assert.match(navigation, /<strong>\{pageTitles\[props\.activeAdminPage\]\}<\/strong>/, 'page title is retained')
+const layout = await readFile(new URL('../src/app/AdminLayout.tsx', import.meta.url), 'utf8')
+assert.match(layout, /title=\{current.title\}/, 'the shared page container retains the page title')
 assert.match(login, /consoleAppearance = false/)
 assert.match(login, /consoleAppearance \? <aside/)
 assert.match(customer, /consoleAppearance/, 'customer login opts into shared presentation')

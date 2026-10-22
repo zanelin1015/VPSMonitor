@@ -15,12 +15,11 @@ const vite = await createServer({
 })
 
 try {
-  await vite.listen()
-  const transformed = await vite.transformRequest('/src/App.tsx')
+  const transformed = await vite.transformRequest('/src/app/AdminApp.tsx')
   const ast = ts.createSourceFile('App.js', transformed.code, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
   let resetsAppContent = false
   function visit(node) {
-    if (ts.isCallExpression(node) && node.arguments[0]?.getText(ast) === 'AppContent' && ts.isStringLiteral(node.arguments[1])) {
+    if (ts.isCallExpression(node) && node.arguments[0]?.getText(ast) === 'AdminApp' && ts.isStringLiteral(node.arguments[1])) {
       resetsAppContent = node.arguments[2]?.kind === ts.SyntaxKind.TrueKeyword
     }
     ts.forEachChild(node, visit)

@@ -320,7 +320,17 @@ function parseShareUserInfo(parsed: URL): { username: string; password: string; 
   const username = usableEndpointValue(decodeURIComponent(parsed.username || ''))
   const password = usableEndpointValue(decodeURIComponent(parsed.password || ''))
   if (parsed.protocol === 'ss:') {
-    const decoded = username.includes(':') ? username : tryDecodeBase64(username)
+    // SIP002 links normally carry a single base64-encoded
+    // `method:password` value, but Shadowsocks 2022 also uses the explicit
+    // `method:server-password:user-password@host` form. URL splits the latter
+    // at the first colon, so the method is in `username` and both keys are in
+    // `password`.
+    let decoded = username
+    if (password) {
+      decoded = `${username}:${password}`
+    } else if (!username.includes(':')) {
+      decoded = tryDecodeBase64(username)
+    }
     const separator = decoded.indexOf(':')
     if (separator > 0) {
       return {

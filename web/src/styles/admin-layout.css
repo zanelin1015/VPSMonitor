@@ -1,0 +1,256 @@
+.admin-pro-layout {
+  height: 100dvh;
+  overflow-y: auto;
+  background: var(--bg);
+}
+.admin-pro-layout .ant-pro-layout {
+  min-height: 100dvh;
+}
+.admin-pro-layout .ant-pro-layout-bg-list {
+  display: none;
+}
+.admin-pro-layout .ant-pro-layout .ant-layout {
+  background: var(--bg);
+}
+.admin-pro-layout .ant-pro-sider {
+  border-right: 1px solid var(--border);
+  box-shadow: none;
+}
+.admin-pro-logo {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 19px;
+  font-weight: 700;
+}
+.admin-pro-footer {
+  display: grid;
+  gap: 8px;
+  padding: 16px 8px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.admin-pro-page .ant-pro-page-container-children-container {
+  margin: 0;
+  padding: 16px 24px 24px;
+}
+.admin-pro-page .ant-page-header {
+  padding: 18px 24px 0;
+}
+.admin-pro-page-body {
+  min-width: 0;
+}
+.admin-pro-page-body .admin-content-page {
+  height: auto;
+  overflow: visible;
+}
+.admin-pro-page-body .admin-workbench {
+  height: auto;
+  overflow: visible;
+}
+.admin-pro-page-body .admin-workbench-grid {
+  grid-template-rows: repeat(2, minmax(210px, auto));
+  overflow: visible;
+}
+.admin-pro-page-body .admin-workbench-strip {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+.admin-pro-page-body .admin-workbench-heading small,
+.admin-pro-page-body .admin-workbench-metric :is(span, small) {
+  font-size: 12px;
+}
+.admin-pro-page-body .admin-workbench-metric strong {
+  font-size: 23px;
+  font-weight: 600;
+}
+.admin-pro-page-body .workspace-grid {
+  height: calc(100dvh - 190px);
+  min-height: 540px;
+}
+.admin-assets-page {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.admin-assets-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.admin-assets-summary .ant-statistic-content {
+  font-variant-numeric: tabular-nums;
+}
+.admin-assets-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+.admin-assets-filters .ant-input-affix-wrapper {
+  flex: 1 1 240px;
+  max-width: 440px;
+}
+.admin-assets-name {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+}
+.admin-assets-name-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+.admin-assets-name small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.admin-assets-name button {
+  min-width: 0;
+  max-width: 240px;
+  padding: 0;
+  height: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+.admin-assets-metric {
+  display: grid;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.admin-assets-metric .ant-progress {
+  margin: 0;
+  line-height: 1;
+}
+.admin-assets-speed {
+  display: grid;
+  gap: 4px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.admin-assets-mobile {
+  display: none;
+}
+.admin-agent-drawer .ant-drawer-body {
+  padding: 16px 20px;
+  background: var(--bg);
+}
+.admin-agent-drawer .tabs-card > .ant-card-body {
+  padding: 16px;
+}
+.admin-agent-drawer .tabs-card {
+  height: auto;
+}
+.admin-agent-drawer .selected-agent-toolbar {
+  align-items: flex-start;
+}
+.admin-agent-drawer .selected-agent-toolbar > .ant-space {
+  gap: 8px !important;
+}
+.admin-agent-drawer .tabs-card .ant-tabs-content-holder {
+  overflow: visible;
+}
+.admin-pro-layout :focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+@media (max-width: 1024px) {
+  .admin-pro-page .ant-pro-page-container-children-container {
+    padding: 16px;
+  }
+  .admin-pro-page .ant-page-header {
+    padding-inline: 16px;
+  }
+  .admin-pro-page-body .admin-workbench-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: none;
+  }
+}
+@media (max-width: 767px) {
+  .admin-pro-page .ant-pro-page-container-children-container {
+    padding: 12px;
+  }
+  .admin-pro-page .ant-page-header {
+    padding-inline: 12px;
+  }
+  .admin-pro-page .ant-page-header-heading {
+    gap: 8px;
+  }
+  .admin-assets-summary {
+    gap: 8px;
+  }
+  .admin-assets-summary .ant-card-body {
+    padding: 12px;
+  }
+  .admin-assets-summary .ant-statistic-title {
+    font-size: 12px;
+  }
+  .admin-assets-summary .ant-statistic-content {
+    font-size: 22px;
+  }
+  .admin-assets-desktop {
+    display: none;
+  }
+  .admin-assets-mobile {
+    display: grid;
+    gap: 12px;
+  }
+  .admin-assets-mobile .ant-card-body {
+    padding: 16px;
+  }
+  .admin-assets-mobile-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: start;
+  }
+  .admin-assets-mobile-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-block: 16px;
+  }
+  .admin-assets-filters > .ant-select,
+  .admin-assets-filters .ant-input-affix-wrapper {
+    width: 100%;
+    max-width: none;
+  }
+  .admin-assets-mobile .ant-btn {
+    min-height: 44px;
+  }
+  .admin-assets-filters :is(input, .ant-select-selector) {
+    min-height: 40px;
+  }
+  .admin-agent-drawer .ant-drawer-body {
+    padding: 10px;
+  }
+  .admin-agent-drawer .tabs-card > .ant-card-body {
+    padding: 12px;
+  }
+  .admin-agent-drawer .ant-tabs-nav {
+    max-width: calc(100vw - 44px);
+  }
+  .admin-agent-drawer .selected-agent-toolbar {
+    display: grid;
+    gap: 12px;
+  }
+  .admin-pro-page-body .admin-workbench-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .admin-pro-page-body .workbench-speed-card {
+    grid-column: auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .admin-pro-layout *,
+  .admin-agent-drawer * {
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+}
