@@ -29,6 +29,7 @@ export interface AdminShellNavigationProps {
   onLogout: () => void
   onOpenWorkbench: () => void
   onOpenAssets: () => void
+  onOpenRecommendations: () => void
   onOpenFinance: () => void
   onOpenTopology: () => void
   onOpenAccessLogs: () => void

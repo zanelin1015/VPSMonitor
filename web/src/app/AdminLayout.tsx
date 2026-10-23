@@ -3,6 +3,7 @@ import {
   ApiOutlined,
   BellOutlined,
   CloudServerOutlined,
+  CompassOutlined,
   DashboardOutlined,
   DeploymentUnitOutlined,
   DollarOutlined,
@@ -20,6 +21,7 @@ import { adminMenuHref, adminMenuRoutes, currentAdminMenu, visibleAdminMenu } fr
 const icons = {
   dashboard: <DashboardOutlined />,
   assets: <CloudServerOutlined />,
+  recommendations: <CompassOutlined />,
   topology: <ApartmentOutlined />,
   customers: <TeamOutlined />,
   finance: <DollarOutlined />,

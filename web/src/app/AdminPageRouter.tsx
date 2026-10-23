@@ -13,6 +13,9 @@ const Customers = lazy(() =>
 const FrontProxies = lazy(() =>
   import('../components/FrontProxyManagementPage').then((module) => ({ default: module.FrontProxyManagementPage })),
 )
+const Recommendations = lazy(() =>
+  import('../pages/admin/RecommendationsPage').then((module) => ({ default: module.RecommendationsPage })),
+)
 const Support = lazy(() =>
   import('../components/AdminSupportPage').then((module) => ({ default: module.AdminSupportPage })),
 )
@@ -38,6 +41,9 @@ export function AdminPageRouter(props: AdminPageRouterProps) {
       break
     case 'front-proxies':
       content = <FrontProxies canManageNodes={props.canManageSystem} />
+      break
+    case 'recommendations':
+      content = <Recommendations />
       break
     case 'support':
       content = <Support onUnreadCountChange={props.onSupportUnread} />

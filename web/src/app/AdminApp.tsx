@@ -312,6 +312,10 @@ export function AdminApp() {
     setSelectedNodeAnchor('')
   }
   const openCustomersPage = () => setActiveAdminPage('customers')
+  const openRecommendationsPage = () => {
+    setActiveAdminPage('recommendations')
+    setTopologyVisible(false)
+  }
   const openFrontProxiesPage = () => {
     setActiveAdminPage('front-proxies')
     setTopologyVisible(false)
@@ -340,6 +344,7 @@ export function AdminApp() {
     onOpenClientInstall: () => void openClientInstallModal(),
     onOpenTelegram: () => setTelegramBotModalOpen(true),
     onOpenCustomers: openCustomersPage,
+    onOpenRecommendations: openRecommendationsPage,
     onOpenFrontProxies: openFrontProxiesPage,
     onOpenSupport: openSupportPage,
     onOpenFrontendSettings: () => void openFrontendSettingsModal(true),

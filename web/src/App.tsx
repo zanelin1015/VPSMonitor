@@ -10,6 +10,9 @@ const CustomerPortal = lazy(() =>
   import('./components/CustomerPortal').then((module) => ({ default: module.CustomerPortal })),
 )
 const PublicSite = lazy(() => import('./components/PublicSite').then((module) => ({ default: module.PublicSite })))
+const RecommendationsPage = lazy(() =>
+  import('./pages/admin/RecommendationsPage').then((module) => ({ default: module.RecommendationsPage })),
+)
 
 export default function App() {
   const pathname = appPathname()
@@ -17,6 +20,7 @@ export default function App() {
     pathname === '/site' ||
     pathname === '/official' ||
     new URLSearchParams(window.location.search).get('page') === 'site'
+  const recommendationMode = pathname === '/recommendations'
   const content = (
     <Suspense
       fallback={
@@ -25,7 +29,7 @@ export default function App() {
         </div>
       }
     >
-      {publicMode ? <PublicSite /> : pathname === '/customer' ? <CustomerPortal /> : <AdminApp />}
+      {recommendationMode ? <RecommendationsPage publicPage /> : publicMode ? <PublicSite /> : pathname === '/customer' ? <CustomerPortal /> : <AdminApp />}
     </Suspense>
   )
   return isConsoleThemeRoute(pathname, window.location.search) ? (

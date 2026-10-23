@@ -6,6 +6,7 @@ export type AdminMenuKey = AdminPageKey | 'topology'
 export type AdminMenuAction =
   | 'onOpenWorkbench'
   | 'onOpenAssets'
+  | 'onOpenRecommendations'
   | 'onOpenFinance'
   | 'onOpenTopology'
   | 'onOpenCustomers'
@@ -29,6 +30,13 @@ export const adminMenu = [
     description: '集中查看服务器状态、资源与节点配置',
     group: '监控',
     action: 'onOpenAssets',
+  },
+  {
+    key: 'recommendations',
+    title: '推荐中心',
+    description: '按场景筛选 VPS、线路与中转方案',
+    group: '业务',
+    action: 'onOpenRecommendations',
   },
   {
     key: 'topology',
@@ -102,7 +110,7 @@ export function visibleAdminMenu(canManageSystem: boolean, isAreaManagerAccount:
 function visibleAdminMenuForRole(canManageSystem: boolean, isAreaManagerAccount: boolean, isOperatorAccount: boolean) {
   return adminMenu.filter(
     (item) =>
-      (!isOperatorAccount || item.key === 'customers' || item.key === 'support') &&
+      (!isOperatorAccount || item.key === 'customers' || item.key === 'recommendations' || item.key === 'support') &&
       (!('adminOnly' in item) || canManageSystem) &&
       (!('frontProxyOnly' in item) || canManageSystem || isAreaManagerAccount),
   )

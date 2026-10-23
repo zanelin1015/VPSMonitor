@@ -7,6 +7,7 @@ export function isInternalConsoleRoute(pathname: string, search = ''): boolean {
 
 export function isConsoleThemeRoute(pathname: string, search = ''): boolean {
   // The public marketing site keeps its independent visual identity.
-  return new URLSearchParams(search).get('page') !== 'site'
+  return pathname !== '/recommendations'
+    && new URLSearchParams(search).get('page') !== 'site'
     && (pathname === '/customer' || isInternalConsoleRoute(pathname, search))
 }

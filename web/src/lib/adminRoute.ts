@@ -4,6 +4,7 @@ import { adminEntryPath, appPathname } from './appBasePath'
 export type AdminPageKey =
   | 'dashboard'
   | 'assets'
+  | 'recommendations'
   | 'finance'
   | 'customers'
   | 'front-proxies'
@@ -114,6 +115,7 @@ export function buildAdminRouteURL(route: AdminRouteState): string {
 function normalizeAdminPage(value: string): AdminPageKey {
   switch (value) {
     case 'assets':
+    case 'recommendations':
     case 'finance':
     case 'customers':
     case 'front-proxies':
@@ -131,6 +133,8 @@ function pageFromAdminPath(path: string): string {
   switch (path) {
     case '/admin/assets':
       return 'assets'
+    case '/admin/recommendations':
+      return 'recommendations'
     case '/admin/finance':
       return 'finance'
     case '/admin/customers':
