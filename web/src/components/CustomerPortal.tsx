@@ -1218,8 +1218,9 @@ function CustomerLinkTraffic({ link }: { link: CustomerLinkView }) {
   const upload = Math.max(0, Math.round(Number(link.traffic_upload_bytes || 0) * multiplier))
   const download = Math.max(0, Math.round(Number(link.traffic_download_bytes || 0) * multiplier))
   const unlimited = trafficLimit <= 0
-  const percent = unlimited ? 0 : Math.min(100, (trafficUsed / trafficLimit) * 100)
-  const strokeColor = percent >= 90 ? '#ef4444' : percent >= 75 ? '#f59e0b' : '#2563eb'
+  const rawPercent = unlimited ? 0 : (trafficUsed / trafficLimit) * 100
+  const percent = Math.min(100, rawPercent)
+  const strokeColor = rawPercent > 100 ? '#ef4444' : rawPercent >= 75 ? '#f59e0b' : '#2563eb'
 
   return (
     <div className="customer-link-traffic" aria-label="链路流量用量">

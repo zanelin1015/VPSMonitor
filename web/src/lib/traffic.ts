@@ -92,7 +92,7 @@ function buildTrafficMeter(used: number, total: number): TrafficMeterStatus {
   const percent = total ? (used / total) * 100 : 0
   return {
     label: `${formatBytes(used)} / ${formatBytes(total)} (${Math.min(999, percent).toFixed(1)}%)`,
-    level: percent >= 90 ? 'bad' : percent >= 75 ? 'warn' : 'ok',
+    level: percent > 100 ? 'bad' : percent >= 75 ? 'warn' : 'ok',
     used,
     total,
     percent: clampMetricPercent(percent),
