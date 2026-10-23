@@ -242,3 +242,119 @@ func realtimeMetricByAgent(t *testing.T, metrics []model.AgentRealtimeMetrics, a
 	t.Fatalf("metric for agent %s not found in %#v", agentID, metrics)
 	return model.AgentRealtimeMetrics{}
 }
+
+func TestAreaManagerSpeedSurvivesOlderOverviewSamples(t *testing.T) {
+	app := &App{}
+	user := model.AdminUser{ID: 2, Role: model.AdminRoleAreaManager}
+	now := time.Now().UTC()
+	sample := func(at time.Time, up, down int64) *model.XUIOverview {
+		return &model.XUIOverview{AgentID: "hk", ReportedAt: at, Summary: model.VPSSummary{NetIOUp: 999999, NetIODown: 999999}, Clients: []model.XUIClientView{{InboundID: 7, Email: "allowed", Up: up, Down: down}}}
+	}
+	app.areaManagerScopedTrafficSummary(user, sample(now.Add(-4*time.Second), 100, 200))
+	current := app.areaManagerScopedTrafficSummary(user, sample(now.Add(-2*time.Second), 140, 260))
+	if current.NetIOUp != 20 || current.NetIODown != 30 {
+		t.Fatalf("expected authorized client rate: %#v", current)
+	}
+	older := app.areaManagerScopedTrafficSummary(user, sample(now.Add(-time.Minute), 1, 2))
+	if older.NetIOUp != 20 || older.NetIODown != 30 || older.NetTrafficSent != 140 {
+		t.Fatalf("older snapshot replaced live metrics: %#v", older)
+	}
+	next := app.areaManagerScopedTrafficSummary(user, sample(now, 180, 320))
+	if next.NetIOUp != 20 || next.NetIODown != 30 {
+		t.Fatalf("older snapshot poisoned the sampling baseline: %#v", next)
+	}
+	// Changing permissions must discard cached speed, even when the new scope has older data.
+	changed := sample(now.Add(-time.Minute), 999999, 999999)
+	changed.Clients[0].Email = "different-permission"
+	if value := app.areaManagerScopedTrafficSummary(user, changed); value.NetIOUp != 0 || value.NetIODown != 0 {
+		t.Fatalf("old-scope rate leaked after permissions changed: %#v", value)
+	}
+}
+
+func TestAreaManagerLiveSpeedIgnoresDetailRefreshAndExpires(t *testing.T) {
+	app := &App{}
+	user := model.AdminUser{ID: 3, Role: model.AdminRoleAreaManager}
+	now := time.Now().UTC()
+	sample := func(at time.Time, up int64) *model.XUIOverview {
+		return &model.XUIOverview{AgentID: "hk", ReportedAt: at, Clients: []model.XUIClientView{{InboundID: 7, Email: "allowed", Up: up}}}
+	}
+	app.areaManagerScopedTrafficSummary(user, sample(now.Add(-4*time.Second), 100), true)
+	live := app.areaManagerScopedTrafficSummary(user, sample(now.Add(-2*time.Second), 140), true)
+	if live.NetIOUp != 20 {
+		t.Fatalf("expected live rate 20, got %#v", live)
+	}
+	detail := app.areaManagerScopedTrafficSummary(user, sample(now, 999999))
+	if detail.NetIOUp != 20 || detail.NetTrafficSent != 140 {
+		t.Fatalf("a detail refresh must not replace fresh scoped live counters: %#v", detail)
+	}
+	app.areaTrafficSamples = nil
+	app.areaManagerScopedTrafficSummary(user, sample(now.Add(-20*time.Second), 100), true)
+	stale := app.areaManagerScopedTrafficSummary(user, sample(now.Add(-18*time.Second), 140), true)
+	if stale.NetIOUp != 0 {
+		t.Fatalf("expired live sample must not retain speed: %#v", stale)
+	}
+}
+
+func TestAreaManagerHTTPAndRealtimeAggregateGrantedAndCreatedClients(t *testing.T) {
+	db, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk"}); err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	manager, err := db.CreateAreaManager(model.AreaManagerAccountRequest{Username: "area-speeds", Password: "password123", Enabled: &enabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{AgentID: "hk", InboundID: 7, InboundTag: "node-7", ClientEmail: "allowed@example.com", Enabled: &enabled}); err != nil {
+		t.Fatal(err)
+	}
+	user := model.AdminUser{ID: manager.ID, Role: model.AdminRoleAreaManager}
+	action, err := db.CreateXUIActionWithActor("hk", model.XUIActionRequest{Kind: model.XUIActionAddClient, Payload: map[string]any{"inbound_id": 7, "inbound_tag": "node-7", "client": map[string]any{"email": "own"}}}, model.XUIActionActor{Role: user.Role, AccountID: user.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.CompleteXUIAction("hk", action.ID, model.XUIActionResultRequest{Status: model.XUIActionStatusSucceeded}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	snapshot := realtimeTrafficSnapshot("hk", "node-7", now.Add(-time.Minute))
+	snapshot.XUI.Inbounds[0]["settings"] = `{"clients":[{"email":"allowed@example.com","enable":true},{"email":"hidden@example.com","enable":true},{"email":"own","enable":true}]}`
+	if err := db.SaveSnapshot(snapshot); err != nil {
+		t.Fatal(err)
+	}
+	app := &App{store: db, realtime: newRealtimeHub()}
+	metric := func(at time.Time, allowedUp, allowedDown, ownUp, ownDown int64) model.AgentRealtimeMetrics {
+		item := realtimeTrafficMetric("hk", at, allowedUp, allowedDown, 9000000, 9000000)
+		item.XUITraffic.Clients = append(item.XUITraffic.Clients, model.XUIRealtimeClientTraffic{InboundID: 7, InboundTag: "node-7", Email: "own", Up: ownUp, Down: ownDown})
+		return item
+	}
+	app.areaManagerRealtimeMetrics(user, []model.AgentRealtimeMetrics{metric(now.Add(-2*time.Second), 100, 200, 10, 20)})
+	fresh := metric(now, 140, 260, 30, 60)
+	app.realtime.update(fresh)
+	realtime := realtimeMetricByAgent(t, app.areaManagerRealtimeMetrics(user, app.realtime.snapshot()), "hk")
+	seconds := fresh.XUITraffic.CollectedAt.Sub(now.Add(-2 * time.Second)).Seconds()
+	if realtime.Summary.NetIOUp != trafficRate(170, 110, seconds) || realtime.Summary.NetIODown != trafficRate(320, 220, seconds) {
+		t.Fatalf("expected granted + self-created speed 30/50, excluding hidden traffic: %#v", realtime.Summary)
+	}
+	// The ordinary dashboard refresh must read the same fresh counters as the WS stream.
+	view := model.GlobalDashboardView{Agents: []model.DashboardAgentView{{AgentID: "hk"}}}
+	app.applyAreaManagerDashboardTraffic(user, &view, app.areaManagerClientScope(user))
+	if view.Agents[0].Summary.NetTrafficSent != 170 || view.Agents[0].Summary.NetTrafficRecv != 320 || view.Agents[0].Summary.NetIOUp == 0 || view.Agents[0].Summary.NetIODown == 0 {
+		t.Fatalf("REST refresh lost live authorized traffic: %#v", view.Agents[0].Summary)
+	}
+}
+
+func TestNodeOnlyGrantDoesNotInheritOtherClientTraffic(t *testing.T) {
+	scope := areaManagerClientScope{agents: map[string]struct{}{"hk": {}}}
+	addAreaManagerScopeAssignment(&scope, "hk", 7, "node-7", "", true, true)
+	overview := &model.XUIOverview{AgentID: "hk", Nodes: []model.XUINodeView{{ID: 7, Tag: "node-7", ClientCount: 0, Up: 900000, Down: 900000}}}
+	applyScopedClientTrafficToNodes("hk", overview.Nodes, nil, scope)
+	total, _ := scopedOverviewTrafficTotals(overview)
+	if total.Sent != 0 || total.Recv != 0 {
+		t.Fatalf("node-only grant inherited unauthorized traffic: %#v", total)
+	}
+}

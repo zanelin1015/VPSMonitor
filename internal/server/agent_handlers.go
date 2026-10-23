@@ -709,7 +709,7 @@ func (a *App) handleAgentRefresh(w http.ResponseWriter, r *http.Request, agentID
 		writeError(w, http.StatusNotFound, "agent not found")
 		return
 	}
-	if isAreaManager(user) || isOperatorAdmin(user) {
+	if isOperatorAdmin(user) {
 		writeError(w, http.StatusForbidden, "当前账号不能触发 Client 立即刷新")
 		return
 	}
@@ -1338,6 +1338,9 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 		if (action.Kind == model.XUIActionDeleteRoutingRules || action.Kind == model.XUIActionDeleteOutbounds || action.Kind == model.XUIActionUpdateRoutingRule) && (action.Result["saved"] == true || action.Result["submitted"] == true) && a.realtime != nil {
 			// Refresh the full saved-template snapshot, including partial success
 			// where saving worked but restarting Xray did not.
+			a.realtime.sendAgentControl(agentID, model.AgentControlMessage{Type: model.AgentControlCollectNow})
+		}
+		if action.Kind == model.XUIActionAddClient && action.Status == model.XUIActionStatusSucceeded && a.realtime != nil {
 			a.realtime.sendAgentControl(agentID, model.AgentControlMessage{Type: model.AgentControlCollectNow})
 		}
 		if (action.Kind == model.XUIActionUpdateClientConfig || action.Kind == model.XUIActionManualResetClientTraffic) && a.realtime != nil {

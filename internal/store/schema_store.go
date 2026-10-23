@@ -458,6 +458,9 @@ func (s *SQLiteStore) init() error {
 			return fmt.Errorf("init schema: %w", err)
 		}
 	}
+	if err := s.ensureColumn("area_manager_assignments", "node_only", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	if err := s.ensureColumn("agents", "agent_tags_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return err
 	}

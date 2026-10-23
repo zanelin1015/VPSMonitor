@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 const vite = await createServer({ root: fileURLToPath(new URL('../', import.meta.url)), configFile: fileURLToPath(new URL('../vite.config.ts', import.meta.url)), logLevel: 'silent', optimizeDeps: { noDiscovery: true, include: [] }, ssr: { optimizeDeps: { noDiscovery: true, include: [] } } })
 try {
-  const { buildRealmGrantOptions, buildAreaAssignmentTreeData, emptyAreaManagerForm } = await vite.ssrLoadModule('/src/components/CustomerManagementHelpers.tsx')
+  const { buildRealmGrantOptions, buildAreaAssignmentTreeData, assignmentNodeKeys, normalizeAreaAssignmentTreeKeys, areaAssignmentDraftFromTargetOption, dedupeAreaManagerAssignmentDrafts, assignmentTreeKeys, emptyAreaManagerForm } = await vite.ssrLoadModule('/src/components/CustomerManagementHelpers.tsx')
   const agent = { agent_id: 'entry', last_seen_at: new Date().toISOString(), agent_name: 'Entry', summary: {}, entry: { port_forwarding: { enabled: true, backend: 'realm', rules: [{ enabled: true, listen_port: 10000, target_port: 20000 }] }, haproxy: { enabled: true, rules: [{ enabled: true, listen_port: 10001, primary: { port: 20001 } }] } } }
   assert.equal(buildRealmGrantOptions('entry', [agent]).length, 0, 'configuration alone does not prove a service is running')
   agent.realm = { running: true }
@@ -22,6 +22,21 @@ try {
   const tree = buildAreaAssignmentTreeData('entry', overview, [agent])
   assert.equal(tree[0].children.length, 1, 'disabled nodes do not enter the grant tree')
   assert.equal(tree[0].children[0].children.length, 1, 'disabled clients do not enter the grant tree')
+  const nodeKey = tree[0].children[0].value
+  const clientKey = tree[0].children[0].children[0].value
+  assert.deepEqual(normalizeAreaAssignmentTreeKeys('entry', ['agent:entry'], overview, [agent]), [nodeKey], 'collapsed Client groups become real node grants')
+  assert.deepEqual(normalizeAreaAssignmentTreeKeys('entry', [nodeKey], overview, [agent]), [nodeKey], 'individual nodes remain selected')
+  assert.deepEqual(normalizeAreaAssignmentTreeKeys('entry', [clientKey], overview, [agent]), [clientKey], 'individual clients retain their scope')
+  assert.deepEqual(normalizeAreaAssignmentTreeKeys('entry', [], overview, [agent]), [], 'unchecking clears the selection')
+  assert.deepEqual(normalizeAreaAssignmentTreeKeys('entry', ['agent:entry', nodeKey], overview, [agent]), [nodeKey], 'expanded selections do not duplicate grants')
+  assert.deepEqual(assignmentNodeKeys('entry', overview, [agent]), [nodeKey], 'select-all uses only visible enabled nodes')
+  const nodeGrant = areaAssignmentDraftFromTargetOption('entry', { node: overview.nodes[0] }, [agent])
+  const clientGrant = areaAssignmentDraftFromTargetOption('entry', { client: overview.clients[0] }, [agent])
+  assert.equal(nodeGrant.node_only, true, 'selecting a node does not imply client access')
+  assert.equal(tree[0].checkable, false, 'Client groups do not cascade grants')
+  assert.equal(dedupeAreaManagerAssignmentDrafts([nodeGrant, clientGrant]).length, 2, 'node and client grants survive independently')
+  assert.deepEqual(normalizeAreaAssignmentTreeKeys('entry', [{value: nodeKey}], overview, [agent]), [nodeKey], 'strict tree events preserve node-only selection')
+  assert.deepEqual(assignmentTreeKeys('entry', overview, [agent]), [nodeKey, clientKey], 'select-all still includes eligible clients')
   for (const key of ['realm_enabled', 'line_enabled', 'landing_enabled', 'front_link_enabled']) assert.equal(emptyAreaManagerForm[key], false, 'new account categories require explicit enablement')
   console.log('area permission candidate tests passed')
 } finally { await vite.close() }

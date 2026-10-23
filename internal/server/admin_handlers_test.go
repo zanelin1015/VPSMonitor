@@ -285,6 +285,37 @@ func TestAreaManagerCustomerAssignmentRequiresGrantedOrCreatedClient(t *testing.
 	}) {
 		t.Fatal("expected a successfully created client to be assignable under the authorized node")
 	}
+	for _, item := range []struct {
+		email   string
+		actorID int64
+		status  string
+	}{
+		{"other-area@example.com", user.ID + 1, model.XUIActionStatusSucceeded},
+		{"pending@example.com", user.ID, ""},
+		{"failed@example.com", user.ID, model.XUIActionStatusFailed},
+	} {
+		created, err := sqliteStore.CreateXUIActionWithActor("agent-1", model.XUIActionRequest{
+			Kind:    model.XUIActionAddClient,
+			Payload: map[string]any{"inbound_id": 7, "inbound_tag": "node-7", "client": map[string]any{"email": item.email}},
+		}, model.XUIActionActor{Role: user.Role, AccountID: item.actorID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if item.status != "" {
+			if _, err := sqliteStore.CompleteXUIAction("agent-1", created.ID, model.XUIActionResultRequest{Status: item.status}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	overview := &model.XUIOverview{AgentID: "agent-1", Clients: []model.XUIClientView{}}
+	for _, email := range []string{"granted@example.com", "created@example.com", "other-area@example.com", "pending@example.com", "failed@example.com", "unassigned@example.com"} {
+		overview.Clients = append(overview.Clients, model.XUIClientView{InboundID: 7, InboundTag: "node-7", Email: email})
+	}
+	app.sanitizeXUIOverviewForAdmin(user, overview)
+	if len(overview.Clients) != 2 || overview.Clients[0].Email != "granted@example.com" || overview.Clients[1].Email != "created@example.com" {
+		t.Fatalf("expected granted and successfully self-created clients only, got %#v", overview.Clients)
+	}
+
 }
 
 func TestCustomerAssignmentForwardingTargetAgents(t *testing.T) {

@@ -39,14 +39,31 @@ const healthOptions = (['all', 'healthy', 'warning', 'offline'] as const).map((v
 const statusText = { healthy: '健康在线', warning: '运行告警', offline: '离线' } as const
 const statusBadge = { healthy: 'success', warning: 'warning', offline: 'error' } as const
 
-function ResourceMetric({ value, label }: { value?: number; label: string }) {
+function UnavailableMetric({ label, offline }: { label: string; offline: boolean }) {
+  const reason = offline ? 'Client 离线，暂无实时数据' : '暂无数据'
+  return <Typography.Text type="secondary" title={reason} aria-label={`${label}：${reason}`}>—</Typography.Text>
+}
+
+function ResourceMetric({ agent, value, label }: { agent: DashboardAgentView; value?: number; label: string }) {
+  const offline = agentHealthCategory(agent) === 'offline'
+  if (offline) return <UnavailableMetric label={label} offline />
   if (value === undefined || !Number.isFinite(value))
-    return <Typography.Text type="secondary">暂无数据</Typography.Text>
+    return <UnavailableMetric label={label} offline={false} />
   const percent = Math.min(100, Math.max(0, value))
   return (
     <div className="admin-assets-metric" aria-label={`${label} ${percent.toFixed(0)}%`}>
       <span>{percent.toFixed(0)}%</span>
       <Progress percent={percent} showInfo={false} size="small" status={percent >= 90 ? 'exception' : 'normal'} />
+    </div>
+  )
+}
+
+function SpeedMetric({ agent }: { agent: DashboardAgentView }) {
+  if (agentHealthCategory(agent) === 'offline') return <UnavailableMetric label="实时网速" offline />
+  return (
+    <div className="admin-assets-speed">
+      <span>↑ {formatSpeed(agent.summary.net_io_up || 0)}</span>
+      <Typography.Text type="secondary">↓ {formatSpeed(agent.summary.net_io_down || 0)}</Typography.Text>
     </div>
   )
 }
@@ -88,6 +105,9 @@ export function AssetsPage(props: AssetsPageProps) {
   const identity = (agent: DashboardAgentView) => {
     const countryCode = agentCountryCode(agent)
     const location = formatAgentLocation(agent, countryCode)
+    const address = [agent.summary.observed_ip, agent.summary.public_ipv4, agent.summary.public_ipv6]
+      .map((value) => value?.trim())
+      .find(Boolean)
     return (
       <div className="admin-assets-name">
         <div className="admin-assets-name-row">
@@ -96,7 +116,18 @@ export function AssetsPage(props: AssetsPageProps) {
             {agent.agent_name || agent.agent_id}
           </Button>
         </div>
-        {!props.restrictedView ? <small>{location}</small> : null}
+        {!props.restrictedView ? (
+          <>
+            <Typography.Text
+              className="admin-assets-address"
+              type="secondary"
+              copyable={address ? { text: address } : false}
+            >
+              {address || 'IP 未上报'}
+            </Typography.Text>
+            <small>{location}</small>
+          </>
+        ) : null}
       </div>
     )
   }
@@ -138,7 +169,7 @@ export function AssetsPage(props: AssetsPageProps) {
             key: 'cpu',
             width: 110,
             sorter: (a: DashboardAgentView, b: DashboardAgentView) => (a.summary.cpu || 0) - (b.summary.cpu || 0),
-            render: (_: unknown, agent: DashboardAgentView) => <ResourceMetric value={agent.summary.cpu} label="CPU" />,
+            render: (_: unknown, agent: DashboardAgentView) => <ResourceMetric agent={agent} value={agent.summary.cpu} label="CPU" />,
           },
           {
             title: '内存',
@@ -148,6 +179,7 @@ export function AssetsPage(props: AssetsPageProps) {
               calculateMemoryPercent(a.summary) - calculateMemoryPercent(b.summary),
             render: (_: unknown, agent: DashboardAgentView) => (
               <ResourceMetric
+                agent={agent}
                 value={agent.summary.mem_total ? calculateMemoryPercent(agent.summary) : undefined}
                 label="内存"
               />
@@ -161,6 +193,7 @@ export function AssetsPage(props: AssetsPageProps) {
               calculateDiskPercent(a.summary) - calculateDiskPercent(b.summary),
             render: (_: unknown, agent: DashboardAgentView) => (
               <ResourceMetric
+                agent={agent}
                 value={agent.summary.disk_total ? calculateDiskPercent(agent.summary) : undefined}
                 label="硬盘"
               />
@@ -171,10 +204,7 @@ export function AssetsPage(props: AssetsPageProps) {
             key: 'speed',
             width: 150,
             render: (_: unknown, agent: DashboardAgentView) => (
-              <div className="admin-assets-speed">
-                <span>↑ {formatSpeed(agent.summary.net_io_up || 0)}</span>
-                <Typography.Text type="secondary">↓ {formatSpeed(agent.summary.net_io_down || 0)}</Typography.Text>
-              </div>
+              <SpeedMetric agent={agent} />
             ),
           },
         ]
@@ -325,11 +355,12 @@ export function AssetsPage(props: AssetsPageProps) {
                 <>
                   <div>
                     <Typography.Text type="secondary">CPU</Typography.Text>
-                    <ResourceMetric value={agent.summary.cpu} label="CPU" />
+                    <ResourceMetric agent={agent} value={agent.summary.cpu} label="CPU" />
                   </div>
                   <div>
                     <Typography.Text type="secondary">内存</Typography.Text>
                     <ResourceMetric
+                      agent={agent}
                       value={agent.summary.mem_total ? calculateMemoryPercent(agent.summary) : undefined}
                       label="内存"
                     />
@@ -343,9 +374,7 @@ export function AssetsPage(props: AssetsPageProps) {
               {!props.restrictedView ? (
                 <div>
                   <Typography.Text type="secondary">实时网速</Typography.Text>
-                  <div>
-                    ↑{formatSpeed(agent.summary.net_io_up || 0)} ↓{formatSpeed(agent.summary.net_io_down || 0)}
-                  </div>
+                  <SpeedMetric agent={agent} />
                 </div>
               ) : null}
             </div>

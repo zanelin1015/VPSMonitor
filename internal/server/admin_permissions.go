@@ -443,8 +443,8 @@ func (a *App) sanitizeXUIOverviewForAreaAssignment(user model.AdminUser, overvie
 	overview.OnlineClientCount = 0
 	filteredNodes := make([]model.XUINodeView, 0, len(overview.Nodes))
 	for _, node := range overview.Nodes {
-		canAssignAllClients := clientScope.allowsInbound(overview.AgentID, node.ID, node.Tag)
-		if _, visible := visibleInbounds[overviewInboundKey(node.ID, node.Tag)]; !canAssignAllClients && !visible {
+		canAssignAllClients := clientScope.allowsWholeInbound(overview.AgentID, node.ID, node.Tag)
+		if _, visible := visibleInbounds[overviewInboundKey(node.ID, node.Tag)]; !clientScope.allowsInbound(overview.AgentID, node.ID, node.Tag) && !visible {
 			continue
 		}
 		node.CanAssignAllClients = &canAssignAllClients
@@ -730,11 +730,12 @@ func sanitizeGeoForAreaManager(geo *model.IPGeoView) *model.IPGeoView {
 }
 
 type areaManagerClientScope struct {
-	exactClients map[string]struct{}
-	inbounds     map[string]struct{}
-	realmPorts   map[string]struct{}
-	haProxyPorts map[string]struct{}
-	agents       map[string]struct{}
+	exactClients     map[string]struct{}
+	inbounds         map[string]struct{}
+	nodeOnlyInbounds map[string]struct{}
+	realmPorts       map[string]struct{}
+	haProxyPorts     map[string]struct{}
+	agents           map[string]struct{}
 }
 
 type areaManagerOutboundScope struct {
@@ -773,6 +774,9 @@ func (a *App) areaManagerClientScope(user model.AdminUser) areaManagerClientScop
 	if !isAreaManager(user) || user.ID <= 0 || a == nil || a.store == nil {
 		return scope
 	}
+	for agentID := range scope.agents {
+		a.addAreaManagerCreatedClients(user, agentID, &scope)
+	}
 	customers, err := a.store.ListCustomersForOwner(model.AdminRoleAreaManager, user.ID)
 	if err != nil {
 		return scope
@@ -804,7 +808,7 @@ func (a *App) areaManagerGrantedClientScope(user model.AdminUser) areaManagerCli
 			if assignment.ClientEmail == "" {
 				inboundTag = a.normalizeAreaManagerForwardingAssignmentTag(assignment.AgentID, assignment.InboundID, inboundTag, configCache)
 			}
-			addAreaManagerScopeAssignment(&scope, assignment.AgentID, assignment.InboundID, inboundTag, assignment.ClientEmail, assignment.Enabled)
+			addAreaManagerScopeAssignment(&scope, assignment.AgentID, assignment.InboundID, inboundTag, assignment.ClientEmail, assignment.Enabled, assignment.NodeOnly)
 		}
 	}
 	return scope
@@ -854,18 +858,22 @@ func (a *App) areaManagerAssignmentClientScope(user model.AdminUser, agentID str
 	if agentID == "" || !isAreaManager(user) || user.ID <= 0 || a == nil || a.store == nil {
 		return scope
 	}
+	a.addAreaManagerCreatedClients(user, agentID, &scope)
+	return scope
+}
+
+func (a *App) addAreaManagerCreatedClients(user model.AdminUser, agentID string, scope *areaManagerClientScope) {
 	actions, err := a.store.ListSucceededXUIActionsByActorKind(agentID, user.Role, user.ID, model.XUIActionAddClient)
 	if err != nil {
-		return scope
+		return
 	}
 	for _, action := range actions {
 		inboundID, inboundTag, email, ok := xuiAddClientTarget(action.Payload)
 		if !ok || !scope.allowsManageInbound(agentID, inboundID, inboundTag) {
 			continue
 		}
-		addAreaManagerExactClient(&scope, agentID, inboundID, inboundTag, email)
+		addAreaManagerExactClient(scope, agentID, inboundID, inboundTag, email)
 	}
-	return scope
 }
 
 func xuiAddClientTarget(payload map[string]any) (int, string, string, bool) {
@@ -893,7 +901,7 @@ func addAreaManagerExactClient(scope *areaManagerClientScope, agentID string, in
 	}
 }
 
-func addAreaManagerScopeAssignment(scope *areaManagerClientScope, agentID string, inboundID int, inboundTag, clientEmail string, enabled bool) {
+func addAreaManagerScopeAssignment(scope *areaManagerClientScope, agentID string, inboundID int, inboundTag, clientEmail string, enabled bool, nodeOnly ...bool) {
 	if scope == nil || !enabled || agentID == "" {
 		return
 	}
@@ -912,6 +920,14 @@ func addAreaManagerScopeAssignment(scope *areaManagerClientScope, agentID string
 	}
 	if isHAProxyAssignmentTag(inboundTag) {
 		scope.haProxyPorts[areaForwardingPortKey(agentID, inboundID)] = struct{}{}
+		return
+	}
+	if len(nodeOnly) > 0 && nodeOnly[0] {
+		if scope.nodeOnlyInbounds == nil {
+			scope.nodeOnlyInbounds = make(map[string]struct{})
+		}
+		scope.nodeOnlyInbounds[areaClientInboundKey(agentID, inboundID, inboundTag)] = struct{}{}
+		scope.nodeOnlyInbounds[areaClientInboundKey(agentID, inboundID, "")] = struct{}{}
 		return
 	}
 	if scope.hasExactClientOnInbound(agentID, inboundID, inboundTag) {
@@ -960,10 +976,23 @@ func (s areaManagerClientScope) allowsClient(agentID string, inboundID int, inbo
 			return true
 		}
 	}
-	return s.allowsInbound(agentID, inboundID, inboundTag)
+	return s.allowsWholeInbound(agentID, inboundID, inboundTag)
 }
 
 func (s areaManagerClientScope) allowsInbound(agentID string, inboundID int, inboundTag string) bool {
+	if _, ok := s.agents[agentID]; !ok {
+		return false
+	}
+	if _, ok := s.nodeOnlyInbounds[areaClientInboundKey(agentID, inboundID, inboundTag)]; ok {
+		return true
+	}
+	if _, ok := s.nodeOnlyInbounds[areaClientInboundKey(agentID, inboundID, "")]; ok {
+		return true
+	}
+	return s.allowsWholeInbound(agentID, inboundID, inboundTag)
+}
+
+func (s areaManagerClientScope) allowsWholeInbound(agentID string, inboundID int, inboundTag string) bool {
 	if agentID == "" {
 		return false
 	}
@@ -1229,6 +1258,26 @@ func applyAreaManagerClientCounts(view *model.GlobalDashboardView, clientScope a
 		}
 		agentNodes[areaClientInboundKey(chain.RootAgentID, inboundID, chain.RootInboundTag)] = struct{}{}
 	}
+	for key := range clientScope.nodeOnlyInbounds {
+		parts := strings.Split(key, "\x00")
+		if len(parts) != 3 {
+			continue
+		}
+		if nodeCounts[parts[0]] == nil {
+			nodeCounts[parts[0]] = make(map[string]struct{})
+		}
+		exists := false
+		for existing := range nodeCounts[parts[0]] {
+			other := strings.Split(existing, "\x00")
+			if len(other) == 3 && other[1] == parts[1] {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			nodeCounts[parts[0]][key] = struct{}{}
+		}
+	}
 	for index := range view.Agents {
 		view.Agents[index].ClientCount = len(counts[view.Agents[index].AgentID])
 		view.Agents[index].NodeCount = len(nodeCounts[view.Agents[index].AgentID])
@@ -1390,7 +1439,7 @@ func (a *App) areaManagerCustomerAssignmentAllowed(user model.AdminUser, req mod
 	}
 	clientScope := a.areaManagerAssignmentClientScope(user, req.AgentID)
 	if strings.TrimSpace(req.ClientEmail) == "" {
-		return clientScope.allowsInbound(req.AgentID, req.InboundID, req.InboundTag)
+		return clientScope.allowsWholeInbound(req.AgentID, req.InboundID, req.InboundTag)
 	}
 	if clientScope.allowsClient(req.AgentID, req.InboundID, req.InboundTag, req.ClientEmail) {
 		return true
@@ -1505,7 +1554,7 @@ func (a *App) areaManagerDeleteClientPayloadAllowed(user model.AdminUser, agentI
 	if email != "" {
 		return a.areaManagerClientScope(user).allowsClient(agentID, inboundID, inboundTag, email)
 	}
-	return a.areaManagerClientScope(user).allowsInbound(agentID, inboundID, inboundTag)
+	return a.areaManagerClientScope(user).allowsWholeInbound(agentID, inboundID, inboundTag)
 }
 
 func intFromAny(value any) int {

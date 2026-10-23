@@ -22,10 +22,11 @@ import {
   assignmentFormFromAssignment,
   assignmentFormFromDraft,
   assignmentMatchesInbound,
-  assignmentNodeKeys,
+  assignmentTreeKeys,
   billingFormPatch,
   buildAreaAssignmentTreeData,
   buildAssignmentTargetOptions,
+  normalizeAreaAssignmentTreeKeys,
   buildClientAssignmentTreeData,
   buildRealmGrantOptions,
   clientBilling,
@@ -905,8 +906,8 @@ export function CustomerManagementModal(props: {
     for (const assignment of removed) {
       await fetchJSON(`/api/v1/admin/area-managers/${managerID}/assignments/${assignment.id}`, { method: 'DELETE' })
     }
-    const previousKeys = new Set(previous.map(areaAssignmentKey))
-    const additions = next.filter(item => !previousKeys.has(areaAssignmentKey(item)))
+    const previousKeys = new Set(previous.map(item => `${areaAssignmentKey(item)}:${Boolean(item.node_only)}`))
+    const additions = next.filter(item => !previousKeys.has(`${areaAssignmentKey(item)}:${Boolean(item.node_only)}`))
     if (additions.length) {
       await fetchJSON<AreaManagerAssignment[]>(`/api/v1/admin/area-managers/${managerID}/assignments`, {
         method: 'POST',
@@ -1672,11 +1673,12 @@ export function CustomerManagementModal(props: {
           <Col xs={24} md={12}>
             <Space style={{ width: '100%', justifyContent: 'space-between' }}>
               <Text type="secondary">x-ui 客户端 / 节点</Text>
-              <Button size="small" disabled={!areaBatchXUIAgentID || !areaBatchClientTreeData.length} onClick={() => setAreaBatchForm((current) => ({ ...current, selected_xui_keys: assignmentNodeKeys(areaBatchXUIAgentID, areaBatchOverview, agents) }))}>全选</Button>
+              <Button size="small" disabled={!areaBatchXUIAgentID || !areaBatchClientTreeData.length} onClick={() => setAreaBatchForm((current) => ({ ...current, selected_xui_keys: assignmentTreeKeys(areaBatchXUIAgentID, areaBatchOverview, agents) }))}>全选</Button>
             </Space>
             <TreeSelect
               multiple
               treeCheckable
+              treeCheckStrictly
               style={{ width: '100%' }}
               showSearch
               placeholder="按 Client / 节点 / 客户端授权"
@@ -1687,7 +1689,7 @@ export function CustomerManagementModal(props: {
               treeDefaultExpandAll
               showCheckedStrategy={TreeSelect.SHOW_PARENT}
               maxTagCount="responsive"
-              onChange={(values) => setAreaBatchForm((current) => ({ ...current, selected_xui_keys: values as string[] }))}
+              onChange={(values) => setAreaBatchForm((current) => ({ ...current, selected_xui_keys: normalizeAreaAssignmentTreeKeys(areaBatchXUIAgentID, values as string[], areaBatchOverview, agents) }))}
             />
           </Col>
         </Row>

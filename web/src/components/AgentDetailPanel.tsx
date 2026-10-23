@@ -1768,7 +1768,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
             ) : null}
             <Button icon={<ArrowLeftOutlined />} onClick={onBackToList}>返回 Client 列表</Button>
             {canShowXUIControls ? <Button disabled={!canOpenXUI} onClick={onOpenXUI}>打开 x-ui 面板</Button> : null}
-            {!restrictedView ? <Button icon={<ReloadOutlined />} loading={currentAgentLoading} onClick={onRefreshCurrentAgent}>立即获取 Client 信息</Button> : null}
+            <Button icon={<ReloadOutlined />} loading={currentAgentLoading} onClick={onRefreshCurrentAgent}>立即获取 Client 信息</Button>
             {!restrictedView ? <Button danger onClick={openRealtimeTerminal}>实时 TTY</Button> : null}
             {!restrictedView ? <Button loading={remoteCommandLoading} onClick={openRemoteCommand}>单次命令</Button> : null}
             {canShowXUIControls ? (

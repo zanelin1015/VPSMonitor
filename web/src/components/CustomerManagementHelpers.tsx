@@ -34,6 +34,7 @@ export interface AssignmentFormState {
 }
 
 export interface AreaManagerAssignmentDraft {
+  node_only?: boolean
   agent_id: string
   inbound_id: number
   inbound_tag: string
@@ -191,6 +192,7 @@ export function buildAreaAssignmentTreeData(agentID: string, overview: XUIOvervi
     title: agentName(agentID, agents),
     value: `agent:${agentID}`,
     selectable: false,
+    checkable: false,
     children: overviewNodeGroups(overview, true).map(({ node, clients }) => ({
       title: nodeLabel(node),
       value: areaAssignmentKey(areaAssignmentDraftFromTargetOption(agentID, { node }, agents)),
@@ -230,7 +232,17 @@ export function assignmentNodeKeys(agentID: string, overview: XUIOverview | null
   if (!agentID) {
     return []
   }
-  return (overview?.nodes || []).map((node) => areaAssignmentKey(areaAssignmentDraftFromTargetOption(agentID, { node }, agents)))
+  return buildAreaAssignmentTreeData(agentID, overview, agents)[0]?.children.map(node => node.value) || []
+}
+
+export function assignmentTreeKeys(agentID: string, overview: XUIOverview | null, agents: DashboardAgentView[]): string[] {
+  return buildAreaAssignmentTreeData(agentID, overview, agents).flatMap(root => root.children.flatMap(node => [node.value, ...node.children.map(client => client.value)]))
+}
+
+// SHOW_PARENT can emit the display-only Client group after its children are checked.
+// Convert that group back to real grant keys before updating controlled state.
+export function normalizeAreaAssignmentTreeKeys(agentID: string, keys: Array<string | { value: string }>, overview: XUIOverview | null, agents: DashboardAgentView[]): string[] {
+  return uniqueStrings(keys.map(key => typeof key === 'string' ? key : key.value).flatMap(key => key === `agent:${agentID}` ? assignmentNodeKeys(agentID, overview, agents) : [key]))
 }
 
 export function buildRealmGrantOptions(agentID: string, agents: DashboardAgentView[]) {
@@ -427,6 +439,7 @@ export function areaAssignmentDraftFromTargetOption(
     inbound_id: node?.id || 0,
     inbound_tag: node?.tag || '',
     client_email: '',
+    node_only: true,
     public_client_name: node ? defaultPublicNodeName(node, agentID, agents) : agentName(agentID, agents),
     enabled: true,
   }
@@ -447,6 +460,7 @@ export function normalizeAreaManagerAssignmentDrafts(
       inbound_id: Number(item.inbound_id || 0),
       inbound_tag: item.inbound_tag || '',
       client_email: item.client_email || '',
+      node_only: item.node_only === true,
       public_client_name: item.public_client_name || item.client_email || item.inbound_tag || `Inbound #${item.inbound_id}`,
       enabled: item.enabled !== false,
     }
@@ -474,7 +488,7 @@ export function dedupeAreaManagerAssignmentDrafts(items: AreaManagerAssignmentDr
   const seen = new Set<string>()
   const exactClientAssignments = items.filter((item) => item.client_email && !isRealmAssignmentTagValue(item.inbound_tag || ''))
   for (const item of items) {
-    if (!item.client_email && !isRealmAssignmentTagValue(item.inbound_tag || '') && exactClientAssignments.some((exact) => assignmentMatchesInbound(exact, item.agent_id, item.inbound_id, item.inbound_tag))) {
+    if (!item.client_email && !item.node_only && !isRealmAssignmentTagValue(item.inbound_tag || '') && exactClientAssignments.some((exact) => assignmentMatchesInbound(exact, item.agent_id, item.inbound_id, item.inbound_tag))) {
       continue
     }
     const key = areaAssignmentKey(item)
@@ -556,7 +570,7 @@ function isRealmForwardedClientOption(client: XUIClientView): boolean {
   )
 }
 
-function isLegacyRealmForwardedClientAssignment(item: { inbound_tag?: string; client_email?: string; public_client_name?: string }): boolean {
+function isLegacyRealmForwardedClientAssignment(item: { inbound_tag?: string; client_email?: string; node_only?: boolean; public_client_name?: string }): boolean {
   if (!item.client_email) {
     return false
   }
@@ -589,17 +603,17 @@ export function areaAssignmentKey(item: { agent_id: string; inbound_id: number; 
   ].map((part) => encodeURIComponent(part)).join('::')
 }
 
-export function areaAssignmentLabel(item: { agent_id: string; inbound_id: number; inbound_tag?: string; client_email?: string; public_client_name?: string }, agents: DashboardAgentView[]): string {
+export function areaAssignmentLabel(item: { agent_id: string; inbound_id: number; inbound_tag?: string; client_email?: string; node_only?: boolean; public_client_name?: string }, agents: DashboardAgentView[]): string {
   if (isRealmAssignmentDraft(item, agents)) {
     return realmAssignmentDisplayName(item, agents)
   }
-  const scope = item.client_email ? item.client_email : '整个节点'
+  const scope = item.client_email || (item.node_only ? '仅节点（可新增客户端）' : '整个节点')
   const name = item.public_client_name || item.inbound_tag || `Inbound #${item.inbound_id}`
   return `${agentName(item.agent_id, agents)} / ${name} / ${scope}`
 }
 
 export function renderAssignmentHierarchy(
-  items: Array<{ agent_id: string; inbound_id: number; inbound_tag?: string; client_email?: string; public_client_name?: string }>,
+  items: Array<{ agent_id: string; inbound_id: number; inbound_tag?: string; client_email?: string; node_only?: boolean; public_client_name?: string }>,
   agents: DashboardAgentView[],
   onRemove?: (key: string) => void,
 ) {
@@ -612,7 +626,7 @@ export function renderAssignmentHierarchy(
     const realm = isRealmAssignmentDraft(item, agents)
     const nodeLabelText = realm ? realmAssignmentDisplayName(item, agents) : item.inbound_tag || `Inbound #${item.inbound_id}`
     const nodeKeyText = `${item.inbound_id}\x00${nodeLabelText}`
-    const clientLabelText = realm ? '端口授权' : item.client_email || '整个节点'
+    const clientLabelText = realm ? '端口授权' : item.client_email || (item.node_only ? '仅节点（可新增客户端）' : '整个节点')
     if (!grouped.has(agentID)) {
       grouped.set(agentID, new Map())
     }

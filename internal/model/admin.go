@@ -151,6 +151,7 @@ type AreaManagerAssignment struct {
 	AgentID          string    `json:"agent_id"`
 	InboundID        int       `json:"inbound_id"`
 	InboundTag       string    `json:"inbound_tag,omitempty"`
+	NodeOnly         bool      `json:"node_only,omitempty"`
 	ClientEmail      string    `json:"client_email,omitempty"`
 	PublicClientName string    `json:"public_client_name,omitempty"`
 	Enabled          bool      `json:"enabled"`
@@ -162,6 +163,7 @@ type AreaManagerAssignmentRequest struct {
 	AgentID          string `json:"agent_id"`
 	InboundID        int    `json:"inbound_id"`
 	InboundTag       string `json:"inbound_tag,omitempty"`
+	NodeOnly         bool   `json:"node_only,omitempty"`
 	ClientEmail      string `json:"client_email,omitempty"`
 	PublicClientName string `json:"public_client_name,omitempty"`
 	Enabled          *bool  `json:"enabled,omitempty"`

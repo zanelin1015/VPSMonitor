@@ -414,7 +414,7 @@ func (s *SQLiteStore) ListAreaManagerAssignments(managerID int64) ([]model.AreaM
 		return nil, nil
 	}
 	rows, err := s.db.Query(`
-		SELECT id, manager_id, agent_id, inbound_id, inbound_tag, client_email, public_client_name,
+		SELECT id, manager_id, agent_id, inbound_id, inbound_tag, client_email, public_client_name, node_only,
 			enabled, created_at, updated_at
 		FROM area_manager_assignments
 		WHERE manager_id = ?
@@ -499,15 +499,16 @@ func (s *SQLiteStore) CreateAreaManagerAssignments(managerID int64, requests []m
 		}
 		if _, err = tx.Exec(`
 			INSERT INTO area_manager_assignments (
-				manager_id, agent_id, inbound_id, inbound_tag, client_email, public_client_name,
+				manager_id, agent_id, inbound_id, inbound_tag, client_email, public_client_name, node_only,
 				enabled, created_at, updated_at
 			)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(manager_id, agent_id, inbound_id, inbound_tag, client_email) DO UPDATE SET
 				public_client_name = excluded.public_client_name,
+				node_only = excluded.node_only,
 				enabled = excluded.enabled,
 				updated_at = excluded.updated_at
-		`, managerID, req.AgentID, req.InboundID, req.InboundTag, req.ClientEmail, req.PublicClientName, boolInt(enabled), now, now); err != nil {
+		`, managerID, req.AgentID, req.InboundID, req.InboundTag, req.ClientEmail, req.PublicClientName, boolInt(req.NodeOnly), boolInt(enabled), now, now); err != nil {
 			return nil, fmt.Errorf("create area manager assignment: %w", err)
 		}
 	}
@@ -755,6 +756,9 @@ func (s *SQLiteStore) normalizeAreaManagerAssignmentRequest(req model.AreaManage
 	req.AgentID = strings.TrimSpace(req.AgentID)
 	req.InboundTag = strings.TrimSpace(req.InboundTag)
 	req.ClientEmail = strings.TrimSpace(req.ClientEmail)
+	if req.NodeOnly && req.ClientEmail != "" {
+		return req, fmt.Errorf("node_only cannot include client_email")
+	}
 	req.PublicClientName = strings.TrimSpace(req.PublicClientName)
 	if req.AgentID == "" {
 		return req, fmt.Errorf("agent_id is required")
@@ -920,14 +924,16 @@ func normalizeAreaManagerRevenueCycle(value string) string {
 func scanAreaManagerAssignment(scanner rowScanner) (model.AreaManagerAssignment, error) {
 	var (
 		item          model.AreaManagerAssignment
+		nodeOnly      int
 		enabled       int
 		createdAtText string
 		updatedAtText string
 	)
-	if err := scanner.Scan(&item.ID, &item.ManagerID, &item.AgentID, &item.InboundID, &item.InboundTag, &item.ClientEmail, &item.PublicClientName, &enabled, &createdAtText, &updatedAtText); err != nil {
+	if err := scanner.Scan(&item.ID, &item.ManagerID, &item.AgentID, &item.InboundID, &item.InboundTag, &item.ClientEmail, &item.PublicClientName, &nodeOnly, &enabled, &createdAtText, &updatedAtText); err != nil {
 		return model.AreaManagerAssignment{}, fmt.Errorf("scan area manager assignment: %w", err)
 	}
 	item.Enabled = enabled != 0
+	item.NodeOnly = nodeOnly != 0
 	item.CreatedAt = parseTime(createdAtText)
 	item.UpdatedAt = parseTime(updatedAtText)
 	return item, nil

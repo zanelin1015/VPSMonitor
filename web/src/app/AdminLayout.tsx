@@ -49,7 +49,7 @@ export function AdminLayout({
   const pathFor = (key: Parameters<typeof adminMenuHref>[0]) => adminMenuHref(key)
 
   return (
-    <div className="admin-pro-layout page-shell admin-page-shell">
+    <div className={`admin-pro-layout page-shell admin-page-shell${current.key === 'dashboard' ? ' admin-pro-workbench-layout' : ''}`}>
       <ProLayout
         title="ZaneLin"
         logo={

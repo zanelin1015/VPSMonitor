@@ -5,11 +5,12 @@ import { fetchJSON } from '../lib/appHelpers'
 import {
   areaAssignmentDraftFromTargetOption,
   areaAssignmentKey,
-  assignmentNodeKeys,
+  assignmentTreeKeys,
   buildAreaAssignmentTreeData,
   buildAssignmentTargetOptions,
   isRealmAssignmentDraft,
   normalizeAreaManagerOutboundGrants,
+  normalizeAreaAssignmentTreeKeys,
   uniqueStrings,
   type AreaManagerAssignmentDraft,
   type AreaManagerFormState,
@@ -65,14 +66,23 @@ export function AreaMachineGrantFields({ kind, options, form, setForm, agents }:
 
   const currentOverview = overview?.agent_id === agentID ? overview : null
   const treeData = buildAreaAssignmentTreeData(agentID, currentOverview, agents)
-  const selectedKeys = form.assignments.filter(item => item.agent_id === agentID && !isRealmAssignmentDraft(item, agents)).map(areaAssignmentKey)
+  const selectedKeys = uniqueStrings(form.assignments
+    .filter(item => item.agent_id === agentID && !isRealmAssignmentDraft(item, agents))
+    .flatMap(item => {
+      const key = areaAssignmentKey(item)
+      // Show the effective scope of legacy whole-node grants while editing them.
+      const legacyClients = !item.client_email && !item.node_only
+        ? treeData.flatMap(root => root.children.filter(node => node.value === key).flatMap(node => node.children.map(client => client.value)))
+        : []
+      return [key, ...legacyClients]
+    }))
   function update(keys: string[]) {
     if (!agentID || !currentOverview) return
     const drafts = new Map(buildAssignmentTargetOptions(currentOverview).map(option => {
       const draft = areaAssignmentDraftFromTargetOption(agentID, option, agents)
       return [areaAssignmentKey(draft), draft]
     }))
-    const selected = keys.map(key => drafts.get(key)).filter((item): item is AreaManagerAssignmentDraft => Boolean(item))
+    const selected = normalizeAreaAssignmentTreeKeys(agentID, keys, currentOverview, agents).map(key => drafts.get(key)).filter((item): item is AreaManagerAssignmentDraft => Boolean(item))
     setForm(current => {
       const assignments = [...current.assignments.filter(item => item.agent_id !== agentID || isRealmAssignmentDraft(item, agents)), ...selected]
       const ids = new Set(assignments.map(item => item.agent_id))
@@ -106,12 +116,13 @@ export function AreaMachineGrantFields({ kind, options, form, setForm, agents }:
         onChange={value => { setOverview(null); setAgentID(value || '') }} />
     </AreaPermissionField>
     <AreaPermissionField label="x-ui 节点 / 客户端授权" action={
-      <Button size="small" disabled={!agentID || loading || !treeData.length} onClick={() => update(assignmentNodeKeys(agentID, currentOverview, agents))}>全选</Button>
+      <Button size="small" disabled={!agentID || loading || !treeData.length} onClick={() => update(assignmentTreeKeys(agentID, currentOverview, agents))}>全选</Button>
     }>
-      <TreeSelect aria-label={label + '节点授权'} multiple treeCheckable style={{ width: '100%' }} showSearch
+      <TreeSelect aria-label={label + '节点授权'} multiple treeCheckable treeCheckStrictly style={{ width: '100%' }} showSearch
         placeholder="按 Client / 节点 / 客户端授权" value={selectedKeys} loading={loading}
         disabled={!agentID || loading || !currentOverview} treeData={treeData} treeDefaultExpandAll
         showCheckedStrategy={TreeSelect.SHOW_PARENT} maxTagCount="responsive" onChange={keys => update(keys as string[])} />
+      <Typography.Text type="secondary">节点与客户端独立授权；只选节点可新增客户端，不包含已有客户端。</Typography.Text>
     </AreaPermissionField>
     {kind === 'line' ? <AreaPermissionField label="线路机已有出站规则" action={
       <Button size="small" disabled={!canGrantOutbounds || !outboundOptions.length} onClick={() => updateOutbounds(outboundOptions.map(option => option.value))}>全选</Button>

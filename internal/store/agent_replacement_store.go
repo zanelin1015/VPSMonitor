@@ -467,7 +467,7 @@ func migrateAreaManagerAgentTagsTx(tx *sql.Tx, sourceAgentID, replacementAgentID
 
 func migrateAreaManagerAssignmentsTx(tx *sql.Tx, sourceAgentID, replacementAgentID string) (int, error) {
 	rows, err := tx.Query(`
-		SELECT manager_id, inbound_id, inbound_tag, client_email, public_client_name, enabled, created_at, updated_at
+		SELECT manager_id, inbound_id, inbound_tag, client_email, public_client_name, node_only, enabled, created_at, updated_at
 		FROM area_manager_assignments
 		WHERE agent_id = ?
 	`, sourceAgentID)
@@ -476,14 +476,14 @@ func migrateAreaManagerAssignmentsTx(tx *sql.Tx, sourceAgentID, replacementAgent
 	}
 	type assignmentRow struct {
 		managerID                          int64
-		inboundID, enabled                 int
+		inboundID, enabled, nodeOnly       int
 		inboundTag, clientEmail            string
 		publicClientName, created, updated string
 	}
 	items := make([]assignmentRow, 0)
 	for rows.Next() {
 		var item assignmentRow
-		if err := rows.Scan(&item.managerID, &item.inboundID, &item.inboundTag, &item.clientEmail, &item.publicClientName, &item.enabled, &item.created, &item.updated); err != nil {
+		if err := rows.Scan(&item.managerID, &item.inboundID, &item.inboundTag, &item.clientEmail, &item.publicClientName, &item.nodeOnly, &item.enabled, &item.created, &item.updated); err != nil {
 			_ = rows.Close()
 			return 0, fmt.Errorf("scan area manager assignment for replacement: %w", err)
 		}
@@ -498,17 +498,18 @@ func migrateAreaManagerAssignmentsTx(tx *sql.Tx, sourceAgentID, replacementAgent
 	for _, item := range items {
 		if _, err := tx.Exec(`
 			INSERT INTO area_manager_assignments (
-				manager_id, agent_id, inbound_id, inbound_tag, client_email, public_client_name,
+				manager_id, agent_id, inbound_id, inbound_tag, client_email, public_client_name, node_only,
 				enabled, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(manager_id, agent_id, inbound_id, inbound_tag, client_email) DO UPDATE SET
 				public_client_name = CASE
 					WHEN area_manager_assignments.public_client_name = '' THEN excluded.public_client_name
 					ELSE area_manager_assignments.public_client_name
 				END,
+				node_only = MIN(area_manager_assignments.node_only, excluded.node_only),
 				enabled = MAX(area_manager_assignments.enabled, excluded.enabled),
 				updated_at = excluded.updated_at
-		`, item.managerID, replacementAgentID, item.inboundID, item.inboundTag, item.clientEmail, item.publicClientName, item.enabled, item.created, item.updated); err != nil {
+		`, item.managerID, replacementAgentID, item.inboundID, item.inboundTag, item.clientEmail, item.publicClientName, item.nodeOnly, item.enabled, item.created, item.updated); err != nil {
 			return 0, fmt.Errorf("save replacement area manager assignment: %w", err)
 		}
 	}

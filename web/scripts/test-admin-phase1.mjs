@@ -120,7 +120,7 @@ try {
     routing_rule_count: 2,
     reported_at: new Date().toISOString(),
     last_seen_at: new Date().toISOString(),
-    summary: { cpu: 83, mem_total: 8000, mem_used: 4000, net_io_up: 1024, net_io_down: 2048 },
+    summary: { observed_ip: '203.0.113.10', public_ipv4: '198.51.100.20', cpu: 83, mem_total: 8000, mem_used: 4000, disk_total: 10000, disk_used: 3400, net_io_up: 1024, net_io_down: 2048, net_traffic_total: 4096 },
     geo: { country_code: 'HK', country_name: 'admin-only-location' },
   }
   const props = {
@@ -144,8 +144,8 @@ try {
     onSelectAgent() {},
     onSearchTextChange() {},
   }
-  const render = (restrictedView) =>
-    renderToStaticMarkup(h(ConfigProvider, {}, h(AntApp, {}, h(AssetsPage, { ...props, restrictedView }))))
+  const render = (restrictedView, agents = props.agents) =>
+    renderToStaticMarkup(h(ConfigProvider, {}, h(AntApp, {}, h(AssetsPage, { ...props, agents, restrictedView }))))
   const full = render(false)
   assert.match(full, /香港示例 Client/)
   assert.match(full, /搜索 Client/)
@@ -156,9 +156,42 @@ try {
   assert.match(full, /class="country-flag"/)
   assert.match(full, /aria-label="admin-only-location"/)
   assert.match(full, /查看详情/)
+  assert.equal(full.split('>203.0.113.10<').length - 1, 2, 'IP appears in desktop and mobile identity')
+  assert.doesNotMatch(full, /198\.51\.100\.20/, 'Client-reported IP takes precedence')
+  const ipv4 = render(false, [{ ...agent, summary: { ...agent.summary, observed_ip: '' } }])
+  assert.match(ipv4, /198\.51\.100\.20/, 'public IPv4 is used when observed IP is missing')
+  const ipv6 = render(false, [{ ...agent, summary: { ...agent.summary, observed_ip: '', public_ipv4: '', public_ipv6: '2001:db8::10' } }])
+  assert.match(ipv6, /2001:db8::10/, 'IPv6-only clients retain their address')
+  assert.match(full, /aria-label="CPU 83%"/)
+  assert.match(full, /aria-label="内存 50%"/)
+  assert.match(full, /aria-label="硬盘 34%"/)
+  assert.match(full, /↑ 1.0 KB\/s/)
+  const offlineAgent = {
+    ...agent,
+    last_seen_at: '2020-01-01T00:00:00Z',
+    reported_at: '2020-01-01T00:00:00Z',
+  }
+  const offline = render(false, [offlineAgent])
+  assert.match(offline, /离线/)
+  assert.match(offline, /203\.0\.113\.10/, 'offline clients retain their identifying IP')
+  for (const [label, count] of [['CPU', 2], ['内存', 2], ['硬盘', 1], ['实时网速', 2]]) {
+    assert.equal(
+      offline.split(`aria-label="${label}：Client 离线，暂无实时数据"`).length - 1,
+      count,
+      `${label} hides cached values in desktop and mobile views`,
+    )
+  }
+  assert.doesNotMatch(offline, /aria-label="(?:CPU|内存|硬盘) \d+%"|↑ 1.0 KB\/s|↓ 2.0 KB\/s/)
+  assert.match(offline, /4.0 KB/, 'offline clients retain accumulated traffic')
+  const recovered = render(false, [{ ...offlineAgent, realtime_at: new Date().toISOString() }])
+  assert.match(recovered, /aria-label="CPU 83%"/, 'new realtime data restores live metrics')
+  const idle = render(false, [{ ...agent, summary: { ...agent.summary, cpu: 0, net_io_up: 0, net_io_down: 0 } }])
+  assert.match(idle, /aria-label="CPU 0%"/, 'online zero load remains a valid value')
+  assert.match(idle, /↑ 0 B\/s/, 'online idle speed is not treated as unavailable')
   const restricted = render(true)
   assert.doesNotMatch(restricted, /CPU|内存|硬盘|实时网速|admin-only-location|mem_total/)
   assert.doesNotMatch(restricted, /class="country-flag"/)
+  assert.doesNotMatch(restricted, /203\.0\.113\.10|198\.51\.100\.20/, 'restricted views do not reveal host IPs')
   assert.match(restricted, /已授权/)
   assert.match(restricted, /香港示例 Client/)
   const { adminMenuHref } = await vite.ssrLoadModule('/src/app/adminMenu.ts')

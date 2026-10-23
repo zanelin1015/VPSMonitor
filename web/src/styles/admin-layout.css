@@ -105,6 +105,10 @@
   align-items: center;
   gap: 8px;
 }
+.admin-assets-address {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
 .admin-assets-name small {
   color: var(--muted);
   font-size: 12px;
@@ -168,6 +172,42 @@
 .admin-pro-layout :focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 3px;
+}
+/* Let the desktop workbench inherit the space below the actual page header. */
+@media (min-width: 1181px) {
+  .admin-pro-workbench-layout .ant-pro-layout,
+  .admin-pro-workbench-layout .ant-pro-layout > .ant-layout {
+    height: 100%;
+  }
+  .admin-pro-workbench-layout :is(
+    .ant-pro-layout-container,
+    .ant-pro-layout-content,
+    .admin-pro-page,
+    .ant-pro-grid-content,
+    .ant-pro-grid-content-children,
+    .ant-pro-page-container-children-container,
+    .admin-pro-page-body,
+    .admin-pro-route
+  ) {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .admin-pro-workbench-layout .admin-pro-page > .ant-pro-page-container-warp {
+    flex: 0 0 auto;
+  }
+  .admin-pro-workbench-layout .admin-pro-page-body .admin-workbench {
+    flex: 1 0 auto;
+    height: auto;
+  }
+  .admin-pro-workbench-layout .admin-pro-page-body .admin-workbench-grid {
+    flex: 1 0 574px;
+    grid-template-rows: repeat(2, minmax(280px, 1fr));
+  }
+  .admin-pro-workbench-layout .workbench-client-expiry-card .workbench-client-expiry-list {
+    max-height: none;
+  }
 }
 @media (max-width: 1024px) {
   .admin-pro-page .ant-pro-page-container-children-container {

@@ -438,6 +438,7 @@ export interface AreaManagerAssignment {
   enabled: boolean
   created_at: string
   updated_at: string
+  node_only?: boolean
 }
 
 export interface AreaManagerOutboundGrant {

@@ -10,12 +10,21 @@ import (
 )
 
 type areaManagerTrafficSample struct {
+	Realtime   bool
 	ReportedAt time.Time
 	Scope      string
 	Sent       uint64
 	Recv       uint64
 	UpSpeed    uint64
 	DownSpeed  uint64
+}
+
+func (sample areaManagerTrafficSample) fresh() bool {
+	ttl := realtimeMetricTTL
+	if sample.Realtime {
+		ttl = xuiRealtimeTrafficTTL
+	}
+	return !sample.ReportedAt.IsZero() && time.Since(sample.ReportedAt) <= ttl
 }
 
 type scopedClientTraffic struct {
@@ -34,7 +43,7 @@ type areaManagerRealtimeContextCache struct {
 
 const xuiRealtimeTrafficTTL = 10 * time.Second
 
-func (a *App) areaManagerScopedTrafficSummary(user model.AdminUser, overview *model.XUIOverview) model.VPSSummary {
+func (a *App) areaManagerScopedTrafficSummary(user model.AdminUser, overview *model.XUIOverview, realtimeSample ...bool) model.VPSSummary {
 	if overview == nil {
 		return model.VPSSummary{}
 	}
@@ -57,13 +66,27 @@ func (a *App) areaManagerScopedTrafficSummary(user model.AdminUser, overview *mo
 		a.areaTrafficSamples = make(map[string]areaManagerTrafficSample)
 	}
 	previous, found := a.areaTrafficSamples[cacheKey]
+	isRealtime := len(realtimeSample) > 0 && realtimeSample[0]
+	// Older REST/detail snapshots must not move the realtime baseline backwards.
+	if found && previous.Scope == scope && ((previous.Realtime && !isRealtime && previous.fresh()) || (previous.Realtime == isRealtime && reportedAt.Before(previous.ReportedAt))) {
+		a.areaTrafficMu.Unlock()
+		summary.NetTrafficSent = previous.Sent
+		summary.NetTrafficRecv = previous.Recv
+		summary.NetTrafficTotal = previous.Sent + previous.Recv
+		if previous.fresh() {
+			summary.NetIOUp = previous.UpSpeed
+			summary.NetIODown = previous.DownSpeed
+		}
+		return summary
+	}
 	next := areaManagerTrafficSample{
+		Realtime:   isRealtime,
 		ReportedAt: reportedAt,
 		Scope:      scope,
 		Sent:       totals.Sent,
 		Recv:       totals.Recv,
 	}
-	if found && previous.Scope == scope {
+	if found && previous.Scope == scope && previous.Realtime == isRealtime {
 		next.UpSpeed = previous.UpSpeed
 		next.DownSpeed = previous.DownSpeed
 		if reportedAt.After(previous.ReportedAt) {
@@ -75,7 +98,7 @@ func (a *App) areaManagerScopedTrafficSummary(user model.AdminUser, overview *mo
 	a.areaTrafficSamples[cacheKey] = next
 	a.areaTrafficMu.Unlock()
 
-	if reportedAt.IsZero() || time.Since(reportedAt) > realtimeMetricTTL {
+	if !next.fresh() {
 		return summary
 	}
 	summary.NetIOUp = next.UpSpeed
@@ -162,7 +185,7 @@ func applyScopedClientTrafficToNodes(agentID string, nodes []model.XUINodeView, 
 	}
 	for index := range nodes {
 		totals := byInbound[overviewInboundKey(nodes[index].ID, nodes[index].Tag)]
-		if totals.Count == 0 && clientScope.allowsInbound(agentID, nodes[index].ID, nodes[index].Tag) {
+		if totals.Count == 0 && clientScope.allowsWholeInbound(agentID, nodes[index].ID, nodes[index].Tag) {
 			nodes[index].ClientCount = 0
 			continue
 		}
@@ -205,7 +228,11 @@ func applyScopedClientTrafficToOutbounds(outbounds []model.XUIOutboundView, clie
 }
 
 func (a *App) applyAreaManagerDashboardTraffic(user model.AdminUser, view *model.GlobalDashboardView, clientScope areaManagerClientScope) {
-	a.applyAreaManagerDashboardTrafficWithRealtime(user, view, clientScope, nil)
+	var metrics []model.AgentRealtimeMetrics
+	if a != nil && a.realtime != nil {
+		metrics = a.realtime.snapshot()
+	}
+	a.applyAreaManagerDashboardTrafficWithRealtime(user, view, clientScope, metrics)
 }
 
 func (a *App) applyAreaManagerDashboardTrafficWithRealtime(user model.AdminUser, view *model.GlobalDashboardView, clientScope areaManagerClientScope, metrics []model.AgentRealtimeMetrics) {
@@ -249,13 +276,14 @@ func (a *App) applyAreaManagerDashboardTrafficFromContext(user model.AdminUser, 
 			}
 		}
 		overview.Clients = visibleClients
-		if reportedAt := latestScopedRealtimeTrafficAt(agent.AgentID, visibleClients, realtimeAtByClient); !reportedAt.IsZero() {
+		realtimeAt := latestScopedRealtimeTrafficAt(agent.AgentID, visibleClients, realtimeAtByClient)
+		if reportedAt := realtimeAt; !reportedAt.IsZero() {
 			overview.ReportedAt = reportedAt
 			overview.CollectedAt = reportedAt
 		}
 		// The dashboard path has not sanitized nodes; only use its filtered clients.
 		overview.Nodes = nil
-		agent.Summary = a.areaManagerScopedTrafficSummary(user, overview)
+		agent.Summary = a.areaManagerScopedTrafficSummary(user, overview, !realtimeAt.IsZero())
 	}
 }
 

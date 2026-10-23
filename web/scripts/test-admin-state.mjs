@@ -215,6 +215,28 @@ try {
   await act(async () => {
     renderer.unmount()
   })
+  const { useXUIActionComposer } = await vite.ssrLoadModule('/src/hooks/admin/useXUIActionComposer.ts')
+  const refreshes = []
+  let composer
+  function ComposerHarness() {
+    composer = useXUIActionComposer({
+      adminUser: { id: 2, role: 'area_manager' }, currentOverview: null,
+      selectedAgentId: 'sample-b', message: detailOptions.message, setAdminUser: no,
+      loadXUIActions: async (...args) => refreshes.push(['actions', ...args]),
+      loadOverview: async (...args) => refreshes.push(['overview', ...args]),
+    })
+    return null
+  }
+  await act(async () => { renderer = create(h(ComposerHarness)) })
+  timers.clear()
+  composer.scheduleXUIActionResultRefresh('sample-b')
+  assert.equal(timers.size, 6, 'mutations retry while the Client collects its new snapshot')
+  await act(async () => { for (const timer of timers.values()) timer.fn() })
+  assert.equal(refreshes.filter(call => call[0] === 'actions').length, 6)
+  assert.equal(refreshes.filter(call => call[0] === 'overview').length, 6, 'result polling also reloads the visible client list')
+  assert.ok(refreshes.every(call => call[1] === 'sample-b' && call[2].silent === true))
+  timers.clear()
+  await act(async () => renderer.unmount())
   console.log('admin deep links, role restrictions, timer cleanup, stale responses and unsaved drafts passed')
 } finally {
   renderer?.unmount()

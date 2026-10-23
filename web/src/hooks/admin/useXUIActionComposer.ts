@@ -24,6 +24,7 @@ interface Options {
   selectedAgentId: string
   message: MessageInstance
   loadXUIActions: (agentID?: string, options?: LoadOptions) => Promise<void>
+  loadOverview: (agentID: string, options?: LoadOptions) => Promise<void>
   setAdminUser: Dispatch<SetStateAction<AdminUser | null>>
 }
 
@@ -33,6 +34,7 @@ export function useXUIActionComposer({
   selectedAgentId,
   message,
   loadXUIActions,
+  loadOverview,
   setAdminUser,
 }: Options) {
   const [xuiActionModalOpen, setXUIActionModalOpen] = useState(false)
@@ -145,6 +147,7 @@ export function useXUIActionComposer({
     ;[500, 1000, 2000, 4000, 8000, 15000].forEach((delay) => {
       window.setTimeout(() => {
         void loadXUIActions(agentID, { silent: true })
+        void loadOverview(agentID, { silent: true })
       }, delay)
     })
   }
