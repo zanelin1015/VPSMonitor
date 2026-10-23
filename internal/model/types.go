@@ -95,6 +95,7 @@ type RealmSnapshot struct {
 	ConfigPath  string             `json:"config_path,omitempty"`
 	ServiceName string             `json:"service_name,omitempty"`
 	BinaryPath  string             `json:"binary_path,omitempty"`
+	Running     bool               `json:"running"`
 	CollectedAt time.Time          `json:"collected_at"`
 	Error       string             `json:"error,omitempty"`
 	Rules       []RealmForwardRule `json:"rules,omitempty"`
@@ -103,6 +104,7 @@ type RealmSnapshot struct {
 type HAProxySnapshot struct {
 	CollectedAt time.Time                  `json:"collected_at"`
 	SocketPath  string                     `json:"socket_path,omitempty"`
+	Running     bool                       `json:"running"`
 	Error       string                     `json:"error,omitempty"`
 	Rules       []HAProxyRuleRuntimeStatus `json:"rules,omitempty"`
 }

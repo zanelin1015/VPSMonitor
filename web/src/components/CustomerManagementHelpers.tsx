@@ -6,7 +6,7 @@ const { Text } = Typography
 
 export const DEFAULT_ACCOUNT_PASSWORD = '12345678'
 
-export type ManagementTabKey = 'area' | 'customers' | 'operators'
+export type ManagementTabKey = 'area' | 'customers' | 'operators' | 'roles'
 
 export interface CustomerFormState {
   username: string
@@ -48,6 +48,12 @@ export interface AreaManagerOutboundGrantDraft {
 }
 
 export interface AreaManagerFormState {
+  realm_enabled: boolean
+  line_enabled: boolean
+  landing_enabled: boolean
+  front_link_enabled: boolean
+  line_agent_ids: string[]
+  landing_agent_ids: string[]
   username: string
   password: string
   display_name: string
@@ -58,9 +64,6 @@ export interface AreaManagerFormState {
   revenue_currency: 'CNY' | 'USDT'
   revenue_cycle: 'month' | 'quarter' | 'semiannual' | 'year'
   grant_agent_id: string
-  xui_grant_agent_id: string
-  outbound_create_enabled: boolean
-  outbound_grant_agent_id: string
   outbound_grants: AreaManagerOutboundGrantDraft[]
   front_proxy_node_ids: number[]
   assignments: AreaManagerAssignmentDraft[]
@@ -100,6 +103,8 @@ export const emptyAssignmentForm: AssignmentFormState = {
 }
 
 export const emptyAreaManagerForm: AreaManagerFormState = {
+  realm_enabled: false, line_enabled: false, landing_enabled: false, front_link_enabled: false,
+  line_agent_ids: [], landing_agent_ids: [],
   username: '',
   password: '',
   display_name: '',
@@ -110,9 +115,6 @@ export const emptyAreaManagerForm: AreaManagerFormState = {
   revenue_currency: 'CNY',
   revenue_cycle: 'month',
   grant_agent_id: '',
-  xui_grant_agent_id: '',
-  outbound_create_enabled: false,
-  outbound_grant_agent_id: '',
   outbound_grants: [],
   front_proxy_node_ids: [],
   assignments: [],
@@ -145,14 +147,14 @@ export function clientKey(client: XUIClientView): string {
 
 export function buildAssignmentTargetOptions(overview: XUIOverview | null) {
   const clients = (overview?.clients || [])
-    .filter((client) => !isRealmForwardedClientOption(client))
+    .filter((client) => client.enabled !== false && !isRealmForwardedClientOption(client))
     .map((client) => ({
       value: clientKey(client),
       label: clientLabel(client),
       client,
       node: undefined as XUINodeView | undefined,
     }))
-  const nodes = (overview?.nodes || []).map((node) => ({
+  const nodes = (overview?.nodes || []).filter(node => node.enabled !== false).map((node) => ({
     value: nodeKey(node),
     label: nodeLabel(node),
     client: undefined as XUIClientView | undefined,
@@ -201,8 +203,9 @@ export function buildAreaAssignmentTreeData(agentID: string, overview: XUIOvervi
 }
 
 function overviewNodeGroups(overview: XUIOverview | null, excludeRealmForwarded: boolean) {
-  const nodes = [...(overview?.nodes || [])]
-  const clients = (overview?.clients || []).filter((client) => !excludeRealmForwarded || !isRealmForwardedClientOption(client))
+  const nodes = [...(overview?.nodes || [])].filter(node => node.enabled !== false)
+  const disabledNodes = new Set((overview?.nodes || []).filter(node => node.enabled === false).map(node => Number(node.id)))
+  const clients = (overview?.clients || []).filter((client) => !disabledNodes.has(Number(client.inbound_id)) && client.enabled !== false && (!excludeRealmForwarded || !isRealmForwardedClientOption(client)))
   const nodeIDs = new Set(nodes.map((node) => Number(node.id || 0)))
   for (const client of clients) {
     if (!nodeIDs.has(Number(client.inbound_id || 0))) {
@@ -232,9 +235,11 @@ export function assignmentNodeKeys(agentID: string, overview: XUIOverview | null
 
 export function buildRealmGrantOptions(agentID: string, agents: DashboardAgentView[]) {
   const agent = agents.find((item) => item.agent_id === agentID)
+  const lastSeen = Date.parse(agent?.last_seen_at || agent?.reported_at || '')
+  if (!Number.isFinite(lastSeen) || Date.now() - lastSeen > 120_000) return []
   const realmConfig = agent?.entry?.port_forwarding
-  const realmRules = realmConfig?.enabled && (realmConfig.backend || '').trim().toLowerCase() !== 'none' ? realmConfig.rules || [] : []
-  const haProxyRules = agent?.entry?.haproxy?.enabled ? agent.entry.haproxy.rules || [] : []
+  const realmRules = agent?.realm?.running && !agent.realm.error && realmConfig?.enabled && (realmConfig.backend || '').trim().toLowerCase() !== 'none' ? realmConfig.rules || [] : []
+  const haProxyRules = agent?.haproxy?.running && !agent.haproxy.error && agent?.entry?.haproxy?.enabled ? agent.entry.haproxy.rules || [] : []
   const seenPorts = new Set<number>()
   const realmOptions = realmRules
     .filter((rule) => rule.enabled !== false && Number(rule.listen_port || 0) > 0)

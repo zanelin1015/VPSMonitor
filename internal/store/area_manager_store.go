@@ -37,6 +37,9 @@ func (s *SQLiteStore) ListAreaManagers() ([]model.AreaManagerAdminView, error) {
 		return nil, fmt.Errorf("close area manager rows: %w", err)
 	}
 	for i := range items {
+		if err := s.hydrateAreaManagerPermissions(&items[i]); err != nil {
+			return nil, err
+		}
 		items[i].AgentIDs, err = s.ListAreaManagerAgentIDs(items[i].ID)
 		if err != nil {
 			return nil, err
@@ -68,6 +71,9 @@ func (s *SQLiteStore) GetAreaManager(id int64) (model.AreaManagerAdminView, bool
 	item, found, err := s.getAreaManagerBase(id)
 	if err != nil || !found {
 		return item, found, err
+	}
+	if err := s.hydrateAreaManagerPermissions(&item); err != nil {
+		return model.AreaManagerAdminView{}, false, err
 	}
 	item.AgentIDs, err = s.ListAreaManagerAgentIDs(id)
 	if err != nil {
@@ -144,6 +150,9 @@ func (s *SQLiteStore) CreateAreaManager(req model.AreaManagerAccountRequest) (mo
 	if err = s.replaceAreaManagerOutboundGrantsTx(tx, id, normalized.outboundGrants); err != nil {
 		return model.AreaManagerAdminView{}, err
 	}
+	if err = s.replaceAreaManagerPermissionsTx(tx, id, normalized); err != nil {
+		return model.AreaManagerAdminView{}, err
+	}
 	if err = tx.Commit(); err != nil {
 		return model.AreaManagerAdminView{}, fmt.Errorf("commit area manager create: %w", err)
 	}
@@ -202,9 +211,38 @@ func (s *SQLiteStore) UpdateAreaManager(id int64, req model.AreaManagerAccountRe
 	if req.OutboundCreateEnabled == nil {
 		normalized.outboundCreateEnabled = current.view.OutboundCreateEnabled
 	}
+	if req.LandingEnabled != nil {
+		normalized.outboundCreateEnabled = *req.LandingEnabled
+	}
 	if normalized.agentIDs == nil {
 		normalized.agentIDs = current.view.AgentIDs
 	}
+	if normalized.realmEnabled == nil {
+		normalized.realmEnabled = areaPermissionBool(current.view.RealmEnabled)
+	}
+	if normalized.lineEnabled == nil {
+		normalized.lineEnabled = areaPermissionBool(current.view.LineEnabled)
+	}
+	if normalized.landingEnabled == nil {
+		normalized.landingEnabled = areaPermissionBool(current.view.LandingEnabled)
+	}
+	if normalized.frontLinkEnabled == nil {
+		normalized.frontLinkEnabled = areaPermissionBool(current.view.FrontLinkEnabled)
+	}
+	if normalized.lineAgentIDs == nil {
+		normalized.lineAgentIDs = cloneStrings(current.view.LineAgentIDs)
+	}
+	if normalized.landingAgentIDs == nil {
+		normalized.landingAgentIDs = cloneStrings(current.view.LandingAgentIDs)
+	}
+	if !*normalized.lineEnabled {
+		normalized.lineAgentIDs = []string{}
+	}
+	if !*normalized.landingEnabled {
+		normalized.landingAgentIDs = []string{}
+		normalized.outboundCreateEnabled = false
+	}
+	normalized.agentIDs = uniqueAreaManagerAgentIDs(append(normalized.agentIDs, append(normalized.lineAgentIDs, normalized.landingAgentIDs...)...))
 	if normalized.outboundGrants != nil {
 		if err := validateAreaManagerOutboundGrantAgents(normalized.agentIDs, normalized.outboundGrants); err != nil {
 			return model.AreaManagerAdminView{}, err
@@ -251,6 +289,14 @@ func (s *SQLiteStore) UpdateAreaManager(id int64, req model.AreaManagerAccountRe
 	}
 	if normalized.outboundGrants != nil {
 		if err = s.replaceAreaManagerOutboundGrantsTx(tx, id, normalized.outboundGrants); err != nil {
+			return model.AreaManagerAdminView{}, err
+		}
+	}
+	if err = s.replaceAreaManagerPermissionsTx(tx, id, normalized); err != nil {
+		return model.AreaManagerAdminView{}, err
+	}
+	if (req.LineEnabled != nil && !*req.LineEnabled) || (req.LandingEnabled != nil && !*req.LandingEnabled) || (req.RealmEnabled != nil && !*req.RealmEnabled) {
+		if _, err = tx.Exec(`DELETE FROM area_manager_agents WHERE manager_id=? AND agent_id NOT IN (SELECT agent_id FROM area_manager_assignments WHERE manager_id=? UNION SELECT agent_id FROM area_manager_outbound_grants WHERE manager_id=?)`, id, id, id); err != nil {
 			return model.AreaManagerAdminView{}, err
 		}
 	}
@@ -577,6 +623,12 @@ type normalizedAreaManagerRequest struct {
 	revenueCycle          string
 	outboundCreateEnabled bool
 	outboundGrants        []model.AreaManagerOutboundGrantRequest
+	realmEnabled          *bool
+	lineEnabled           *bool
+	landingEnabled        *bool
+	frontLinkEnabled      *bool
+	lineAgentIDs          []string
+	landingAgentIDs       []string
 }
 
 func (s *SQLiteStore) normalizeAreaManagerRequest(req model.AreaManagerAccountRequest, creating bool) (normalizedAreaManagerRequest, error) {
@@ -605,6 +657,9 @@ func (s *SQLiteStore) normalizeAreaManagerRequest(req model.AreaManagerAccountRe
 	outboundCreateEnabled := false
 	if req.OutboundCreateEnabled != nil {
 		outboundCreateEnabled = *req.OutboundCreateEnabled
+	}
+	if req.LandingEnabled != nil {
+		outboundCreateEnabled = *req.LandingEnabled
 	}
 	revenueAmount := 0.0
 	if req.RevenueAmount != nil {
@@ -641,7 +696,26 @@ func (s *SQLiteStore) normalizeAreaManagerRequest(req model.AreaManagerAccountRe
 			return normalizedAreaManagerRequest{}, err
 		}
 	}
+	lineIDs, err := s.normalizeAreaManagerAgentIDs(req.LineAgentIDs)
+	if err != nil {
+		return normalizedAreaManagerRequest{}, err
+	}
+	landingIDs, err := s.normalizeAreaManagerAgentIDs(req.LandingAgentIDs)
+	if err != nil {
+		return normalizedAreaManagerRequest{}, err
+	}
+	if !creating && req.LineAgentIDs == nil {
+		lineIDs = nil
+	}
+	if !creating && req.LandingAgentIDs == nil {
+		landingIDs = nil
+	}
+	if creating {
+		agentIDs = uniqueAreaManagerAgentIDs(append(agentIDs, append(lineIDs, landingIDs...)...))
+	}
 	return normalizedAreaManagerRequest{
+		realmEnabled: req.RealmEnabled, lineEnabled: req.LineEnabled, landingEnabled: req.LandingEnabled, frontLinkEnabled: req.FrontLinkEnabled,
+		lineAgentIDs: lineIDs, landingAgentIDs: landingIDs,
 		username:              username,
 		displayName:           displayName,
 		enabled:               enabled,
@@ -782,6 +856,9 @@ func (s *SQLiteStore) getAreaManagerWithHash(id int64) (areaManagerWithHash, boo
 	item.view.RevenueCycle = normalizeAreaManagerRevenueCycle(item.view.RevenueCycle)
 	item.view.CreatedAt = parseTime(createdAtText)
 	item.view.UpdatedAt = parseTime(updatedAtText)
+	if err := s.hydrateAreaManagerPermissions(&item.view); err != nil {
+		return areaManagerWithHash{}, false, err
+	}
 	item.view.AgentIDs, err = s.ListAreaManagerAgentIDs(id)
 	if err != nil {
 		return areaManagerWithHash{}, false, err

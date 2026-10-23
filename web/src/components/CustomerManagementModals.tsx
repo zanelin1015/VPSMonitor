@@ -1,16 +1,14 @@
 import type { Dispatch, ReactNode, SetStateAction } from 'react'
-import { Button, Card, Checkbox, Col, Empty, Input, InputNumber, Modal, Row, Select, Space, Switch, Table, Tag, TreeSelect, Typography } from 'antd'
-import type { TreeSelectProps } from 'antd'
+import { Button, Card, Checkbox, Col, Empty, Input, InputNumber, Modal, Row, Select, Space, Switch, Table, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { SaveOutlined } from '@ant-design/icons'
 
-import type { AreaManagerAssignment, CustomerAdminView, CustomerAssignment, XUIOverview } from '../types'
+import type { AreaManagerAssignment, CustomerAdminView, CustomerAssignment } from '../types'
 import { REVENUE_CURRENCIES } from '../lib/currency'
 import { customerEntryURL } from '../lib/appBasePath'
 import type { AreaManagerFormState, AssignmentFormState, CustomerFormState } from './CustomerManagementHelpers'
 import {
   areaAssignmentKey,
-  assignmentNodeKeys,
   DEFAULT_ACCOUNT_PASSWORD,
   emptyAssignmentForm,
   emptyCustomerForm,
@@ -18,14 +16,20 @@ import {
   renderAssignmentHierarchy,
 } from './CustomerManagementHelpers'
 
+import { AreaFrontLinkCreate } from './AreaFrontLinkCreate'
+import { AreaMachineGrantFields, AreaPermissionField, AreaPermissionSection } from './AreaPermissionFields'
+
 const { Text } = Typography
 
 export interface CustomerManagementModalsProps {
   canManageAreaManagers: boolean
   agents: Parameters<typeof renderAssignmentHierarchy>[1]
   agentOptions: Array<{ value: string; label: string }>
+  realmAgentOptions: Array<{ value: string; label: string }>
+  lineAgentOptions: Array<{ value: string; label: string }>
+  landingAgentOptions: Array<{ value: string; label: string }>
+  onFrontLinksChanged: () => Promise<void>
   frontProxyOptions: Array<{ value: number; label: string }>
-  areaManagerOutboundAgentOptions: Array<{ value: string; label: string }>
   editingAreaManagerID: number | null
   areaManagerModalOpen: boolean
   areaManagerForm: AreaManagerFormState
@@ -33,19 +37,9 @@ export interface CustomerManagementModalsProps {
   savingAreaManager: boolean
   onCloseAreaManagerModal: () => void
   onSaveAreaManager: () => void
-  areaManagerXUIGrantAgentID: string
-  areaManagerOverview: XUIOverview | null
-  areaManagerOverviewLoading: boolean
-  areaManagerOutboundOverviewLoading: boolean
-  areaManagerGrantTreeData: TreeSelectProps['treeData']
   areaManagerRealmGrantOptions: Array<{ value: string; label: string }>
-  areaManagerOutboundGrantOptions: Array<{ value: string; label: string }>
   selectedAreaManagerRealmKeys: string[]
-  selectedAreaManagerXUIKeys: string[]
-  selectedAreaManagerOutboundTags: string[]
   onUpdateAreaManagerRealmGrantTargets: (values: string[]) => void
-  onUpdateAreaManagerGrantTargets: (values: string[]) => void
-  onUpdateAreaManagerOutboundGrantTargets: (values: string[]) => void
   onRemoveAreaManagerGrant: (key: string) => void
   onRemoveAreaManagerOutboundGrant: (agentID: string, outboundTag: string) => void
 
@@ -86,9 +80,8 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
   const {
     canManageAreaManagers,
     agents,
-    agentOptions,
+    realmAgentOptions, lineAgentOptions, landingAgentOptions, onFrontLinksChanged,
     frontProxyOptions,
-    areaManagerOutboundAgentOptions,
     editingAreaManagerID,
     areaManagerModalOpen,
     areaManagerForm,
@@ -96,19 +89,9 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
     savingAreaManager,
     onCloseAreaManagerModal,
     onSaveAreaManager,
-    areaManagerXUIGrantAgentID,
-    areaManagerOverview,
-    areaManagerOverviewLoading,
-    areaManagerOutboundOverviewLoading,
-    areaManagerGrantTreeData,
     areaManagerRealmGrantOptions,
-    areaManagerOutboundGrantOptions,
     selectedAreaManagerRealmKeys,
-    selectedAreaManagerXUIKeys,
-    selectedAreaManagerOutboundTags,
     onUpdateAreaManagerRealmGrantTargets,
-    onUpdateAreaManagerGrantTargets,
-    onUpdateAreaManagerOutboundGrantTargets,
     onRemoveAreaManagerGrant,
     onRemoveAreaManagerOutboundGrant,
     customerCreateModalOpen,
@@ -235,161 +218,118 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
                 </Row>
               </Card>
             </Col>
-            <Col xs={24} md={12}>
-              <Text type="secondary">转发入口 Client</Text>
-              <Select
-                style={{ width: '100%' }}
-                showSearch
-                placeholder="选择 GZ 入口 Client"
-                options={agentOptions}
-                value={areaManagerForm.grant_agent_id || undefined}
-                optionFilterProp="label"
-                onChange={(value) => setAreaManagerForm((current) => ({ ...current, grant_agent_id: value }))}
-              />
-            </Col>
-            <Col xs={24} md={12}>
-              <Text type="secondary">x-ui 出口 Client</Text>
-              <Select
-                style={{ width: '100%' }}
-                showSearch
-                placeholder="选择 HK 出口 Client"
-                options={agentOptions}
-                value={areaManagerXUIGrantAgentID || undefined}
-                optionFilterProp="label"
-                onChange={(value) => setAreaManagerForm((current) => ({ ...current, xui_grant_agent_id: value }))}
-              />
-            </Col>
-            <Col xs={24} md={12}>
-              <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                <Text type="secondary">转发入口授权</Text>
-                <Button size="small" disabled={!areaManagerForm.grant_agent_id || !areaManagerRealmGrantOptions.length} onClick={() => onUpdateAreaManagerRealmGrantTargets(areaManagerRealmGrantOptions.map((option) => option.value))}>全选</Button>
-              </Space>
-              <Select
-                mode="multiple"
-                style={{ width: '100%' }}
-                showSearch
-                placeholder="选择 Realm / HAProxy 入口"
-                value={selectedAreaManagerRealmKeys}
-                disabled={!areaManagerForm.grant_agent_id}
-                options={areaManagerRealmGrantOptions.map((option) => ({ value: option.value, label: option.label }))}
-                optionFilterProp="label"
-                maxTagCount="responsive"
-                onChange={(values) => onUpdateAreaManagerRealmGrantTargets(values)}
-              />
-            </Col>
-            <Col xs={24} md={12}>
-              <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                <Text type="secondary">x-ui 节点 / 客户端授权</Text>
-                <Button
-                  size="small"
-                  disabled={!areaManagerXUIGrantAgentID || !(areaManagerGrantTreeData?.length)}
-                  onClick={() => onUpdateAreaManagerGrantTargets(assignmentNodeKeys(areaManagerXUIGrantAgentID, areaManagerOverview, agents))}
-                >
-                  全选
-                </Button>
-              </Space>
-              <TreeSelect
-                multiple
-                treeCheckable
-                style={{ width: '100%' }}
-                showSearch
-                placeholder="按 Client / 节点 / 客户端授权"
-                value={selectedAreaManagerXUIKeys}
-                loading={areaManagerOverviewLoading}
-                disabled={!areaManagerXUIGrantAgentID}
-                treeData={areaManagerGrantTreeData}
-                treeDefaultExpandAll
-                showCheckedStrategy={TreeSelect.SHOW_PARENT}
-                maxTagCount="responsive"
-                onChange={(values) => onUpdateAreaManagerGrantTargets(values as string[])}
-              />
-            </Col>
             <Col xs={24}>
-              <Text type="secondary">节点落地权限</Text>
-              <div className="customer-admin-switch-row">
-                <Switch
-                  checked={areaManagerForm.outbound_create_enabled}
-                  onChange={(checked) => setAreaManagerForm((current) => ({ ...current, outbound_create_enabled: checked }))}
-                />
-                <Text>允许添加已授权 Client 的节点作为落地</Text>
-              </div>
+              <Card size="small" title="权限类别">
+                <Space wrap size="large">
+                  {([{ key: 'realm_enabled', label: 'Realm / HAProxy 前置入口' }, { key: 'line_enabled', label: '线路机' }, { key: 'landing_enabled', label: '落地机' }, { key: 'front_link_enabled', label: '前置链接' }] as const).map(({ key, label }) => <Space key={key}>
+                    <Switch aria-label={label + '权限'} checked={areaManagerForm[key]} onChange={checked => setAreaManagerForm(current => {
+                      const next = { ...current, [key]: checked }
+                      if (!checked) {
+                        if (key === 'realm_enabled') { next.grant_agent_id = ''; next.assignments = next.assignments.filter(item => !isRealmAssignmentDraft(item, agents)) }
+                        if (key === 'front_link_enabled') next.front_proxy_node_ids = []
+                        if (key === 'line_enabled') next.outbound_grants = []
+                        if (key === 'line_enabled' || key === 'landing_enabled') {
+                          const keep = new Set([...(next.line_enabled ? lineAgentOptions : []), ...(next.landing_enabled ? landingAgentOptions : [])].map(item => item.value))
+                          next.assignments = next.assignments.filter(item => isRealmAssignmentDraft(item, agents) || keep.has(item.agent_id))
+                        }
+                      }
+                      return next
+                    })} /><Text>{label}</Text>
+                  </Space>)}
+                </Space>
+              </Card>
             </Col>
-            <Col xs={24} md={12}>
-              <Text type="secondary">当前 Client</Text>
-              <Select
-                style={{ width: '100%' }}
-                showSearch
-                allowClear
-                placeholder="选择已授权的 Client"
-                options={areaManagerOutboundAgentOptions}
-                value={areaManagerForm.outbound_grant_agent_id || undefined}
-                optionFilterProp="label"
-                onChange={(value) => setAreaManagerForm((current) => ({ ...current, outbound_grant_agent_id: value || '' }))}
-              />
-            </Col>
-            <Col xs={24} md={12}>
-              <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                <Text type="secondary">当前 Client 已有出站规则</Text>
-                <Button
-                  size="small"
-                  disabled={!areaManagerForm.outbound_grant_agent_id || !areaManagerOutboundGrantOptions.length}
-                  onClick={() => onUpdateAreaManagerOutboundGrantTargets(areaManagerOutboundGrantOptions.map((option) => option.value))}
-                >
-                  全选
-                </Button>
-              </Space>
-              <Select
-                mode="multiple"
-                style={{ width: '100%' }}
-                showSearch
-                placeholder="选择允许区域账号使用的出站规则"
-                value={selectedAreaManagerOutboundTags}
-                options={areaManagerOutboundGrantOptions}
-                optionFilterProp="label"
-                loading={areaManagerOutboundOverviewLoading}
-                disabled={!areaManagerForm.outbound_grant_agent_id}
-                maxTagCount="responsive"
-                onChange={onUpdateAreaManagerOutboundGrantTargets}
-              />
-            </Col>
-            <Col xs={24}>
-              <Text type="secondary">第三方前置代理授权</Text>
-              <Select
-                mode="multiple"
-                style={{ width: '100%' }}
-                placeholder="选择允许该区域账号继续下发的前置代理"
-                value={areaManagerForm.front_proxy_node_ids}
-                options={frontProxyOptions}
-                optionFilterProp="label"
-                maxTagCount="responsive"
-                onChange={(values) => setAreaManagerForm((current) => ({ ...current, front_proxy_node_ids: values }))}
-              />
-            </Col>
-            <Col xs={24}>
-              <Text type="secondary">已授权范围</Text>
-              <div style={{ marginTop: 6 }}>
-                {areaManagerForm.assignments.length ? renderAssignmentHierarchy(areaManagerForm.assignments, agents, onRemoveAreaManagerGrant) : <Tag>未选择节点</Tag>}
-              </div>
-            </Col>
-            <Col xs={24}>
-              <Text type="secondary">已授权出站</Text>
-              <div style={{ marginTop: 6 }}>
-                {areaManagerForm.outbound_grants.length ? (
-                  <Space wrap size={[6, 6]}>
-                    {areaManagerForm.outbound_grants.map((grant) => (
-                      <Tag
-                        key={`${grant.agent_id}::${grant.outbound_tag}`}
-                        color="cyan"
-                        closable
-                        onClose={() => onRemoveAreaManagerOutboundGrant(grant.agent_id, grant.outbound_tag)}
-                      >
-                        {(agents.find((agent) => agent.agent_id === grant.agent_id)?.agent_name || grant.agent_id)} / {grant.outbound_tag}
-                      </Tag>
-                    ))}
-                  </Space>
-                ) : <Tag>未授权出站</Tag>}
-              </div>
-            </Col>
+            {areaManagerForm.realm_enabled ? (
+              <AreaPermissionSection title="Realm / HAProxy 前置入口">
+                <AreaPermissionField label="前置入口 Client">
+                  <Select
+                    style={{ width: '100%' }}
+                    showSearch
+                    placeholder="选择正在运行 Realm / HAProxy 的 Client"
+                    disabled={!areaManagerForm.realm_enabled}
+                    options={areaManagerForm.realm_enabled ? realmAgentOptions : []}
+                    value={areaManagerForm.grant_agent_id || undefined}
+                    optionFilterProp="label"
+                    onChange={(value) => setAreaManagerForm((current) => ({ ...current, grant_agent_id: value }))}
+                  />
+                </AreaPermissionField>
+                <AreaPermissionField label="转发入口授权" action={
+                  <Button size="small" disabled={!areaManagerForm.grant_agent_id || !areaManagerRealmGrantOptions.length} onClick={() => onUpdateAreaManagerRealmGrantTargets(areaManagerRealmGrantOptions.map(option => option.value))}>全选</Button>
+                }>
+                  <Select
+                    mode="multiple"
+                    style={{ width: '100%' }}
+                    showSearch
+                    placeholder="选择 Realm / HAProxy 入口"
+                    value={selectedAreaManagerRealmKeys}
+                    disabled={!areaManagerForm.realm_enabled || !areaManagerForm.grant_agent_id}
+                    options={areaManagerRealmGrantOptions.map((option) => ({ value: option.value, label: option.label }))}
+                    optionFilterProp="label"
+                    maxTagCount="responsive"
+                    onChange={(values) => onUpdateAreaManagerRealmGrantTargets(values)}
+                  />
+                </AreaPermissionField>
+              </AreaPermissionSection>
+            ) : null}
+            {areaManagerForm.line_enabled ? (
+              <AreaPermissionSection title="线路机">
+                <AreaMachineGrantFields kind="line" options={lineAgentOptions} form={areaManagerForm} setForm={setAreaManagerForm} agents={agents} />
+              </AreaPermissionSection>
+            ) : null}
+            {areaManagerForm.landing_enabled ? (
+              <AreaPermissionSection title="落地机">
+                <AreaMachineGrantFields kind="landing" options={landingAgentOptions} form={areaManagerForm} setForm={setAreaManagerForm} agents={agents} />
+                <Col xs={24}><Text type="secondary">开启落地机权限后，允许添加已授权 Client 的节点作为落地。</Text></Col>
+              </AreaPermissionSection>
+            ) : null}
+            {areaManagerForm.front_link_enabled ? (
+              <AreaPermissionSection title="前置链接">
+                <AreaPermissionField label="前置链接授权" action={
+                  <AreaFrontLinkCreate agents={agents} onCreated={async id => { await onFrontLinksChanged(); setAreaManagerForm(current => ({ ...current, front_proxy_node_ids: [...current.front_proxy_node_ids, id] })) }} />
+                }>
+                  <Select
+                    mode="multiple"
+                    style={{ width: '100%' }}
+                    placeholder="选择已启用的本地或第三方前置链接"
+                    disabled={!areaManagerForm.front_link_enabled}
+                    value={areaManagerForm.front_proxy_node_ids}
+                    options={areaManagerForm.front_link_enabled ? frontProxyOptions : []}
+                    optionFilterProp="label"
+                    maxTagCount="responsive"
+                    onChange={(values) => setAreaManagerForm((current) => ({ ...current, front_proxy_node_ids: values }))}
+                  />
+                </AreaPermissionField>
+              </AreaPermissionSection>
+            ) : null}
+            {(areaManagerForm.realm_enabled || areaManagerForm.line_enabled || areaManagerForm.landing_enabled) ? (
+              <Col xs={24}>
+                <Text type="secondary">已授权范围</Text>
+                <div style={{ marginTop: 6 }}>
+                  {areaManagerForm.assignments.length ? renderAssignmentHierarchy(areaManagerForm.assignments, agents, onRemoveAreaManagerGrant) : <Tag>未选择节点</Tag>}
+                </div>
+              </Col>
+            ) : null}
+            {(areaManagerForm.line_enabled) ? (
+              <Col xs={24}>
+                <Text type="secondary">已授权出站</Text>
+                <div style={{ marginTop: 6 }}>
+                  {areaManagerForm.outbound_grants.length ? (
+                    <Space wrap size={[6, 6]}>
+                      {areaManagerForm.outbound_grants.map((grant) => (
+                        <Tag
+                          key={`${grant.agent_id}::${grant.outbound_tag}`}
+                          color="cyan"
+                          closable
+                          onClose={() => onRemoveAreaManagerOutboundGrant(grant.agent_id, grant.outbound_tag)}
+                        >
+                          {(agents.find((agent) => agent.agent_id === grant.agent_id)?.agent_name || grant.agent_id)} / {grant.outbound_tag}
+                        </Tag>
+                      ))}
+                    </Space>
+                  ) : <Tag>未授权出站</Tag>}
+                </div>
+              </Col>
+            ) : null}
           </Row>
         </Modal>
       ) : null}

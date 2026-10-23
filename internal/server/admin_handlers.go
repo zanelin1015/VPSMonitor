@@ -22,6 +22,10 @@ func (a *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		a.handleAdminSupport(w, r, parts)
 		return
 	}
+	if path == "agent-roles" {
+		a.handleAdminAgentRoles(w, r)
+		return
+	}
 	if path == "area-managers" || strings.HasPrefix(path, "area-managers/") {
 		a.handleAdminAreaManagers(w, r, strings.Split(path, "/")[1:])
 		return

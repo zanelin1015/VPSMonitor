@@ -15,6 +15,7 @@ import {
   Statistic,
   Tag,
   Typography,
+  theme,
 } from 'antd'
 import { useEffect, useState, type ComponentProps } from 'react'
 import type { AgentRail } from '../../components/DashboardAgentRail'
@@ -46,6 +47,23 @@ function ResourceMetric({ value, label }: { value?: number; label: string }) {
     <div className="admin-assets-metric" aria-label={`${label} ${percent.toFixed(0)}%`}>
       <span>{percent.toFixed(0)}%</span>
       <Progress percent={percent} showInfo={false} size="small" status={percent >= 90 ? 'exception' : 'normal'} />
+    </div>
+  )
+}
+
+function TrafficMetric({ agent, restrictedView }: { agent: DashboardAgentView; restrictedView?: boolean }) {
+  const { token } = theme.useToken()
+  const traffic = calculateTrafficStatus(agent).total
+  if (restrictedView) return <span>{formatBytes(traffic.used)}</span>
+  const hasLimit = traffic.total > 0 && typeof traffic.percent === 'number'
+  const color = traffic.level === 'bad' ? token.colorError : traffic.level === 'warn' ? token.colorWarning : token.colorPrimary
+  return (
+    <div className="admin-assets-metric" title={hasLimit ? traffic.label : '未设置流量额度'} aria-label={`周期流量 ${hasLimit ? traffic.label : formatBytes(traffic.used) + '，未设置额度'}`}>
+      <div className="admin-assets-traffic-value">
+        <span>{formatBytes(traffic.used)}{hasLimit ? ` / ${formatBytes(traffic.total)}` : ''}</span>
+        <Typography.Text type="secondary">{hasLimit ? `${((traffic.used / traffic.total) * 100).toFixed(1)}%` : '未设置额度'}</Typography.Text>
+      </div>
+      {hasLimit ? <Progress percent={traffic.percent} showInfo={false} size="small" strokeColor={color} status={traffic.level === 'bad' ? 'exception' : 'normal'} /> : null}
     </div>
   )
 }
@@ -164,9 +182,9 @@ export function AssetsPage(props: AssetsPageProps) {
     {
       title: '周期流量',
       key: 'traffic',
-      width: 140,
+      width: 190,
       sorter: (a, b) => calculateTrafficStatus(a).total.used - calculateTrafficStatus(b).total.used,
-      render: (_, agent) => formatBytes(calculateTrafficStatus(agent).total.used),
+      render: (_, agent) => <TrafficMetric agent={agent} restrictedView={props.restrictedView} />,
     },
     {
       title: '节点 / 客户端',
@@ -320,7 +338,7 @@ export function AssetsPage(props: AssetsPageProps) {
               ) : null}
               <div>
                 <Typography.Text type="secondary">周期流量</Typography.Text>
-                <div>{formatBytes(calculateTrafficStatus(agent).total.used)}</div>
+                <TrafficMetric agent={agent} restrictedView={props.restrictedView} />
               </div>
               {!props.restrictedView ? (
                 <div>

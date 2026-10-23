@@ -141,6 +141,18 @@ func (s *SQLiteStore) init() error {
 		);
 		`,
 		`
+		CREATE TABLE IF NOT EXISTS area_manager_permissions (
+			manager_id INTEGER PRIMARY KEY,
+			realm_enabled INTEGER NOT NULL DEFAULT 1,
+			line_enabled INTEGER NOT NULL DEFAULT 1,
+			landing_enabled INTEGER NOT NULL DEFAULT 1,
+			front_link_enabled INTEGER NOT NULL DEFAULT 1,
+			line_agent_ids_json TEXT NOT NULL DEFAULT '[]',
+			landing_agent_ids_json TEXT NOT NULL DEFAULT '[]',
+			FOREIGN KEY(manager_id) REFERENCES area_manager_accounts(id) ON DELETE CASCADE
+		);
+		`,
+		`
 		CREATE TABLE IF NOT EXISTS front_proxy_nodes (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,

@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -145,12 +146,31 @@ func collectRealmSnapshot(cfg model.RealmForwardConfig) *model.RealmSnapshot {
 			CollectedAt: time.Now().UTC(),
 			Rules:       rules,
 		}
+		snapshot.Running = realmServiceRunning(snapshot.ServiceName, path)
 		if err != nil {
 			snapshot.Error = err.Error()
 		}
 		return snapshot
 	}
 	return nil
+}
+
+func realmServiceRunning(serviceName, configPath string) bool {
+	configPath = strings.TrimSpace(configPath)
+	if configPath != "" {
+		for _, processConfigPath := range configPathsFromRealmProcesses("/proc") {
+			if filepath.Clean(processConfigPath) == filepath.Clean(configPath) {
+				return true
+			}
+		}
+	}
+	serviceName = strings.TrimSpace(serviceName)
+	if serviceName == "" || !commandExists("systemctl") {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return exec.CommandContext(ctx, "systemctl", "is-active", "--quiet", serviceName).Run() == nil
 }
 
 func discoverRealmConfigPaths(cfg model.RealmForwardConfig) []string {

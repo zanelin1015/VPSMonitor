@@ -68,6 +68,7 @@ func collectHAProxySnapshot(ctx context.Context, cfg model.HAProxyConfig) *model
 		return snapshot
 	}
 	populateHAProxySnapshot(cfg, snapshot, stats)
+	snapshot.Running = true
 	return snapshot
 }
 

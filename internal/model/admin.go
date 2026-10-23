@@ -8,6 +8,9 @@ const (
 	AdminRoleAreaManager   = "area_manager"
 	DefaultAccountPassword = "12345678"
 
+	AgentRoleLine    = "线路机"
+	AgentRoleLanding = "落地机"
+
 	FrontProxyGranteeAreaManager = "area_manager"
 	FrontProxyGranteeCustomer    = "customer"
 )
@@ -68,6 +71,12 @@ type AreaManagerAccountRequest struct {
 	OutboundCreateEnabled *bool                             `json:"outbound_create_enabled,omitempty"`
 	OutboundGrants        []AreaManagerOutboundGrantRequest `json:"outbound_grants,omitempty"`
 	FrontProxyNodeIDs     []int64                           `json:"front_proxy_node_ids,omitempty"`
+	RealmEnabled          *bool                             `json:"realm_enabled,omitempty"`
+	LineEnabled           *bool                             `json:"line_enabled,omitempty"`
+	LandingEnabled        *bool                             `json:"landing_enabled,omitempty"`
+	FrontLinkEnabled      *bool                             `json:"front_link_enabled,omitempty"`
+	LineAgentIDs          []string                          `json:"line_agent_ids,omitempty"`
+	LandingAgentIDs       []string                          `json:"landing_agent_ids,omitempty"`
 }
 
 type OperatorAccountRequest struct {
@@ -177,8 +186,27 @@ type AreaManagerAdminView struct {
 	FrontProxies          []FrontProxyNodeView       `json:"front_proxies,omitempty"`
 	Assignments           []AreaManagerAssignment    `json:"assignments,omitempty"`
 	Customers             []CustomerAdminView        `json:"customers,omitempty"`
+	RealmEnabled          bool                       `json:"realm_enabled"`
+	LineEnabled           bool                       `json:"line_enabled"`
+	LandingEnabled        bool                       `json:"landing_enabled"`
+	FrontLinkEnabled      bool                       `json:"front_link_enabled"`
+	LineAgentIDs          []string                   `json:"line_agent_ids,omitempty"`
+	LandingAgentIDs       []string                   `json:"landing_agent_ids,omitempty"`
 	CreatedAt             time.Time                  `json:"created_at"`
 	UpdatedAt             time.Time                  `json:"updated_at"`
+}
+
+type AgentRoleView struct {
+	AgentID        string `json:"agent_id"`
+	AgentName      string `json:"agent_name,omitempty"`
+	LineEnabled    bool   `json:"line_enabled"`
+	LandingEnabled bool   `json:"landing_enabled"`
+}
+
+type AgentRoleUpdateRequest struct {
+	AgentID        string `json:"agent_id"`
+	LineEnabled    bool   `json:"line_enabled"`
+	LandingEnabled bool   `json:"landing_enabled"`
 }
 
 type ClientInstallInfo struct {

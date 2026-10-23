@@ -261,6 +261,7 @@ export interface NetworkPolicySnapshot {
 }
 
 export interface RealmSnapshot {
+  running?: boolean
   config_path?: string
   service_name?: string
   binary_path?: string
@@ -322,6 +323,7 @@ export interface HAProxyRealmTarget {
 }
 
 export interface HAProxySnapshot {
+  running?: boolean
   collected_at: string
   socket_path?: string
   error?: string
@@ -518,6 +520,12 @@ export interface CustomerBillingReconciliationResponse {
 }
 
 export interface AreaManagerAdminView {
+  realm_enabled?: boolean
+  line_enabled?: boolean
+  landing_enabled?: boolean
+  front_link_enabled?: boolean
+  line_agent_ids?: string[]
+  landing_agent_ids?: string[]
   id: number
   username: string
   display_name?: string

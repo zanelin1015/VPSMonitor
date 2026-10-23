@@ -10,6 +10,7 @@
     "test:app-base": "node scripts/test-app-base.mjs",
     "test:app-recovery": "node scripts/test-app-recovery.mjs",
     "test:console-theme": "node scripts/test-console-theme.mjs",
+    "test:area-permissions": "node scripts/test-area-permissions.mjs",
     "test:customer-authorization": "node scripts/test-customer-authorization.mjs",
     "test:customer-session": "node scripts/test-customer-session.mjs",
     "test:dev-proxy": "node scripts/test-dev-proxy.mjs",

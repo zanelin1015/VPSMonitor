@@ -12,7 +12,6 @@ import {
   type AreaBatchAssignmentFormState,
   type AreaManagerAssignmentDraft,
   type AreaManagerFormState,
-  type AreaManagerOutboundGrantDraft,
   type AssignmentFormState,
   type CustomerFormState,
   type ManagementTabKey,
@@ -43,7 +42,6 @@ import {
   findMatchingAssignment,
   findRealmTargetNode,
   firstRealmAssignmentAgentID,
-  firstXUIAssignmentAgentID,
   isRealmAssignmentDraft,
   nodeKey,
   nodeLabel,
@@ -56,6 +54,7 @@ import {
   uniqueStrings,
 } from './CustomerManagementHelpers'
 import { CustomerManagementModals } from './CustomerManagementModals'
+import { AgentRolePanel } from './AgentRolePanel'
 import { OperatorManagementPanel, type OperatorDraft } from './OperatorManagementPanel'
 
 const { Text, Title } = Typography
@@ -133,10 +132,6 @@ export function CustomerManagementModal(props: {
   const [areaBatchForm, setAreaBatchForm] = useState<AreaBatchAssignmentFormState>(emptyAreaBatchAssignmentForm)
   const [areaBatchOverview, setAreaBatchOverview] = useState<XUIOverview | null>(null)
   const [areaBatchOverviewLoading, setAreaBatchOverviewLoading] = useState(false)
-  const [areaManagerOverview, setAreaManagerOverview] = useState<XUIOverview | null>(null)
-  const [areaManagerOverviewLoading, setAreaManagerOverviewLoading] = useState(false)
-  const [areaManagerOutboundOverview, setAreaManagerOutboundOverview] = useState<XUIOverview | null>(null)
-  const [areaManagerOutboundOverviewLoading, setAreaManagerOutboundOverviewLoading] = useState(false)
   const skipAssignmentResetRef = useRef(false)
 
   const selectedCustomer = customers.find((item) => item.id === selectedCustomerID) || null
@@ -155,6 +150,9 @@ export function CustomerManagementModal(props: {
     value: agent.agent_id,
     label: agent.agent_name || agent.agent_id,
   })), [agents])
+  const realmAgentOptions = useMemo(() => agentOptions.filter(option => buildRealmGrantOptions(option.value, agents).length > 0), [agentOptions, agents])
+  const lineAgentOptions = useMemo(() => agentOptions.filter(option => agents.find(agent => agent.agent_id === option.value)?.tags?.includes('线路机')), [agentOptions, agents])
+  const landingAgentOptions = useMemo(() => agentOptions.filter(option => agents.find(agent => agent.agent_id === option.value)?.tags?.includes('落地机')), [agentOptions, agents])
   const customerAssignmentAgentOptions = useMemo(() => canManageAreaManagers
     ? agentOptions
     : customerAssignmentSources.map((source) => ({
@@ -180,20 +178,7 @@ export function CustomerManagementModal(props: {
   const areaBatchXUIAgentID = areaBatchForm.xui_agent_id
   const areaBatchClientTreeData = useMemo(() => buildAreaAssignmentTreeData(areaBatchXUIAgentID, areaBatchOverview, agents), [areaBatchXUIAgentID, areaBatchOverview, agents])
   const areaBatchRealmOptions = useMemo(() => buildRealmGrantOptions(areaBatchForm.agent_id, agents), [areaBatchForm.agent_id, agents])
-  const areaManagerXUIGrantAgentID = areaManagerForm.xui_grant_agent_id
-  const areaManagerOutboundGrantAgentID = areaManagerForm.outbound_grant_agent_id
-  const areaManagerGrantOptions = useMemo(() => buildAssignmentTargetOptions(areaManagerOverview), [areaManagerOverview])
-  const areaManagerGrantTreeData = useMemo(() => buildAreaAssignmentTreeData(areaManagerXUIGrantAgentID, areaManagerOverview, agents), [areaManagerXUIGrantAgentID, areaManagerOverview, agents])
   const areaManagerRealmGrantOptions = useMemo(() => buildRealmGrantOptions(areaManagerForm.grant_agent_id, agents), [areaManagerForm.grant_agent_id, agents])
-  const areaManagerOutboundGrantOptions = useMemo(() => (areaManagerOutboundOverview?.outbounds || [])
-    .flatMap((outbound) => outbound.tag ? [{
-      value: outbound.tag,
-      label: [outbound.tag, outbound.protocol].filter(Boolean).join(' / '),
-    }] : []), [areaManagerOutboundOverview])
-  const areaManagerOutboundAgentOptions = useMemo(() => {
-    const authorizedAgentIDs = new Set(areaManagerForm.assignments.map((assignment) => assignment.agent_id))
-    return agentOptions.filter((option) => authorizedAgentIDs.has(option.value))
-  }, [agentOptions, areaManagerForm.assignments])
   const frontProxyOptions = useMemo(() => frontProxies
     .filter((item) => item.enabled)
     .map((item) => ({
@@ -357,64 +342,6 @@ export function CustomerManagementModal(props: {
       cancelled = true
     }
   }, [areaBatchForm.xui_agent_id])
-
-  useEffect(() => {
-    if (!areaManagerXUIGrantAgentID) {
-      setAreaManagerOverview(null)
-      return
-    }
-    let cancelled = false
-    setAreaManagerOverviewLoading(true)
-    void fetchJSON<XUIOverview>(`/api/v1/agents/${areaManagerXUIGrantAgentID}/xui/overview?assignment_scope=1`)
-      .then((data) => {
-        if (!cancelled) {
-          setAreaManagerOverview(data)
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setAreaManagerOverview(null)
-          message.warning(error instanceof Error ? error.message : '加载 x-ui 节点失败')
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setAreaManagerOverviewLoading(false)
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [areaManagerXUIGrantAgentID])
-
-  useEffect(() => {
-    if (!areaManagerOutboundGrantAgentID) {
-      setAreaManagerOutboundOverview(null)
-      return
-    }
-    let cancelled = false
-    setAreaManagerOutboundOverviewLoading(true)
-    void fetchJSON<XUIOverview>(`/api/v1/agents/${areaManagerOutboundGrantAgentID}/xui/overview?assignment_scope=1`)
-      .then((data) => {
-        if (!cancelled) {
-          setAreaManagerOutboundOverview(data)
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setAreaManagerOutboundOverview(null)
-          message.warning(error instanceof Error ? error.message : '加载 x-ui 出站失败')
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setAreaManagerOutboundOverviewLoading(false)
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [areaManagerOutboundGrantAgentID])
 
   const assignmentColumns: ColumnsType<CustomerAssignment> = [
     {
@@ -910,11 +837,15 @@ export function CustomerManagementModal(props: {
       message.warning('新区域账号密码至少 8 位')
       return
     }
-    const assignments = normalizeAreaManagerAssignmentDrafts(areaManagerForm.assignments, agents)
+    const assignments = normalizeAreaManagerAssignmentDrafts(areaManagerForm.assignments, agents).filter(item => {
+      if (isRealmAssignmentDraft(item, agents)) return areaManagerForm.realm_enabled
+      const tags = agents.find(agent => agent.agent_id === item.agent_id)?.tags || []
+      return areaManagerForm.line_enabled && tags.includes('线路机') || areaManagerForm.landing_enabled && tags.includes('落地机')
+    })
     const authorizedAgentIDs = new Set(assignments.map((assignment) => assignment.agent_id))
     const outboundGrants = normalizeAreaManagerOutboundGrants(areaManagerForm.outbound_grants)
-      .filter((grant) => authorizedAgentIDs.has(grant.agent_id))
-    if (!assignments.length && !outboundGrants.length) {
+      .filter((grant) => areaManagerForm.line_enabled && authorizedAgentIDs.has(grant.agent_id))
+    if (!assignments.length && !outboundGrants.length && !areaManagerForm.front_proxy_node_ids.length) {
       message.warning('请至少授权一个节点 / 客户端或已有出站')
       return
     }
@@ -931,18 +862,21 @@ export function CustomerManagementModal(props: {
         revenue_amount: areaManagerForm.revenue_amount,
         revenue_currency: areaManagerForm.revenue_currency,
         revenue_cycle: areaManagerForm.revenue_cycle,
-        outbound_create_enabled: areaManagerForm.outbound_create_enabled,
+        outbound_create_enabled: areaManagerForm.landing_enabled,
         outbound_grants: outboundGrants,
-        front_proxy_node_ids: areaManagerForm.front_proxy_node_ids,
+        front_proxy_node_ids: areaManagerForm.front_link_enabled ? areaManagerForm.front_proxy_node_ids : [],
+        realm_enabled: areaManagerForm.realm_enabled, line_enabled: areaManagerForm.line_enabled,
+        landing_enabled: areaManagerForm.landing_enabled, front_link_enabled: areaManagerForm.front_link_enabled,
+        line_agent_ids: areaManagerForm.line_enabled ? uniqueStrings(assignments.filter(item => !isRealmAssignmentDraft(item, agents) && agents.find(agent => agent.agent_id === item.agent_id)?.tags?.includes('线路机')).map(item => item.agent_id)) : [],
+        landing_agent_ids: areaManagerForm.landing_enabled ? uniqueStrings(assignments.filter(item => !isRealmAssignmentDraft(item, agents) && agents.find(agent => agent.agent_id === item.agent_id)?.tags?.includes('落地机')).map(item => item.agent_id)) : [],
       }
       if (editingAreaManagerID) {
-        const currentManager = areaManagers.find((item) => item.id === editingAreaManagerID)
-        await fetchJSON<AreaManagerAdminView>(`/api/v1/admin/area-managers/${editingAreaManagerID}`, {
+        const updatedManager = await fetchJSON<AreaManagerAdminView>(`/api/v1/admin/area-managers/${editingAreaManagerID}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         })
-        await replaceAreaManagerAssignments(editingAreaManagerID, currentManager?.assignments || [], assignments)
+        await replaceAreaManagerAssignments(editingAreaManagerID, updatedManager.assignments || [], assignments)
         message.success('区域账号已更新')
       } else {
         const created = await fetchJSON<AreaManagerAdminView>('/api/v1/admin/area-managers', {
@@ -971,11 +905,13 @@ export function CustomerManagementModal(props: {
     for (const assignment of removed) {
       await fetchJSON(`/api/v1/admin/area-managers/${managerID}/assignments/${assignment.id}`, { method: 'DELETE' })
     }
-    if (next.length) {
+    const previousKeys = new Set(previous.map(areaAssignmentKey))
+    const additions = next.filter(item => !previousKeys.has(areaAssignmentKey(item)))
+    if (additions.length) {
       await fetchJSON<AreaManagerAssignment[]>(`/api/v1/admin/area-managers/${managerID}/assignments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ assignments: next }),
+        body: JSON.stringify({ assignments: additions }),
       })
     }
   }
@@ -1050,7 +986,11 @@ export function CustomerManagementModal(props: {
       const inferredRealmTargetAssignments = await inferRealmTargetXUIAssignments(areaBatchForm.selected_realm_keys, areaBatchRealmOptions, xuiAssignments)
       const assignments = dedupeAreaManagerAssignmentDrafts([
         ...realmAssignments,
-        ...inferredRealmTargetAssignments,
+        ...inferredRealmTargetAssignments.filter(item => {
+          const manager = areaManagers.find(manager => manager.id === areaBatchForm.manager_id)
+          const tags = agents.find(agent => agent.agent_id === item.agent_id)?.tags || []
+          return manager && (manager.line_enabled !== false && tags.includes('线路机') || manager.landing_enabled !== false && tags.includes('落地机'))
+        }),
         ...xuiAssignments,
       ])
       if (!assignments.length) {
@@ -1096,9 +1036,9 @@ export function CustomerManagementModal(props: {
       revenue_currency: record.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
       revenue_cycle: normalizeRevenueCycle(record.revenue_cycle),
       grant_agent_id: firstRealmAssignmentAgentID(record.assignments || [], agents) || '',
-      xui_grant_agent_id: firstXUIAssignmentAgentID(record.assignments || [], agents) || '',
-      outbound_create_enabled: Boolean(record.outbound_create_enabled),
-      outbound_grant_agent_id: record.outbound_grants?.[0]?.agent_id || '',
+      realm_enabled: record.realm_enabled !== false, line_enabled: record.line_enabled !== false,
+      landing_enabled: record.landing_enabled !== false, front_link_enabled: record.front_link_enabled !== false,
+      line_agent_ids: record.line_agent_ids || [], landing_agent_ids: record.landing_agent_ids || [],
       outbound_grants: normalizeAreaManagerOutboundGrants(record.outbound_grants || []),
       front_proxy_node_ids: (record.front_proxies || []).map((item) => item.id),
       assignments: normalizeAreaManagerAssignmentDrafts(record.assignments || [], agents),
@@ -1530,53 +1470,6 @@ export function CustomerManagementModal(props: {
     }
   }
 
-  function updateAreaManagerGrantTargets(keys: string[]) {
-    const agentID = areaManagerXUIGrantAgentID
-    if (!agentID) {
-      return
-    }
-    const optionMap = new Map(areaManagerGrantOptions.map((option) => {
-      const draft = areaAssignmentDraftFromTargetOption(agentID, option, agents)
-      return [areaAssignmentKey(draft), draft]
-    }))
-    const nextForAgent = keys
-      .map((key) => optionMap.get(key))
-      .filter((item): item is AreaManagerAssignmentDraft => Boolean(item))
-    setAreaManagerForm((current) => {
-      const otherAssignments = current.assignments.filter((assignment) => assignment.agent_id !== agentID || isRealmAssignmentDraft(assignment, agents))
-      const assignments = [...otherAssignments, ...nextForAgent]
-      return {
-        ...current,
-        assignments,
-        agent_ids: uniqueStrings(assignments.map((assignment) => assignment.agent_id)),
-        outbound_grants: current.outbound_grants.filter((grant) => assignments.some((assignment) => assignment.agent_id === grant.agent_id)),
-        outbound_grant_agent_id: assignments.some((assignment) => assignment.agent_id === current.outbound_grant_agent_id) ? current.outbound_grant_agent_id : '',
-      }
-    })
-  }
-
-  function updateAreaManagerOutboundGrantTargets(tags: string[]) {
-    const agentID = areaManagerOutboundGrantAgentID
-    if (!agentID) {
-      return
-    }
-    const allowedTags = new Set(areaManagerOutboundGrantOptions.map((option) => option.value))
-    const nextForAgent: AreaManagerOutboundGrantDraft[] = tags
-      .filter((tag): tag is string => Boolean(tag) && allowedTags.has(tag))
-      .map((outboundTag) => ({ agent_id: agentID, outbound_tag: outboundTag }))
-    setAreaManagerForm((current) => {
-      const outboundGrants = normalizeAreaManagerOutboundGrants([
-        ...current.outbound_grants.filter((grant) => grant.agent_id !== agentID),
-        ...nextForAgent,
-      ])
-      return {
-        ...current,
-        outbound_grants: outboundGrants,
-        agent_ids: uniqueStrings(current.assignments.map((assignment) => assignment.agent_id)),
-      }
-    })
-  }
-
   async function updateAreaManagerRealmGrantTargets(keys: string[]) {
     const agentID = areaManagerForm.grant_agent_id
     if (!agentID) {
@@ -1587,7 +1480,10 @@ export function CustomerManagementModal(props: {
       .map((key) => optionMap.get(key))
       .filter((item): item is AreaManagerAssignmentDraft => Boolean(item))
     const existingXUIAssignments = areaManagerForm.assignments.filter((assignment) => !isRealmAssignmentDraft(assignment, agents))
-    const inferredTargetAssignments = await inferRealmTargetXUIAssignments(keys, areaManagerRealmGrantOptions, existingXUIAssignments)
+    const inferredTargetAssignments = (await inferRealmTargetXUIAssignments(keys, areaManagerRealmGrantOptions, existingXUIAssignments)).filter(item => {
+      const tags = agents.find(agent => agent.agent_id === item.agent_id)?.tags || []
+      return areaManagerForm.line_enabled && tags.includes('线路机') || areaManagerForm.landing_enabled && tags.includes('落地机')
+    })
     setAreaManagerForm((current) => {
       const otherAssignments = current.assignments.filter((assignment) => assignment.agent_id !== agentID || !isRealmAssignmentDraft(assignment, agents))
       const assignments = dedupeAreaManagerAssignmentDrafts([...otherAssignments, ...nextForAgent, ...inferredTargetAssignments])
@@ -1596,7 +1492,6 @@ export function CustomerManagementModal(props: {
         assignments,
         agent_ids: uniqueStrings(assignments.map((assignment) => assignment.agent_id)),
         outbound_grants: current.outbound_grants.filter((grant) => assignments.some((assignment) => assignment.agent_id === grant.agent_id)),
-        outbound_grant_agent_id: assignments.some((assignment) => assignment.agent_id === current.outbound_grant_agent_id) ? current.outbound_grant_agent_id : '',
       }
     })
   }
@@ -1614,6 +1509,7 @@ export function CustomerManagementModal(props: {
         continue
       }
       const targetAgentID = realmRuleTargetAgentID(option.rule, agents)
+      if (!agents.find(agent => agent.agent_id === targetAgentID)?.tags?.some(tag => tag === '线路机' || tag === '落地机')) continue
       if (!targetAgentID) {
         continue
       }
@@ -1655,7 +1551,6 @@ export function CustomerManagementModal(props: {
         assignments,
         agent_ids: uniqueStrings(assignments.map((assignment) => assignment.agent_id)),
         outbound_grants: current.outbound_grants.filter((grant) => assignments.some((assignment) => assignment.agent_id === grant.agent_id)),
-        outbound_grant_agent_id: assignments.some((assignment) => assignment.agent_id === current.outbound_grant_agent_id) ? current.outbound_grant_agent_id : '',
       }
     })
   }
@@ -1724,7 +1619,7 @@ export function CustomerManagementModal(props: {
               value={areaBatchForm.manager_id ?? undefined}
               options={areaManagers.map((item) => ({ value: item.id, label: `${item.username} · ${item.display_name || item.username}` }))}
               optionFilterProp="label"
-              onChange={(value) => setAreaBatchForm((current) => ({ ...current, manager_id: value }))}
+              onChange={(value) => setAreaBatchForm((current) => ({ ...current, manager_id: value, agent_id: '', xui_agent_id: '', selected_realm_keys: [], selected_xui_keys: [] }))}
             />
           </Col>
           <Col xs={24} md={12}>
@@ -1734,7 +1629,8 @@ export function CustomerManagementModal(props: {
               showSearch
               placeholder="选择 GZ 入口"
               value={areaBatchForm.agent_id || undefined}
-              options={agentOptions}
+              options={areaManagers.find(item => item.id === areaBatchForm.manager_id)?.realm_enabled === false ? [] : realmAgentOptions}
+              disabled={!areaBatchForm.manager_id || areaManagers.find(item => item.id === areaBatchForm.manager_id)?.realm_enabled === false}
               optionFilterProp="label"
               onChange={(value) => setAreaBatchForm((current) => ({ ...current, agent_id: value, selected_realm_keys: [] }))}
             />
@@ -1746,7 +1642,11 @@ export function CustomerManagementModal(props: {
               showSearch
               placeholder="选择 HK 出口"
               value={areaBatchForm.xui_agent_id || undefined}
-              options={agentOptions}
+              options={agentOptions.filter(option => {
+                const manager = areaManagers.find(item => item.id === areaBatchForm.manager_id)
+                return manager && (manager.line_enabled !== false && lineAgentOptions.some(item => item.value === option.value) || manager.landing_enabled !== false && landingAgentOptions.some(item => item.value === option.value))
+              })}
+              disabled={!areaBatchForm.manager_id}
               optionFilterProp="label"
               onChange={(value) => setAreaBatchForm((current) => ({ ...current, xui_agent_id: value, selected_xui_keys: [] }))}
             />
@@ -1880,22 +1780,19 @@ export function CustomerManagementModal(props: {
   const selectedAreaManagerRealmKeys = areaManagerForm.assignments
     .filter((assignment) => assignment.agent_id === areaManagerForm.grant_agent_id && isRealmAssignmentDraft(assignment, agents))
     .map(areaAssignmentKey)
-  const selectedAreaManagerXUIKeys = areaManagerForm.assignments
-    .filter((assignment) => assignment.agent_id === areaManagerXUIGrantAgentID && !isRealmAssignmentDraft(assignment, agents))
-    .map(areaAssignmentKey)
-  const selectedAreaManagerOutboundTags = areaManagerForm.outbound_grants
-    .filter((grant) => grant.agent_id === areaManagerOutboundGrantAgentID)
-    .map((grant) => grant.outbound_tag)
   const selectedCustomerTitle = selectedCustomer ? selectedCustomer.display_name || selectedCustomer.username : '未选择用户'
 
   const accountEditorModals = (
     <>
       <CustomerManagementModals
       canManageAreaManagers={canManageAreaManagers}
+      realmAgentOptions={realmAgentOptions}
+      lineAgentOptions={lineAgentOptions}
+      landingAgentOptions={landingAgentOptions}
+      onFrontLinksChanged={loadFrontProxies}
       agents={agents}
       agentOptions={agentOptions}
       frontProxyOptions={frontProxyOptions}
-      areaManagerOutboundAgentOptions={areaManagerOutboundAgentOptions}
       editingAreaManagerID={editingAreaManagerID}
       areaManagerModalOpen={areaManagerModalOpen}
       areaManagerForm={areaManagerForm}
@@ -1903,19 +1800,9 @@ export function CustomerManagementModal(props: {
       savingAreaManager={savingAreaManager}
       onCloseAreaManagerModal={closeAreaManagerModal}
       onSaveAreaManager={() => void saveAreaManager()}
-      areaManagerXUIGrantAgentID={areaManagerXUIGrantAgentID}
-      areaManagerOverview={areaManagerOverview}
-      areaManagerOverviewLoading={areaManagerOverviewLoading}
-      areaManagerOutboundOverviewLoading={areaManagerOutboundOverviewLoading}
-      areaManagerGrantTreeData={areaManagerGrantTreeData}
       areaManagerRealmGrantOptions={areaManagerRealmGrantOptions.map((option) => ({ value: option.value, label: option.label }))}
-      areaManagerOutboundGrantOptions={areaManagerOutboundGrantOptions}
       selectedAreaManagerRealmKeys={selectedAreaManagerRealmKeys}
-      selectedAreaManagerXUIKeys={selectedAreaManagerXUIKeys}
-      selectedAreaManagerOutboundTags={selectedAreaManagerOutboundTags}
       onUpdateAreaManagerRealmGrantTargets={(values) => void updateAreaManagerRealmGrantTargets(values)}
-      onUpdateAreaManagerGrantTargets={(values) => updateAreaManagerGrantTargets(values)}
-      onUpdateAreaManagerOutboundGrantTargets={updateAreaManagerOutboundGrantTargets}
       onRemoveAreaManagerGrant={removeAreaManagerGrant}
       onRemoveAreaManagerOutboundGrant={removeAreaManagerOutboundGrant}
       customerCreateModalOpen={customerCreateModalOpen}
@@ -1977,6 +1864,7 @@ export function CustomerManagementModal(props: {
   )
 
   const managementTabs = [
+    ...((canManageAreaManagers || adminUser?.role === 'operator') ? [{ key: 'roles', label: 'Client 角色', children: <AgentRolePanel onChanged={() => onConfigChanged?.()} /> }] : []),
     ...(canManageAreaManagers && areaManagersPanel ? [{ key: 'area', label: '区域账号', children: areaManagersPanel }] : []),
     ...(canManageAreaManagers ? [{
       key: 'operators',

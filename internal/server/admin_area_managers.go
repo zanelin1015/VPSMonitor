@@ -29,6 +29,10 @@ func (a *App) handleAdminAreaManagers(w http.ResponseWriter, r *http.Request, pa
 				writeError(w, http.StatusBadRequest, fmt.Sprintf("decode area manager request: %v", err))
 				return
 			}
+			if err := a.validateAreaRoleIDs(req); err != nil {
+				writeError(w, 400, err.Error())
+				return
+			}
 			item, err := a.store.CreateAreaManager(req)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
@@ -85,6 +89,10 @@ func (a *App) handleAdminAreaManagers(w http.ResponseWriter, r *http.Request, pa
 					writeError(w, http.StatusBadRequest, fmt.Sprintf("decode area manager assignment request: %v", err))
 					return
 				}
+				if err := a.validateAreaAssignments(id, req.Assignments); err != nil {
+					writeError(w, 400, err.Error())
+					return
+				}
 				assignments, err := a.store.CreateAreaManagerAssignments(id, req.Assignments)
 				if err != nil {
 					writeError(w, http.StatusBadRequest, err.Error())
@@ -126,6 +134,31 @@ func (a *App) handleAdminAreaManagers(w http.ResponseWriter, r *http.Request, pa
 		var req model.AreaManagerAccountRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode area manager request: %v", err))
+			return
+		}
+		current, found, err := a.store.GetAreaManager(id)
+		if err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+		if !found {
+			writeError(w, 404, "area manager not found")
+			return
+		}
+		if req.RealmEnabled == nil {
+			req.RealmEnabled = &current.RealmEnabled
+		}
+		if req.LineEnabled == nil {
+			req.LineEnabled = &current.LineEnabled
+		}
+		if req.LandingEnabled == nil {
+			req.LandingEnabled = &current.LandingEnabled
+		}
+		if req.FrontLinkEnabled == nil {
+			req.FrontLinkEnabled = &current.FrontLinkEnabled
+		}
+		if err := a.validateAreaRoleIDs(req); err != nil {
+			writeError(w, 400, err.Error())
 			return
 		}
 		item, err := a.store.UpdateAreaManager(id, req)

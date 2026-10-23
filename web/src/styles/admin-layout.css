@@ -127,6 +127,16 @@
   margin: 0;
   line-height: 1;
 }
+.admin-assets-traffic-value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  column-gap: 8px;
+}
+.admin-assets-traffic-value > span {
+  white-space: nowrap;
+}
 .admin-assets-speed {
   display: grid;
   gap: 4px;
