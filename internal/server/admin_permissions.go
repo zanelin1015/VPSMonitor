@@ -209,6 +209,8 @@ func (a *App) sanitizeDashboardForAdmin(user model.AdminUser, view *model.Global
 			continue
 		}
 		publicAgent := sanitizeDashboardAgentForAreaManager(agent, tagMap)
+		publicAgent.FinanceClients = areaManagerVisibleFinanceClients(agent, clientScope)
+		publicAgent.FinanceClientsReady = agent.FinanceClientsReady
 		agentNames[agent.AgentID] = publicAgent.AgentName
 		filteredAgents = append(filteredAgents, publicAgent)
 	}
@@ -553,6 +555,28 @@ func sanitizeAgentListItemForAreaManager(item model.AgentListItem, tagMap map[st
 	item.HAProxy = nil
 	item.Geo = nil
 	return item
+}
+
+func areaManagerVisibleFinanceClients(agent model.DashboardAgentView, scope areaManagerClientScope) []model.FinanceClientView {
+	if !agent.FinanceClientsReady || len(agent.FinanceClients) == 0 {
+		return []model.FinanceClientView{}
+	}
+	visible := make([]model.FinanceClientView, 0, len(agent.FinanceClients))
+	for _, client := range agent.FinanceClients {
+		if !scope.allowsClient(agent.AgentID, client.InboundID, client.InboundTag, client.Email) {
+			continue
+		}
+		visible = append(visible, model.FinanceClientView{
+			ClientID:    client.ClientID,
+			InboundID:   client.InboundID,
+			InboundTag:  client.InboundTag,
+			Email:       client.Email,
+			Comment:     client.Comment,
+			NodeEnabled: client.NodeEnabled,
+			Enabled:     client.Enabled,
+		})
+	}
+	return visible
 }
 
 func sanitizeDashboardAgentForAreaManager(agent model.DashboardAgentView, tagMap map[string][]string) model.DashboardAgentView {

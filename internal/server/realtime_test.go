@@ -591,6 +591,43 @@ func TestAreaManagerDashboardKeepsAuthorizedForwardingRelayOnly(t *testing.T) {
 	}
 }
 
+func TestAreaManagerDashboardKeepsAuthorizedFinanceClientsForBindingDiagnostics(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sqliteStore.Close()
+	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "us", AgentName: "US"}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	enabled := true
+	manager, err := sqliteStore.CreateAreaManager(model.AreaManagerAccountRequest{
+		Username: "area-finance-visible", Password: "password123", Enabled: &enabled, AgentIDs: []string{"us"},
+	})
+	if err != nil {
+		t.Fatalf("CreateAreaManager: %v", err)
+	}
+	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+		AgentID: "us", InboundID: 7, InboundTag: "in-36897-tcp", ClientEmail: "user1", Enabled: &enabled,
+	}); err != nil {
+		t.Fatalf("CreateAreaManagerAssignment: %v", err)
+	}
+
+	view := model.GlobalDashboardView{Agents: []model.DashboardAgentView{{
+		AgentID:             "us",
+		FinanceClientsReady: true,
+		FinanceClients: []model.FinanceClientView{
+			{ClientID: "stable-user1", InboundID: 7, InboundTag: "in-36897-tcp", Email: "user1", Enabled: true},
+			{ClientID: "hidden-user2", InboundID: 7, InboundTag: "in-36897-tcp", Email: "user2", Enabled: true},
+		},
+	}}}
+	app := &App{store: sqliteStore}
+	app.sanitizeDashboardForAdmin(model.AdminUser{ID: manager.ID, Role: model.AdminRoleAreaManager, AgentIDs: []string{"us"}}, &view)
+	if len(view.Agents) != 1 || !view.Agents[0].FinanceClientsReady || len(view.Agents[0].FinanceClients) != 1 || view.Agents[0].FinanceClients[0].ClientID != "stable-user1" {
+		t.Fatalf("expected only the authorized current client for binding diagnostics, got %#v", view.Agents)
+	}
+}
+
 func TestAreaManagerXUIOverviewFiltersUnassignedClients(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "bridge.db")
 	sqliteStore, err := store.NewSQLiteStore(dbPath)
