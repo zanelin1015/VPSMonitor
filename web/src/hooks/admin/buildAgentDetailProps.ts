@@ -378,7 +378,7 @@ export function buildAgentDetailProps({
       setManagedConfig(mergeBilling)
       void loadAgents({ silent: true })
       void loadOverview(selectedAgentId, { silent: true })
-      void loadConfigAudits(selectedAgentId, { silent: true })
+      if (canManageSystem) void loadConfigAudits(selectedAgentId, { silent: true })
       scheduleXUIActionResultRefresh(save.action?.agent_id || selectedAgentId)
       ;[1000, 3000, 8000, 15000].forEach((delay) =>
         window.setTimeout(() => void loadOverview(selectedAgentId, { silent: true }), delay),

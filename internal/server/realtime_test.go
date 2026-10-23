@@ -699,8 +699,8 @@ func TestAreaManagerXUIOverviewFiltersUnassignedClients(t *testing.T) {
 	if overview.ClientCount != 1 || overview.OnlineClientCount != 0 {
 		t.Fatalf("expected sanitized client counters, got count=%d online=%d", overview.ClientCount, overview.OnlineClientCount)
 	}
-	if overview.Clients[0].TotalGB != 0 || overview.Clients[0].ExpiryTime != 0 || overview.Clients[0].LastOnline != 0 {
-		t.Fatalf("expected sensitive client limits/timestamps stripped, got %#v", overview.Clients[0])
+	if overview.Clients[0].TotalGB != 100 || overview.Clients[0].ExpiryTime != 200 || overview.Clients[0].LastOnline != 300 {
+		t.Fatalf("expected authorized client limits/timestamps preserved, got %#v", overview.Clients[0])
 	}
 	if len(overview.Nodes) != 1 || overview.Nodes[0].ID != 1001 {
 		t.Fatalf("expected only assigned client inbound node, got %#v", overview.Nodes)
@@ -1230,7 +1230,7 @@ func TestAreaManagerXUIOverviewAllowsRealmForwardedClientsFromAssignedEntry(t *t
 	if overview.Nodes[0].Remark != "GZ Public:20001 -> HK Public:1001" || overview.Clients[0].InboundRemark != "GZ Public:20001 -> HK Public:1001" {
 		t.Fatalf("expected forwarded node labels to use public Client names, got node=%q client=%q", overview.Nodes[0].Remark, overview.Clients[0].InboundRemark)
 	}
-	if overview.Clients[0].TotalGB != 0 || overview.Clients[0].ExpiryTime != 0 || overview.Clients[0].LastOnline != 0 {
+	if overview.Clients[0].TotalGB != 100 || overview.Clients[0].ExpiryTime != 200 || overview.Clients[0].LastOnline != 300 {
 		t.Fatalf("expected sensitive client metrics stripped, got %#v", overview.Clients[0])
 	}
 }
@@ -1380,8 +1380,8 @@ func TestAreaManagerAssignmentPickerFiltersUnauthorizedClients(t *testing.T) {
 	if len(overview.Clients) != 1 || overview.Clients[0].Email != "assigned@example.com" {
 		t.Fatalf("expected assignment picker to keep only the exact authorized client, got %#v", overview.Clients)
 	}
-	if overview.Clients[0].TotalGB != 0 || overview.Clients[0].LastOnline != 0 {
-		t.Fatalf("expected sensitive client limits/timestamps stripped, got %#v", overview.Clients)
+	if overview.Clients[0].TotalGB != 100 || overview.Clients[0].LastOnline != 300 {
+		t.Fatalf("expected authorized client limits/timestamps preserved, got %#v", overview.Clients)
 	}
 	if len(overview.Nodes) != 1 || overview.Nodes[0].ClientCount != 0 || overview.Nodes[0].Total != 0 {
 		t.Fatalf("expected node picker metadata without metrics, got %#v", overview.Nodes)

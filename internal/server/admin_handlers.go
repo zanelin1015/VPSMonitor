@@ -89,6 +89,12 @@ func (a *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.handleAdminAccountUpdate(w, r)
+	case "password":
+		if r.Method != http.MethodPut {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		a.handleAreaManagerPasswordUpdate(w, r)
 	case "audit":
 		if r.Method != http.MethodGet {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")

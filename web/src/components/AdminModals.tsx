@@ -7,6 +7,7 @@ import {
   CopyOutlined,
   DeleteOutlined,
   EditOutlined,
+  LockOutlined,
   LogoutOutlined,
   PlusOutlined,
   SettingOutlined,
@@ -78,6 +79,7 @@ export function PersonalCenterDropdown(props: {
     },
     { type: 'divider' },
     ...(canManageSystem ? [{ key: 'account', icon: <EditOutlined />, label: '账号与头像' }] : []),
+    ...(adminUser.role === 'area_manager' ? [{ key: 'account', icon: <LockOutlined />, label: '修改密码' }] : []),
     ...(canManageSystem ? [{ key: 'client-install', icon: <CloudDownloadOutlined />, label: 'Client 安装命令' }] : []),
     ...(canManageSystem ? [{ key: 'telegram', icon: <BellOutlined />, label: 'TG 告警机器人' }] : []),
     { key: 'customers', icon: <TeamOutlined />, label: '人员管理' },
@@ -337,8 +339,9 @@ export function AccountSettingsModal(props: {
   onClose: () => void
   onSave: () => void
   onFormChange: (form: AccountFormState) => void
+  passwordOnly?: boolean
 }) {
-  const { open, saving, form, onClose, onSave, onFormChange } = props
+  const { open, saving, form, onClose, onSave, onFormChange, passwordOnly = false } = props
   const [avatarError, setAvatarError] = useState('')
   const update = (patch: Partial<AccountFormState>) => onFormChange({ ...form, ...patch })
   const handleAvatarFile = (event: ChangeEvent<HTMLInputElement>) => {
@@ -370,9 +373,9 @@ export function AccountSettingsModal(props: {
   }
 
   return (
-    <Modal title="修改管理员账号" open={open} onCancel={onClose} onOk={onSave} confirmLoading={saving} okText="保存" cancelText="取消">
+    <Modal title={passwordOnly ? '修改密码' : '修改管理员账号'} open={open} onCancel={() => { if (!saving) onClose() }} onOk={onSave} confirmLoading={saving} closable={!saving} maskClosable={!saving} keyboard={!saving} cancelButtonProps={{ disabled: saving }} okText="保存" cancelText="取消">
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-        <div className="account-avatar-editor">
+        {passwordOnly ? <Text type="secondary">修改后当前登录保持有效，其他设备需使用新密码重新登录。</Text> : <><div className="account-avatar-editor">
           <Avatar size={72} src={form.avatar_url || undefined} className="account-avatar-preview">
             {avatarInitial(form.new_username)}
           </Avatar>
@@ -389,22 +392,22 @@ export function AccountSettingsModal(props: {
             <Text type={avatarError ? 'danger' : 'secondary'}>{avatarError || '支持 JPG / PNG / WebP，保存后会同步到个人中心。'}</Text>
           </div>
         </div>
-        <Divider style={{ margin: '4px 0' }} />
+        <Divider style={{ margin: '4px 0' }} /></>}
         <div>
-          <Text type="secondary">当前密码</Text>
-          <Input.Password value={form.current_password} onChange={(event) => update({ current_password: event.target.value })} />
+          <label htmlFor="account-current-password">当前密码</label>
+          <Input.Password id="account-current-password" autoComplete="current-password" disabled={saving} value={form.current_password} onChange={(event) => update({ current_password: event.target.value })} />
         </div>
-        <div>
+        {!passwordOnly ? <div>
           <Text type="secondary">新用户名</Text>
           <Input value={form.new_username} onChange={(event) => update({ new_username: event.target.value })} />
+        </div> : null}
+        <div>
+          <label htmlFor="account-new-password">新密码</label>
+          <Input.Password id="account-new-password" autoComplete="new-password" disabled={saving} placeholder={passwordOnly ? '至少 8 位' : '留空表示不修改密码'} value={form.new_password} onChange={(event) => update({ new_password: event.target.value })} />
         </div>
         <div>
-          <Text type="secondary">新密码</Text>
-          <Input.Password placeholder="留空表示不修改密码" value={form.new_password} onChange={(event) => update({ new_password: event.target.value })} />
-        </div>
-        <div>
-          <Text type="secondary">确认新密码</Text>
-          <Input.Password placeholder="留空表示不修改密码" value={form.confirm_password} onChange={(event) => update({ confirm_password: event.target.value })} />
+          <label htmlFor="account-confirm-password">确认新密码</label>
+          <Input.Password id="account-confirm-password" autoComplete="new-password" disabled={saving} placeholder={passwordOnly ? '请再次输入新密码' : '留空表示不修改密码'} value={form.confirm_password} onChange={(event) => update({ confirm_password: event.target.value })} />
         </div>
       </Space>
     </Modal>

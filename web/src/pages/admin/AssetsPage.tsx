@@ -199,16 +199,14 @@ export function AssetsPage(props: AssetsPageProps) {
               />
             ),
           },
-          {
-            title: '实时网速',
-            key: 'speed',
-            width: 150,
-            render: (_: unknown, agent: DashboardAgentView) => (
-              <SpeedMetric agent={agent} />
-            ),
-          },
         ]
       : []),
+    {
+      title: '实时网速',
+      key: 'speed',
+      width: 150,
+      render: (_, agent) => <SpeedMetric agent={agent} />,
+    },
     {
       title: '周期流量',
       key: 'traffic',
@@ -339,7 +337,7 @@ export function AssetsPage(props: AssetsPageProps) {
               setPageSize(size)
             },
           }}
-          scroll={{ x: props.restrictedView ? 760 : 1250 }}
+          scroll={{ x: props.restrictedView ? 910 : 1250 }}
           locale={{ emptyText: <Empty description="没有匹配的 Client" /> }}
         />
       </div>
@@ -371,12 +369,10 @@ export function AssetsPage(props: AssetsPageProps) {
                 <Typography.Text type="secondary">周期流量</Typography.Text>
                 <TrafficMetric agent={agent} restrictedView={props.restrictedView} />
               </div>
-              {!props.restrictedView ? (
-                <div>
-                  <Typography.Text type="secondary">实时网速</Typography.Text>
-                  <SpeedMetric agent={agent} />
-                </div>
-              ) : null}
+              <div>
+                <Typography.Text type="secondary">实时网速</Typography.Text>
+                <SpeedMetric agent={agent} />
+              </div>
             </div>
             <Space wrap>
               {agent.tags?.map((tag) => (

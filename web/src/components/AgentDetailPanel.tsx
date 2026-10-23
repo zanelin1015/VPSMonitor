@@ -307,6 +307,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onXUIChange,
     onFeatureChange,
   } = props
+  const canManageClients = canManageConfig || restrictedView
   const [remoteCommandOpen, setRemoteCommandOpen] = useState(false)
   const [clientConfigEditor, setClientConfigEditor] = useState<XUIClientView | null>(null)
   const [remoteCommand, setRemoteCommand] = useState('')
@@ -686,14 +687,14 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         const online = isClientOnline(record.last_online, overview?.reported_at)
         return (
           <div className="client-status-cell">
-            <Tooltip title={accountBasedProxy ? '节点账号请在 x-ui 入站中维护' : !canManageConfig ? '当前账号没有修改权限' : `点击${configuredEnabled ? '禁用' : '启用'}客户端`}>
+            <Tooltip title={accountBasedProxy ? '节点账号请在 x-ui 入站中维护' : !canManageClients ? '当前账号没有修改权限' : `点击${configuredEnabled ? '禁用' : '启用'}客户端`}>
               <span className="client-enabled-control">
                 <Switch
                   className="client-enabled-switch"
                   checked={configuredEnabled}
                   checkedChildren="启用"
                   unCheckedChildren="禁用"
-                  disabled={!canManageConfig || accountBasedProxy || Boolean(xuiClientResetLoadingKey) || Boolean(xuiClientToggleLoadingKey && xuiClientToggleLoadingKey !== xuiClientActionKey(record))}
+                  disabled={!canManageClients || accountBasedProxy || Boolean(xuiClientResetLoadingKey) || Boolean(xuiClientToggleLoadingKey && xuiClientToggleLoadingKey !== xuiClientActionKey(record))}
                   loading={xuiClientToggleLoadingKey === xuiClientActionKey(record)}
                   aria-label={`${record.email || record.comment || '客户端'}：启用状态`}
                   aria-busy={xuiClientToggleLoadingKey === xuiClientActionKey(record)}
@@ -727,15 +728,15 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
             <strong>{formatBytes(total)}</strong>
             <Tooltip title="流量上限"><span className="client-summary-chip">{limit > 0 ? `/ ${formatBytes(limit)}` : '无上限'}</span></Tooltip>
           </div>
-          {!restrictedView ? <div className="client-traffic-directions">
+          <div className="client-traffic-directions">
             <Tooltip title="上传"><span aria-label={`上传 ${formatBytes(record.up || 0)}`}><span className="client-traffic-arrow" aria-hidden="true">↑</span>{formatBytes(record.up || 0)}</span></Tooltip>
             <Tooltip title="下载"><span aria-label={`下载 ${formatBytes(record.down || 0)}`}><span className="client-traffic-arrow" aria-hidden="true">↓</span>{formatBytes(record.down || 0)}</span></Tooltip>
-          </div> : null}
-          {!restrictedView ? <div className="client-traffic-reset">
+          </div>
+          <div className="client-traffic-reset">
             <span className="client-summary-label">重置</span>
             <span className="client-summary-chip">{clientTrafficResetSummary(record)}</span>
             <Tooltip title="流量计费倍率"><span className="client-summary-chip">{normalizeClientTrafficMultiplier(billing.traffic_multiplier)} 倍</span></Tooltip>
-            {canManageConfig && !isAccountBasedProxyClient(record) ? (
+            {!restrictedView && canManageConfig && !isAccountBasedProxyClient(record) ? (
               <Popconfirm
                 title={`重置「${record.email || '客户端'}」的流量？`}
                 description={<div className="client-traffic-reset-confirm">清空该客户端的已用上传、下载流量；不修改流量上限、到期时间和自动重置周期。若同一客户端关联多个入站，其共享流量会一并重置。此操作无法撤销。</div>}
@@ -756,7 +757,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
                 >手动重置</Button>
               </Popconfirm>
             ) : null}
-          </div> : null}
+          </div>
         </div>
       },
     },
@@ -806,7 +807,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       render: (_, record) => (
         <div className="client-action-controls">
           <div className="client-action-row">
-            {!restrictedView ? <Button size="small" disabled={!canManageConfig || !record.email} onClick={() => setClientConfigEditor(record)}>编辑</Button> : null}
+            <Button size="small" disabled={!canManageClients || !record.email} onClick={() => setClientConfigEditor(record)}>编辑</Button>
             <Button size="small" disabled={!record.import_url} onClick={() => onCopyImportURL(record)}>
               复制
             </Button>
@@ -828,16 +829,6 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
             >
               授权给用户
             </Button>
-            {restrictedView && !isAccountBasedProxyClient(record) ? (
-              <Button
-                size="small"
-                disabled={Boolean(xuiClientToggleLoadingKey && xuiClientToggleLoadingKey !== xuiClientActionKey(record))}
-                loading={xuiClientToggleLoadingKey === xuiClientActionKey(record)}
-                onClick={() => onSetXUIClientEnabled(record, !(record.config_enabled ?? record.enabled))}
-              >
-                {(record.config_enabled ?? record.enabled) ? '停用' : '启用'}
-              </Button>
-            ) : null}
             <Popconfirm
               title="删除这个 Client？"
               description={`将从 x-ui 入站 ${record.inbound_remark || record.inbound_tag || record.inbound_id} 删除 ${record.email || '该客户端'}，不会重启 Xray。`}
@@ -861,7 +852,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     },
   ]
   const visibleClientColumns = restrictedView
-    ? clientColumns.filter((column) => !['protocol', 'status', 'billing', 'expiry', 'last_online', 'route'].includes(String(column.key || '')))
+    ? clientColumns.filter((column) => !['expiry', 'route'].includes(String(column.key || '')))
     : clientColumns
   const realmNodeColumns: ColumnsType<RealmForwardNodeView> = [
     {

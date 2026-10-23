@@ -107,12 +107,42 @@ func (a *App) sanitizeManagedConfigForAdmin(user model.AdminUser, cfg model.Mana
 	}
 	cfg.AgentName = areaManagerDisplayName(cfg.CustomerDisplayName, cfg.AgentName, cfg.AgentID)
 	cfg.Tags = a.areaManagerTagsForAgent(user, cfg.AgentID)
+	billings := a.areaManagerVisibleClientBillings(user, cfg)
 	cfg.Renewal = sanitizeAreaManagerRenewal(cfg.Renewal)
+	cfg.Renewal.ClientBillings = billings
 	cfg.Entry = model.AgentEntryConfig{}
 	cfg.XUI = config.XUIConfig{
 		Enabled: cfg.XUI.Enabled,
 	}
 	return cfg
+}
+
+// Only per-client display settings are shared; VPS costs and unrelated client prices stay private.
+func (a *App) areaManagerVisibleClientBillings(user model.AdminUser, cfg model.ManagedAgentConfig) []model.XUIClientBillingConfig {
+	if !isAreaManager(user) || len(cfg.Renewal.ClientBillings) == 0 {
+		return nil
+	}
+	scope := a.areaManagerClientScope(user)
+	var clients []model.XUIClientView
+	if overview := a.xuiOverviewForOutboundAuthorization(cfg.AgentID); overview != nil {
+		clients = overview.Clients
+	}
+	result := make([]model.XUIClientBillingConfig, 0)
+	for _, billing := range cfg.Renewal.ClientBillings {
+		allowed := billing.Email != "" && scope.allowsClient(cfg.AgentID, billing.InboundID, billing.InboundTag, billing.Email)
+		if !allowed && billing.ClientID != "" {
+			for _, client := range clients {
+				if client.ClientID == billing.ClientID && (scope.allowsClient(cfg.AgentID, client.InboundID, client.InboundTag, client.Email) || a.areaManagerCanViewForwardedClient(user, cfg.AgentID, client, scope)) {
+					allowed = true
+					break
+				}
+			}
+		}
+		if allowed {
+			result = append(result, billing)
+		}
+	}
+	return result
 }
 
 func (a *App) sanitizeAgentRecordForAdmin(user model.AdminUser, agent model.AgentRecord) model.AgentRecord {
@@ -267,11 +297,6 @@ func (a *App) sanitizeXUIOverviewForAdmin(user model.AdminUser, overview *model.
 			!a.areaManagerCanViewForwardedClient(user, overview.AgentID, client, clientScope) {
 			continue
 		}
-		client.TotalGB = 0
-		client.ExpiryTime = 0
-		client.CreatedAt = 0
-		client.UpdatedAt = 0
-		client.LastOnline = 0
 		filteredClients = append(filteredClients, client)
 	}
 	overview.Clients = filteredClients
@@ -430,11 +455,6 @@ func (a *App) sanitizeXUIOverviewForAreaAssignment(user model.AdminUser, overvie
 			!a.areaManagerCanViewForwardedClient(user, overview.AgentID, client, clientScope) {
 			continue
 		}
-		client.TotalGB = 0
-		client.ExpiryTime = 0
-		client.CreatedAt = 0
-		client.UpdatedAt = 0
-		client.LastOnline = 0
 		filteredClients = append(filteredClients, client)
 		visibleInbounds[overviewInboundKey(client.InboundID, client.InboundTag)] = struct{}{}
 	}

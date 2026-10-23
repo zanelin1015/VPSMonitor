@@ -639,3 +639,49 @@ func TestAreaManagerDashboardFiltersUseAssignmentScopeWhenAgentListIsStale(t *te
 		t.Fatalf("expected dashboard snapshot filter to include assignment-scoped agent, got %#v", snapshots)
 	}
 }
+
+func TestAreaManagerSeesOnlyAuthorizedClientDisplayConfiguration(t *testing.T) {
+	db, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.RegisterAgent(model.AgentRegisterRequest{AgentID: "display"}); err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	manager, err := db.CreateAreaManager(model.AreaManagerAccountRequest{Username: "area-display", Password: "password123", Enabled: &enabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{AgentID: "display", InboundID: 7, InboundTag: "node-7", ClientEmail: "allowed@example.com", Enabled: &enabled}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveSnapshot(realtimeTrafficSnapshot("display", "node-7", time.Now())); err != nil {
+		t.Fatal(err)
+	}
+	app := &App{store: db}
+	user := model.AdminUser{ID: manager.ID, Role: model.AdminRoleAreaManager}
+	original := model.ManagedAgentConfig{AgentID: "display", Renewal: model.VPSRenewalConfig{CostAmount: 999, ClientBillings: []model.XUIClientBillingConfig{
+		{ClientID: "11111111-1111-1111-1111-111111111111", RevenueAmount: 57, RevenueCurrency: "CNY", RevenueCycle: "quarter", TrafficMultiplier: 2, StartTime: 123, ExpireTime: 456},
+		{ClientID: "22222222-2222-2222-2222-222222222222", RevenueAmount: 999},
+		{InboundID: 8, InboundTag: "other-node", Email: "allowed@example.com", RevenueAmount: 888},
+	}}}
+	filtered := app.sanitizeManagedConfigForAdmin(user, original)
+	if filtered.Renewal.CostAmount != 0 || len(filtered.Renewal.ClientBillings) != 1 {
+		t.Fatalf("unrelated financial information leaked: %#v", filtered.Renewal)
+	}
+	billing := filtered.Renewal.ClientBillings[0]
+	if billing.RevenueAmount != 57 || billing.TrafficMultiplier != 2 || billing.RevenueCycle != "quarter" || billing.StartTime != 123 || billing.ExpireTime != 456 {
+		t.Fatalf("authorized price and billing details were lost: %#v", billing)
+	}
+	if len(original.Renewal.ClientBillings) != 3 || original.Renewal.CostAmount != 999 {
+		t.Fatal("sanitization modified stored configuration")
+	}
+	// Records with scoped inbound/email keys work even when no client ID is stored.
+	original.Renewal.ClientBillings = []model.XUIClientBillingConfig{{InboundID: 7, InboundTag: "node-7", Email: "allowed@example.com", RevenueAmount: 42}, {InboundID: 7, InboundTag: "node-7", Email: "hidden@example.com", RevenueAmount: 99}}
+	filtered = app.sanitizeManagedConfigForAdmin(user, original)
+	if len(filtered.Renewal.ClientBillings) != 1 || filtered.Renewal.ClientBillings[0].RevenueAmount != 42 {
+		t.Fatalf("inbound/email billing scope was not preserved: %#v", filtered.Renewal.ClientBillings)
+	}
+}

@@ -652,12 +652,24 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 		} else {
 			a.sanitizeXUIOverviewForAdmin(user, overview)
 		}
-		if isRootAdmin(user) {
+		if isRootAdmin(user) || isAreaManager(user) {
 			overview.ClientConfigSaves, err = a.store.LatestXUIClientConfigSaves(agentID)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
+		}
+		if isAreaManager(user) {
+			visible := make([]model.XUIClientConfigSave, 0)
+			for _, save := range overview.ClientConfigSaves {
+				for _, client := range overview.Clients {
+					if clientConfigSaveMatchesClient(save, client) {
+						visible = append(visible, save)
+						break
+					}
+				}
+			}
+			overview.ClientConfigSaves = visible
 		}
 		writeJSON(w, http.StatusOK, overview)
 	default:

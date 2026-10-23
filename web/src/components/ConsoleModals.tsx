@@ -244,6 +244,7 @@ export function ConsoleModals(props: ConsoleModalsProps) {
       />
 
       <AccountSettingsModal
+        passwordOnly={adminUser?.role === 'area_manager'}
         open={accountModalOpen}
         saving={accountSaving}
         form={accountForm}

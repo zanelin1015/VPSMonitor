@@ -342,6 +342,36 @@ Content-Type: application/json
 
 ## 打包与测试
 
+### 一键发布 GitHub 新版本（Linux/macOS）
+
+先提交本次要发布的功能代码，并切换到仓库默认分支。首次使用需安装 GitHub CLI 并执行 `gh auth login`；还需 Git、Go、Node.js/npm、tar、zip、unzip 和 shasum。
+
+```bash
+./scripts/release.sh
+```
+
+按提示输入版本号（默认在当前 Server/Client 最高版本上递增补丁号）和 Markdown 发布说明。说明支持多行，单独输入 `.` 后回车结束。脚本运行全部前端回归测试、构建前端，统一更新三个版本文件并创建版本提交，然后运行 Go 测试、构建五种平台的 Server/Client 共十个安装包，核对包内版本和二进制提交信息，生成 `checksums.txt`。最后确认后才推送分支和标签、上传 GitHub 草稿；资产核对通过后公开发布并标记为 Latest。
+
+也可以预先准备说明文件：
+
+```bash
+./scripts/release.sh --version 0.3.55 --notes-file /tmp/release-notes.md
+# 仅预览，不改文件、不联网、不发布
+./scripts/release.sh --dry-run
+# 上传为草稿，暂不公开
+./scripts/release.sh --version 0.3.55 --notes-file /tmp/release-notes.md --draft
+# 非交互发布；仅在已确定版本和说明时使用
+./scripts/release.sh --version 0.3.55 --notes-file /tmp/release-notes.md --yes
+```
+
+安装包、校验文件及发布说明保存在 `dist/`。脚本拒绝覆盖已有标签或 Release，不自动拉取合并分支，也不会强推。失败或取消时保留本地已完成的版本提交和安装包，便于检查；若已创建 GitHub 草稿，则检查并补齐草稿中的资产后再发布。上传只包含本次十个指定安装包和 `checksums.txt`，不会混入 `dist/` 中的历史包或临时文件。
+
+脚本流程可用 `python3 scripts/test-release.py` 在临时仓库离线验证；该测试不会操作真实 GitHub Release。
+
+仓库历史上已跟踪的 `dist/` 安装包在打包后可能显示为本地修改，这不属于源码变更；脚本将新安装包上传为 Release 资产，不自动把这些二进制变更加入版本提交。
+
+### 仅打包
+
 Linux/macOS：
 
 ```bash

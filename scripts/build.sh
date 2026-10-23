@@ -159,10 +159,12 @@ if [[ ! -d "${ROOT_DIR}/web/node_modules" ]]; then
   )
 fi
 
-(
-  cd "${ROOT_DIR}/web"
-  npm run build
-)
+if [[ "${VPSMONITOR_SKIP_WEB_BUILD:-0}" != "1" ]]; then
+  (
+    cd "${ROOT_DIR}/web"
+    npm run build
+  )
+fi
 
 go test ./...
 

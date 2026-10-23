@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,7 +19,16 @@ func TestUnifiedClientConfigAPIValidatesPermissionsVersionAndDispatches(t *testi
 		name, role, version string
 		day                 int
 		want                int
-	}{{"anonymous", "", "0.3.49", 31, 401}, {"area", "area", "0.3.49", 31, 403}, {"old-client", "root", "0.3.48", 31, 409}, {"invalid-reset", "root", "0.3.49", 32, 400}, {"save", "root", "0.3.49", 31, 200}} {
+	}{
+		{"anonymous", "", "0.3.49", 31, 401},
+		{"area-without-client-grant", "area", "0.3.49", 31, 403},
+		{"area-node-only", "area-node-only", "0.3.49", 31, 403},
+		{"area-other-client", "area-other-client", "0.3.49", 31, 403},
+		{"area-authorized-client", "area-authorized", "0.3.49", 31, 200},
+		{"old-client", "root", "0.3.48", 31, 409},
+		{"invalid-reset", "root", "0.3.49", 32, 400},
+		{"save", "root", "0.3.49", 31, 200},
+	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "save.db"))
 			if err != nil {
@@ -41,13 +51,29 @@ func TestUnifiedClientConfigAPIValidatesPermissionsVersionAndDispatches(t *testi
 			if err := s.EnsureAdminAccount("admin", "password123"); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := s.CreateAreaManager(model.AreaManagerAccountRequest{Username: "area", Password: "password123", AgentIDs: []string{agent.AgentID}}); err != nil {
+			manager, err := s.CreateAreaManager(model.AreaManagerAccountRequest{Username: "area", Password: "password123", AgentIDs: []string{agent.AgentID}})
+			if err != nil {
 				t.Fatal(err)
+			}
+			var assignmentID int64
+			if tc.role == "area-authorized" || tc.role == "area-node-only" || tc.role == "area-other-client" {
+				email := "alice"
+				if tc.role == "area-other-client" {
+					email = "bob"
+				}
+				if tc.role == "area-node-only" {
+					email = ""
+				}
+				assignment, err := s.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{AgentID: agent.AgentID, InboundID: 7, InboundTag: "inbound-7", ClientEmail: email, NodeOnly: tc.role == "area-node-only"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				assignmentID = assignment.ID
 			}
 			token := ""
 			if tc.role != "" {
 				username := "admin"
-				if tc.role == "area" {
+				if strings.HasPrefix(tc.role, "area") {
 					username = "area"
 				}
 				user, ok, err := s.AuthenticateAdmin(username, "password123")
@@ -122,6 +148,43 @@ func TestUnifiedClientConfigAPIValidatesPermissionsVersionAndDispatches(t *testi
 			}
 			if err := json.Unmarshal(w.Body.Bytes(), &save); err != nil || save.Action.Status != "failed" || !save.BillingSaved {
 				t.Fatal("partial failure receipt was lost")
+			}
+			if tc.role == "area-authorized" {
+				// An authorized editor can see its pending/result status in the overview.
+				getOverview := func() model.XUIOverview {
+					t.Helper()
+					req := httptest.NewRequest(http.MethodGet, "/api/v1/agents/config-agent/xui/overview", nil)
+					req.AddCookie(&http.Cookie{Name: adminSessionCookieName, Value: token})
+					w := httptest.NewRecorder()
+					app.Handler().ServeHTTP(w, req)
+					var overview model.XUIOverview
+					if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &overview) != nil {
+						t.Fatalf("overview status=%d body=%s", w.Code, w.Body.String())
+					}
+					return overview
+				}
+				if overview := getOverview(); len(overview.ClientConfigSaves) != 1 {
+					t.Fatal("authorized client save is missing from overview")
+				}
+				if err := s.DeleteAreaManagerAssignment(manager.ID, assignmentID); err != nil {
+					t.Fatal(err)
+				}
+				for _, method := range []string{http.MethodGet, http.MethodPost} {
+					url := "/api/v1/agents/config-agent/xui/client-config"
+					if method == http.MethodGet {
+						url += "/" + save.RequestID
+					}
+					req := httptest.NewRequest(method, url, bytes.NewReader(body))
+					req.AddCookie(&http.Cookie{Name: adminSessionCookieName, Value: token})
+					w := httptest.NewRecorder()
+					app.Handler().ServeHTTP(w, req)
+					if w.Code != http.StatusForbidden {
+						t.Fatalf("revoked grant %s status=%d body=%s", method, w.Code, w.Body.String())
+					}
+				}
+				if overview := getOverview(); len(overview.ClientConfigSaves) != 0 {
+					t.Fatal("revoked client save leaked through overview")
+				}
 			}
 		})
 	}

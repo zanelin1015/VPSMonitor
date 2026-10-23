@@ -16,7 +16,7 @@ func (a *App) handleXUIClientConfig(w http.ResponseWriter, r *http.Request, agen
 	if !ok {
 		return
 	}
-	if !isRootAdmin(user) && !isOperatorAdmin(user) {
+	if !isRootAdmin(user) && !isOperatorAdmin(user) && !isAreaManager(user) {
 		writeError(w, http.StatusForbidden, "当前账号没有客户端配置管理权限")
 		return
 	}
@@ -29,6 +29,10 @@ func (a *App) handleXUIClientConfig(w http.ResponseWriter, r *http.Request, agen
 		}
 		if !found {
 			writeError(w, http.StatusNotFound, "save record not found")
+			return
+		}
+		if isAreaManager(user) && !a.areaManagerCanReadClientConfigSave(user, agentID, save) {
+			writeError(w, http.StatusForbidden, "客户端不在当前区域账号的授权范围内")
 			return
 		}
 		if save.Action != nil {
@@ -91,6 +95,10 @@ func (a *App) handleXUIClientConfig(w http.ResponseWriter, r *http.Request, agen
 		writeError(w, http.StatusConflict, "客户端或关联节点已变化，请刷新后重新编辑")
 		return
 	}
+	if isAreaManager(user) && !a.areaManagerCanEditXUIClient(user, agentID, *client) {
+		writeError(w, http.StatusForbidden, "客户端不在当前区域账号的授权范围内")
+		return
+	}
 	target := model.XUIClientConfigTarget{AgentID: agentID, InboundID: client.InboundID, InboundTag: client.InboundTag, ClientID: firstNonEmptyString(client.ClientID, client.AuthUUID), Email: client.Email}
 	if client.RealmTargetAgentID != "" {
 		target.AgentID, target.InboundID, target.InboundTag = client.RealmTargetAgentID, client.RealmTargetInboundID, client.RealmTargetInboundTag
@@ -135,4 +143,28 @@ func (a *App) handleXUIClientConfig(w http.ResponseWriter, r *http.Request, agen
 	}
 	a.clearCustomerOverviewCache()
 	writeJSON(w, http.StatusOK, save)
+}
+
+func (a *App) areaManagerCanEditXUIClient(user model.AdminUser, agentID string, client model.XUIClientView) bool {
+	scope := a.areaManagerClientScope(user)
+	return scope.allowsClient(agentID, client.InboundID, client.InboundTag, client.Email) || a.areaManagerCanViewForwardedClient(user, agentID, client, scope)
+}
+
+func clientConfigSaveMatchesClient(save model.XUIClientConfigSave, client model.XUIClientView) bool {
+	return save.InboundID == client.InboundID && save.Email == client.Email &&
+		(save.InboundTag == "" || save.InboundTag == client.InboundTag) &&
+		(save.ClientID == "" || save.ClientID == client.ClientID)
+}
+
+func (a *App) areaManagerCanReadClientConfigSave(user model.AdminUser, agentID string, save model.XUIClientConfigSave) bool {
+	overview := a.xuiOverviewForOutboundAuthorization(agentID)
+	if overview == nil {
+		return false
+	}
+	for _, client := range overview.Clients {
+		if clientConfigSaveMatchesClient(save, client) && a.areaManagerCanEditXUIClient(user, agentID, client) {
+			return true
+		}
+	}
+	return false
 }

@@ -58,6 +58,11 @@ type AdminAccountUpdateRequest struct {
 	AvatarURL       *string `json:"avatar_url,omitempty"`
 }
 
+type AdminPasswordUpdateRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
 type AreaManagerAccountRequest struct {
 	Username              string                            `json:"username"`
 	Password              string                            `json:"password,omitempty"`

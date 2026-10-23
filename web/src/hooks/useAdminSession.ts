@@ -77,16 +77,24 @@ export function useAdminSession() {
   }
 
   async function saveAccount() {
+    const passwordOnly = adminUser?.role === 'area_manager'
+    if (passwordOnly && (!accountForm.current_password || new TextEncoder().encode(accountForm.new_password).length < 8)) {
+      message.error('请输入当前密码，并设置至少 8 位的新密码')
+      return
+    }
     if (accountForm.new_password && accountForm.new_password !== accountForm.confirm_password) {
       message.error('两次输入的新密码不一致')
       return
     }
     setAccountSaving(true)
     try {
-      const data = await fetchJSON<AdminAuthResponse>('/api/v1/admin/account', {
+      const data = await fetchJSON<AdminAuthResponse>(passwordOnly ? '/api/v1/admin/password' : '/api/v1/admin/account', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: JSON.stringify(passwordOnly ? {
+          current_password: accountForm.current_password,
+          new_password: accountForm.new_password,
+        } : {
           current_password: accountForm.current_password,
           new_username: accountForm.new_username,
           new_password: accountForm.new_password,
@@ -103,7 +111,7 @@ export function useAdminSession() {
         avatar_url: data.user.avatar_url || '',
       })
       setAccountModalOpen(false)
-      message.success('管理员账号已更新')
+      message.success(passwordOnly ? '密码已修改' : '管理员账号已更新')
     } catch (error) {
       if (isUnauthorized(error)) {
         setAdminUser(null)

@@ -73,6 +73,31 @@ func (a *App) handleAdminAccountUpdate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, model.AdminLoginResponse{User: user, System: serverSystemInfo()})
 }
 
+func (a *App) handleAreaManagerPasswordUpdate(w http.ResponseWriter, r *http.Request) {
+	user, token, ok := a.requireAdmin(w, r)
+	if !ok {
+		return
+	}
+	if !isAreaManager(user) {
+		writeError(w, http.StatusForbidden, "当前账号不支持此密码修改入口")
+		return
+	}
+	var req model.AdminPasswordUpdateRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "密码修改请求格式有误")
+		return
+	}
+	updated, err := a.store.UpdateAreaManagerPassword(user.ID, req, token)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, model.AdminLoginResponse{User: updated, System: serverSystemInfo()})
+}
+
 func (a *App) handleAdminTelegramBots(w http.ResponseWriter, r *http.Request, parts []string) {
 	if _, _, ok := a.requireRootAdmin(w, r); !ok {
 		return

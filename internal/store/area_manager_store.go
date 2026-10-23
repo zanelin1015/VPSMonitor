@@ -10,6 +10,54 @@ import (
 	"bridge-core/internal/model"
 )
 
+func (s *SQLiteStore) UpdateAreaManagerPassword(id int64, req model.AdminPasswordUpdateRequest, keepSessionToken string) (model.AdminUser, error) {
+	if req.CurrentPassword == "" {
+		return model.AdminUser{}, fmt.Errorf("请输入当前密码")
+	}
+	if len(req.NewPassword) < adminPasswordMinLength {
+		return model.AdminUser{}, fmt.Errorf("新密码至少需要 %d 位", adminPasswordMinLength)
+	}
+	var currentHash string
+	err := s.db.QueryRow(`SELECT password_hash FROM area_manager_accounts WHERE id = ? AND enabled = 1`, id).Scan(&currentHash)
+	if err != nil {
+		return model.AdminUser{}, fmt.Errorf("无法读取当前区域账号")
+	}
+	valid, err := verifyPassword(req.CurrentPassword, currentHash)
+	if err != nil || !valid {
+		return model.AdminUser{}, fmt.Errorf("当前密码不正确")
+	}
+	newHash, err := hashPassword(req.NewPassword)
+	if err != nil {
+		return model.AdminUser{}, err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return model.AdminUser{}, err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(`UPDATE area_manager_accounts SET password_hash = ?, updated_at = ? WHERE id = ? AND enabled = 1 AND password_hash = ?`, newHash, time.Now().UTC().Format(time.RFC3339Nano), id, currentHash)
+	if err != nil {
+		return model.AdminUser{}, err
+	}
+	if count, err := result.RowsAffected(); err != nil || count != 1 {
+		return model.AdminUser{}, fmt.Errorf("账号已变化，请重新登录后再试")
+	}
+	if _, err := tx.Exec(`DELETE FROM admin_sessions WHERE role = ? AND account_id = ? AND token_hash <> ?`, model.AdminRoleAreaManager, id, sessionTokenHash(keepSessionToken)); err != nil {
+		return model.AdminUser{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.AdminUser{}, err
+	}
+	user, found, err := s.loadAreaManagerAdminUser(id)
+	if err != nil {
+		return model.AdminUser{}, err
+	}
+	if !found {
+		return model.AdminUser{}, fmt.Errorf("区域账号不存在或已停用")
+	}
+	return user, nil
+}
+
 func (s *SQLiteStore) ListAreaManagers() ([]model.AreaManagerAdminView, error) {
 	rows, err := s.db.Query(`
 		SELECT id, username, display_name, enabled, billing_enabled, revenue_amount, revenue_currency, revenue_cycle,
