@@ -1,8 +1,7 @@
-import { Select } from 'antd'
 import type { AdminUser, SystemInfo } from '../types'
 import type { AdminPageKey } from '../lib/adminRoute'
-import type { ThemeMode } from '../theme'
 import { PersonalCenterDropdown } from './AdminModals'
+import { CustomerThemeButton } from './CustomerThemeButton'
 
 export interface AdminShellNavigationProps {
   adminUser: AdminUser
@@ -17,8 +16,6 @@ export interface AdminShellNavigationProps {
   scopedAgentCount: number
   supportUnreadCount: number
   agentsLoading: boolean
-  themeMode: ThemeMode
-  effectiveMode: ThemeMode
   serverVersionLabel: string
   onOpenAccount: () => void
   onOpenClientInstall: () => void
@@ -37,24 +34,13 @@ export interface AdminShellNavigationProps {
   onOpenAccessLogs: () => void
   onOpenSchedules: () => void
   onRefreshAgents: () => void
-  onThemeModeChange: (value: ThemeMode) => void
 }
 
 /** Shared account and appearance controls for desktop and mobile headers. */
 export function AdminHeaderActions(props: AdminShellNavigationProps) {
   return [
-    <Select
+    <CustomerThemeButton
       key="theme"
-      aria-label="界面主题"
-      size="small"
-      value={props.themeMode}
-      style={{ width: 116 }}
-      options={[
-        { value: 'system', label: '跟随系统' },
-        { value: 'light', label: '明亮' },
-        { value: 'dark', label: '暗黑' },
-      ]}
-      onChange={props.onThemeModeChange}
     />,
     <PersonalCenterDropdown
       key="account"

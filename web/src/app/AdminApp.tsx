@@ -38,7 +38,6 @@ import { OverviewSummaryCard } from '../components/DashboardOverviewSummary'
 import { renderCNFlowPanel } from '../components/DashboardTopologyPanels'
 import { LoginScreen } from '../components/LoginScreen'
 import { VisualEffects } from '../components/VisualEffects'
-import { useAppTheme } from '../theme'
 
 const AssetsPage = lazy(() => import('../pages/admin/AssetsPage').then((module) => ({ default: module.AssetsPage })))
 const CustomerManagementModal = lazy(() =>
@@ -52,8 +51,6 @@ const CustomerBatchAuthorizationModal = lazy(() =>
 
 export function AdminApp() {
   const { message } = AntdApp.useApp()
-  const appearance = useAppTheme()
-  const { mode: themeMode, effectiveMode, setMode: setThemeMode } = appearance
   const session = useAdminSession()
   const {
     accountModalOpen,
@@ -338,8 +335,6 @@ export function AdminApp() {
     scopedAgentCount,
     supportUnreadCount,
     agentsLoading,
-    themeMode,
-    effectiveMode,
     serverVersionLabel,
     onOpenAccount: openAccountModal,
     onOpenClientInstall: () => void openClientInstallModal(),
@@ -358,7 +353,6 @@ export function AdminApp() {
     onOpenAccessLogs: openAccessLogsPage,
     onOpenSchedules: openSchedulesPage,
     onRefreshAgents: () => void loadAgents(),
-    onThemeModeChange: setThemeMode,
   }
 
   const consoleModalProps = buildConsoleModalProps({

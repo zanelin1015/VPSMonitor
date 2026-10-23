@@ -49,6 +49,7 @@ try {
   )
 
   const { AdminLayout } = await vite.ssrLoadModule('/src/app/AdminLayout.tsx')
+  const { AppThemeProvider } = await vite.ssrLoadModule('/src/theme.tsx')
   const navigation = {
     adminUser: { id: 1, username: 'preview', role: 'admin' },
     systemInfo: null,
@@ -80,18 +81,14 @@ try {
     try {
       return renderToStaticMarkup(
         h(
-          ConfigProvider,
+          AppThemeProvider,
           {},
           h(
-            AntApp,
+            ConfigProvider,
             {},
-            h(
-              AdminLayout,
-              {
-                navigation: { ...navigation, canManageSystem: !restricted, isAreaManagerAccount: restricted },
-              },
-              'page content',
-            ),
+            h(AntApp, {}, h(AdminLayout, {
+              navigation: { ...navigation, canManageSystem: !restricted, isAreaManagerAccount: restricted },
+            }, 'page content')),
           ),
         ),
       )
@@ -103,6 +100,7 @@ try {
   }
   const layout = renderLayout(false)
   assert.match(layout, /role="menuitem"/, 'the real layout must render navigation items')
+  assert.match(layout, /customer-theme-button/, 'the admin header must use the customer theme button')
   assert.match(layout, /href="\/zanelin\/monitor\?page=assets"/)
   assert.match(layout, /href="\/zanelin\/monitor\?page=finance"/)
   const areaLayout = renderLayout(true)
