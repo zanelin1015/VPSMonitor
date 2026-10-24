@@ -24,8 +24,11 @@ export class AppErrorBoundary extends Component<{ children: ReactNode }, State> 
     if (!this.state.failed) return this.props.children
 
     const path = appPathname()
-    const publicPage = path === '/site' || path === '/official' || new URLSearchParams(window.location.search).get('page') === 'site'
-    const home = path === '/customer' ? withAppBasePath('/customer') : publicPage ? withAppBasePath('/site') : `${adminEntryPath()}?page=assets`
+    const home = path === '/customer'
+      ? withAppBasePath('/customer')
+      : path === '/recommendations'
+        ? withAppBasePath('/recommendations')
+        : `${adminEntryPath()}?page=assets`
 
     return (
       <main className="app-error-screen">

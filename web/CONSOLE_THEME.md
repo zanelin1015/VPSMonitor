@@ -12,8 +12,8 @@ and it has no runtime dependency on the reference website.
 
 - `src/lib/adminConsoleTheme.ts` owns light/dark palettes and Ant Design tokens.
 - `src/components/AdminConsoleTheme.tsx` scopes tokens and portal styling to the
-  internal console and `/customer`. `/site`, `/official` and `?page=site` retain
-  their existing theme. Subpath deployments use the existing `appPathname()`.
+  internal console and `/customer`. The public `/recommendations` page keeps its
+  own presentation. Subpath deployments use the existing `appPathname()`.
 - `src/styles/console.css` is the shared local visual layer. It does not
   change table widths, horizontal scrolling, fixed columns or save actions.
 - `src/styles/customer-console.css` adapts customer cards, topology, support
@@ -31,7 +31,7 @@ Run `npm run test:console-theme` and `npm run build` from `web/`.
 For visual review, use a disposable local server database and demo snapshots,
 not production credentials or customer data. Review desktop/light/dark,
 announcement modals, customer login/links, 390px mobile navigation and
-public-route isolation. The regular local Vite preview can proxy the live API;
+recommendation-page isolation. The regular local Vite preview can proxy the live API;
 isolated visual fixtures must use a separate test server, never mutate live data.
 Existing frontend regression scripts cover navigation, finance, expiry,
 network summaries, search and routing deletion.

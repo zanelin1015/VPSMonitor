@@ -36,8 +36,7 @@ try {
     ['/zanelin/monitor', '?page=assets&agent=broken', '/zanelin/monitor?page=assets'],
     ['/customer', '', '/customer'],
     ['/zanelin/customer', '', '/zanelin/customer'],
-    ['/zanelin/official', '', '/zanelin/site'],
-    ['/', '?page=site', '/site'],
+    ['/zanelin/recommendations', '', '/zanelin/recommendations'],
   ]) {
     globalThis.window = { location: { pathname, search } }
     const markup = renderToStaticMarkup(boundary.render())

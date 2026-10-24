@@ -1,5 +1,4 @@
 import {
-  ArrowLeftOutlined,
   ArrowRightOutlined,
   CheckCircleFilled,
   CloudServerOutlined,
@@ -40,19 +39,16 @@ export function RecommendationsPage({ publicPage = false }: { publicPage?: boole
     <div className={`recommendation-page-shell${publicPage ? ' recommendation-page-shell-public' : ''}`}>
       {publicPage ? (
         <header className="recommendation-public-header">
-          <a className="recommendation-public-brand" href={withAppBasePath('/site')}>
+          <a className="recommendation-public-brand" href={withAppBasePath('/recommendations')}>
             <span className="recommendation-public-brand-mark">Z</span>
             <span>ZaneLin <small>NETWORK PICKS</small></span>
           </a>
-          <Space wrap>
-            <Button icon={<ArrowLeftOutlined />} href={withAppBasePath('/site')}>拓扑首页</Button>
-            <Button type="primary" href={adminEntryPath()}>进入控制台</Button>
-          </Space>
+          <Button type="primary" href={adminEntryPath()}>进入控制台</Button>
         </header>
       ) : null}
 
       <main className="recommendation-page">
-        <section className="recommendation-hero">
+        <section className="recommendation-hero" id="recommendation-top">
           <div className="recommendation-hero-copy">
             <div className="recommendation-kicker"><GlobalOutlined /> ZANELIN · PREMIUM NETWORK</div>
             <Typography.Title level={1}>美国精品家宽<br /><em>三网优选</em></Typography.Title>
@@ -132,7 +128,7 @@ export function RecommendationsPage({ publicPage = false }: { publicPage?: boole
               我们会根据你的地区、用途和预算，推荐合适的线路。实际速度受套餐、设备及本地网络环境影响。
             </Typography.Paragraph>
           </div>
-          <Button type="primary" size="large" href={withAppBasePath('/site')} icon={<ArrowRightOutlined />}>查看公开拓扑</Button>
+          <Button type="primary" size="large" href="#recommendation-top" icon={<ArrowRightOutlined />}>回到页面顶部</Button>
         </section>
       </main>
     </div>

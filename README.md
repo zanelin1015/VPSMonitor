@@ -145,7 +145,7 @@ Windows 服务默认名为 `VPSMonitorClient`。安装器会保留已有 `client
 | `snapshot_retention_days` | 历史快照按时间保留天数，默认 30。负数关闭时间清理。 |
 | `snapshot_retention_count` | 每个 Client 最多保留的历史快照数，默认 5000。负数关闭数量清理。 |
 
-Server 管理台地址通常是 `https://你的域名/`。Customer 入口是 `https://你的域名/customer`，公开站点入口是 `https://你的域名/site`（如果启用）。
+Server 管理台地址通常是 `https://你的域名/`。Customer 入口是 `https://你的域名/customer`，推荐页入口是 `https://你的域名/recommendations`。
 
 Customer 登录使用两个独立的 HttpOnly Cookie：登录凭证有效期 2 小时，refresh 凭证有效期 30 天。前端收到 Customer 接口的 401 时，会通过 `POST /api/v1/customer/refresh` 获取新的登录凭证，并重试原请求一次；并发请求共用同一次续期。refresh 仅用于续期，不能直接访问业务接口；其 30 天期限固定从登录时计算，续期不延长期限，临近期限签发的登录凭证也不会超过该期限。退出登录会撤销当前设备的两种凭证；禁用账号或管理员重置密码会撤销该账号的所有凭证。客户自行改密保留当前设备登录，其他设备需要重新登录。数据库只保存凭证哈希。升级前已有登录凭证保留原有效期，再次登录后启用双凭证；订阅 Token 不受此机制影响。
 

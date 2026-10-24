@@ -6,12 +6,10 @@ const bundled = await build({ entryPoints: [new URL('../src/lib/adminConsoleThem
 const { adminConsoleTheme, consolePalette, consoleCSSVariables, isInternalConsoleRoute, isConsoleThemeRoute } = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString('base64')}`)
 
 for (const route of ['/', '/admin/assets', '/monitor']) assert.equal(isInternalConsoleRoute(route), true)
-for (const route of ['/customer', '/site', '/official']) assert.equal(isInternalConsoleRoute(route), false)
-assert.equal(isInternalConsoleRoute('/', '?page=site'), false)
+for (const route of ['/customer', '/recommendations']) assert.equal(isInternalConsoleRoute(route), false)
 assert.equal(isInternalConsoleRoute('/', '?page=settings'), true)
 for (const route of ['/', '/admin/assets', '/monitor', '/customer']) assert.equal(isConsoleThemeRoute(route), true)
-for (const route of ['/site', '/official']) assert.equal(isConsoleThemeRoute(route), false)
-assert.equal(isConsoleThemeRoute('/customer', '?page=site'), false)
+assert.equal(isConsoleThemeRoute('/recommendations'), false)
 
 function luminance(hex) {
   const rgb = hex.slice(1).match(/../g).map(value => parseInt(value, 16) / 255)

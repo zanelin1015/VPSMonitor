@@ -4,7 +4,7 @@
 
 ## 入口与渲染
 
-- `web/src/App.tsx`：区分管理端、客户入口与公开站点，按需加载对应应用。
+- `web/src/App.tsx`：区分管理端、客户入口与公开推荐页，按需加载对应应用。
 - `web/src/app/AdminApp.tsx`：组合业务 Hook，将数据和操作绑定到页面；不直接发起 HTTP 请求。
 - `AdminLayout.tsx`：ProLayout + PageContainer，统一桌面与移动导航、页面标题和全局操作。
 - `adminMenu.ts`：菜单、分组、权限条件与页面文案的单一配置，`adminMenuHref` 保留根目录和 `/zanelin` 部署路径。
