@@ -10,7 +10,7 @@ import {
   WhatsAppOutlined,
 } from '@ant-design/icons'
 import { Button, Space, Typography } from 'antd'
-import { adminEntryPath, withAppBasePath } from '../../lib/appBasePath'
+import { withAppBasePath } from '../../lib/appBasePath'
 
 const carriers = [
   { name: '电信', detail: 'CN2 GIA', icon: <CloudServerOutlined />, tone: 'blue' },
@@ -45,7 +45,6 @@ export function RecommendationsPage({ publicPage = false }: { publicPage?: boole
             <span className="recommendation-public-brand-mark">Z</span>
             <span>ZaneLin <small>NETWORK PICKS</small></span>
           </a>
-          <Button type="primary" href={adminEntryPath()}>进入控制台</Button>
         </header>
       ) : null}
 
@@ -111,6 +110,38 @@ export function RecommendationsPage({ publicPage = false }: { publicPage?: boole
           </div>
         </section>
 
+        <section className="recommendation-explainers">
+          <article className="recommendation-explainer">
+            <div className="recommendation-explainer-icon"><ThunderboltFilled /></div>
+            <div className="recommendation-section-kicker">OPTIMIZED ROUTE</div>
+            <Typography.Title level={2}>优化线路为什么优于普通线路？</Typography.Title>
+            <Typography.Paragraph>
+              普通线路通常依赖共享的公共转发路径，遇到晚高峰或跨网传输时，更容易出现拥塞、绕路和抖动。优化线路会优先选择更稳定的跨网互联和 VIP 通道，让数据走更合适的路径。
+            </Typography.Paragraph>
+            <ul>
+              <li><CheckCircleFilled /> 更少绕路，延迟和丢包更容易保持稳定</li>
+              <li><CheckCircleFilled /> 晚高峰拥塞更少，直播和实时业务体验更平滑</li>
+              <li><CheckCircleFilled /> 持续监测线路状态，异常时可以及时切换和排查</li>
+            </ul>
+            <small className="recommendation-explainer-note">线路质量会受地区、运营商、本地网络和套餐资源影响，优化线路不等于对所有网络环境作绝对保证。</small>
+          </article>
+
+          <article className="recommendation-explainer">
+            <div className="recommendation-explainer-icon recommendation-explainer-icon-gold"><GlobalOutlined /></div>
+            <div className="recommendation-section-kicker">RESIDENTIAL IP FOR AI</div>
+            <Typography.Title level={2}>为什么家宽 IP 更适合 AI 工具？</Typography.Title>
+            <Typography.Paragraph>
+              家宽 IP 通常来自真实家庭网络的运营商 ASN，网络画像更接近普通用户。广播 IP 或机房 IP 往往集中在数据中心，地址复用和异常流量更容易被风控系统识别。
+            </Typography.Paragraph>
+            <ul>
+              <li><CheckCircleFilled /> 用户来源更自然，减少因机房 ASN 触发的额外验证</li>
+              <li><CheckCircleFilled /> 区域和网络类型更贴近真实使用场景</li>
+              <li><CheckCircleFilled /> 对登录、对话和内容工具的连续使用更友好</li>
+            </ul>
+            <small className="recommendation-explainer-note">家宽 IP 也不代表一定不会触发验证，仍需遵守 AI 服务商的条款、地区限制和使用政策。</small>
+          </article>
+        </section>
+
         <section className="recommendation-benefits">
           <div className="recommendation-section-heading">
             <div>
@@ -143,7 +174,6 @@ export function RecommendationsPage({ publicPage = false }: { publicPage?: boole
             <Space wrap>
               <Button type="primary" href="https://t.me/AlanStone1015" target="_blank" rel="noopener noreferrer" icon={<SendOutlined />}>Telegram</Button>
               <Button href="https://wa.me/zanelin1" target="_blank" rel="noopener noreferrer" icon={<WhatsAppOutlined />}>WhatsApp</Button>
-              <Button type="link" href="#recommendation-top" icon={<ArrowRightOutlined />}>回到顶部</Button>
             </Space>
           </div>
         </section>
