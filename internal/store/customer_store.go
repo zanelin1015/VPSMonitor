@@ -1,8 +1,10 @@
 package store
 
 import (
+	"crypto/sha256"
 	"crypto/subtle"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -26,10 +28,11 @@ func (s *SQLiteStore) listCustomers(ownerType string, ownerID int64) ([]model.Cu
 	query := `
 		SELECT id, username, display_name, style_code, owner_type, owner_id, enabled, created_at, updated_at
 		FROM customer_accounts
+		WHERE owner_type <> ?
 	`
-	args := []any{}
+	args := []any{model.CustomerOwnerGuest}
 	if ownerType != "" && ownerID > 0 {
-		query += ` WHERE owner_type = ? AND owner_id = ?`
+		query += ` AND owner_type = ? AND owner_id = ?`
 		args = append(args, ownerType, ownerID)
 	}
 	query += ` ORDER BY updated_at DESC, id DESC`
@@ -67,6 +70,76 @@ func (s *SQLiteStore) listCustomers(ownerType string, ownerID int64) ([]model.Cu
 		customers[i].FrontProxies = frontProxyNodeViews(frontProxiesByCustomer[customers[i].ID])
 	}
 	return customers, nil
+}
+
+// GetOrCreateGuestCustomer creates a short-lived, non-login customer account
+// keyed by the observed client IP. It lets guest support reuse the existing
+// conversation and admin inbox without exposing guest accounts in customer
+// management.
+func (s *SQLiteStore) GetOrCreateGuestCustomer(ip string, ttl time.Duration) (model.CustomerUser, error) {
+	ip = strings.TrimSpace(ip)
+	if ip == "" {
+		ip = "unknown"
+	}
+	if ttl <= 0 {
+		return model.CustomerUser{}, fmt.Errorf("invalid guest customer lifetime")
+	}
+	digest := sha256.Sum256([]byte(ip))
+	username := "guest-" + hex.EncodeToString(digest[:])[:20]
+	displayName := "访客 · " + ip
+	now := time.Now().UTC()
+	expiresAt := now.Add(ttl)
+	var existingUsername string
+	err := s.db.QueryRow(`SELECT username FROM customer_accounts WHERE guest_ip = ? AND owner_type = ?`, ip, model.CustomerOwnerGuest).Scan(&existingUsername)
+	if err == sql.ErrNoRows {
+		hash, hashErr := hashPassword("guest:" + ip)
+		if hashErr != nil {
+			return model.CustomerUser{}, fmt.Errorf("hash guest customer password: %w", hashErr)
+		}
+		_, err = s.db.Exec(`
+			INSERT OR IGNORE INTO customer_accounts
+			(username, password_hash, display_name, style_code, subscription_token, owner_type, owner_id, enabled, guest_ip, guest_expires_at, created_at, updated_at)
+			VALUES (?, ?, ?, '', '', ?, 0, 1, ?, ?, ?, ?)
+		`, username, hash, displayName, model.CustomerOwnerGuest, ip, expiresAt.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
+		if err != nil {
+			return model.CustomerUser{}, fmt.Errorf("create guest customer: %w", err)
+		}
+	} else if err != nil {
+		return model.CustomerUser{}, fmt.Errorf("find guest customer: %w", err)
+	} else if existingUsername != "" {
+		username = existingUsername
+	}
+	_, err = s.db.Exec(`
+		UPDATE customer_accounts
+		SET display_name = ?, enabled = 1, guest_ip = ?, guest_expires_at = ?, updated_at = ?
+		WHERE username = ? AND owner_type = ?
+	`, displayName, ip, expiresAt.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), username, model.CustomerOwnerGuest)
+	if err != nil {
+		return model.CustomerUser{}, fmt.Errorf("refresh guest customer: %w", err)
+	}
+	user, err := scanCustomerUser(s.db.QueryRow(`
+		SELECT id, username, display_name, style_code, owner_type, owner_id, enabled, created_at, updated_at
+		FROM customer_accounts WHERE username = ? AND owner_type = ?
+	`, username, model.CustomerOwnerGuest))
+	if err != nil {
+		return model.CustomerUser{}, fmt.Errorf("load guest customer: %w", err)
+	}
+	return user, nil
+}
+
+func (s *SQLiteStore) GuestCustomerMatchesIP(customerID int64, ip string) (bool, error) {
+	if customerID <= 0 {
+		return false, nil
+	}
+	var storedIP string
+	err := s.db.QueryRow(`SELECT guest_ip FROM customer_accounts WHERE id = ? AND owner_type = ?`, customerID, model.CustomerOwnerGuest).Scan(&storedIP)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("load guest customer ip: %w", err)
+	}
+	return strings.TrimSpace(storedIP) == strings.TrimSpace(ip), nil
 }
 
 func (s *SQLiteStore) listCustomerAssignmentsForCustomers(customerIDs []int64) (map[int64][]model.CustomerAssignment, error) {

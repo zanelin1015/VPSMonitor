@@ -11,6 +11,7 @@ import {
 } from '@ant-design/icons'
 import { Button, Space, Typography } from 'antd'
 import { withAppBasePath } from '../../lib/appBasePath'
+import { GuestSupportWidget } from '../../components/GuestSupportWidget'
 
 const carriers = [
   { name: '电信', detail: 'CN2 GIA', icon: <CloudServerOutlined />, tone: 'blue' },
@@ -178,6 +179,7 @@ export function RecommendationsPage({ publicPage = false }: { publicPage?: boole
           </div>
         </section>
       </main>
+      {publicPage ? <GuestSupportWidget /> : null}
     </div>
   )
 }

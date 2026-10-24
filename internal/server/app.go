@@ -48,6 +48,8 @@ const (
 	customerSessionTTL        = 2 * time.Hour
 	customerRefreshCookieName = "bridge_core_customer_refresh"
 	customerRefreshTTL        = 30 * 24 * time.Hour
+	guestSupportCookieName    = "bridge_core_guest_support"
+	guestSupportSessionTTL    = 30 * 24 * time.Hour
 	dashboardCacheTTL         = 10 * time.Second
 	topologyCacheTTL          = 45 * time.Second
 	customerOverviewCacheTTL  = 10 * time.Second
@@ -233,6 +235,8 @@ func (a *App) Handler() http.Handler {
 	}
 	mux.HandleFunc("/api/v1/admin/", a.handleAdmin)
 	mux.HandleFunc("/api/v1/customer/", a.handleCustomer)
+	mux.HandleFunc("/api/v1/public/support", a.handlePublicSupport)
+	mux.HandleFunc("/api/v1/public/support/", a.handlePublicSupport)
 	mux.HandleFunc("/api/v1/frontend-settings", a.handlePublicFrontendSettings)
 	mux.HandleFunc("/api/v1/image-proxy", a.handleImageProxy)
 	mux.HandleFunc("/api/v1/dashboard/realtime", a.handleDashboardRealtime)

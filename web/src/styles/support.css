@@ -22,6 +22,12 @@
   font-size: 23px;
 }
 
+.guest-support .customer-support-launcher {
+  border-color: rgba(244, 212, 122, .68);
+  background: #b98216;
+  box-shadow: 0 12px 28px rgba(185, 130, 22, .3);
+}
+
 .customer-support-panel {
   display: grid;
   width: min(380px, calc(100vw - 28px));
@@ -33,6 +39,10 @@
   background: var(--surface-strong);
   box-shadow: 0 22px 60px rgba(15, 23, 42, 0.22);
   backdrop-filter: blur(18px);
+}
+
+.guest-support .customer-support-panel {
+  border-color: rgba(244, 212, 122, .42);
 }
 
 .customer-support-header,

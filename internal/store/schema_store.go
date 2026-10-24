@@ -500,6 +500,12 @@ func (s *SQLiteStore) init() error {
 	if err := s.ensureColumn("customer_accounts", "owner_id", "INTEGER NOT NULL DEFAULT 1"); err != nil {
 		return err
 	}
+	if err := s.ensureColumn("customer_accounts", "guest_ip", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("customer_accounts", "guest_expires_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	if err := s.ensureColumn("customer_sessions", "refresh_token_hash", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
@@ -517,6 +523,9 @@ func (s *SQLiteStore) init() error {
 	}
 	if err := s.ensureColumn("area_manager_accounts", "outbound_create_enabled", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
+	}
+	if _, err := s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_accounts_guest_ip ON customer_accounts(guest_ip) WHERE guest_ip <> ''`); err != nil {
+		return fmt.Errorf("init guest customer index: %w", err)
 	}
 	for _, column := range []struct {
 		name       string

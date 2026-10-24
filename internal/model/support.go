@@ -18,6 +18,8 @@ type SupportConversation struct {
 	CustomerDisplayName string     `json:"customer_display_name,omitempty"`
 	OwnerType           string     `json:"owner_type"`
 	OwnerID             int64      `json:"owner_id"`
+	IsGuest             bool       `json:"is_guest,omitempty"`
+	GuestIP             string     `json:"guest_ip,omitempty"`
 	Status              string     `json:"status"`
 	LastMessagePreview  string     `json:"last_message_preview,omitempty"`
 	LastSenderRole      string     `json:"last_sender_role,omitempty"`

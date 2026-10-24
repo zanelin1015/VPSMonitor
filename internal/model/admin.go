@@ -6,6 +6,7 @@ const (
 	AdminRoleRoot          = "admin"
 	AdminRoleOperator      = "operator"
 	AdminRoleAreaManager   = "area_manager"
+	CustomerOwnerGuest     = "guest"
 	DefaultAccountPassword = "12345678"
 
 	AgentRoleLine    = "线路机"

@@ -163,7 +163,7 @@ export function AdminSupportPage({ onUnreadCountChange }: AdminSupportPageProps)
     return conversations.filter((item) => {
       if (filter === 'open' && item.status !== 'open') return false
       if (!keyword) return true
-      return [item.customer_display_name, item.customer_username, item.last_message_preview]
+      return [item.customer_display_name, item.customer_username, item.guest_ip, item.last_message_preview]
         .some((value) => String(value || '').toLowerCase().includes(keyword))
     })
   }, [conversations, filter, search])
@@ -213,12 +213,13 @@ export function AdminSupportPage({ onUnreadCountChange }: AdminSupportPageProps)
                 <span className="support-conversation-avatar">{supportInitial(conversation)}</span>
                 <span className="support-conversation-copy">
                   <span className="support-conversation-title-row">
-                    <strong>{conversation.customer_display_name || conversation.customer_username}</strong>
+                    <strong>{conversation.is_guest ? `访客 · ${conversation.guest_ip || '未知 IP'}` : conversation.customer_display_name || conversation.customer_username}</strong>
                     <time>{conversation.last_message_at ? compactTime(conversation.last_message_at) : ''}</time>
                   </span>
                   <span className="support-conversation-preview">{conversation.last_message_preview || '尚未发送消息'}</span>
                   <span className="support-conversation-meta">
-                    <small>@{conversation.customer_username}</small>
+                    <small>{conversation.is_guest ? '未登录临时账号' : `@${conversation.customer_username}`}</small>
+                    {conversation.is_guest ? <Tag color="gold">访客</Tag> : null}
                     {conversation.status === 'closed' ? <Tag>已结束</Tag> : null}
                     {conversation.unread_count > 0 ? <Badge count={conversation.unread_count} overflowCount={99} /> : null}
                   </span>
@@ -235,8 +236,8 @@ export function AdminSupportPage({ onUnreadCountChange }: AdminSupportPageProps)
             <>
               <header className="support-thread-header">
                 <div>
-                  <strong>{thread.conversation.customer_display_name || thread.conversation.customer_username}</strong>
-                  <small>@{thread.conversation.customer_username}</small>
+                  <strong>{thread.conversation.is_guest ? `访客 · ${thread.conversation.guest_ip || '未知 IP'}` : thread.conversation.customer_display_name || thread.conversation.customer_username}</strong>
+                  <small>{thread.conversation.is_guest ? '未登录临时账号' : `@${thread.conversation.customer_username}`}</small>
                 </div>
                 {thread.conversation.status === 'open' ? (
                   <Button

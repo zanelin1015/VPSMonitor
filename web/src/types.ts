@@ -648,6 +648,8 @@ export interface SupportConversation {
   customer_display_name?: string
   owner_type: string
   owner_id: number
+  is_guest?: boolean
+  guest_ip?: string
   status: SupportConversationStatus
   last_message_preview?: string
   last_sender_role?: SupportSenderRole

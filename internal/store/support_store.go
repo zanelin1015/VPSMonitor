@@ -285,6 +285,7 @@ func supportConversationSelect(audience string) string {
 			customer.display_name,
 			customer.owner_type,
 			customer.owner_id,
+			customer.guest_ip,
 			conversation.status,
 			conversation.last_message_preview,
 			conversation.last_sender_role,
@@ -300,6 +301,7 @@ func supportConversationSelect(audience string) string {
 func scanSupportConversation(scanner rowScanner) (model.SupportConversation, error) {
 	var (
 		item              model.SupportConversation
+		guestIP           string
 		lastMessageAtText string
 		createdAtText     string
 		updatedAtText     string
@@ -311,6 +313,7 @@ func scanSupportConversation(scanner rowScanner) (model.SupportConversation, err
 		&item.CustomerDisplayName,
 		&item.OwnerType,
 		&item.OwnerID,
+		&guestIP,
 		&item.Status,
 		&item.LastMessagePreview,
 		&item.LastSenderRole,
@@ -326,6 +329,10 @@ func scanSupportConversation(scanner rowScanner) (model.SupportConversation, err
 	}
 	item.CreatedAt = parseTime(createdAtText)
 	item.UpdatedAt = parseTime(updatedAtText)
+	item.IsGuest = item.OwnerType == model.CustomerOwnerGuest
+	if item.IsGuest {
+		item.GuestIP = guestIP
+	}
 	return item, nil
 }
 

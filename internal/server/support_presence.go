@@ -48,6 +48,9 @@ func (h *supportPresenceHub) onlineForCustomer(customer model.CustomerUser) bool
 	if h.connections[supportPresenceKey(model.AdminUser{ID: 1, Role: model.AdminRoleRoot})] > 0 {
 		return true
 	}
+	if customer.OwnerType == model.CustomerOwnerGuest {
+		return false
+	}
 	if customer.OwnerType == model.AdminRoleAreaManager && customer.OwnerID > 0 {
 		return h.connections[supportPresenceKey(model.AdminUser{ID: customer.OwnerID, Role: model.AdminRoleAreaManager})] > 0
 	}

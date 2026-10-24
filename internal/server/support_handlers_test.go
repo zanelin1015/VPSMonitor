@@ -22,6 +22,67 @@ func (f supportRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, 
 	return f(request)
 }
 
+func TestPublicGuestSupportBindsTemporaryConversationToIP(t *testing.T) {
+	tempDir := t.TempDir()
+	cipher, err := store.LoadOrCreateCredentialCipher(filepath.Join(tempDir, "credential.key"))
+	if err != nil {
+		t.Fatalf("LoadOrCreateCredentialCipher: %v", err)
+	}
+	s, err := store.NewSQLiteStore(filepath.Join(tempDir, "bridge.db"), store.WithCredentialCipher(cipher))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer s.Close()
+	if err := s.EnsureAdminAccount("admin", "password123"); err != nil {
+		t.Fatalf("EnsureAdminAccount: %v", err)
+	}
+	app := &App{store: s, supportPresence: newSupportPresenceHub()}
+	handler := app.Handler()
+
+	get := httptest.NewRequest(http.MethodGet, "https://monitor.example/api/v1/public/support?mark_read=0", nil)
+	get.RemoteAddr = "198.51.100.24:443"
+	getRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(getRecorder, get)
+	if getRecorder.Code != http.StatusOK {
+		t.Fatalf("guest support get status=%d body=%s", getRecorder.Code, getRecorder.Body.String())
+	}
+	guestCookie := authCookie(t, getRecorder, guestSupportCookieName)
+	if guestCookie == nil || guestCookie.Value == "" || guestCookie.Path != "/api/v1/public/" {
+		t.Fatalf("expected scoped guest support cookie, got %#v", guestCookie)
+	}
+
+	post := httptest.NewRequest(http.MethodPost, "https://monitor.example/api/v1/public/support/messages", bytes.NewBufferString(`{"body":"Guest question"}`))
+	post.RemoteAddr = "198.51.100.24:443"
+	post.Header.Set("Content-Type", "application/json")
+	post.AddCookie(guestCookie)
+	postRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(postRecorder, post)
+	if postRecorder.Code != http.StatusCreated {
+		t.Fatalf("guest support post status=%d body=%s", postRecorder.Code, postRecorder.Body.String())
+	}
+
+	adminToken := supportAdminToken(t, s, "admin")
+	list := httptest.NewRequest(http.MethodGet, "/api/v1/admin/support", nil)
+	list.AddCookie(&http.Cookie{Name: adminSessionCookieName, Value: adminToken})
+	listRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(listRecorder, list)
+	if listRecorder.Code != http.StatusOK {
+		t.Fatalf("admin support list status=%d body=%s", listRecorder.Code, listRecorder.Body.String())
+	}
+	var response model.SupportConversationListResponse
+	if err := json.Unmarshal(listRecorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode guest support list: %v", err)
+	}
+	if len(response.Conversations) != 1 || !response.Conversations[0].IsGuest || response.Conversations[0].GuestIP != "198.51.100.24" {
+		t.Fatalf("expected one IP-labelled guest conversation, got %#v", response.Conversations)
+	}
+	if customers, err := s.ListCustomers(); err != nil {
+		t.Fatalf("list customers: %v", err)
+	} else if len(customers) != 0 {
+		t.Fatalf("guest account should stay out of customer management, got %#v", customers)
+	}
+}
+
 func TestSupportHandlersEnforceAreaOwnershipAndSendOfflineTelegram(t *testing.T) {
 	tempDir := t.TempDir()
 	cipher, err := store.LoadOrCreateCredentialCipher(filepath.Join(tempDir, "credential.key"))
