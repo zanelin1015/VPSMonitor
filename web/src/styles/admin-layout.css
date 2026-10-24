@@ -24,8 +24,20 @@
   border-radius: 8px;
   background: var(--primary);
   color: #fff;
-  font-size: 19px;
-  font-weight: 700;
+  overflow: hidden;
+}
+.admin-pro-logo svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+  overflow: visible;
+}
+.admin-pro-logo path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
 }
 .admin-pro-footer {
   display: grid;

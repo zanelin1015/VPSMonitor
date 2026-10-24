@@ -56,7 +56,9 @@ export function AdminLayout({
         title="ZaneLin"
         logo={
           <span className="admin-pro-logo" aria-hidden>
-            Z
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <path d="M5 6h14L5 18h14" />
+            </svg>
           </span>
         }
         layout="mix"
