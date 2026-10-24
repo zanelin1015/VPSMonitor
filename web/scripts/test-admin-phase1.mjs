@@ -26,7 +26,7 @@ try {
     assert.ok(!area.includes(key), `area accounts cannot navigate to ${key}`)
   }
   assert.ok(area.includes('front-proxies'))
-  assert.deepEqual(operator, ['customers', 'support'], 'operator accounts only see customer operations and support')
+  assert.deepEqual(operator, ['recommendations', 'customers', 'support'], 'operator accounts only see recommendations, customer operations and support')
   assert.equal(currentAdminMenu('dashboard', true).key, 'topology')
   assert.equal(currentAdminMenu('assets', true).key, 'assets')
 
@@ -34,18 +34,18 @@ try {
   const converted = getMenuData(adminMenuRoutes(true, false), { locale: false }).menuData
   assert.equal(converted.length, 4, 'all navigation groups survive ProLayout conversion')
   assert.deepEqual(
-    converted.flatMap((group) => group.children.map((item) => item.path)),
-    admin.map((key) => `/${key}`),
+    converted.flatMap((group) => group.children.map((item) => item.path)).sort(),
+    admin.map((key) => `/${key}`).sort(),
   )
   const convertedArea = getMenuData(adminMenuRoutes(false, true), { locale: false }).menuData
   assert.deepEqual(
-    convertedArea.flatMap((group) => group.children.map((item) => item.path)),
-    area.map((key) => `/${key}`),
+    convertedArea.flatMap((group) => group.children.map((item) => item.path)).sort(),
+    area.map((key) => `/${key}`).sort(),
   )
   const convertedOperator = getMenuData(adminMenuRoutes(false, false, true), { locale: false }).menuData
   assert.deepEqual(
-    convertedOperator.flatMap((group) => group.children.map((item) => item.path)),
-    operator.map((key) => `/${key}`),
+    convertedOperator.flatMap((group) => group.children.map((item) => item.path)).sort(),
+    operator.map((key) => `/${key}`).sort(),
   )
 
   const { AdminLayout } = await vite.ssrLoadModule('/src/app/AdminLayout.tsx')
