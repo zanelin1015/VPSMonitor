@@ -439,6 +439,44 @@ func TestSQLiteStoreAreaManagerOutboundGrantsAndCreatePermission(t *testing.T) {
 	}
 }
 
+func TestSQLiteStoreAreaManagerRecommendationTokenCanBeCustomized(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	enabled := true
+	first, err := store.CreateAreaManager(model.AreaManagerAccountRequest{
+		Username: "recommendation-one", Password: "password123", Enabled: &enabled,
+		RecommendationToken: "area-one-home",
+	})
+	if err != nil {
+		t.Fatalf("CreateAreaManager: %v", err)
+	}
+	if first.RecommendationToken != "area-one-home" {
+		t.Fatalf("custom recommendation token was not saved: %#v", first)
+	}
+	updated, err := store.UpdateAreaManager(first.ID, model.AreaManagerAccountRequest{RecommendationToken: "area-one-new"})
+	if err != nil {
+		t.Fatalf("UpdateAreaManager recommendation token: %v", err)
+	}
+	if updated.RecommendationToken != "area-one-new" {
+		t.Fatalf("updated recommendation token was not returned: %#v", updated)
+	}
+	if _, found, enabled, err := store.ResolveAreaManagerRecommendationToken("area-one-home"); err != nil || found || enabled {
+		t.Fatalf("old recommendation token should be invalid: found=%v enabled=%v err=%v", found, enabled, err)
+	}
+	if id, found, enabled, err := store.ResolveAreaManagerRecommendationToken("area-one-new"); err != nil || !found || !enabled || id != first.ID {
+		t.Fatalf("new recommendation token should resolve to manager: id=%d found=%v enabled=%v err=%v", id, found, enabled, err)
+	}
+	if _, err := store.CreateAreaManager(model.AreaManagerAccountRequest{
+		Username: "recommendation-two", Password: "password123", Enabled: &enabled,
+		RecommendationToken: "area-one-new",
+	}); err == nil {
+		t.Fatal("expected duplicate recommendation token to be rejected")
+	}
+}
+
 func sqliteColumnExists(t *testing.T, db *sql.DB, tableName string, columnName string) bool {
 	t.Helper()
 	rows, err := db.Query(`PRAGMA table_info(` + tableName + `)`)

@@ -155,6 +155,16 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
               <Input value={areaManagerForm.display_name} onChange={(event) => setAreaManagerForm((current) => ({ ...current, display_name: event.target.value }))} />
             </Col>
             <Col xs={24} md={12}>
+              <Text type="secondary">推荐页 URL 标识</Text>
+              <Input
+                value={areaManagerForm.recommendation_token}
+                placeholder={editingAreaManagerID ? '留空保持当前标识' : '留空自动生成'}
+                addonBefore="?area="
+                onChange={(event) => setAreaManagerForm((current) => ({ ...current, recommendation_token: event.target.value }))}
+              />
+              <div className="muted-line">仅支持 6–96 位字母、数字、短横线、下划线或点；修改后旧链接立即失效。</div>
+            </Col>
+            <Col xs={24} md={12}>
               <Text type="secondary">密码{editingAreaManagerID ? '（留空不改，可初始化为 12345678）' : '（默认 12345678）'}</Text>
               <Input.Password value={areaManagerForm.password} onChange={(event) => setAreaManagerForm((current) => ({ ...current, password: event.target.value }))} />
             </Col>

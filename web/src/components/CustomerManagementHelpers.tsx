@@ -58,6 +58,7 @@ export interface AreaManagerFormState {
   username: string
   password: string
   display_name: string
+  recommendation_token: string
   enabled: boolean
   agent_ids: string[]
   billing_enabled: boolean
@@ -109,6 +110,7 @@ export const emptyAreaManagerForm: AreaManagerFormState = {
   username: '',
   password: '',
   display_name: '',
+  recommendation_token: '',
   enabled: true,
   agent_ids: [],
   billing_enabled: false,

@@ -68,6 +68,7 @@ type AreaManagerAccountRequest struct {
 	Username              string                            `json:"username"`
 	Password              string                            `json:"password,omitempty"`
 	DisplayName           string                            `json:"display_name,omitempty"`
+	RecommendationToken   string                            `json:"recommendation_token,omitempty"`
 	Enabled               *bool                             `json:"enabled,omitempty"`
 	AgentIDs              []string                          `json:"agent_ids,omitempty"`
 	BillingEnabled        *bool                             `json:"billing_enabled,omitempty"`

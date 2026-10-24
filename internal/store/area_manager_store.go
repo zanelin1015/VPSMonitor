@@ -176,9 +176,12 @@ func (s *SQLiteStore) CreateAreaManager(req model.AreaManagerAccountRequest) (mo
 	if err != nil {
 		return model.AreaManagerAdminView{}, err
 	}
-	recommendationToken, err := randomTokenBytes(24)
-	if err != nil {
-		return model.AreaManagerAdminView{}, fmt.Errorf("generate area manager recommendation token: %w", err)
+	recommendationToken := normalized.recommendationToken
+	if recommendationToken == "" {
+		recommendationToken, err = randomTokenBytes(24)
+		if err != nil {
+			return model.AreaManagerAdminView{}, fmt.Errorf("generate area manager recommendation token: %w", err)
+		}
 	}
 
 	now := time.Now().UTC()
@@ -253,6 +256,9 @@ func (s *SQLiteStore) UpdateAreaManager(id int64, req model.AreaManagerAccountRe
 	}
 	if normalized.displayName == "" {
 		normalized.displayName = firstNonEmpty(current.view.DisplayName, normalized.username)
+	}
+	if normalized.recommendationToken == "" {
+		normalized.recommendationToken = current.view.RecommendationToken
 	}
 	if req.Enabled == nil {
 		normalized.enabled = current.view.Enabled
@@ -338,10 +344,10 @@ func (s *SQLiteStore) UpdateAreaManager(id int64, req model.AreaManagerAccountRe
 	}()
 	_, err = tx.Exec(`
 		UPDATE area_manager_accounts
-		SET username = ?, password_hash = ?, display_name = ?, enabled = ?, billing_enabled = ?, revenue_amount = ?, revenue_currency = ?, revenue_cycle = ?,
+		SET username = ?, password_hash = ?, display_name = ?, recommendation_token = ?, enabled = ?, billing_enabled = ?, revenue_amount = ?, revenue_currency = ?, revenue_cycle = ?,
 			outbound_create_enabled = ?, updated_at = ?
 		WHERE id = ?
-	`, normalized.username, passwordHash, normalized.displayName, boolInt(normalized.enabled), boolInt(normalized.billingEnabled), normalized.revenueAmount, normalized.revenueCurrency, normalized.revenueCycle, boolInt(normalized.outboundCreateEnabled), now.Format(time.RFC3339Nano), id)
+	`, normalized.username, passwordHash, normalized.displayName, normalized.recommendationToken, boolInt(normalized.enabled), boolInt(normalized.billingEnabled), normalized.revenueAmount, normalized.revenueCurrency, normalized.revenueCycle, boolInt(normalized.outboundCreateEnabled), now.Format(time.RFC3339Nano), id)
 	if err != nil {
 		return model.AreaManagerAdminView{}, fmt.Errorf("update area manager: %w", err)
 	}
@@ -677,6 +683,7 @@ func (s *SQLiteStore) SaveAreaManagerAgentTags(managerID int64, agentID string, 
 type normalizedAreaManagerRequest struct {
 	username              string
 	displayName           string
+	recommendationToken   string
 	enabled               bool
 	agentIDs              []string
 	billingEnabled        bool
@@ -707,6 +714,12 @@ func (s *SQLiteStore) normalizeAreaManagerRequest(req model.AreaManagerAccountRe
 	}
 	if len(displayName) > 160 {
 		return normalizedAreaManagerRequest{}, fmt.Errorf("display name is too long")
+	}
+	recommendationToken := strings.TrimSpace(req.RecommendationToken)
+	if recommendationToken != "" {
+		if err := validateAreaManagerRecommendationToken(recommendationToken); err != nil {
+			return normalizedAreaManagerRequest{}, err
+		}
 	}
 	enabled := true
 	if req.Enabled != nil {
@@ -780,6 +793,7 @@ func (s *SQLiteStore) normalizeAreaManagerRequest(req model.AreaManagerAccountRe
 		lineAgentIDs: lineIDs, landingAgentIDs: landingIDs,
 		username:              username,
 		displayName:           displayName,
+		recommendationToken:   recommendationToken,
 		enabled:               enabled,
 		agentIDs:              agentIDs,
 		billingEnabled:        billingEnabled,
@@ -986,6 +1000,19 @@ func (s *SQLiteStore) ensureAreaManagerRecommendationToken(id int64, current str
 		}
 	}
 	return token, nil
+}
+
+func validateAreaManagerRecommendationToken(token string) error {
+	if len(token) < 6 || len(token) > 96 {
+		return fmt.Errorf("recommendation token must be 6-96 characters")
+	}
+	for _, char := range token {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '-' || char == '_' || char == '.' {
+			continue
+		}
+		return fmt.Errorf("recommendation token may contain only letters, numbers, hyphen, underscore or dot")
+	}
+	return nil
 }
 
 // ResolveAreaManagerRecommendationToken returns the owning area manager and
