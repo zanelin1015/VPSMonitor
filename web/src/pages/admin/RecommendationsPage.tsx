@@ -4,8 +4,10 @@ import {
   CloudServerOutlined,
   CustomerServiceOutlined,
   GlobalOutlined,
+  SendOutlined,
   ThunderboltFilled,
   WifiOutlined,
+  WhatsAppOutlined,
 } from '@ant-design/icons'
 import { Button, Space, Typography } from 'antd'
 import { adminEntryPath, withAppBasePath } from '../../lib/appBasePath'
@@ -58,6 +60,15 @@ export function RecommendationsPage({ publicPage = false }: { publicPage?: boole
             <div className="recommendation-speed-lockup" aria-label="最高可达 1.5 Gbps">
               <strong>1.5</strong><span>Gbps</span>
               <small>最高可达 · 晚高峰速度稳定</small>
+            </div>
+            <div className="recommendation-contact-strip" aria-label="个人联系方式">
+              <span className="recommendation-contact-label">直接联系</span>
+              <a href="https://t.me/AlanStone1015" target="_blank" rel="noopener noreferrer">
+                <SendOutlined /><span>Telegram</span><strong>@AlanStone1015</strong>
+              </a>
+              <a href="https://wa.me/zanelin1" target="_blank" rel="noopener noreferrer">
+                <WhatsAppOutlined /><span>WhatsApp</span><strong>zanelin1</strong>
+              </a>
             </div>
             <Space wrap size={10}>
               <Button type="primary" size="large" href="#recommendation-carriers" icon={<ArrowRightOutlined />}>了解三网线路</Button>
@@ -124,11 +135,17 @@ export function RecommendationsPage({ publicPage = false }: { publicPage?: boole
           <div>
             <div className="recommendation-section-kicker">READY WHEN YOU ARE</div>
             <Typography.Title level={2}>欢迎私信咨询</Typography.Title>
-            <Typography.Paragraph>
+          <Typography.Paragraph>
               我们会根据你的地区、用途和预算，推荐合适的线路。实际速度受套餐、设备及本地网络环境影响。
             </Typography.Paragraph>
           </div>
-          <Button type="primary" size="large" href="#recommendation-top" icon={<ArrowRightOutlined />}>回到页面顶部</Button>
+          <div className="recommendation-consult-actions">
+            <Space wrap>
+              <Button type="primary" href="https://t.me/AlanStone1015" target="_blank" rel="noopener noreferrer" icon={<SendOutlined />}>Telegram</Button>
+              <Button href="https://wa.me/zanelin1" target="_blank" rel="noopener noreferrer" icon={<WhatsAppOutlined />}>WhatsApp</Button>
+              <Button type="link" href="#recommendation-top" icon={<ArrowRightOutlined />}>回到顶部</Button>
+            </Space>
+          </div>
         </section>
       </main>
     </div>
