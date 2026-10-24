@@ -329,10 +329,8 @@ func scanSupportConversation(scanner rowScanner) (model.SupportConversation, err
 	}
 	item.CreatedAt = parseTime(createdAtText)
 	item.UpdatedAt = parseTime(updatedAtText)
-	item.IsGuest = item.OwnerType == model.CustomerOwnerGuest
-	if item.IsGuest {
-		item.GuestIP = guestIP
-	}
+	item.GuestIP = guestIP
+	item.IsGuest = strings.TrimSpace(guestIP) != ""
 	return item, nil
 }
 

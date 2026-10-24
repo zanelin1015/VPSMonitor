@@ -10,7 +10,7 @@ const { Text } = Typography
 const supportEndpoint = '/api/v1/public/support'
 
 /** Guest-only support widget. The server binds its session to the observed IP. */
-export function GuestSupportWidget() {
+export function GuestSupportWidget({ scopeToken }: { scopeToken?: string }) {
   const [open, setOpen] = useState(false)
   const [thread, setThread] = useState<SupportThreadResponse | null>(null)
   const [draft, setDraft] = useState('')
@@ -20,10 +20,18 @@ export function GuestSupportWidget() {
   const messageListRef = useRef<HTMLDivElement | null>(null)
   const requestIDRef = useRef(0)
 
+  function supportURL(path = '', markRead?: boolean) {
+    const query = new URLSearchParams()
+    if (markRead !== undefined) query.set('mark_read', markRead ? '1' : '0')
+    if (scopeToken) query.set('area', scopeToken)
+    const suffix = query.toString()
+    return `${supportEndpoint}${path}${suffix ? `?${suffix}` : ''}`
+  }
+
   async function refresh(markRead: boolean) {
     const requestID = ++requestIDRef.current
     try {
-      const data = await fetchJSON<SupportThreadResponse>(`${supportEndpoint}?mark_read=${markRead ? '1' : '0'}`)
+      const data = await fetchJSON<SupportThreadResponse>(supportURL('', markRead))
       if (requestID !== requestIDRef.current) return
       setThread(data)
       setError('')
@@ -61,7 +69,7 @@ export function GuestSupportWidget() {
     if (!body || sending) return
     setSending(true)
     try {
-      await fetchJSON<SupportMessage>(`${supportEndpoint}/messages`, {
+      await fetchJSON<SupportMessage>(supportURL('/messages'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ body }),

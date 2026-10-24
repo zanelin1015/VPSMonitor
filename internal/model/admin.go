@@ -183,6 +183,7 @@ type AreaManagerAdminView struct {
 	ID                    int64                      `json:"id"`
 	Username              string                     `json:"username"`
 	DisplayName           string                     `json:"display_name,omitempty"`
+	RecommendationToken   string                     `json:"recommendation_token,omitempty"`
 	Enabled               bool                       `json:"enabled"`
 	AgentIDs              []string                   `json:"agent_ids,omitempty"`
 	BillingEnabled        bool                       `json:"billing_enabled"`

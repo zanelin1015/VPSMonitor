@@ -38,11 +38,16 @@ const benefits = [
 ]
 
 export function RecommendationsPage({ publicPage = false }: { publicPage?: boolean }) {
+  const recommendationScope = publicPage ? new URLSearchParams(window.location.search).get('area')?.trim() || undefined : undefined
+  const recommendationHomeURL = recommendationScope
+    ? `${withAppBasePath('/recommendations')}?area=${encodeURIComponent(recommendationScope)}`
+    : withAppBasePath('/recommendations')
+
   return (
     <div className={`recommendation-page-shell${publicPage ? ' recommendation-page-shell-public' : ''}`}>
       {publicPage ? (
         <header className="recommendation-public-header">
-          <a className="recommendation-public-brand" href={withAppBasePath('/recommendations')}>
+          <a className="recommendation-public-brand" href={recommendationHomeURL}>
             <span className="recommendation-public-brand-mark">Z</span>
             <span>ZaneLin <small>NETWORK PICKS</small></span>
           </a>
@@ -179,7 +184,7 @@ export function RecommendationsPage({ publicPage = false }: { publicPage?: boole
           </div>
         </section>
       </main>
-      {publicPage ? <GuestSupportWidget /> : null}
+      {publicPage ? <GuestSupportWidget scopeToken={recommendationScope} /> : null}
     </div>
   )
 }

@@ -60,7 +60,7 @@ func (s *SQLiteStore) UpdateAreaManagerPassword(id int64, req model.AdminPasswor
 
 func (s *SQLiteStore) ListAreaManagers() ([]model.AreaManagerAdminView, error) {
 	rows, err := s.db.Query(`
-		SELECT id, username, display_name, enabled, billing_enabled, revenue_amount, revenue_currency, revenue_cycle,
+		SELECT id, username, display_name, recommendation_token, enabled, billing_enabled, revenue_amount, revenue_currency, revenue_cycle,
 			outbound_create_enabled, created_at, updated_at
 		FROM area_manager_accounts
 		ORDER BY created_at DESC, id DESC
@@ -85,6 +85,11 @@ func (s *SQLiteStore) ListAreaManagers() ([]model.AreaManagerAdminView, error) {
 		return nil, fmt.Errorf("close area manager rows: %w", err)
 	}
 	for i := range items {
+		var err error
+		items[i].RecommendationToken, err = s.ensureAreaManagerRecommendationToken(items[i].ID, items[i].RecommendationToken)
+		if err != nil {
+			return nil, err
+		}
 		if err := s.hydrateAreaManagerPermissions(&items[i]); err != nil {
 			return nil, err
 		}
@@ -119,6 +124,10 @@ func (s *SQLiteStore) GetAreaManager(id int64) (model.AreaManagerAdminView, bool
 	item, found, err := s.getAreaManagerBase(id)
 	if err != nil || !found {
 		return item, found, err
+	}
+	item.RecommendationToken, err = s.ensureAreaManagerRecommendationToken(item.ID, item.RecommendationToken)
+	if err != nil {
+		return model.AreaManagerAdminView{}, false, err
 	}
 	if err := s.hydrateAreaManagerPermissions(&item); err != nil {
 		return model.AreaManagerAdminView{}, false, err
@@ -167,6 +176,10 @@ func (s *SQLiteStore) CreateAreaManager(req model.AreaManagerAccountRequest) (mo
 	if err != nil {
 		return model.AreaManagerAdminView{}, err
 	}
+	recommendationToken, err := randomTokenBytes(24)
+	if err != nil {
+		return model.AreaManagerAdminView{}, fmt.Errorf("generate area manager recommendation token: %w", err)
+	}
 
 	now := time.Now().UTC()
 	tx, err := s.db.Begin()
@@ -181,10 +194,10 @@ func (s *SQLiteStore) CreateAreaManager(req model.AreaManagerAccountRequest) (mo
 
 	result, err := tx.Exec(`
 		INSERT INTO area_manager_accounts (
-			username, password_hash, display_name, enabled, billing_enabled, revenue_amount, revenue_currency, revenue_cycle,
+			username, password_hash, display_name, recommendation_token, enabled, billing_enabled, revenue_amount, revenue_currency, revenue_cycle,
 			outbound_create_enabled, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, normalized.username, hash, normalized.displayName, boolInt(normalized.enabled), boolInt(normalized.billingEnabled), normalized.revenueAmount, normalized.revenueCurrency, normalized.revenueCycle, boolInt(normalized.outboundCreateEnabled), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, normalized.username, hash, normalized.displayName, recommendationToken, boolInt(normalized.enabled), boolInt(normalized.billingEnabled), normalized.revenueAmount, normalized.revenueCurrency, normalized.revenueCycle, boolInt(normalized.outboundCreateEnabled), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
 	if err != nil {
 		return model.AreaManagerAdminView{}, fmt.Errorf("create area manager: %w", err)
 	}
@@ -865,7 +878,7 @@ func (s *SQLiteStore) ensureAreaManagerUsernameAvailable(username string, except
 
 func (s *SQLiteStore) getAreaManagerBase(id int64) (model.AreaManagerAdminView, bool, error) {
 	row := s.db.QueryRow(`
-		SELECT id, username, display_name, enabled, billing_enabled, revenue_amount, revenue_currency, revenue_cycle,
+		SELECT id, username, display_name, recommendation_token, enabled, billing_enabled, revenue_amount, revenue_currency, revenue_cycle,
 			outbound_create_enabled, created_at, updated_at
 		FROM area_manager_accounts
 		WHERE id = ?
@@ -890,11 +903,11 @@ func (s *SQLiteStore) getAreaManagerWithHash(id int64) (areaManagerWithHash, boo
 	var enabled, billingEnabled, outboundCreateEnabled int
 	var createdAtText, updatedAtText string
 	err := s.db.QueryRow(`
-		SELECT id, username, password_hash, display_name, enabled, billing_enabled, revenue_amount, revenue_currency, revenue_cycle,
+		SELECT id, username, password_hash, display_name, recommendation_token, enabled, billing_enabled, revenue_amount, revenue_currency, revenue_cycle,
 			outbound_create_enabled, created_at, updated_at
 		FROM area_manager_accounts
 		WHERE id = ?
-	`, id).Scan(&item.view.ID, &item.view.Username, &item.passwordHash, &item.view.DisplayName, &enabled, &billingEnabled, &item.view.RevenueAmount, &item.view.RevenueCurrency, &item.view.RevenueCycle, &outboundCreateEnabled, &createdAtText, &updatedAtText)
+	`, id).Scan(&item.view.ID, &item.view.Username, &item.passwordHash, &item.view.DisplayName, &item.view.RecommendationToken, &enabled, &billingEnabled, &item.view.RevenueAmount, &item.view.RevenueCurrency, &item.view.RevenueCycle, &outboundCreateEnabled, &createdAtText, &updatedAtText)
 	if err == sql.ErrNoRows {
 		return areaManagerWithHash{}, false, nil
 	}
@@ -908,6 +921,10 @@ func (s *SQLiteStore) getAreaManagerWithHash(id int64) (areaManagerWithHash, boo
 	item.view.RevenueCycle = normalizeAreaManagerRevenueCycle(item.view.RevenueCycle)
 	item.view.CreatedAt = parseTime(createdAtText)
 	item.view.UpdatedAt = parseTime(updatedAtText)
+	item.view.RecommendationToken, err = s.ensureAreaManagerRecommendationToken(item.view.ID, item.view.RecommendationToken)
+	if err != nil {
+		return areaManagerWithHash{}, false, err
+	}
 	if err := s.hydrateAreaManagerPermissions(&item.view); err != nil {
 		return areaManagerWithHash{}, false, err
 	}
@@ -938,7 +955,7 @@ func scanAreaManager(scanner rowScanner) (model.AreaManagerAdminView, error) {
 	var item model.AreaManagerAdminView
 	var enabled, billingEnabled, outboundCreateEnabled int
 	var createdAtText, updatedAtText string
-	if err := scanner.Scan(&item.ID, &item.Username, &item.DisplayName, &enabled, &billingEnabled, &item.RevenueAmount, &item.RevenueCurrency, &item.RevenueCycle, &outboundCreateEnabled, &createdAtText, &updatedAtText); err != nil {
+	if err := scanner.Scan(&item.ID, &item.Username, &item.DisplayName, &item.RecommendationToken, &enabled, &billingEnabled, &item.RevenueAmount, &item.RevenueCurrency, &item.RevenueCycle, &outboundCreateEnabled, &createdAtText, &updatedAtText); err != nil {
 		return model.AreaManagerAdminView{}, fmt.Errorf("scan area manager: %w", err)
 	}
 	item.Enabled = enabled != 0
@@ -949,6 +966,45 @@ func scanAreaManager(scanner rowScanner) (model.AreaManagerAdminView, error) {
 	item.CreatedAt = parseTime(createdAtText)
 	item.UpdatedAt = parseTime(updatedAtText)
 	return item, nil
+}
+
+func (s *SQLiteStore) ensureAreaManagerRecommendationToken(id int64, current string) (string, error) {
+	if strings.TrimSpace(current) != "" {
+		return strings.TrimSpace(current), nil
+	}
+	token, err := randomTokenBytes(24)
+	if err != nil {
+		return "", fmt.Errorf("generate area manager recommendation token: %w", err)
+	}
+	result, err := s.db.Exec(`UPDATE area_manager_accounts SET recommendation_token = ? WHERE id = ? AND recommendation_token = ''`, token, id)
+	if err != nil {
+		return "", fmt.Errorf("save area manager recommendation token: %w", err)
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		if err := s.db.QueryRow(`SELECT recommendation_token FROM area_manager_accounts WHERE id = ?`, id).Scan(&token); err != nil {
+			return "", fmt.Errorf("reload area manager recommendation token: %w", err)
+		}
+	}
+	return token, nil
+}
+
+// ResolveAreaManagerRecommendationToken returns the owning area manager and
+// whether the account is currently enabled for a public recommendations URL.
+func (s *SQLiteStore) ResolveAreaManagerRecommendationToken(token string) (int64, bool, bool, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return 0, false, false, nil
+	}
+	var id int64
+	var enabled int
+	err := s.db.QueryRow(`SELECT id, enabled FROM area_manager_accounts WHERE recommendation_token = ?`, token).Scan(&id, &enabled)
+	if err == sql.ErrNoRows {
+		return 0, false, false, nil
+	}
+	if err != nil {
+		return 0, false, false, fmt.Errorf("resolve area manager recommendation token: %w", err)
+	}
+	return id, true, enabled != 0, nil
 }
 
 func normalizeAreaManagerRevenueCurrency(value string) string {

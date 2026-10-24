@@ -83,6 +83,104 @@ func TestPublicGuestSupportBindsTemporaryConversationToIP(t *testing.T) {
 	}
 }
 
+func TestPublicGuestSupportScopesRecommendationURLToAreaManager(t *testing.T) {
+	tempDir := t.TempDir()
+	cipher, err := store.LoadOrCreateCredentialCipher(filepath.Join(tempDir, "credential.key"))
+	if err != nil {
+		t.Fatalf("LoadOrCreateCredentialCipher: %v", err)
+	}
+	s, err := store.NewSQLiteStore(filepath.Join(tempDir, "bridge.db"), store.WithCredentialCipher(cipher))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer s.Close()
+	if err := s.EnsureAdminAccount("admin", "password123"); err != nil {
+		t.Fatalf("EnsureAdminAccount: %v", err)
+	}
+	enabled := true
+	areaOne, err := s.CreateAreaManager(model.AreaManagerAccountRequest{Username: "scoped-one", Password: "password123", Enabled: &enabled})
+	if err != nil {
+		t.Fatalf("CreateAreaManager one: %v", err)
+	}
+	areaTwo, err := s.CreateAreaManager(model.AreaManagerAccountRequest{Username: "scoped-two", Password: "password123", Enabled: &enabled})
+	if err != nil {
+		t.Fatalf("CreateAreaManager two: %v", err)
+	}
+	if areaOne.RecommendationToken == "" || areaOne.RecommendationToken == areaTwo.RecommendationToken {
+		t.Fatalf("area recommendation tokens should be distinct: %#v %#v", areaOne, areaTwo)
+	}
+	app := &App{store: s, supportPresence: newSupportPresenceHub()}
+	handler := app.Handler()
+
+	getScoped := func(token string) *http.Cookie {
+		request := httptest.NewRequest(http.MethodGet, "https://monitor.example/api/v1/public/support?area="+token+"&mark_read=0", nil)
+		request.RemoteAddr = "198.51.100.77:443"
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("scoped guest support get status=%d body=%s", recorder.Code, recorder.Body.String())
+		}
+		return authCookie(t, recorder, guestSupportCookieName)
+	}
+
+	areaOneCookie := getScoped(areaOne.RecommendationToken)
+	if areaOneCookie == nil || areaOneCookie.Value == "" {
+		t.Fatal("expected area one guest support cookie")
+	}
+	post := httptest.NewRequest(http.MethodPost, "https://monitor.example/api/v1/public/support/messages?area="+areaOne.RecommendationToken, bytes.NewBufferString(`{"body":"Area one question"}`))
+	post.RemoteAddr = "198.51.100.77:443"
+	post.Header.Set("Content-Type", "application/json")
+	post.AddCookie(areaOneCookie)
+	postRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(postRecorder, post)
+	if postRecorder.Code != http.StatusCreated {
+		t.Fatalf("area one guest support post status=%d body=%s", postRecorder.Code, postRecorder.Body.String())
+	}
+
+	areaTwoCookie := getScoped(areaTwo.RecommendationToken)
+	postTwo := httptest.NewRequest(http.MethodPost, "https://monitor.example/api/v1/public/support/messages?area="+areaTwo.RecommendationToken, bytes.NewBufferString(`{"body":"Area two question"}`))
+	postTwo.RemoteAddr = "198.51.100.77:443"
+	postTwo.Header.Set("Content-Type", "application/json")
+	postTwo.AddCookie(areaTwoCookie)
+	postTwoRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(postTwoRecorder, postTwo)
+	if postTwoRecorder.Code != http.StatusCreated {
+		t.Fatalf("area two guest support post status=%d body=%s", postTwoRecorder.Code, postTwoRecorder.Body.String())
+	}
+	areaOneAdminToken := supportAdminToken(t, s, "scoped-one")
+	areaTwoAdminToken := supportAdminToken(t, s, "scoped-two")
+	listFor := func(token string) model.SupportConversationListResponse {
+		request := httptest.NewRequest(http.MethodGet, "/api/v1/admin/support", nil)
+		request.AddCookie(&http.Cookie{Name: adminSessionCookieName, Value: token})
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("area support list status=%d body=%s", recorder.Code, recorder.Body.String())
+		}
+		var response model.SupportConversationListResponse
+		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+			t.Fatalf("decode area support list: %v", err)
+		}
+		return response
+	}
+	areaOneConversations := listFor(areaOneAdminToken).Conversations
+	areaTwoConversations := listFor(areaTwoAdminToken).Conversations
+	if len(areaOneConversations) != 1 || !areaOneConversations[0].IsGuest || areaOneConversations[0].OwnerID != areaOne.ID {
+		t.Fatalf("area one should see only its guest conversation: %#v", areaOneConversations)
+	}
+	if len(areaTwoConversations) != 1 || !areaTwoConversations[0].IsGuest || areaTwoConversations[0].OwnerID != areaTwo.ID {
+		t.Fatalf("area two should see only its guest conversation: %#v", areaTwoConversations)
+	}
+	if areaOneConversations[0].CustomerID == areaTwoConversations[0].CustomerID {
+		t.Fatal("same IP on different recommendation URLs must use separate guest accounts")
+	}
+	if customers, err := s.ListCustomersForOwner(model.AdminRoleAreaManager, areaOne.ID); err != nil {
+		t.Fatalf("list area one customers: %v", err)
+	} else if len(customers) != 0 {
+		t.Fatalf("scoped guest account should stay out of customer management: %#v", customers)
+	}
+}
+
 func TestSupportHandlersEnforceAreaOwnershipAndSendOfflineTelegram(t *testing.T) {
 	tempDir := t.TempDir()
 	cipher, err := store.LoadOrCreateCredentialCipher(filepath.Join(tempDir, "credential.key"))

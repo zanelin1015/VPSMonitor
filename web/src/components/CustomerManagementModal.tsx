@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, App as AntdApp, Button, Card, Col, Empty, Input, Modal, Popconfirm, Row, Select, Space, Spin, Table, Tabs, Tag, TreeSelect, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { CopyOutlined, DeleteOutlined, EditOutlined, ExportOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SyncOutlined } from '@ant-design/icons'
+import { CopyOutlined, DeleteOutlined, EditOutlined, ExportOutlined, LinkOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SyncOutlined } from '@ant-design/icons'
 
 import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, CustomerAssignmentSourceView, CustomerBillingDiagnostic, CustomerBillingReconciliationResponse, CustomerSubscriptionURLResponse, DashboardAgentView, FrontProxyNode, OperatorAdminView, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
 import { fetchJSON, formatDateTime } from '../lib/appHelpers'
+import { withAppBasePath } from '../lib/appBasePath'
 import { CustomerAssignmentManagerCard } from './CustomerAssignmentManagerCard'
 import { AdminHelpHint } from './AdminHelpHint'
 import {
@@ -564,10 +565,11 @@ export function CustomerManagementModal(props: {
     },
     {
       title: '操作',
-      width: 260,
+      width: 350,
       render: (_, record) => (
-        <Space size={6}>
+        <Space size={6} wrap>
           <Button size="small" icon={<EditOutlined />} onClick={() => editAreaManager(record)}>编辑</Button>
+          <Button size="small" icon={<LinkOutlined />} onClick={() => void copyAreaManagerRecommendationURL(record)}>推荐页 URL</Button>
           <Popconfirm title={`将 ${record.username} 的密码初始化为 ${DEFAULT_ACCOUNT_PASSWORD}？`} okText="初始化" cancelText="取消" onConfirm={() => void resetAreaManagerPassword(record.id)}>
             <Button size="small" icon={<SyncOutlined />} loading={resettingAreaManagerID === record.id}>初始化密码</Button>
           </Popconfirm>
@@ -740,6 +742,21 @@ export function CustomerManagementModal(props: {
       message.error(error instanceof Error ? error.message : '加载区域账号失败')
     } finally {
       setAreaManagersLoading(false)
+    }
+  }
+
+  async function copyAreaManagerRecommendationURL(record: AreaManagerAdminView) {
+    const token = record.recommendation_token?.trim()
+    if (!token) {
+      message.error('该区域账号暂未生成推荐页 URL')
+      return
+    }
+    const url = `${window.location.origin}${withAppBasePath('/recommendations')}?area=${encodeURIComponent(token)}`
+    try {
+      await navigator.clipboard.writeText(url)
+      message.success('区域推荐页 URL 已复制')
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '复制 URL 失败')
     }
   }
 

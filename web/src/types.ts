@@ -530,6 +530,7 @@ export interface AreaManagerAdminView {
   id: number
   username: string
   display_name?: string
+  recommendation_token?: string
   enabled: boolean
   agent_ids?: string[]
   billing_enabled?: boolean

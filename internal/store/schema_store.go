@@ -82,6 +82,7 @@ func (s *SQLiteStore) init() error {
 			username TEXT NOT NULL COLLATE NOCASE UNIQUE,
 			password_hash TEXT NOT NULL,
 			display_name TEXT NOT NULL DEFAULT '',
+			recommendation_token TEXT NOT NULL DEFAULT '',
 			enabled INTEGER NOT NULL DEFAULT 1,
 			billing_enabled INTEGER NOT NULL DEFAULT 0,
 			revenue_amount REAL NOT NULL DEFAULT 0,
@@ -524,8 +525,17 @@ func (s *SQLiteStore) init() error {
 	if err := s.ensureColumn("area_manager_accounts", "outbound_create_enabled", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
-	if _, err := s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_accounts_guest_ip ON customer_accounts(guest_ip) WHERE guest_ip <> ''`); err != nil {
+	if err := s.ensureColumn("area_manager_accounts", "recommendation_token", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if _, err := s.db.Exec(`DROP INDEX IF EXISTS idx_customer_accounts_guest_ip`); err != nil {
+		return fmt.Errorf("drop legacy guest customer index: %w", err)
+	}
+	if _, err := s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_accounts_guest_scope ON customer_accounts(guest_ip, owner_type, owner_id) WHERE guest_ip <> ''`); err != nil {
 		return fmt.Errorf("init guest customer index: %w", err)
+	}
+	if _, err := s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_area_manager_recommendation_token ON area_manager_accounts(recommendation_token) WHERE recommendation_token <> ''`); err != nil {
+		return fmt.Errorf("init area manager recommendation index: %w", err)
 	}
 	for _, column := range []struct {
 		name       string

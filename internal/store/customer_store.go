@@ -28,9 +28,9 @@ func (s *SQLiteStore) listCustomers(ownerType string, ownerID int64) ([]model.Cu
 	query := `
 		SELECT id, username, display_name, style_code, owner_type, owner_id, enabled, created_at, updated_at
 		FROM customer_accounts
-		WHERE owner_type <> ?
+		WHERE guest_ip = ''
 	`
-	args := []any{model.CustomerOwnerGuest}
+	args := make([]any, 0, 2)
 	if ownerType != "" && ownerID > 0 {
 		query += ` AND owner_type = ? AND owner_id = ?`
 		args = append(args, ownerType, ownerID)
@@ -73,10 +73,10 @@ func (s *SQLiteStore) listCustomers(ownerType string, ownerID int64) ([]model.Cu
 }
 
 // GetOrCreateGuestCustomer creates a short-lived, non-login customer account
-// keyed by the observed client IP. It lets guest support reuse the existing
-// conversation and admin inbox without exposing guest accounts in customer
-// management.
-func (s *SQLiteStore) GetOrCreateGuestCustomer(ip string, ttl time.Duration) (model.CustomerUser, error) {
+// keyed by the observed client IP and support owner scope. It lets guest
+// support reuse the existing conversation and admin inbox without exposing
+// guest accounts in customer management.
+func (s *SQLiteStore) GetOrCreateGuestCustomer(ip string, ttl time.Duration, ownerType string, ownerID int64) (model.CustomerUser, error) {
 	ip = strings.TrimSpace(ip)
 	if ip == "" {
 		ip = "unknown"
@@ -84,23 +84,30 @@ func (s *SQLiteStore) GetOrCreateGuestCustomer(ip string, ttl time.Duration) (mo
 	if ttl <= 0 {
 		return model.CustomerUser{}, fmt.Errorf("invalid guest customer lifetime")
 	}
-	digest := sha256.Sum256([]byte(ip))
+	ownerType = strings.TrimSpace(ownerType)
+	if ownerType == "" {
+		ownerType = model.CustomerOwnerGuest
+	}
+	if ownerType == model.CustomerOwnerGuest {
+		ownerID = 0
+	}
+	digest := sha256.Sum256([]byte(fmt.Sprintf("%s:%d:%s", ownerType, ownerID, ip)))
 	username := "guest-" + hex.EncodeToString(digest[:])[:20]
 	displayName := "访客 · " + ip
 	now := time.Now().UTC()
 	expiresAt := now.Add(ttl)
 	var existingUsername string
-	err := s.db.QueryRow(`SELECT username FROM customer_accounts WHERE guest_ip = ? AND owner_type = ?`, ip, model.CustomerOwnerGuest).Scan(&existingUsername)
+	err := s.db.QueryRow(`SELECT username FROM customer_accounts WHERE guest_ip = ? AND owner_type = ? AND owner_id = ?`, ip, ownerType, ownerID).Scan(&existingUsername)
 	if err == sql.ErrNoRows {
-		hash, hashErr := hashPassword("guest:" + ip)
+		hash, hashErr := hashPassword(fmt.Sprintf("guest:%s:%d:%s", ownerType, ownerID, ip))
 		if hashErr != nil {
 			return model.CustomerUser{}, fmt.Errorf("hash guest customer password: %w", hashErr)
 		}
 		_, err = s.db.Exec(`
 			INSERT OR IGNORE INTO customer_accounts
 			(username, password_hash, display_name, style_code, subscription_token, owner_type, owner_id, enabled, guest_ip, guest_expires_at, created_at, updated_at)
-			VALUES (?, ?, ?, '', '', ?, 0, 1, ?, ?, ?, ?)
-		`, username, hash, displayName, model.CustomerOwnerGuest, ip, expiresAt.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
+			VALUES (?, ?, ?, '', '', ?, ?, 1, ?, ?, ?, ?)
+		`, username, hash, displayName, ownerType, ownerID, ip, expiresAt.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
 		if err != nil {
 			return model.CustomerUser{}, fmt.Errorf("create guest customer: %w", err)
 		}
@@ -112,27 +119,27 @@ func (s *SQLiteStore) GetOrCreateGuestCustomer(ip string, ttl time.Duration) (mo
 	_, err = s.db.Exec(`
 		UPDATE customer_accounts
 		SET display_name = ?, enabled = 1, guest_ip = ?, guest_expires_at = ?, updated_at = ?
-		WHERE username = ? AND owner_type = ?
-	`, displayName, ip, expiresAt.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), username, model.CustomerOwnerGuest)
+		WHERE username = ? AND owner_type = ? AND owner_id = ?
+	`, displayName, ip, expiresAt.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), username, ownerType, ownerID)
 	if err != nil {
 		return model.CustomerUser{}, fmt.Errorf("refresh guest customer: %w", err)
 	}
 	user, err := scanCustomerUser(s.db.QueryRow(`
 		SELECT id, username, display_name, style_code, owner_type, owner_id, enabled, created_at, updated_at
-		FROM customer_accounts WHERE username = ? AND owner_type = ?
-	`, username, model.CustomerOwnerGuest))
+		FROM customer_accounts WHERE username = ? AND owner_type = ? AND owner_id = ?
+	`, username, ownerType, ownerID))
 	if err != nil {
 		return model.CustomerUser{}, fmt.Errorf("load guest customer: %w", err)
 	}
 	return user, nil
 }
 
-func (s *SQLiteStore) GuestCustomerMatchesIP(customerID int64, ip string) (bool, error) {
+func (s *SQLiteStore) GuestCustomerMatchesIP(customerID int64, ip, ownerType string, ownerID int64) (bool, error) {
 	if customerID <= 0 {
 		return false, nil
 	}
 	var storedIP string
-	err := s.db.QueryRow(`SELECT guest_ip FROM customer_accounts WHERE id = ? AND owner_type = ?`, customerID, model.CustomerOwnerGuest).Scan(&storedIP)
+	err := s.db.QueryRow(`SELECT guest_ip FROM customer_accounts WHERE id = ? AND owner_type = ? AND owner_id = ?`, customerID, ownerType, ownerID).Scan(&storedIP)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}

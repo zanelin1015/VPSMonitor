@@ -13,7 +13,22 @@ import (
 
 func (a *App) handlePublicSupport(w http.ResponseWriter, r *http.Request) {
 	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/public/support"), "/")
-	user, _, ok := a.requireGuestSupport(w, r)
+	ownerType := model.CustomerOwnerGuest
+	var ownerID int64
+	if scopeToken := strings.TrimSpace(r.URL.Query().Get("area")); scopeToken != "" {
+		managerID, found, enabled, err := a.store.ResolveAreaManagerRecommendationToken(scopeToken)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if !found || !enabled {
+			writeError(w, http.StatusNotFound, "recommendation link not found")
+			return
+		}
+		ownerType = model.AdminRoleAreaManager
+		ownerID = managerID
+	}
+	user, _, ok := a.requireGuestSupport(w, r, ownerType, ownerID)
 	if !ok {
 		return
 	}
@@ -75,21 +90,21 @@ func (a *App) handlePublicSupport(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, message)
 }
 
-func (a *App) requireGuestSupport(w http.ResponseWriter, r *http.Request) (model.CustomerUser, string, bool) {
+func (a *App) requireGuestSupport(w http.ResponseWriter, r *http.Request, ownerType string, ownerID int64) (model.CustomerUser, string, bool) {
 	ip := a.requestObservedIP(r)
 	if strings.TrimSpace(ip) == "" {
 		ip = "unknown"
 	}
 	if cookie, err := r.Cookie(guestSupportCookieName); err == nil && cookie.Value != "" {
 		user, _, valid, validateErr := a.store.ValidateCustomerSession(cookie.Value)
-		if validateErr == nil && valid && user.OwnerType == model.CustomerOwnerGuest {
-			matches, matchErr := a.store.GuestCustomerMatchesIP(user.ID, ip)
+		if validateErr == nil && valid {
+			matches, matchErr := a.store.GuestCustomerMatchesIP(user.ID, ip, ownerType, ownerID)
 			if matchErr == nil && matches {
 				return user, cookie.Value, true
 			}
 		}
 	}
-	user, err := a.store.GetOrCreateGuestCustomer(ip, guestSupportSessionTTL)
+	user, err := a.store.GetOrCreateGuestCustomer(ip, guestSupportSessionTTL, ownerType, ownerID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return model.CustomerUser{}, "", false
