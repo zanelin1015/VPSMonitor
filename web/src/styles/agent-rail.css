@@ -1120,13 +1120,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-.client-billing-controls {
-  display: grid;
-  min-width: max-content;
-  gap: 6px;
-}
-
-/* Compact editors raise their inputs on hover/focus; keep them below the pinned identity column. */
+/* Keep table content below the pinned identity and action columns. */
 .xui-client-table {
   min-width: 0;
   width: 100%;
@@ -1466,37 +1460,6 @@
   align-items: center;
   gap: 6px;
   flex-wrap: nowrap;
-}
-
-.client-billing-price-row,
-.client-billing-cycle-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: nowrap;
-  white-space: nowrap;
-}
-
-.client-billing-price-row > *,
-.client-billing-cycle-row > * {
-  flex: 0 0 auto;
-}
-
-.client-traffic-limit-editor {
-  width: 148px;
-}
-
-.ant-modal.xui-traffic-reset-modal .ant-modal-content {
-  background: var(--bg) !important;
-}
-
-.ant-modal.xui-traffic-reset-modal .ant-modal-header {
-  background: transparent !important;
-}
-
-.client-traffic-limit-editor .ant-input-number {
-  min-width: 0;
-  width: 108px;
 }
 
 .mini-progress {

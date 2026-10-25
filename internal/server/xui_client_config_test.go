@@ -35,14 +35,14 @@ func TestUnifiedClientConfigAPIValidatesPermissionsVersionAndDispatches(t *testi
 				t.Fatal(err)
 			}
 			defer s.Close()
-			agent, err := s.RegisterAgent(model.AgentRegisterRequest{AgentID: "config-agent"})
+			agent, err := testRegisterAgent(s, model.AgentRegisterRequest{AgentID: "config-agent"})
 			if err != nil {
 				t.Fatal(err)
 			}
 			cfg := agent.Config
 			cfg.XUI.Enabled = true
 			cfg.XUI.APIToken = "ephemeral-panel-token"
-			if _, err := s.UpdateAgentConfig(agent.AgentID, cfg); err != nil {
+			if _, err := testUpdateAgentConfig(s, agent.AgentID, cfg); err != nil {
 				t.Fatal(err)
 			}
 			if err := s.SaveSnapshot(model.AgentSnapshot{AgentID: agent.AgentID, Version: tc.version, ReportedAt: time.Now(), XUI: &model.XUISnapshot{Inbounds: []map[string]any{{"id": 7, "tag": "inbound-7", "protocol": "vless", "enable": true, "port": 20001, "settings": `{"clients":[{"id":"stable-uuid","email":"alice","enable":true,"totalGB":0,"expiryTime":0,"trafficReset":"never","trafficResetDay":1}]}`}}}}); err != nil {
@@ -64,7 +64,7 @@ func TestUnifiedClientConfigAPIValidatesPermissionsVersionAndDispatches(t *testi
 				if tc.role == "area-node-only" {
 					email = ""
 				}
-				assignment, err := s.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{AgentID: agent.AgentID, InboundID: 7, InboundTag: "inbound-7", ClientEmail: email, NodeOnly: tc.role == "area-node-only"})
+				assignment, err := testCreateAreaManagerAssignment(s, manager.ID, model.AreaManagerAssignmentRequest{AgentID: agent.AgentID, InboundID: 7, InboundTag: "inbound-7", ClientEmail: email, NodeOnly: tc.role == "area-node-only"})
 				if err != nil {
 					t.Fatal(err)
 				}

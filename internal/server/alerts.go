@@ -188,6 +188,9 @@ func (s *alertService) evaluateAll(mode alertDeliveryMode) {
 		s.evaluateAgentRecord(agent, snapshot, true, mode)
 		s.evaluateXUIClientExpiryAlerts(agent, snapshot, mode)
 	}
+	if mode == deliverDailyAlerts {
+		s.evaluateAreaClientExpiryAlerts(agents, latest, time.Now())
+	}
 }
 
 func (s *alertService) evaluateAgentRecord(agent model.AgentRecord, snapshot model.AgentSnapshot, includeOffline bool, mode alertDeliveryMode) {
@@ -209,13 +212,25 @@ func (s *alertService) dispatch(alert alertMessage, mode alertDeliveryMode) {
 		return
 	}
 	text := formatTelegramAlert(alert)
-	bots, err := s.store.ListEnabledTelegramBotSecrets()
+	bots, err := s.store.ListEnabledTelegramBotSecrets(0)
 	if err != nil {
 		log.Printf("alert telegram bots: %v", err)
 		return
 	}
 	if len(bots) == 0 {
 		return
+	}
+	if strings.Contains(alert.key, ":xui_client_expiry:") || strings.HasSuffix(alert.key, ":renewal") {
+		eligible := bots[:0]
+		for _, bot := range bots {
+			if bot.NotifyExpiry {
+				eligible = append(eligible, bot)
+			}
+		}
+		bots = eligible
+		if len(bots) == 0 {
+			return
+		}
 	}
 	shouldSend, err := s.store.ShouldSendAlert(alert.key, alert.fingerprint, text, alertCooldown)
 	if err != nil {
@@ -263,16 +278,19 @@ func (s *alertService) sendTelegramMessage(botToken, chatID, text string) error 
 	return nil
 }
 
-func (s *alertService) sendMessageToEnabledTelegramBots(text string) error {
+func (s *alertService) sendMessageToEnabledTelegramBots(text string, ownerID int64) error {
 	if s == nil || strings.TrimSpace(text) == "" {
 		return nil
 	}
-	bots, err := s.store.ListEnabledTelegramBotSecrets()
+	bots, err := s.store.ListEnabledTelegramBotSecrets(ownerID)
 	if err != nil {
 		return err
 	}
 	var sendErrors []error
 	for _, bot := range bots {
+		if !bot.NotifySupport {
+			continue
+		}
 		if err := s.sendTelegramMessage(bot.BotToken, bot.ChatID, text); err != nil {
 			sendErrors = append(sendErrors, fmt.Errorf("%s: %w", bot.Name, err))
 		}

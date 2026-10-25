@@ -860,28 +860,6 @@ textarea,
 }
 
 @media (max-width: 768px) {
-  .app-shell {
-    width: min(100% - 20px, 1120px);
-    padding-top: 12px;
-  }
-
-  .hero-panel {
-    flex-direction: column;
-    padding: 16px;
-  }
-
-  .hero-actions {
-    width: 100%;
-  }
-
-  .hero-actions .ant-btn {
-    width: 100%;
-  }
-
-  .hero-actions .personal-center-button {
-    width: 48px;
-    min-width: 48px;
-  }
 
   .overview-stat-grid {
     grid-template-columns: 1fr;
@@ -961,8 +939,7 @@ textarea,
 
 @media (max-width: 760px) {
   .workspace-grid,
-  .workspace-grid-topology,
-  .workspace-grid-agent-open {
+  .workspace-grid-topology {
     display: grid;
     width: 100%;
     height: auto;
@@ -975,7 +952,6 @@ textarea,
 
   .workspace-grid:not(.workspace-grid-topology) .sidebar-card,
   .workspace-grid-topology .sidebar-card,
-  .workspace-grid-agent-open .tabs-card,
   .workspace-grid-topology .cn-flow-card {
     height: auto;
     max-height: none;
@@ -991,9 +967,7 @@ textarea,
     overflow: visible;
   }
 
-  .workspace-grid-topology .sidebar-card .ant-card-body,
-  .workspace-grid-agent-open .tabs-card > .ant-card-body,
-  .workspace-grid-agent-open .tabs-card .ant-tabs-content-holder {
+  .workspace-grid-topology .sidebar-card .ant-card-body {
     max-height: none;
     overflow: visible;
     padding-right: 0;

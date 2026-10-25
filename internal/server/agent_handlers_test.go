@@ -76,11 +76,6 @@ func TestHandleRegisterDoesNotSeedDefaultXUIBootstrap(t *testing.T) {
 		PollInterval:          "30s",
 		RequestTimeoutSeconds: 15,
 		XUIAutoInstall:        true,
-		XUIUsername:           "admin",
-		XUIPassword:           "secret",
-		XUIPanelPort:          2053,
-		XUIWebPath:            "/xui/",
-		XUIInstallScriptURL:   "https://example.com/3x-ui.sh",
 	}); err != nil {
 		t.Fatalf("SaveClientInstallSettings: %v", err)
 	}
@@ -124,7 +119,7 @@ func TestHandleRegisterAllowsPre025ClientLegacyBootstrap(t *testing.T) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer sqliteStore.Close()
-	initial, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "legacy-agent", Hostname: "old-host"})
+	initial, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "legacy-agent", Hostname: "old-host"})
 	if err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
@@ -155,7 +150,7 @@ func TestHandleRegisterRequiresTokenForCurrentClient(t *testing.T) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer sqliteStore.Close()
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "current-agent"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "current-agent"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
 	app := &App{config: config.ServerConfig{RegistrationToken: "reg-token"}, store: sqliteStore}
@@ -270,10 +265,6 @@ func TestHandleRegisterDoesNotSeedLinuxXUIDBPathForWindows(t *testing.T) {
 		PollInterval:          "30s",
 		RequestTimeoutSeconds: 15,
 		XUIAutoInstall:        true,
-		XUIUsername:           "admin",
-		XUIPassword:           "secret",
-		XUIPanelPort:          2053,
-		XUIWebPath:            "/xui/",
 	}); err != nil {
 		t.Fatalf("SaveClientInstallSettings: %v", err)
 	}
@@ -314,7 +305,7 @@ func TestHandleHeartbeatUsesServerReceiveTime(t *testing.T) {
 	}
 	defer sqliteStore.Close()
 
-	registerResp, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "drifted-agent", AgentName: "Drifted Agent"})
+	registerResp, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "drifted-agent", AgentName: "Drifted Agent"})
 	if err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
@@ -366,7 +357,7 @@ func TestHandleHeartbeatOverridesClientObservedIP(t *testing.T) {
 	}
 	defer sqliteStore.Close()
 
-	registerResp, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "ip-agent", AgentName: "IP Agent"})
+	registerResp, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "ip-agent", AgentName: "IP Agent"})
 	if err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
@@ -418,7 +409,7 @@ func TestHandleAgentConfigMergesCollectedRealmSnapshotForAdmin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAdminSession: %v", err)
 	}
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "agent-1", AgentName: "Agent 1"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "agent-1", AgentName: "Agent 1"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
 	now := time.Now().UTC()
@@ -485,7 +476,7 @@ func TestHandleAgentConfigPreservesExplicitFeatureSwitches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAdminSession: %v", err)
 	}
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "agent-1", AgentName: "Agent 1"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "agent-1", AgentName: "Agent 1"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
 
@@ -517,7 +508,7 @@ func TestHandleAgentConfigPreservesExplicitFeatureSwitches(t *testing.T) {
 	if !storedConfig.Features.RealmExplicitlyConfigured {
 		t.Fatal("expected the admin Realm switch choice to be persisted")
 	}
-	registerResponse, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{
+	registerResponse, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{
 		AgentID:      "agent-1",
 		AgentName:    "Agent 1",
 		Capabilities: model.AgentCapabilities{Realm: true},
@@ -583,7 +574,7 @@ func TestHandleXUIActionsScopesAreaManagerLogsToCurrentAccount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAdminSession admin: %v", err)
 	}
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "shared-agent", AgentName: "Shared Agent"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "shared-agent", AgentName: "Shared Agent"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
 	enabled := true
@@ -600,7 +591,7 @@ func TestHandleXUIActionsScopesAreaManagerLogsToCurrentAccount(t *testing.T) {
 		t.Fatalf("CreateAreaManager two: %v", err)
 	}
 	for _, managerID := range []int64{managerOne.ID, managerTwo.ID} {
-		if _, err := sqliteStore.CreateAreaManagerAssignment(managerID, model.AreaManagerAssignmentRequest{
+		if _, err := testCreateAreaManagerAssignment(sqliteStore, managerID, model.AreaManagerAssignmentRequest{
 			AgentID: "shared-agent", InboundID: 7, InboundTag: "node-7", Enabled: &enabled,
 		}); err != nil {
 			t.Fatalf("CreateAreaManagerAssignment manager=%d: %v", managerID, err)
@@ -645,7 +636,7 @@ func TestHandleXUIActionsScopesAreaManagerLogsToCurrentAccount(t *testing.T) {
 	}
 	createAction(oneToken, "one@example.com")
 	createAction(twoToken, "two@example.com")
-	if _, err := sqliteStore.CreateXUIAction("shared-agent", model.XUIActionRequest{
+	if _, err := testCreateXUIAction(sqliteStore, "shared-agent", model.XUIActionRequest{
 		Kind: model.XUIActionRestartXUI, Payload: map[string]any{},
 	}); err != nil {
 		t.Fatalf("CreateXUIAction legacy: %v", err)
@@ -698,7 +689,7 @@ func TestHandleAgentConfigUpdateRequestsImmediateClientApply(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAdminSession: %v", err)
 	}
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "gz", AgentName: "Guangzhou"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "gz", AgentName: "Guangzhou"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
 
@@ -778,20 +769,20 @@ func TestHandleRealmConfigCopyCopiesAndAppliesToTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAdminSession: %v", err)
 	}
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "gz", AgentName: "Guangzhou"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "gz", AgentName: "Guangzhou"}); err != nil {
 		t.Fatalf("RegisterAgent source: %v", err)
 	}
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "backup", AgentName: "Backup"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "backup", AgentName: "Backup"}); err != nil {
 		t.Fatalf("RegisterAgent target: %v", err)
 	}
-	if _, err := sqliteStore.UpdateAgentConfig("backup", model.ManagedAgentConfig{
+	if _, err := testUpdateAgentConfig(sqliteStore, "backup", model.ManagedAgentConfig{
 		AgentID:  "backup",
 		Features: model.AgentFeatureConfig{HAProxy: true, Configured: true},
 		Entry:    model.AgentEntryConfig{HAProxy: model.HAProxyConfig{Enabled: true}},
 	}); err != nil {
 		t.Fatalf("UpdateAgentConfig target HAProxy: %v", err)
 	}
-	if _, err := sqliteStore.UpdateAgentConfig("gz", model.ManagedAgentConfig{
+	if _, err := testUpdateAgentConfig(sqliteStore, "gz", model.ManagedAgentConfig{
 		AgentID:   "gz",
 		AgentName: "Guangzhou",
 		Entry: model.AgentEntryConfig{
@@ -860,7 +851,7 @@ func TestSyncRealmConfigFromSnapshotPersistsMachineRealmConfig(t *testing.T) {
 	}
 	defer sqliteStore.Close()
 
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "gz", AgentName: "Guangzhou"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "gz", AgentName: "Guangzhou"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
 	now := time.Now().UTC()
@@ -899,7 +890,7 @@ func TestSyncRealmConfigFromSnapshotIgnoresHAProxyClient(t *testing.T) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer sqliteStore.Close()
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "gz", AgentName: "Guangzhou"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "gz", AgentName: "Guangzhou"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
 	cfg, found, err := sqliteStore.GetAgentConfig("gz")
@@ -910,7 +901,7 @@ func TestSyncRealmConfigFromSnapshotIgnoresHAProxyClient(t *testing.T) {
 	cfg.Features.Configured = true
 	cfg.Entry.HAProxy.Enabled = true
 	cfg.Entry.PortForwarding.Backend = "none"
-	if _, err := sqliteStore.UpdateAgentConfig("gz", cfg); err != nil {
+	if _, err := testUpdateAgentConfig(sqliteStore, "gz", cfg); err != nil {
 		t.Fatalf("UpdateAgentConfig: %v", err)
 	}
 
@@ -935,10 +926,10 @@ func TestAppendRealmForwardedImportURLsScopesAdminExportToEntryAgent(t *testing.
 	}
 	defer sqliteStore.Close()
 
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "gz", AgentName: "Guangzhou"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "gz", AgentName: "Guangzhou"}); err != nil {
 		t.Fatalf("RegisterAgent gz: %v", err)
 	}
-	if _, err := sqliteStore.UpdateAgentConfig("gz", model.ManagedAgentConfig{
+	if _, err := testUpdateAgentConfig(sqliteStore, "gz", model.ManagedAgentConfig{
 		AgentID:   "gz",
 		AgentName: "Guangzhou",
 		Entry: model.AgentEntryConfig{
@@ -956,13 +947,13 @@ func TestAppendRealmForwardedImportURLsScopesAdminExportToEntryAgent(t *testing.
 	}); err != nil {
 		t.Fatalf("UpdateAgentConfig gz: %v", err)
 	}
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk", AgentName: "Hong Kong"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "hk", AgentName: "Hong Kong"}); err != nil {
 		t.Fatalf("RegisterAgent hk: %v", err)
 	}
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "sz", AgentName: "Shenzhen"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "sz", AgentName: "Shenzhen"}); err != nil {
 		t.Fatalf("RegisterAgent sz: %v", err)
 	}
-	if _, err := sqliteStore.UpdateAgentConfig("sz", model.ManagedAgentConfig{
+	if _, err := testUpdateAgentConfig(sqliteStore, "sz", model.ManagedAgentConfig{
 		AgentID:   "sz",
 		AgentName: "Shenzhen",
 		Entry: model.AgentEntryConfig{
@@ -1096,7 +1087,7 @@ func TestBuildAreaManagerTopologyResolvesUndirectlyAssignedRelay(t *testing.T) {
 	defer sqliteStore.Close()
 
 	for _, agentID := range []string{"gz", "hk-primary", "hk-backup", "dmit", "unrelated"} {
-		if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: agentID, AgentName: agentID}); err != nil {
+		if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: agentID, AgentName: agentID}); err != nil {
 			t.Fatalf("RegisterAgent %s: %v", agentID, err)
 		}
 	}
@@ -1106,7 +1097,7 @@ func TestBuildAreaManagerTopologyResolvesUndirectlyAssignedRelay(t *testing.T) {
 			t.Fatalf("GetAgentConfig %s: found=%v err=%v", agentID, found, err)
 		}
 		cfg.Entry = entry
-		if _, err := sqliteStore.UpdateAgentConfig(agentID, cfg); err != nil {
+		if _, err := testUpdateAgentConfig(sqliteStore, agentID, cfg); err != nil {
 			t.Fatalf("UpdateAgentConfig %s: %v", agentID, err)
 		}
 	}
@@ -1158,7 +1149,7 @@ func TestBuildAreaManagerTopologyResolvesUndirectlyAssignedRelay(t *testing.T) {
 		{AgentID: "dmit", InboundID: 1, InboundTag: "in-20001-tcp", ClientEmail: "alice@example.com", Enabled: &enabled},
 		{AgentID: "dmit", InboundID: 2, InboundTag: "direct-in", ClientEmail: "direct@example.com", Enabled: &enabled},
 	} {
-		if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, assignment); err != nil {
+		if _, err := testCreateAreaManagerAssignment(sqliteStore, manager.ID, assignment); err != nil {
 			t.Fatalf("CreateAreaManagerAssignment: %v", err)
 		}
 	}

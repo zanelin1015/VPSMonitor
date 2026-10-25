@@ -38,8 +38,6 @@ type snapshotHistoryRow struct {
 	inboundCount        int
 	outboundCount       int
 	routingRuleCount    int
-	nezhaServerID       int64
-	nezhaServerName     string
 	lastCollectionError string
 	historyVersion      sql.NullInt64
 	legacySnapshotJSON  string
@@ -50,7 +48,7 @@ func (s *SQLiteStore) ListHistory(agentID string, limit int) ([]model.AgentSnaps
 		SELECT
 			agent_id, agent_name, reported_at, hostname, public_ipv4, public_ipv6, cpu, mem_used, mem_total,
 			disk_used, disk_total, net_traffic_sent, net_traffic_recv, net_traffic_total, net_io_up, net_io_down,
-			xray_state, inbound_count, outbound_count, routing_rule_count, nezha_server_id, nezha_server_name,
+			xray_state, inbound_count, outbound_count, routing_rule_count,
 			last_collection_err, history_version, snapshot_json
 		FROM snapshots
 		WHERE agent_id = ?
@@ -105,8 +103,6 @@ func scanSnapshotHistory(scanner snapshotHistoryScanner) (model.AgentSnapshot, e
 		&row.inboundCount,
 		&row.outboundCount,
 		&row.routingRuleCount,
-		&row.nezhaServerID,
-		&row.nezhaServerName,
 		&row.lastCollectionError,
 		&row.historyVersion,
 		&row.legacySnapshotJSON,
@@ -144,8 +140,6 @@ func scanSnapshotHistory(scanner snapshotHistoryScanner) (model.AgentSnapshot, e
 			InboundCount:      row.inboundCount,
 			OutboundCount:     row.outboundCount,
 			RoutingRuleCount:  row.routingRuleCount,
-			NezhaServerID:     nonNegativeUint64(row.nezhaServerID),
-			NezhaServerName:   row.nezhaServerName,
 			LastCollectionErr: row.lastCollectionError,
 		},
 	}, nil

@@ -13,10 +13,6 @@ import {
   openWrtInstallScriptURL,
   powerShellQuote,
   shellQuote,
-  type ClientInstallCommandForm,
-  type ClientInstallCommandKind,
-  type FrontendSettingsForm,
-  type TelegramBotForm,
   windowsInstallScriptURL,
 } from './adminFormHelpers'
 import {
@@ -34,7 +30,6 @@ import {
   actionStatusColor,
   actionStatusLabel,
   buildAddClientActionPayload,
-  buildInboundActionPayload,
   buildInboundClientPayload,
   buildOutboundActionPayload,
   buildOutboundStreamSettings,
@@ -44,18 +39,10 @@ import {
   buildXUIActionPayload,
   defaultAddClientActionForm,
   defaultInboundClientForm,
-  defaultInboundActionForm,
   defaultOutboundActionForm,
   defaultRoutingActionForm,
-  defaultTLSCertificateSelection,
   setRoutingList,
   splitTextList,
-  type TLSCertificateSelectionForm,
-  type XUIAddClientActionForm,
-  type XUIInboundActionForm,
-  type XUIInboundClientForm,
-  type XUIOutboundActionForm,
-  type XUIRoutingActionForm,
   XUI_ACTION_KINDS,
 } from './xuiActionForms'
 
@@ -69,16 +56,14 @@ export type {
   TelegramBotForm,
 } from './adminFormHelpers'
 export type {
-  TLSCertificateSelectionForm,
   XUIAddClientActionForm,
-  XUIInboundActionForm,
   XUIInboundClientForm,
   XUIOutboundActionForm,
   XUIRoutingActionForm,
 } from './xuiActionForms'
 
-export { shortJSON, summarizeConfigAudit, confidenceLabel, formatDateInputFromMillis, dateInputToExpiryMillis, formatExpiryTime, formatDateTime, formatRelativeTime, scopeLabel, scopeColor, summarizeRule, statusColor, agentStatusLevel, summarizeAgent } from './appHelpersFormatting'
-export { parseTagInput, formatTagInput, mergeTagOptions, mergeDashboardTagOptions, parseAddressInput, formatAddressInput, tagChipStyle } from './appHelpersTags'
+export { shortJSON, summarizeConfigAudit, confidenceLabel, formatExpiryTime, formatDateTime, formatRelativeTime, scopeLabel, scopeColor, summarizeRule } from './appHelpersFormatting'
+export { parseTagInput, mergeTagOptions, mergeDashboardTagOptions, parseAddressInput, formatAddressInput, tagChipStyle } from './appHelpersTags'
 export {
   normalizeRenewalConfig,
   normalizeClientBillings,
@@ -86,7 +71,6 @@ export {
   billingKeyForClient,
   defaultClientBilling,
   normalizeClientTrafficMultiplier,
-  scaleClientTraffic,
   findClientBilling,
   upsertClientBilling,
   dateInputToStartMillis,
@@ -151,9 +135,7 @@ export {
   mergeRealtimeSummary,
   isUnauthorized,
   XUI_ACTION_KINDS,
-  defaultTLSCertificateSelection,
   defaultInboundClientForm,
-  defaultInboundActionForm,
   defaultOutboundActionForm,
   defaultRoutingActionForm,
   defaultAddClientActionForm,
@@ -174,7 +156,6 @@ export {
   powerShellQuote,
   buildXUIActionPayload,
   buildAddClientActionPayload,
-  buildInboundActionPayload,
   buildInboundClientPayload,
   buildOutboundActionPayload,
   buildUpsertRoutingActionPayload,

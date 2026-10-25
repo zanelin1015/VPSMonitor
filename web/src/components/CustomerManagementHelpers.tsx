@@ -1,6 +1,6 @@
 import { Space, Tag, Typography } from 'antd'
 
-import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, AreaManagerOutboundGrant, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, DashboardAgentView, FinanceClientView, RealmForwardRule, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
+import type { AreaManagerAssignment, AreaManagerOutboundGrant, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, DashboardAgentView, FinanceClientView, RealmForwardRule, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
 
 const { Text } = Typography
 
@@ -25,7 +25,6 @@ export interface AssignmentFormState {
   client_email: string
   public_client_name: string
   price_mode: 'inherit' | 'override'
-  traffic_multiplier: number
   revenue_amount: number
   revenue_currency: 'CNY' | 'USDT'
   revenue_cycle: 'month' | 'quarter' | 'semiannual' | 'year'
@@ -96,7 +95,6 @@ export const emptyAssignmentForm: AssignmentFormState = {
   client_email: '',
   public_client_name: '',
   price_mode: 'inherit',
-  traffic_multiplier: 1,
   revenue_amount: 0,
   revenue_currency: 'CNY',
   revenue_cycle: 'month',
@@ -129,19 +127,6 @@ export const emptyAreaBatchAssignmentForm: AreaBatchAssignmentFormState = {
   xui_agent_id: '',
   selected_realm_keys: [],
   selected_xui_keys: [],
-}
-
-export function isAreaManagerAdminUser(user: AdminUser | null): boolean {
-  if (!user) {
-    return false
-  }
-  if (user.role === 'area_manager') {
-    return true
-  }
-  if (user.role === 'admin') {
-    return false
-  }
-  return Boolean((user.agent_ids || []).length || (user.id && user.id !== 1))
 }
 
 export function clientKey(client: XUIClientView): string {
@@ -541,10 +526,6 @@ export function firstRealmAssignmentAgentID(items: AreaManagerAssignment[], agen
   return normalizeAreaManagerAssignmentDrafts(items, agents).find((item) => isRealmAssignmentDraft(item, agents))?.agent_id || ''
 }
 
-export function firstXUIAssignmentAgentID(items: AreaManagerAssignment[], agents: DashboardAgentView[]): string {
-  return normalizeAreaManagerAssignmentDrafts(items, agents).find((item) => !isRealmAssignmentDraft(item, agents))?.agent_id || ''
-}
-
 function activeForwardingAssignmentPrefix(agentID: string, listenPort: number, agents: DashboardAgentView[]): 'realm' | 'haproxy' | '' {
   const agent = agents.find((item) => item.agent_id === agentID)
   if (!agent || listenPort <= 0) {
@@ -603,15 +584,6 @@ export function areaAssignmentKey(item: { agent_id: string; inbound_id: number; 
     item.inbound_tag || '',
     item.client_email || '',
   ].map((part) => encodeURIComponent(part)).join('::')
-}
-
-export function areaAssignmentLabel(item: { agent_id: string; inbound_id: number; inbound_tag?: string; client_email?: string; node_only?: boolean; public_client_name?: string }, agents: DashboardAgentView[]): string {
-  if (isRealmAssignmentDraft(item, agents)) {
-    return realmAssignmentDisplayName(item, agents)
-  }
-  const scope = item.client_email || (item.node_only ? '仅节点（可新增客户端）' : '整个节点')
-  const name = item.public_client_name || item.inbound_tag || `Inbound #${item.inbound_id}`
-  return `${agentName(item.agent_id, agents)} / ${name} / ${scope}`
 }
 
 export function renderAssignmentHierarchy(
@@ -754,7 +726,6 @@ export function assignmentFormFromAssignment(record: CustomerAssignment, agents:
     client_email: record.client_email || '',
     public_client_name: record.public_client_name || '',
     price_mode: record.price_mode === 'override' ? 'override' : 'inherit',
-    traffic_multiplier: Number(billing?.traffic_multiplier || 1),
     revenue_amount: Number(billing?.revenue_amount || 0),
     revenue_currency: billing?.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
     revenue_cycle: normalizeRevenueCycle(billing?.revenue_cycle),
@@ -778,7 +749,6 @@ export function assignmentFormFromDraft(draft: CustomerAssignmentDraft, agents: 
     client_email: clientEmail,
     public_client_name: publicClientName,
     price_mode: draft.price_mode === 'override' ? 'override' : 'inherit',
-    traffic_multiplier: Number(draft.traffic_multiplier ?? billing?.traffic_multiplier ?? 1),
     revenue_amount: Number(draft.revenue_amount ?? billing?.revenue_amount ?? 0),
     revenue_currency: draft.revenue_currency === 'USDT' ? 'USDT' : billing?.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
     revenue_cycle: normalizeRevenueCycle(draft.revenue_cycle || billing?.revenue_cycle),
@@ -869,9 +839,8 @@ export function assignmentBindingDiagnostic(record: CustomerAssignment, agents: 
   return { status: 'missing', label: '未找到客户端' }
 }
 
-export function billingFormPatch(billing?: XUIClientBillingConfig): Pick<AssignmentFormState, 'traffic_multiplier' | 'revenue_amount' | 'revenue_currency' | 'revenue_cycle'> {
+export function billingFormPatch(billing?: XUIClientBillingConfig): Pick<AssignmentFormState, 'revenue_amount' | 'revenue_currency' | 'revenue_cycle'> {
   return {
-    traffic_multiplier: Number(billing?.traffic_multiplier || 1),
     revenue_amount: Number(billing?.revenue_amount || 0),
     revenue_currency: billing?.revenue_currency === 'USDT' ? 'USDT' : 'CNY',
     revenue_cycle: normalizeRevenueCycle(billing?.revenue_cycle),

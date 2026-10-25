@@ -55,29 +55,6 @@ export function clientTrafficResetSummary(record: XUIClientView): string {
   }
 }
 
-export function buildClientTrafficResetAction(record: XUIClientView, period: ClientTrafficResetPeriod, day: number, agentID: string) {
-  if (!CLIENT_TRAFFIC_RESET_OPTIONS.some((option) => option.value === period)) throw new Error('请选择有效的流量重置周期')
-  if (!Number.isInteger(day) || day < 1 || day > 31) throw new Error('每月重置日必须为 1–31 的整数')
-  const targetAgentID = record.realm_target_agent_id || agentID
-  const inboundID = record.realm_target_inbound_id || record.inbound_id
-  const inboundTag = record.realm_target_inbound_tag || record.inbound_tag || ''
-  if (!targetAgentID || !record.email || (!inboundID && !inboundTag)) throw new Error('客户端或入站信息不完整，请刷新采集')
-  return {
-    agentID: targetAgentID,
-    request: {
-      kind: 'update_client_traffic_reset',
-      payload: {
-        inbound_id: inboundID,
-        inbound_tag: inboundTag,
-        email: record.email,
-        client_id: record.client_id || record.auth_uuid || record.auth_password || '',
-        traffic_reset: period,
-        traffic_reset_day: day,
-      },
-    },
-  }
-}
-
 // Separate from automatic scheduling and from the retired reset_client_traffic task.
 export function buildManualClientTrafficResetAction(record: XUIClientView, agentID: string) {
   const targetAgentID = record.realm_target_agent_id || agentID

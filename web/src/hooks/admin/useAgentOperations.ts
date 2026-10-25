@@ -14,7 +14,7 @@ interface Options {
   loadAgents: (options?: LoadOptions) => Promise<void>
   loadOverview: (agentID: string, options?: LoadOptions) => Promise<void>
   loadManagedConfig: (agentID: string, options?: LoadOptions) => Promise<void>
-  loadXUIActions: (agentID?: string, options?: LoadOptions) => Promise<void>
+  loadXUIActions: (agentID?: string, options?: LoadOptions) => Promise<unknown>
   loadAgentLogs: (agentID?: string, options?: LoadOptions) => Promise<void>
   setAdminUser: Dispatch<SetStateAction<AdminUser | null>>
   agents: DashboardAgentView[]

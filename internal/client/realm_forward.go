@@ -601,10 +601,6 @@ func activeRealmForwardRules(items []model.RealmForwardRule) []model.RealmForwar
 	return rules
 }
 
-func clientRealmForwardNetwork(network string) string {
-	return "both"
-}
-
 func resolveRealmBinary(configured string, runner commandRunner) (string, error) {
 	if strings.TrimSpace(configured) != "" {
 		return strings.TrimSpace(configured), nil

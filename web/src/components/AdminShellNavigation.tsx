@@ -23,7 +23,6 @@ export interface AdminShellNavigationProps {
   onOpenCustomers: () => void
   onOpenFrontProxies: () => void
   onOpenSupport: () => void
-  onOpenFrontendSettings: () => void
   onOpenAnnouncements: () => void
   onOpenUpdates: () => void
   onLogout: () => void
@@ -52,7 +51,6 @@ export function AdminHeaderActions(props: AdminShellNavigationProps) {
       onOpenClientInstall={props.onOpenClientInstall}
       onOpenTelegram={props.onOpenTelegram}
       onOpenCustomers={props.onOpenCustomers}
-      onOpenFrontendSettings={props.onOpenFrontendSettings}
       onOpenUpdates={props.onOpenUpdates}
       onLogout={props.onLogout}
     />,

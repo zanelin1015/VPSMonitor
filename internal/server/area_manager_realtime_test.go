@@ -16,7 +16,7 @@ func TestAreaManagerRealtimeMetricsUseOnlyAuthorizedClientTraffic(t *testing.T) 
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer sqliteStore.Close()
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
 	enabled := true
@@ -24,7 +24,7 @@ func TestAreaManagerRealtimeMetricsUseOnlyAuthorizedClientTraffic(t *testing.T) 
 	if err != nil {
 		t.Fatalf("CreateAreaManager: %v", err)
 	}
-	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+	if _, err := testCreateAreaManagerAssignment(sqliteStore, manager.ID, model.AreaManagerAssignmentRequest{
 		AgentID: "hk", InboundID: 7, InboundTag: "node-7", ClientEmail: "allowed@example.com", Enabled: &enabled,
 	}); err != nil {
 		t.Fatalf("CreateAreaManagerAssignment: %v", err)
@@ -68,7 +68,7 @@ func TestAreaManagerRealtimeMetricsFollowRealmForwarding(t *testing.T) {
 		{AgentID: "gz", AgentName: "GZ", PublicIPv4: "192.0.2.10"},
 		{AgentID: "hk", AgentName: "HK", PublicIPv4: "192.0.2.20"},
 	} {
-		if _, err := sqliteStore.RegisterAgent(agent); err != nil {
+		if _, err := testRegisterAgent(sqliteStore, agent); err != nil {
 			t.Fatalf("RegisterAgent %s: %v", agent.AgentID, err)
 		}
 	}
@@ -80,7 +80,7 @@ func TestAreaManagerRealtimeMetricsFollowRealmForwarding(t *testing.T) {
 	gzConfig.Entry.PortForwarding = model.RealmForwardConfig{Enabled: true, Backend: "realm", Rules: []model.RealmForwardRule{{
 		Enabled: true, ListenPort: 20001, TargetAgentID: "hk", TargetAddress: "192.0.2.20", TargetPort: 20001, Network: "tcp",
 	}}}
-	if _, err := sqliteStore.UpdateAgentConfig("gz", gzConfig); err != nil {
+	if _, err := testUpdateAgentConfig(sqliteStore, "gz", gzConfig); err != nil {
 		t.Fatalf("UpdateAgentConfig gz: %v", err)
 	}
 
@@ -93,7 +93,7 @@ func TestAreaManagerRealtimeMetricsFollowRealmForwarding(t *testing.T) {
 		{AgentID: "gz", InboundID: 20001, InboundTag: "realm:20001", Enabled: &enabled},
 		{AgentID: "hk", InboundID: 7, InboundTag: "node-7", ClientEmail: "allowed@example.com", Enabled: &enabled},
 	} {
-		if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, assignment); err != nil {
+		if _, err := testCreateAreaManagerAssignment(sqliteStore, manager.ID, assignment); err != nil {
 			t.Fatalf("CreateAreaManagerAssignment: %v", err)
 		}
 	}
@@ -179,7 +179,7 @@ func TestDispatchXUITrafficCollectionRealtimeAttachesCurrentToken(t *testing.T) 
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer sqliteStore.Close()
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "agent-token", AgentName: "Token Agent"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "agent-token", AgentName: "Token Agent"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
 	cfg, found, err := sqliteStore.GetAgentConfig("agent-token")
@@ -187,7 +187,7 @@ func TestDispatchXUITrafficCollectionRealtimeAttachesCurrentToken(t *testing.T) 
 		t.Fatalf("GetAgentConfig: found=%v err=%v", found, err)
 	}
 	cfg.XUI = config.XUIConfig{Enabled: true, APIToken: "latest-token"}
-	if _, err := sqliteStore.UpdateAgentConfig("agent-token", cfg); err != nil {
+	if _, err := testUpdateAgentConfig(sqliteStore, "agent-token", cfg); err != nil {
 		t.Fatalf("UpdateAgentConfig: %v", err)
 	}
 
@@ -301,7 +301,7 @@ func TestAreaManagerHTTPAndRealtimeAggregateGrantedAndCreatedClients(t *testing.
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if _, err := db.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk"}); err != nil {
+	if _, err := testRegisterAgent(db, model.AgentRegisterRequest{AgentID: "hk"}); err != nil {
 		t.Fatal(err)
 	}
 	enabled := true
@@ -309,7 +309,7 @@ func TestAreaManagerHTTPAndRealtimeAggregateGrantedAndCreatedClients(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{AgentID: "hk", InboundID: 7, InboundTag: "node-7", ClientEmail: "allowed@example.com", Enabled: &enabled}); err != nil {
+	if _, err := testCreateAreaManagerAssignment(db, manager.ID, model.AreaManagerAssignmentRequest{AgentID: "hk", InboundID: 7, InboundTag: "node-7", ClientEmail: "allowed@example.com", Enabled: &enabled}); err != nil {
 		t.Fatal(err)
 	}
 	user := model.AdminUser{ID: manager.ID, Role: model.AdminRoleAreaManager}

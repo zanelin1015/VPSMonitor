@@ -158,13 +158,6 @@ func remoteShellCommand(shell string, command string) (string, []string, error) 
 	}
 }
 
-func truncateRemoteCommandOutput(value string) string {
-	if len(value) <= maxRemoteCommandOutputLength {
-		return value
-	}
-	return value[len(value)-maxRemoteCommandOutputLength:]
-}
-
 type tailBuffer struct {
 	data  []byte
 	limit int

@@ -390,7 +390,6 @@ export interface CustomerUser {
   id: number
   username: string
   display_name?: string
-  style_code?: string
   owner_type?: string
   owner_id?: number
   enabled: boolean
@@ -474,7 +473,6 @@ export interface CustomerAssignmentDraft {
   client_email?: string
   price_mode?: 'inherit' | 'override'
   public_client_name?: string
-  traffic_multiplier?: number
   revenue_amount?: number
   revenue_currency?: 'CNY' | 'USDT'
   revenue_cycle?: 'month' | 'quarter' | 'semiannual' | 'year'
@@ -716,23 +714,15 @@ export interface UpdateLatestInfo {
   latest_server_tag?: string
   latest_client_version?: string
   latest_client_tag?: string
-  latest_3xui_version?: string
-  latest_3xui_tag?: string
-  latest_3xui_error?: string
   server_update_available: boolean
   client_update_available_count: number
-  xui_update_available_count: number
   supported_client_count: number
   unknown_client_count: number
   unsupported_client_count: number
-  supported_xui_count: number
-  unknown_xui_count: number
-  unsupported_xui_count: number
   assets?: string[]
   server_assets?: string[]
   client_assets?: string[]
   agent_status?: UpdateAgentStatus[]
-  xui_agent_status?: UpdateAgentStatus[]
   fetched_at: string
 }
 
@@ -792,11 +782,6 @@ export interface ClientInstallInfo {
   realm_download_base_url?: string
   haproxy_auto_install?: boolean
   xui_auto_install?: boolean
-  xui_username?: string
-  xui_password?: string
-  xui_panel_port?: number
-  xui_web_path?: string
-  xui_install_script_url?: string
 }
 
 export interface TagSettingsResponse {
@@ -809,7 +794,6 @@ export interface AreaAgentTagsResponse {
 }
 
 export interface FrontendSettings {
-  custom_code: string
   announcements?: CustomerAnnouncement[]
   announcement_history?: CustomerAnnouncementHistory[]
 }
@@ -853,6 +837,8 @@ export interface TelegramBot {
   chat_id: string
   enabled: boolean
   has_bot_token: boolean
+  notify_expiry: boolean
+  notify_support: boolean
   created_at: string
   updated_at: string
 }

@@ -85,17 +85,6 @@ type XUIConfig struct {
 	AccessLogRetentionDays int    `json:"access_log_retention_days,omitempty"`
 }
 
-type NezhaConfig struct {
-	Enabled       bool   `json:"enabled"`
-	BaseURL       string `json:"base_url"`
-	Username      string `json:"username"`
-	Password      string `json:"password"`
-	SkipTLSVerify bool   `json:"skip_tls_verify"`
-	ServerID      uint64 `json:"server_id"`
-	ServerUUID    string `json:"server_uuid"`
-	ServerName    string `json:"server_name"`
-}
-
 func LoadServerConfig(path string) (ServerConfig, error) {
 	var cfg ServerConfig
 	if err := loadJSON(path, &cfg); err != nil {

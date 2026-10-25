@@ -1,5 +1,5 @@
 import { CopyOutlined } from '@ant-design/icons'
-import { ProTable, type ProColumns } from '@ant-design/pro-components'
+import { ProTable, type ProColumns } from '@ant-design/pro-table'
 import {
   Alert,
   App,
@@ -17,9 +17,10 @@ import {
   Typography,
   theme,
 } from 'antd'
-import { useEffect, useState, type ComponentProps } from 'react'
-import type { AgentRail } from '../../components/DashboardAgentRail'
+import { useEffect, useState } from 'react'
+import type { AgentListProps } from '../../lib/agentList'
 import { CountryFlag } from '../../components/CountryFlag'
+import { useListPagination } from '../../hooks/useListPagination'
 import { agentHealthCategory, agentHealthFilterLabel } from '../../lib/agentHealth'
 import { agentCountryCode, formatAgentLocation } from '../../lib/appHelpers'
 import {
@@ -31,7 +32,7 @@ import {
 } from '../../lib/traffic'
 import type { DashboardAgentView } from '../../types'
 
-export type AssetsPageProps = ComponentProps<typeof AgentRail> & { accountKey: string }
+export type AssetsPageProps = AgentListProps & { accountKey: string }
 const healthOptions = (['all', 'healthy', 'warning', 'offline'] as const).map((value) => ({
   value,
   label: agentHealthFilterLabel(value),
@@ -88,17 +89,16 @@ function TrafficMetric({ agent, restrictedView }: { agent: DashboardAgentView; r
 export function AssetsPage(props: AssetsPageProps) {
   const { message } = App.useApp()
   const [selected, setSelected] = useState<React.Key[]>([])
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
+  const { page, pageSize, onChange: onPageChange } = useListPagination(
+    props.agents.length, JSON.stringify([props.selectedTag, props.healthFilter, props.searchText, props.accountKey]),
+  )
   useEffect(() => {
-    setPage(1)
     setSelected([])
   }, [props.selectedTag, props.healthFilter, props.searchText, props.accountKey])
   useEffect(() => {
     const ids = new Set(props.agents.map((agent) => agent.agent_id))
     setSelected((current) => current.filter((key) => ids.has(String(key))))
-    setPage((current) => Math.min(current, Math.max(1, Math.ceil(props.agents.length / pageSize))))
-  }, [props.agents, pageSize])
+  }, [props.agents])
   const online = props.agents.filter((agent) => agentHealthCategory(agent) !== 'offline').length
   const warning = props.agents.filter((agent) => agentHealthCategory(agent) === 'warning').length
   const open = (agent: DashboardAgentView) => props.onSelectAgent(agent.agent_id, false)
@@ -332,10 +332,7 @@ export function AssetsPage(props: AssetsPageProps) {
             pageSize,
             showSizeChanger: true,
             showTotal: (total) => `共 ${total} 台`,
-            onChange: (current, size) => {
-              setPage(current)
-              setPageSize(size)
-            },
+            onChange: onPageChange,
           }}
           scroll={{ x: props.restrictedView ? 910 : 1250 }}
           locale={{ emptyText: <Empty description="没有匹配的 Client" /> }}
@@ -390,7 +387,7 @@ export function AssetsPage(props: AssetsPageProps) {
           current={page}
           pageSize={pageSize}
           total={props.agents.length}
-          onChange={setPage}
+          onChange={onPageChange}
           showSizeChanger={false}
         />
       </div>

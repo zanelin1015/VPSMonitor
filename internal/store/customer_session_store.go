@@ -91,7 +91,7 @@ func (s *SQLiteStore) RefreshCustomerSession(refreshToken string, accessTTL time
 		return model.CustomerUser{}, CustomerSessionPair{}, false, fmt.Errorf("load customer refresh session: %w", err)
 	}
 	refreshExpiresAt := parseTime(expiresAtText)
-	user, err := scanCustomerUser(tx.QueryRow(`SELECT id, username, display_name, style_code, owner_type, owner_id, enabled, created_at, updated_at FROM customer_accounts WHERE id = ?`, customerID))
+	user, err := scanCustomerUser(tx.QueryRow(`SELECT id, username, display_name, owner_type, owner_id, enabled, created_at, updated_at FROM customer_accounts WHERE id = ?`, customerID))
 	if err != nil {
 		return model.CustomerUser{}, CustomerSessionPair{}, false, fmt.Errorf("load refresh customer: %w", err)
 	}

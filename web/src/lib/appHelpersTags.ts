@@ -28,10 +28,6 @@ export function parseTagInput(rawText: string): string[] {
   return result.sort((left, right) => left.localeCompare(right))
 }
 
-export function formatTagInput(tags: string[] | undefined): string {
-  return (tags || []).join(', ')
-}
-
 export function mergeTagOptions(current: string[], incoming: string[]): string[] {
   return parseTagInput([...current, ...incoming].join(','))
 }

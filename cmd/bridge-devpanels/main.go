@@ -36,8 +36,6 @@ func main() {
 	mux.HandleFunc("/panel/api/server/restartXrayService", handleXUIRestart)
 	mux.HandleFunc("/panel/api/server/getConfigJson", handleXUIConfig)
 	mux.HandleFunc("/panel/xray/getOutboundsTraffic", handleXUIOutboundTraffic)
-	mux.HandleFunc("/api/v1/login", handleNezhaLogin)
-	mux.HandleFunc("/api/v1/server", handleNezhaServer)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, map[string]string{"status": "ok"})
 	})
@@ -158,49 +156,6 @@ func handleXUIConfig(w http.ResponseWriter, _ *http.Request) {
 func handleXUIOutboundTraffic(w http.ResponseWriter, _ *http.Request) {
 	snapshot := devdata.DemoSnapshot("local-dev-01", "Local Dev VPS", time.Now().UTC())
 	writeJSON(w, map[string]any{"success": true, "obj": snapshot.XUI.OutboundTraffic})
-}
-
-func handleNezhaLogin(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	writeJSON(w, map[string]any{
-		"success": true,
-		"data": map[string]any{
-			"token": "mock-nezha-token",
-		},
-	})
-}
-
-func handleNezhaServer(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Authorization") == "" {
-		http.Error(w, "missing authorization", http.StatusUnauthorized)
-		return
-	}
-	writeJSON(w, map[string]any{
-		"success": true,
-		"data": []map[string]any{
-			{
-				"id":   7,
-				"name": "local-dev-vps",
-				"uuid": "mock-nezha-uuid",
-				"geoip": map[string]any{
-					"ip": map[string]any{
-						"ipv4_addr": "203.0.113.24",
-						"ipv6_addr": "2001:db8::24",
-					},
-				},
-				"host": map[string]any{
-					"mem_total": 1024 * 1024 * 1024,
-				},
-				"state": map[string]any{
-					"cpu":      18.7,
-					"mem_used": 420 * 1024 * 1024,
-				},
-			},
-		},
-	})
 }
 
 func writeJSON(w http.ResponseWriter, payload any) {

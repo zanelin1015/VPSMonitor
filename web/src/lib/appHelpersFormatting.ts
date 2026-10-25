@@ -1,5 +1,4 @@
-import type { AgentListItem, ConfigAuditLog, ManagedAgentConfig, XUIRoutingRuleView, VPSSummary } from '../types'
-import { formatMem, formatPercent } from './traffic'
+import type { ConfigAuditLog, ManagedAgentConfig, XUIRoutingRuleView } from '../types'
 
 export function shortJSON(value: unknown): string {
   if (!value || (typeof value === 'object' && Object.keys(value as Record<string, unknown>).length === 0)) {
@@ -45,31 +44,6 @@ export function confidenceLabel(value?: string): string {
     default:
       return '未标记'
   }
-}
-
-export function formatDateInputFromMillis(value?: number): string {
-  if (!value) {
-    return ''
-  }
-  const date = new Date(value)
-  if (!Number.isFinite(date.getTime())) {
-    return ''
-  }
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-export function dateInputToExpiryMillis(value: string): number {
-  if (!value) {
-    return 0
-  }
-  const date = new Date(`${value}T23:59:59`)
-  if (!Number.isFinite(date.getTime())) {
-    return 0
-  }
-  return date.getTime()
 }
 
 export function formatExpiryTime(value?: number): string {
@@ -172,40 +146,6 @@ export function summarizeRule(rule: XUIRoutingRuleView): string {
     segments.push(`network(${rule.network.join(',')})`)
   }
   return segments.join(' · ') || '无额外条件'
-}
-
-export function statusColor(state?: string): string {
-  switch ((state || '').toLowerCase()) {
-    case 'running':
-      return '#0f766e'
-    case 'stop':
-      return '#c05621'
-    case 'error':
-      return '#c53030'
-    default:
-      return '#94a3b8'
-  }
-}
-
-export function agentStatusLevel(state?: string): 'ok' | 'warn' | 'bad' | 'neutral' {
-  switch ((state || '').toLowerCase()) {
-    case 'running':
-      return 'ok'
-    case 'stop':
-    case 'stopped':
-      return 'warn'
-    case 'error':
-      return 'bad'
-    default:
-      return 'neutral'
-  }
-}
-
-export function summarizeAgent(summary?: VPSSummary): string {
-  if (!summary) {
-    return '-'
-  }
-  return `${formatPercent(summary.cpu)} CPU · ${formatMem(summary.mem_used, summary.mem_total)} · 硬盘 ${formatMem(summary.disk_used, summary.disk_total)}`
 }
 
 function parseTimestampMillis(value?: string): number {

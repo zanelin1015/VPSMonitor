@@ -15,7 +15,6 @@ import type {
 import type {
   ClientInstallCommandForm,
   ClientInstallCommandKind,
-  FrontendSettingsForm,
   TelegramBotForm,
   XUIAddClientActionForm,
   XUIOutboundActionForm,
@@ -24,7 +23,6 @@ import type {
 import {
   AccountSettingsModal,
   ClientInstallModal,
-  FrontendSettingsModal,
   ImportURLModal,
   SystemUpdateModal,
   TelegramBotSettingsModal,
@@ -59,10 +57,6 @@ export interface ConsoleModalsProps {
   customerModalOpen: boolean
   customerAssignmentDraft: CustomerAssignmentDraft | null
   editingTelegramBotId: number | null
-  frontendSettingsForm: FrontendSettingsForm
-  frontendSettingsLoading: boolean
-  frontendSettingsModalOpen: boolean
-  frontendSettingsSaving: boolean
   importURLClient: XUIClientView | null
   nodeImportTarget: NodeImportTarget
   onNodeImportTargetChange: (target: NodeImportTarget) => void
@@ -95,7 +89,6 @@ export interface ConsoleModalsProps {
   onCloseClientInstall: () => void
   onCloseCustomerModal: () => void
   onCustomerAssignmentDraftApplied: () => void
-  onCloseFrontendSettings: () => void
   onCloseImportURL: () => void
   onCloseTelegramBot: () => void
   onCloseUpdateModal: () => void
@@ -109,7 +102,6 @@ export interface ConsoleModalsProps {
   onRefreshTelegramBots: () => void
   onSaveAccount: () => void
   onSaveClientInstallSettings: () => void
-  onSaveFrontendSettings: (form?: FrontendSettingsForm) => Promise<boolean>
   onSaveTelegramBot: () => void
   onSubmitXUIAction: () => void
   onTelegramBotFormChange: Dispatch<SetStateAction<TelegramBotForm>>
@@ -117,7 +109,6 @@ export interface ConsoleModalsProps {
   onTestTelegramBot: (id: number) => void
   onUpdateAllClients: () => void
   onForceUpdateAllClients: () => void
-  onUpdateFrontendSettingsFormChange: Dispatch<SetStateAction<FrontendSettingsForm>>
   onUpdateAddClientActionForm: Dispatch<SetStateAction<XUIAddClientActionForm>>
   onUpdateOutboundActionForm: Dispatch<SetStateAction<XUIOutboundActionForm>>
   onUpdateRoutingActionForm: Dispatch<SetStateAction<XUIRoutingActionForm>>
@@ -144,10 +135,6 @@ export function ConsoleModals(props: ConsoleModalsProps) {
     customerModalOpen,
     customerAssignmentDraft,
     editingTelegramBotId,
-    frontendSettingsForm,
-    frontendSettingsLoading,
-    frontendSettingsModalOpen,
-    frontendSettingsSaving,
     importURLClient,
     nodeImportTarget,
     onNodeImportTargetChange,
@@ -180,7 +167,6 @@ export function ConsoleModals(props: ConsoleModalsProps) {
     onCloseClientInstall,
     onCloseCustomerModal,
     onCustomerAssignmentDraftApplied,
-    onCloseFrontendSettings,
     onCloseImportURL,
     onCloseTelegramBot,
     onCloseUpdateModal,
@@ -194,7 +180,6 @@ export function ConsoleModals(props: ConsoleModalsProps) {
     onRefreshTelegramBots,
     onSaveAccount,
     onSaveClientInstallSettings,
-    onSaveFrontendSettings,
     onSaveTelegramBot,
     onSubmitXUIAction,
     onTelegramBotFormChange,
@@ -202,7 +187,6 @@ export function ConsoleModals(props: ConsoleModalsProps) {
     onTestTelegramBot,
     onUpdateAllClients,
     onForceUpdateAllClients,
-    onUpdateFrontendSettingsFormChange,
     onUpdateAddClientActionForm,
     onUpdateOutboundActionForm,
     onUpdateRoutingActionForm,
@@ -253,17 +237,8 @@ export function ConsoleModals(props: ConsoleModalsProps) {
         onFormChange={onAccountFormChange}
       />
 
-      <FrontendSettingsModal
-        open={frontendSettingsModalOpen}
-        loading={frontendSettingsLoading}
-        saving={frontendSettingsSaving}
-        form={frontendSettingsForm}
-        onClose={onCloseFrontendSettings}
-        onSave={onSaveFrontendSettings}
-        onFormChange={onUpdateFrontendSettingsFormChange}
-      />
-
       <TelegramBotSettingsModal
+        areaManager={adminUser?.role === 'area_manager'}
         open={telegramBotModalOpen}
         bots={telegramBots}
         loading={telegramBotsLoading}

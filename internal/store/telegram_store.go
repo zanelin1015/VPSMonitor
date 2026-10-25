@@ -14,12 +14,13 @@ type telegramBotSecret struct {
 	BotToken string
 }
 
-func (s *SQLiteStore) ListTelegramBots() ([]model.TelegramBot, error) {
+func (s *SQLiteStore) ListTelegramBots(ownerID int64) ([]model.TelegramBot, error) {
 	rows, err := s.db.Query(`
-		SELECT id, name, bot_token, chat_id, enabled, created_at, updated_at
+		SELECT id, name, bot_token, chat_id, enabled, notify_expiry, notify_support, created_at, updated_at
 		FROM telegram_bots
+		WHERE area_manager_id = ?
 		ORDER BY id DESC
-	`)
+	`, ownerID)
 	if err != nil {
 		return nil, fmt.Errorf("query telegram bots: %w", err)
 	}
@@ -39,13 +40,16 @@ func (s *SQLiteStore) ListTelegramBots() ([]model.TelegramBot, error) {
 	return items, nil
 }
 
-func (s *SQLiteStore) ListEnabledTelegramBotSecrets() ([]telegramBotSecret, error) {
+func (s *SQLiteStore) ListEnabledTelegramBotSecrets(ownerID int64) ([]telegramBotSecret, error) {
 	rows, err := s.db.Query(`
-		SELECT id, name, bot_token, chat_id, enabled, created_at, updated_at
+		SELECT id, name, bot_token, chat_id, enabled, notify_expiry, notify_support, created_at, updated_at
 		FROM telegram_bots
-		WHERE enabled = 1
-		ORDER BY id ASC
-	`)
+		WHERE enabled = 1 AND area_manager_id = ?
+        AND (area_manager_id = 0 OR EXISTS (
+            SELECT 1 FROM area_manager_accounts a WHERE a.id = telegram_bots.area_manager_id AND a.enabled = 1
+        ))
+        ORDER BY id ASC
+    `, ownerID)
 	if err != nil {
 		return nil, fmt.Errorf("query enabled telegram bots: %w", err)
 	}
@@ -72,8 +76,8 @@ func (s *SQLiteStore) ListEnabledTelegramBotSecrets() ([]telegramBotSecret, erro
 	return items, nil
 }
 
-func (s *SQLiteStore) GetTelegramBotSecret(id int64) (telegramBotSecret, bool, error) {
-	bot, found, err := s.getTelegramBotStoredSecret(id)
+func (s *SQLiteStore) GetTelegramBotSecret(id, ownerID int64) (telegramBotSecret, bool, error) {
+	bot, found, err := s.getTelegramBotStoredSecret(id, ownerID)
 	if err != nil || !found {
 		return telegramBotSecret{}, found, err
 	}
@@ -84,15 +88,15 @@ func (s *SQLiteStore) GetTelegramBotSecret(id int64) (telegramBotSecret, bool, e
 	return bot, true, nil
 }
 
-func (s *SQLiteStore) getTelegramBotStoredSecret(id int64) (telegramBotSecret, bool, error) {
+func (s *SQLiteStore) getTelegramBotStoredSecret(id, ownerID int64) (telegramBotSecret, bool, error) {
 	if id <= 0 {
 		return telegramBotSecret{}, false, nil
 	}
 	row := s.db.QueryRow(`
-		SELECT id, name, bot_token, chat_id, enabled, created_at, updated_at
+		SELECT id, name, bot_token, chat_id, enabled, notify_expiry, notify_support, created_at, updated_at
 		FROM telegram_bots
-		WHERE id = ?
-	`, id)
+		WHERE id = ? AND area_manager_id = ?
+	`, id, ownerID)
 	bot, err := scanTelegramBot(row)
 	if err == sql.ErrNoRows {
 		return telegramBotSecret{}, false, nil
@@ -103,7 +107,7 @@ func (s *SQLiteStore) getTelegramBotStoredSecret(id int64) (telegramBotSecret, b
 	return bot, true, nil
 }
 
-func (s *SQLiteStore) CreateTelegramBot(req model.TelegramBotRequest) (model.TelegramBot, error) {
+func (s *SQLiteStore) CreateTelegramBot(req model.TelegramBotRequest, ownerID int64) (model.TelegramBot, error) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.BotToken = strings.TrimSpace(req.BotToken)
 	req.ChatID = strings.TrimSpace(req.ChatID)
@@ -116,20 +120,29 @@ func (s *SQLiteStore) CreateTelegramBot(req model.TelegramBotRequest) (model.Tel
 	if req.ChatID == "" {
 		return model.TelegramBot{}, fmt.Errorf("chat id is required")
 	}
+	if ownerID < 0 {
+		return model.TelegramBot{}, fmt.Errorf("invalid telegram owner")
+	}
+	if ownerID > 0 {
+		var enabled bool
+		if err := s.db.QueryRow(`SELECT enabled FROM area_manager_accounts WHERE id = ?`, ownerID).Scan(&enabled); err != nil || !enabled {
+			return model.TelegramBot{}, fmt.Errorf("area manager not found or disabled")
+		}
+	}
 	token, err := s.secrets.EncryptString(req.BotToken)
 	if err != nil {
 		return model.TelegramBot{}, fmt.Errorf("encrypt telegram bot token: %w", err)
 	}
 	now := time.Now().UTC()
 	result, err := s.db.Exec(`
-		INSERT INTO telegram_bots (name, bot_token, chat_id, enabled, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, req.Name, token, req.ChatID, boolInt(req.Enabled), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
+		INSERT INTO telegram_bots (area_manager_id, name, bot_token, chat_id, enabled, notify_expiry, notify_support, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, ownerID, req.Name, token, req.ChatID, boolInt(req.Enabled), boolInt(telegramFlag(req.NotifyExpiry, true)), boolInt(telegramFlag(req.NotifySupport, true)), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
 	if err != nil {
 		return model.TelegramBot{}, fmt.Errorf("create telegram bot: %w", err)
 	}
 	id, _ := result.LastInsertId()
-	bot, found, err := s.GetTelegramBotSecret(id)
+	bot, found, err := s.GetTelegramBotSecret(id, ownerID)
 	if err != nil {
 		return model.TelegramBot{}, err
 	}
@@ -139,8 +152,8 @@ func (s *SQLiteStore) CreateTelegramBot(req model.TelegramBotRequest) (model.Tel
 	return bot.TelegramBot, nil
 }
 
-func (s *SQLiteStore) UpdateTelegramBot(id int64, req model.TelegramBotRequest) (model.TelegramBot, error) {
-	current, found, err := s.getTelegramBotStoredSecret(id)
+func (s *SQLiteStore) UpdateTelegramBot(id int64, req model.TelegramBotRequest, ownerID int64) (model.TelegramBot, error) {
+	current, found, err := s.getTelegramBotStoredSecret(id, ownerID)
 	if err != nil {
 		return model.TelegramBot{}, err
 	}
@@ -165,12 +178,12 @@ func (s *SQLiteStore) UpdateTelegramBot(id int64, req model.TelegramBotRequest) 
 	now := time.Now().UTC()
 	if _, err := s.db.Exec(`
 		UPDATE telegram_bots
-		SET name = ?, bot_token = ?, chat_id = ?, enabled = ?, updated_at = ?
-		WHERE id = ?
-	`, name, token, chatID, boolInt(req.Enabled), now.Format(time.RFC3339Nano), id); err != nil {
+		SET name = ?, bot_token = ?, chat_id = ?, enabled = ?, notify_expiry = ?, notify_support = ?, updated_at = ?
+		WHERE id = ? AND area_manager_id = ?
+	`, name, token, chatID, boolInt(req.Enabled), boolInt(telegramFlag(req.NotifyExpiry, current.NotifyExpiry)), boolInt(telegramFlag(req.NotifySupport, current.NotifySupport)), now.Format(time.RFC3339Nano), id, ownerID); err != nil {
 		return model.TelegramBot{}, fmt.Errorf("update telegram bot: %w", err)
 	}
-	updated, found, err := s.GetTelegramBotSecret(id)
+	updated, found, err := s.GetTelegramBotSecret(id, ownerID)
 	if err != nil {
 		return model.TelegramBot{}, err
 	}
@@ -180,11 +193,11 @@ func (s *SQLiteStore) UpdateTelegramBot(id int64, req model.TelegramBotRequest) 
 	return updated.TelegramBot, nil
 }
 
-func (s *SQLiteStore) DeleteTelegramBot(id int64) error {
+func (s *SQLiteStore) DeleteTelegramBot(id, ownerID int64) error {
 	if id <= 0 {
 		return fmt.Errorf("invalid telegram bot id")
 	}
-	result, err := s.db.Exec(`DELETE FROM telegram_bots WHERE id = ?`, id)
+	result, err := s.db.Exec(`DELETE FROM telegram_bots WHERE id = ? AND area_manager_id = ?`, id, ownerID)
 	if err != nil {
 		return fmt.Errorf("delete telegram bot: %w", err)
 	}
@@ -203,7 +216,7 @@ func scanTelegramBot(row rowScanner) (telegramBotSecret, error) {
 		createdAtText string
 		updatedAtText string
 	)
-	if err := row.Scan(&item.ID, &item.Name, &storedToken, &item.ChatID, &enabled, &createdAtText, &updatedAtText); err != nil {
+	if err := row.Scan(&item.ID, &item.Name, &storedToken, &item.ChatID, &enabled, &item.NotifyExpiry, &item.NotifySupport, &createdAtText, &updatedAtText); err != nil {
 		return telegramBotSecret{}, err
 	}
 	item.Enabled = enabled != 0
@@ -228,4 +241,31 @@ func boolInt(value bool) int {
 		return 1
 	}
 	return 0
+}
+
+// Only configured, enabled area owners participate in the daily expiry sweep.
+func (s *SQLiteStore) ListTelegramExpiryOwnerIDs() ([]int64, error) {
+	rows, err := s.db.Query(`SELECT DISTINCT b.area_manager_id
+        FROM telegram_bots b JOIN area_manager_accounts a ON a.id = b.area_manager_id
+        WHERE b.enabled = 1 AND b.notify_expiry = 1 AND a.enabled = 1 ORDER BY b.area_manager_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+func telegramFlag(value *bool, fallback bool) bool {
+	if value == nil {
+		return fallback
+	}
+	return *value
 }

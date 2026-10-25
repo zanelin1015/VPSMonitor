@@ -7,55 +7,8 @@
 }
 
 .admin-console-theme .admin-page-shell {
-  --custom-bg-overlay: linear-gradient(transparent, transparent);
+  --page-surface-overlay: linear-gradient(transparent, transparent);
 }
-
-.admin-console-theme .admin-oa-sider {
-  width: clamp(176px, 16vw, 220px);
-  flex-basis: clamp(176px, 16vw, 220px);
-  gap: 22px;
-  padding: 24px 14px 18px;
-  border-color: color-mix(in srgb, var(--border) 60%, transparent);
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  box-shadow: none;
-  backdrop-filter: blur(16px);
-  overflow-y: auto;
-}
-
-.admin-console-theme .admin-oa-brand { padding: 0 10px 20px; border: 0; }
-.admin-console-theme .admin-oa-brand strong { font-size: 19px; letter-spacing: -.5px; }
-.admin-console-theme .admin-oa-brand-mark { background: var(--primary); border-radius: 12px; font-weight: 700; }
-.admin-console-theme .admin-oa-nav { gap: 5px; }
-.admin-console-theme .admin-oa-nav-item { padding: 11px 12px; border: 0; transition: background .24s, color .24s; }
-.admin-console-theme .admin-oa-nav-item span { font-weight: 600; }
-.admin-console-theme .admin-oa-nav-item:hover { background: color-mix(in srgb, var(--border) 48%, transparent); color: var(--text); }
-.admin-console-theme .admin-oa-nav-item.active { background: var(--green-soft); color: var(--primary); }
-.admin-console-theme .admin-oa-nav-item.active small { color: var(--primary); opacity: .8; }
-.admin-console-theme .admin-oa-sider-foot { border: 0; background: var(--console-input); border-radius: 14px; padding: 16px; }
-:root:not(.dark):where([data-console-theme='soft']) .admin-console-theme .admin-oa-sider-foot { border: 1px solid var(--border); background: var(--card); }
-.admin-console-theme .admin-oa-sider-foot strong { font-size: 28px; font-weight: 650; letter-spacing: -.8px; }
-.admin-console-theme .admin-oa-main {
-  padding: 16px clamp(12px, 1.5vw, 24px) 24px;
-}
-
-.admin-console-theme .admin-oa-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  min-height: 56px;
-  margin-bottom: 18px;
-  padding: 0 2px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-}
-.admin-console-theme .console-page-context { display: grid; min-width: max-content; flex: 0 0 auto; }
-.console-page-context strong { color: var(--text); font-size: 21px; font-weight: 650; letter-spacing: -.5px; }
-.admin-console-theme .admin-oa-topbar .hero-actions-column { flex-direction: row-reverse; align-items: center; gap: 18px; }
-.admin-console-theme .theme-mode-row { margin: 0; }
 .admin-console-theme .personal-center-button { box-shadow: none; border-color: var(--border); }
 .admin-console-theme .personal-center-button-avatar,
 .admin-console-theme .personal-center-avatar-fallback,
@@ -123,7 +76,6 @@
 :root:where([data-console-theme='soft']) :is(.ant-modal, .ant-dropdown) { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif; }
 
 /* Entrance runs on page mount, not on every realtime update or table row. */
-.admin-console-theme .admin-oa-main > :is(.admin-content-page, .workspace-grid) { animation: console-enter .42s var(--console-ease) both; }
 @keyframes console-enter { from { opacity: 0; translate: 0 8px; } to { opacity: 1; translate: 0 0; } }
 
 .admin-console-theme .console-login-shell {
@@ -134,7 +86,7 @@
   min-height: 560px;
   padding: 0;
   overflow: auto;
-  background: var(--custom-bg-image) center / cover no-repeat, var(--bg);
+  background: var(--bg);
 }
 .admin-console-theme .console-login-wordmark { position: absolute; z-index: 1; top: 30px; left: 38px; display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 19px; letter-spacing: -.4px; }
 .admin-console-theme .console-login-wordmark > span { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 9px; background: var(--primary); color: #fff; }
@@ -216,67 +168,18 @@
  * that width, while retaining a sensible minimum for readable controls.
  */
 @media (max-width: 1360px) and (min-width: 981px) {
-  .admin-console-theme .admin-oa-sider {
-    padding-inline: 10px;
-  }
-
-  .admin-console-theme .admin-oa-main {
-    padding-inline: clamp(12px, 1.25vw, 16px);
-  }
 
   .admin-console-theme .workspace-grid-topology {
     grid-template-columns:
       minmax(clamp(220px, 22%, 300px), clamp(280px, 28%, 360px))
       minmax(0, 1fr);
   }
-
-  .admin-console-theme .workspace-grid-agent-open .selected-agent-toolbar {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .admin-console-theme .workspace-grid-agent-open .selected-agent-toolbar > .ant-space {
-    width: 100%;
-  }
-
-  .admin-console-theme .workspace-grid-agent-open .tabs-card .ant-tabs-nav-wrap {
-    overflow-x: auto;
-    scrollbar-width: thin;
-  }
-
-  .admin-console-theme .workspace-grid-agent-open .tabs-card .ant-tabs-nav-list {
-    min-width: max-content;
-  }
 }
 
 @media (max-width: 1240px) and (min-width: 981px) {
-  .admin-console-theme .admin-oa-shell,
-  .admin-console-theme .admin-oa-main,
   .admin-console-theme .workspace-grid,
-  .admin-console-theme .workspace-grid-topology,
-  .admin-console-theme .workspace-grid-agent-open {
+  .admin-console-theme .workspace-grid-topology {
     min-width: 0;
-  }
-
-  .admin-console-theme .admin-oa-main {
-    padding: 12px clamp(10px, 1vw, 12px) 16px;
-  }
-
-  .admin-console-theme .admin-oa-topbar {
-    align-items: flex-start;
-    gap: 12px;
-    margin-bottom: 12px;
-  }
-
-  .admin-console-theme .admin-oa-topbar .hero-actions-column {
-    flex-wrap: wrap;
-    gap: 10px;
-    min-width: 0;
-  }
-
-  .admin-console-theme .admin-oa-topbar .theme-mode-row {
-    flex: 0 1 auto;
   }
 
   .admin-console-theme .workspace-grid-topology {
@@ -291,20 +194,8 @@
     padding-inline: 12px;
   }
 
-  .admin-console-theme .workspace-grid-agent-open .tabs-card > .ant-card-body {
-    padding: 12px;
-  }
-
-}
-@media (max-width: 980px) {
-  .admin-console-theme .admin-oa-sider { width: 100%; flex-basis: auto; padding: 16px; gap: 12px; }
-  .admin-console-theme .admin-oa-main { padding: 12px; }
-  .admin-console-theme .admin-oa-nav-item { min-width: 140px; }
-  .admin-console-theme .admin-oa-topbar { margin-bottom: 12px; }
-  .admin-console-theme .console-page-context strong { font-size: 18px; }
 }
 @media (max-width: 760px) {
-  .admin-console-theme .admin-oa-topbar { display: none; }
   .admin-console-theme .console-login-shell { grid-template-columns: 1fr; min-height: 100dvh; }
   .admin-console-theme .console-login-scene { display: none; }
   .admin-console-theme .console-login-wordmark { left: 24px; top: 24px; }
@@ -312,9 +203,6 @@
   .admin-console-theme .console-login-shell .login-panel { width: min(380px, calc(100% - 48px)); }
   .admin-console-theme .customer-login-shell .login-panel { width: min(420px, calc(100% - 32px)); margin: 90px auto 24px; padding: 30px 24px; }
   .admin-console-theme .customer-login-shell .login-brand h2 { font-size: 27px; }
-  .admin-console-theme .admin-mobile-header { background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: 0 1px 0 var(--border); }
-  .admin-console-theme .admin-mobile-nav button { border: 0; background: transparent; }
-  .admin-console-theme .admin-mobile-nav button.active { color: var(--primary); background: var(--green-soft); }
   .admin-console-theme .admin-workbench-strip { gap: 8px; }
   .admin-console-theme :is(.admin-workbench-heading, .admin-workbench-metric) { min-height: 84px; }
   .admin-console-theme .admin-content-title { padding: 16px; }

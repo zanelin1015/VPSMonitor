@@ -1,63 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, App as AntdApp, Button, Card, Col, Empty, Input, Modal, Popconfirm, Row, Select, Space, Spin, Table, Tabs, Tag, TreeSelect, Typography } from 'antd'
-import type { ColumnsType } from 'antd/es/table'
-import { CopyOutlined, DeleteOutlined, EditOutlined, ExportOutlined, LinkOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SyncOutlined } from '@ant-design/icons'
+import { useCustomerAccounts } from '../hooks/useCustomerAccounts'
+import { useAccountDirectory } from '../hooks/useAccountDirectory';
+import { AreaAccountPanel } from './AreaAccountPanel';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, App as AntdApp, Button, Card, Empty, Input, Modal, Select, Space, Spin, Table, Tabs, Typography } from 'antd';
+import { PlusOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons';
 
-import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, CustomerAssignmentSourceView, CustomerBillingDiagnostic, CustomerBillingReconciliationResponse, CustomerSubscriptionURLResponse, DashboardAgentView, FrontProxyNode, OperatorAdminView, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
-import { fetchJSON, formatDateTime } from '../lib/appHelpers'
-import { withAppBasePath } from '../lib/appBasePath'
-import { CustomerAssignmentManagerCard } from './CustomerAssignmentManagerCard'
-import { AdminHelpHint } from './AdminHelpHint'
-import {
-  DEFAULT_ACCOUNT_PASSWORD,
-  type AreaBatchAssignmentFormState,
-  type AreaManagerAssignmentDraft,
-  type AreaManagerFormState,
-  type AssignmentFormState,
-  type CustomerFormState,
-  type ManagementTabKey,
-  areaAssignmentDraftFromTargetOption,
-  areaAssignmentKey,
-  agentName,
-  assignmentBindingDiagnostic,
-  assignmentFormFromAssignment,
-  assignmentFormFromDraft,
-  assignmentMatchesInbound,
-  assignmentTreeKeys,
-  billingFormPatch,
-  buildAreaAssignmentTreeData,
-  buildAssignmentTargetOptions,
-  normalizeAreaAssignmentTreeKeys,
-  buildClientAssignmentTreeData,
-  buildRealmGrantOptions,
-  clientBilling,
-  clientKey,
-  clientLabel,
-  defaultPublicClientName,
-  defaultPublicNodeName,
-  dedupeAreaManagerAssignmentDrafts,
-  emptyAreaBatchAssignmentForm,
-  emptyAreaManagerForm,
-  emptyAssignmentForm,
-  emptyCustomerForm,
-  effectiveAssignmentBilling,
-  findMatchingAssignment,
-  findRealmTargetNode,
-  firstRealmAssignmentAgentID,
-  isRealmAssignmentDraft,
-  nodeKey,
-  nodeLabel,
-  normalizeAreaManagerAssignmentDrafts,
-  normalizeAreaManagerOutboundGrants,
-  normalizeRevenueCycle,
-  realmRuleTargetAgentID,
-  renderAssignmentHierarchy,
-  revenueCycleLabel,
-  uniqueStrings,
-} from './CustomerManagementHelpers'
-import { CustomerManagementModals } from './CustomerManagementModals'
-import { AgentRolePanel } from './AgentRolePanel'
-import { OperatorManagementPanel, type OperatorDraft } from './OperatorManagementPanel'
+import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, CustomerAssignmentSourceView, CustomerBillingDiagnostic, CustomerBillingReconciliationResponse, DashboardAgentView, XUIClientView, XUINodeView, XUIOverview } from '../types';
+import { fetchJSON } from '../lib/appHelpers';
+
+import { buildCustomerManagementTables } from './CustomerManagementTables';
+import { CustomerAssignmentManagerCard } from './CustomerAssignmentManagerCard';
+import { AdminHelpHint } from './AdminHelpHint';
+import { DEFAULT_ACCOUNT_PASSWORD, type AreaBatchAssignmentFormState, type AreaManagerAssignmentDraft, type AreaManagerFormState, type AssignmentFormState, type ManagementTabKey, areaAssignmentDraftFromTargetOption, areaAssignmentKey, assignmentFormFromAssignment, assignmentFormFromDraft, assignmentMatchesInbound, billingFormPatch, buildAreaAssignmentTreeData, buildAssignmentTargetOptions, buildClientAssignmentTreeData, buildRealmGrantOptions, clientBilling, clientKey, clientLabel, defaultPublicClientName, defaultPublicNodeName, dedupeAreaManagerAssignmentDrafts, emptyAreaBatchAssignmentForm, emptyAreaManagerForm, emptyAssignmentForm, emptyCustomerForm, findMatchingAssignment, findRealmTargetNode, firstRealmAssignmentAgentID, isRealmAssignmentDraft, nodeKey, nodeLabel, normalizeAreaManagerAssignmentDrafts, normalizeAreaManagerOutboundGrants, normalizeRevenueCycle, realmRuleTargetAgentID, revenueCycleLabel, uniqueStrings } from './CustomerManagementHelpers';
+import { CustomerManagementModals } from './CustomerManagementModals';
+import { AgentRolePanel } from './AgentRolePanel';
+import { OperatorManagementPanel } from './OperatorManagementPanel';
 
 const { Text, Title } = Typography
 
@@ -87,44 +44,23 @@ export function CustomerManagementModal(props: {
   const canManageAreaManagers = adminUser?.role === 'admin'
   const canViewFinance = canManageAreaManagers
   const { message } = AntdApp.useApp()
+  const { customers, setCustomers, areaManagers, setAreaManagers, operators, frontProxies, loading, areaManagersLoading, operatorsLoading, resettingOperatorID, savingOperator, selectedCustomerID, setSelectedCustomerID, loadCustomers, loadAreaManagers, copyAreaManagerRecommendationURL, loadOperators, loadFrontProxies, saveOperator, deleteOperator, resetOperatorPassword } = useAccountDirectory(canManageAreaManagers, message)
   const [activeManagementTab, setActiveManagementTab] = useState<ManagementTabKey>(canManageAreaManagers ? 'area' : 'customers')
-  const [customers, setCustomers] = useState<CustomerAdminView[]>([])
   const [customerAssignmentSources, setCustomerAssignmentSources] = useState<CustomerAssignmentSourceView[]>([])
-  const [areaManagers, setAreaManagers] = useState<AreaManagerAdminView[]>([])
-  const [operators, setOperators] = useState<OperatorAdminView[]>([])
-  const [frontProxies, setFrontProxies] = useState<FrontProxyNode[]>([])
-  const [loading, setLoading] = useState(false)
-  const [areaManagersLoading, setAreaManagersLoading] = useState(false)
-  const [operatorsLoading, setOperatorsLoading] = useState(false)
-  const [savingCustomer, setSavingCustomer] = useState(false)
-  const [changingCustomerStatusIDs, setChangingCustomerStatusIDs] = useState<number[]>([])
-  const customerStatusPendingRef = useRef(new Set<number>())
-  const [resettingCustomerID, setResettingCustomerID] = useState<number | null>(null)
-  const [copyingSubscriptionCustomerID, setCopyingSubscriptionCustomerID] = useState<number | null>(null)
   const [savingAssignment, setSavingAssignment] = useState(false)
   const [savingAreaManager, setSavingAreaManager] = useState(false)
   const [resettingAreaManagerID, setResettingAreaManagerID] = useState<number | null>(null)
-  const [resettingOperatorID, setResettingOperatorID] = useState<number | null>(null)
-  const [savingOperator, setSavingOperator] = useState(false)
   const [savingAreaBatchAssignment, setSavingAreaBatchAssignment] = useState(false)
   const [areaBatchModalOpen, setAreaBatchModalOpen] = useState(false)
   const [areaManagerModalOpen, setAreaManagerModalOpen] = useState(false)
-  const [customerCreateModalOpen, setCustomerCreateModalOpen] = useState(false)
-  const [customerEditModalOpen, setCustomerEditModalOpen] = useState(false)
-  const [customerSubscriptionModalOpen, setCustomerSubscriptionModalOpen] = useState(false)
-  const [subscriptionCustomer, setSubscriptionCustomer] = useState<CustomerAdminView | null>(null)
-  const [selectedSubscriptionAssignmentIDs, setSelectedSubscriptionAssignmentIDs] = useState<number[]>([])
   const [assignmentManagerModalOpen, setAssignmentManagerModalOpen] = useState(false)
   const [assignmentViewModalOpen, setAssignmentViewModalOpen] = useState(false)
   const [billingReconciliationModalOpen, setBillingReconciliationModalOpen] = useState(false)
   const [billingReconciliation, setBillingReconciliation] = useState<CustomerBillingReconciliationResponse | null>(null)
   const [billingReconciliationLoading, setBillingReconciliationLoading] = useState(false)
   const [repairingAssignmentID, setRepairingAssignmentID] = useState<number | null>(null)
-  const [selectedCustomerID, setSelectedCustomerID] = useState<number | null>(null)
   const [editingAreaManagerID, setEditingAreaManagerID] = useState<number | null>(null)
   const [editingAssignmentID, setEditingAssignmentID] = useState<number | null>(null)
-  const [customerForm, setCustomerForm] = useState<CustomerFormState>(emptyCustomerForm)
-  const [customerCreateForm, setCustomerCreateForm] = useState<CustomerFormState>(emptyCustomerForm)
   const [customerSearch, setCustomerSearch] = useState('')
   const [customerStatusFilter, setCustomerStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all')
   const [areaManagerForm, setAreaManagerForm] = useState<AreaManagerFormState>(emptyAreaManagerForm)
@@ -135,6 +71,43 @@ export function CustomerManagementModal(props: {
   const [areaBatchOverview, setAreaBatchOverview] = useState<XUIOverview | null>(null)
   const [areaBatchOverviewLoading, setAreaBatchOverviewLoading] = useState(false)
   const skipAssignmentResetRef = useRef(false)
+
+  const {
+    savingCustomer,
+    changingCustomerStatusIDs,
+    resettingCustomerID,
+    copyingSubscriptionCustomerID,
+    customerCreateModalOpen,
+    setCustomerCreateModalOpen,
+    customerEditModalOpen,
+    setCustomerEditModalOpen,
+    customerSubscriptionModalOpen,
+    subscriptionCustomer,
+    selectedSubscriptionAssignmentIDs,
+    setSelectedSubscriptionAssignmentIDs,
+    customerForm,
+    setCustomerForm,
+    customerCreateForm,
+    setCustomerCreateForm,
+    openCustomerCreateModal,
+    openCustomerEditModal,
+    openCustomerSubscriptionModal,
+    closeCustomerSubscriptionModal,
+    createCustomer,
+    toggleCustomerStatus,
+    saveCustomer,
+    deleteCustomer,
+    resetCustomerPassword,
+    copyCustomerSubscription
+  } = useCustomerAccounts({
+    canManageAreaManagers, message, selectedCustomerID, setSelectedCustomerID,
+    setCustomers, setAreaManagers, loadCustomers, loadAreaManagers,
+    onCustomerDeleted: wasSelected => {
+      if (wasSelected) { setAssignmentForm(emptyAssignmentForm); setEditingAssignmentID(null) }
+      setAssignmentManagerModalOpen(false)
+      setAssignmentViewModalOpen(false)
+    },
+  })
 
   const selectedCustomer = customers.find((item) => item.id === selectedCustomerID) || null
   const inheritedAssignmentBilling = useMemo(() => clientBilling(
@@ -345,505 +318,30 @@ export function CustomerManagementModal(props: {
     }
   }, [areaBatchForm.xui_agent_id])
 
-  const assignmentColumns: ColumnsType<CustomerAssignment> = [
-    {
-      title: '授权链路名称',
-      dataIndex: 'public_client_name',
-      width: 240,
-      fixed: 'left',
-      render: (value?: string) => <Text strong style={{ wordBreak: 'break-word' }}>{value || '-'}</Text>,
-    },
-    {
-      title: 'Client / 节点 / 客户端',
-      width: 320,
-      render: (_, record) => renderAssignmentHierarchy([record], agents),
-    },
-    {
-      title: '用户备注',
-      dataIndex: 'remark',
-      width: 140,
-      ellipsis: true,
-      onHeaderCell: () => ({ style: { whiteSpace: 'nowrap', textOverflow: 'clip' } }),
-      render: (value?: string) => value || '-',
-    },
-    {
-      title: '费用',
-      key: 'revenue',
-      width: 220,
-      render: (_, record) => {
-        const billing = effectiveAssignmentBilling(record, agents)
-        return billing && Number(billing.revenue_amount || 0) > 0
-          ? <Space size={4} wrap={false}><span style={{ whiteSpace: 'nowrap' }}>{billing.revenue_currency || 'CNY'} {Number(billing.revenue_amount || 0).toFixed(2)} / {revenueCycleLabel(billing.revenue_cycle)}</span><Tag color={record.price_mode === 'override' ? 'gold' : 'blue'}>{record.price_mode === 'override' ? '用户覆盖' : '节点默认'}</Tag></Space>
-          : <Tag>未设置</Tag>
-      },
-    },
-    {
-      title: '绑定状态',
-      key: 'binding',
-      width: 120,
-      render: (_, record) => {
-        const diagnostic = assignmentBindingDiagnostic(record, agents)
-        const color = diagnostic.status === 'matched' ? 'green' : diagnostic.status === 'legacy' ? 'blue' : diagnostic.status === 'mismatch' ? 'orange' : 'red'
-        return <Tag color={color}>{diagnostic.label}</Tag>
-      },
-    },
-    {
-      title: '流量倍率',
-      key: 'traffic_multiplier',
-      width: 100,
-      render: (_, record) => `${Number(effectiveAssignmentBilling(record, agents)?.traffic_multiplier || 1)} 倍`,
-    },
-    {
-      title: '状态',
-      dataIndex: 'enabled',
-      width: 90,
-      render: (enabled: boolean) => <Tag color={enabled ? 'blue' : 'default'}>{enabled ? '启用' : '停用'}</Tag>,
-    },
-    {
-      title: '操作',
-      key: 'actions',
-      width: 240,
-      fixed: 'right',
-      render: (_, record) => (
-        <Space size={6} wrap={false}>
-          {onOpenAssignment ? (
-            <Button size="small" icon={<ExportOutlined />} onClick={() => onOpenAssignment(record)}>
-              跳转
-            </Button>
-          ) : null}
-          <Button size="small" icon={<EditOutlined />} onClick={() => editAssignment(record)}>编辑</Button>
-          <Popconfirm title="删除这条分配？" okText="删除" cancelText="取消" onConfirm={() => void deleteAssignment(record.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ]
-  const visibleAssignmentColumns = canViewFinance
-    ? assignmentColumns
-    : assignmentColumns.filter((column) => !['revenue', 'traffic_multiplier'].includes(String(column.key || '')))
-
-  const billingReconciliationColumns: ColumnsType<CustomerBillingDiagnostic> = [
-    {
-      title: '用户 / 授权',
-      width: 190,
-      render: (_, record) => <div><Text strong>{record.customer_name || `用户 #${record.customer_id}`}</Text><div className="muted-line">{record.agent_id} / {record.inbound_tag || `Inbound #${record.inbound_id}`}</div></div>,
-    },
-    {
-      title: '已存绑定',
-      width: 220,
-      render: (_, record) => <div>{record.client_email || '节点级授权'}<div className="muted-line">{record.client_id || '未保存稳定 ID'}</div></div>,
-    },
-    {
-      title: '当前 x-ui 客户端',
-      width: 220,
-      render: (_, record) => record.current_client_id
-        ? <div>{record.current_client_name || record.current_client_email}<div className="muted-line">{record.current_client_id}</div></div>
-        : '-',
-    },
-    {
-      title: '结果',
-      width: 220,
-      render: (_, record) => {
-        const color = record.status === 'matched' ? 'green' : record.status === 'legacy' ? 'blue' : record.status === 'mismatch' ? 'orange' : 'red'
-        const label = record.status === 'matched' ? '已匹配' : record.status === 'legacy' ? '旧数据' : record.status === 'mismatch' ? '需修复' : '未找到'
-        return <Space direction="vertical" size={2}><Tag color={color}>{label}</Tag><Text type="secondary">{record.message}</Text></Space>
-      },
-    },
-    {
-      title: '操作',
-      width: 110,
-      render: (_, record) => record.can_rebind
-        ? <Button size="small" type="primary" loading={repairingAssignmentID === record.assignment_id} onClick={() => void rebindBillingAssignment(record)}>重新绑定</Button>
-        : '-',
-    },
-  ]
-
-  const areaCustomerColumns: ColumnsType<CustomerAdminView> = [
-    {
-      title: '下属用户',
-      width: 180,
-      render: (_, record) => (
-        <div>
-          <Text strong>{record.username}</Text>
-          <div className="muted-line">{record.display_name || record.username}</div>
-        </div>
-      ),
-    },
-    {
-      title: '链路',
-      render: (_, record) => {
-        const assignments = record.assignments || []
-        return renderAssignmentHierarchy(assignments, agents)
-      },
-    },
-    {
-      title: '状态',
-      dataIndex: 'enabled',
-      width: 120,
-      render: (_, record) => renderCustomerStatusButton(record),
-    },
-    {
-      title: '操作',
-      width: 330,
-      render: (_, record) => (
-        <Space size={6} wrap>
-          <Button size="small" onClick={() => openAssignmentManagerModal(record)}>管理链路</Button>
-          <Button size="small" icon={<CopyOutlined />} disabled={!record.enabled} onClick={() => openCustomerSubscriptionModal(record)}>导出 Clash</Button>
-          <Popconfirm title={`将 ${record.username} 的密码初始化为 ${DEFAULT_ACCOUNT_PASSWORD}？`} okText="初始化" cancelText="取消" onConfirm={() => void resetCustomerPassword(record.id)}>
-            <Button size="small" icon={<SyncOutlined />} loading={resettingCustomerID === record.id}>初始化密码</Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ]
-
-  const areaManagerColumns: ColumnsType<AreaManagerAdminView> = [
-    {
-      title: '区域账号',
-      width: 180,
-      render: (_, record) => (
-        <div>
-          <Text strong>{record.username}</Text>
-          <div className="muted-line">{record.display_name || record.username}</div>
-        </div>
-      ),
-    },
-    {
-      title: '下属用户 / 链路',
-      width: 150,
-      render: (_, record) => {
-        const ownedCustomers = record.customers || []
-        const assignmentCount = ownedCustomers.reduce((sum, customer) => sum + (customer.assignments?.length || 0), 0)
-        const directCount = normalizeAreaManagerAssignmentDrafts(record.assignments || [], agents).length
-        return (
-          <Space size={6}>
-            <Tag color="geekblue">{ownedCustomers.length} 用户</Tag>
-            <Tag color={assignmentCount ? 'cyan' : 'default'}>{assignmentCount} 链路</Tag>
-            <Tag color={directCount ? 'blue' : 'default'}>{directCount} 授权</Tag>
-          </Space>
-        )
-      },
-    },
-    {
-      title: '可管理节点',
-      render: (_, record) => {
-        const assignments = normalizeAreaManagerAssignmentDrafts(record.assignments || [], agents)
-        if (assignments.length) {
-          return renderAssignmentHierarchy(assignments, agents)
-        }
-        const agentIDs = record.agent_ids || []
-        return agentIDs.length ? (
-          <Space size={[4, 4]} wrap>
-            {agentIDs.map((agentID) => <Tag key={agentID}>{agentName(agentID, agents)}</Tag>)}
-          </Space>
-        ) : <Tag>未细化授权</Tag>
-      },
-    },
-    {
-      title: '区域收入',
-      width: 170,
-      render: (_, record) => record.billing_enabled && Number(record.revenue_amount || 0) > 0
-        ? `${record.revenue_currency || 'CNY'} ${Number(record.revenue_amount || 0).toFixed(2)} / ${revenueCycleLabel(record.revenue_cycle)}`
-        : <Tag>未统计</Tag>,
-    },
-    {
-      title: '出站权限',
-      width: 180,
-      render: (_, record) => (
-        <Space size={[4, 4]} wrap>
-	          <Tag color={record.outbound_create_enabled ? 'green' : 'default'}>{record.outbound_create_enabled ? '允许节点落地' : '禁止节点落地'}</Tag>
-          <Tag color={record.outbound_grants?.length ? 'cyan' : 'default'}>{record.outbound_grants?.length || 0} 个已有出站</Tag>
-        </Space>
-      ),
-    },
-    {
-      title: '状态',
-      dataIndex: 'enabled',
-      width: 90,
-      render: (enabled: boolean) => <Tag color={enabled ? 'blue' : 'default'}>{enabled ? '启用' : '停用'}</Tag>,
-    },
-    {
-      title: '操作',
-      width: 350,
-      render: (_, record) => (
-        <Space size={6} wrap>
-          <Button size="small" icon={<EditOutlined />} onClick={() => editAreaManager(record)}>编辑</Button>
-          <Button size="small" icon={<LinkOutlined />} onClick={() => void copyAreaManagerRecommendationURL(record)}>推荐页 URL</Button>
-          <Popconfirm title={`将 ${record.username} 的密码初始化为 ${DEFAULT_ACCOUNT_PASSWORD}？`} okText="初始化" cancelText="取消" onConfirm={() => void resetAreaManagerPassword(record.id)}>
-            <Button size="small" icon={<SyncOutlined />} loading={resettingAreaManagerID === record.id}>初始化密码</Button>
-          </Popconfirm>
-          <Popconfirm title="删除该区域账号？" okText="删除" cancelText="取消" onConfirm={() => void deleteAreaManager(record.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ]
-
-  const customerColumns: ColumnsType<CustomerAdminView> = [
-    {
-      title: '用户账号',
-      width: 220,
-      sorter: (left, right) => left.username.localeCompare(right.username, 'zh-CN'),
-      render: (_, record) => (
-        <div>
-          <Text strong>{record.username}</Text>
-          <div className="muted-line">{record.display_name || record.username}</div>
-        </div>
-      ),
-    },
-    {
-      title: '已授权链路',
-      width: 160,
-      sorter: (left, right) => (left.assignments?.length || 0) - (right.assignments?.length || 0),
-      render: (_, record) => (
-        <Button size="small" onClick={() => openAssignmentViewModal(record)}>
-          查看 {record.assignments?.length || 0} 条
-        </Button>
-      ),
-    },
-    {
-      title: '状态',
-      dataIndex: 'enabled',
-      width: 120,
-      sorter: (left, right) => Number(left.enabled) - Number(right.enabled),
-      render: (_, record) => renderCustomerStatusButton(record),
-    },
-    {
-      title: '创建时间',
-      dataIndex: 'created_at',
-      width: 180,
-      sorter: (left, right) => timestampForSort(left.created_at) - timestampForSort(right.created_at),
-      render: (value: string) => formatDateTime(value),
-    },
-    {
-      title: '修改时间',
-      dataIndex: 'updated_at',
-      width: 180,
-      defaultSortOrder: 'descend',
-      sorter: (left, right) => timestampForSort(left.updated_at) - timestampForSort(right.updated_at),
-      render: (value: string) => formatDateTime(value),
-    },
-    {
-      title: '操作',
-      width: 510,
-      render: (_, record) => (
-        <Space size={6} wrap>
-          <Button size="small" icon={<EditOutlined />} onClick={() => openCustomerEditModal(record)}>编辑</Button>
-          <Button size="small" type="primary" onClick={() => openAssignmentManagerModal(record)}>管理链路</Button>
-          <Button size="small" icon={<CopyOutlined />} disabled={!record.enabled} onClick={() => openCustomerSubscriptionModal(record)}>导出 Clash</Button>
-          <Popconfirm title={`将 ${record.username} 的密码初始化为 ${DEFAULT_ACCOUNT_PASSWORD}？`} okText="初始化" cancelText="取消" onConfirm={() => void resetCustomerPassword(record.id)}>
-            <Button size="small" icon={<SyncOutlined />} loading={resettingCustomerID === record.id}>初始化密码</Button>
-          </Popconfirm>
-          <Popconfirm title="删除该用户及其全部分配？" okText="删除" cancelText="取消" onConfirm={() => void deleteCustomer(record.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ]
-
-  function timestampForSort(value?: string) {
-    const timestamp = value ? Date.parse(value) : Number.NaN
-    return Number.isFinite(timestamp) ? timestamp : 0
-  }
-
-  function renderCustomerStatusButton(record: CustomerAdminView) {
-    const nextStatusLabel = record.enabled ? '禁用' : '启用'
-    return (
-      <Button
-        size="small"
-        type={record.enabled ? 'primary' : 'default'}
-        ghost={record.enabled}
-        danger={!record.enabled}
-        style={{ minWidth: 72 }}
-        loading={changingCustomerStatusIDs.includes(record.id)}
-        title={`点击${nextStatusLabel}`}
-        aria-label={`${nextStatusLabel}用户 ${record.display_name || record.username}`}
-        onClick={() => void toggleCustomerStatus(record)}
-      >
-        {record.enabled ? '启用' : '禁用'}
-      </Button>
-    )
-  }
-
-  const areaAssignmentColumns: ColumnsType<AreaManagerAssignment> = [
-    {
-      title: '已授权 Client / 节点 / 客户端',
-      render: (_, record) => renderAssignmentHierarchy([record], agents),
-    },
-    {
-      title: '操作',
-      width: 90,
-      render: (_, record) => (
-        <Popconfirm title="移除该区域授权？" okText="移除" cancelText="取消" onConfirm={() => void deleteAreaManagerAssignment(record.manager_id, record.id)}>
-          <Button size="small" danger icon={<DeleteOutlined />} />
-        </Popconfirm>
-      ),
-    },
-  ]
-
-  function renderAreaManagerCustomers(record: AreaManagerAdminView) {
-    const ownedCustomers = record.customers || []
-    const directAssignments = record.assignments || []
-    if (!ownedCustomers.length && !directAssignments.length) {
-      return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="该区域账号暂未创建下属用户或授权" />
-    }
-    return (
-      <Space direction="vertical" style={{ width: '100%' }}>
-        {directAssignments.length ? (
-          <Table
-            size="small"
-            rowKey={(assignment) => assignment.id}
-            columns={areaAssignmentColumns}
-            dataSource={directAssignments}
-            pagination={false}
-          />
-        ) : null}
-        {ownedCustomers.length ? <Table
-          size="small"
-          rowKey={(customer) => customer.id}
-          columns={areaCustomerColumns}
-          dataSource={ownedCustomers}
-          pagination={false}
-        /> : null}
-      </Space>
-    )
-  }
-
-  async function loadCustomers() {
-    setLoading(true)
-    try {
-      const data = await fetchJSON<CustomerAdminView[]>('/api/v1/admin/customers')
-      setCustomers(data)
-      setSelectedCustomerID((current) => {
-        if (current && data.some((item) => item.id === current)) {
-          return current
-        }
-        return data[0]?.id || null
-      })
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '加载人员失败')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function loadAreaManagers() {
-    if (!canManageAreaManagers) {
-      return
-    }
-    setAreaManagersLoading(true)
-    try {
-      const data = await fetchJSON<AreaManagerAdminView[]>('/api/v1/admin/area-managers')
-      setAreaManagers(Array.isArray(data) ? data : [])
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '加载区域账号失败')
-    } finally {
-      setAreaManagersLoading(false)
-    }
-  }
-
-  async function copyAreaManagerRecommendationURL(record: AreaManagerAdminView) {
-    const token = record.recommendation_token?.trim()
-    if (!token) {
-      message.error('该区域账号暂未生成推荐页 URL')
-      return
-    }
-    const url = `${window.location.origin}${withAppBasePath('/recommendations')}?area=${encodeURIComponent(token)}`
-    try {
-      await navigator.clipboard.writeText(url)
-      message.success('区域推荐页 URL 已复制')
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '复制 URL 失败')
-    }
-  }
-
-  async function loadOperators() {
-    if (!canManageAreaManagers) {
-      return
-    }
-    setOperatorsLoading(true)
-    try {
-      const data = await fetchJSON<OperatorAdminView[]>('/api/v1/admin/operators')
-      setOperators(Array.isArray(data) ? data : [])
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '加载运营管理员失败')
-    } finally {
-      setOperatorsLoading(false)
-    }
-  }
-
-  async function loadFrontProxies() {
-    try {
-      const data = await fetchJSON<FrontProxyNode[]>('/api/v1/admin/front-proxies')
-      setFrontProxies(Array.isArray(data) ? data : [])
-    } catch (error) {
-      setFrontProxies([])
-      message.error(error instanceof Error ? error.message : '加载前置代理失败')
-    }
-  }
-
-  async function saveOperator(draft: OperatorDraft): Promise<boolean> {
-    setSavingOperator(true)
-    try {
-      const payload = {
-        username: draft.username.trim(),
-        display_name: draft.display_name.trim(),
-        password: draft.password,
-        enabled: draft.enabled,
-      }
-      if (draft.id) {
-        await fetchJSON<OperatorAdminView>(`/api/v1/admin/operators/${draft.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
-        message.success('运营管理员已更新')
-      } else {
-        await fetchJSON<OperatorAdminView>('/api/v1/admin/operators', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
-        message.success('运营管理员已创建')
-      }
-      await loadOperators()
-      return true
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '保存运营管理员失败')
-      return false
-    } finally {
-      setSavingOperator(false)
-    }
-  }
-
-  async function deleteOperator(id: number) {
-    setSavingOperator(true)
-    try {
-      await fetchJSON(`/api/v1/admin/operators/${id}`, { method: 'DELETE' })
-      message.success('运营管理员已删除')
-      await loadOperators()
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '删除运营管理员失败')
-    } finally {
-      setSavingOperator(false)
-    }
-  }
-
-  async function resetOperatorPassword(id: number) {
-    setResettingOperatorID(id)
-    try {
-      await fetchJSON<OperatorAdminView>(`/api/v1/admin/operators/${id}/reset-password`, { method: 'POST' })
-      message.success(`运营管理员密码已初始化为 ${DEFAULT_ACCOUNT_PASSWORD}`)
-      await loadOperators()
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '初始化运营管理员密码失败')
-    } finally {
-      setResettingOperatorID(null)
-    }
-  }
+  const { visibleAssignmentColumns, billingReconciliationColumns, areaManagerColumns, customerColumns, renderAreaManagerCustomers } = buildCustomerManagementTables({
+    agents,
+    canViewFinance,
+    onOpenAssignment,
+    editAssignment,
+    deleteAssignment,
+    repairingAssignmentID,
+    rebindBillingAssignment,
+    resettingCustomerID,
+    openAssignmentManagerModal,
+    openCustomerSubscriptionModal,
+    resetCustomerPassword,
+    editAreaManager,
+    copyAreaManagerRecommendationURL,
+    resetAreaManagerPassword,
+    resettingAreaManagerID,
+    deleteAreaManager,
+    openAssignmentViewModal,
+    openCustomerEditModal,
+    deleteCustomer,
+    changingCustomerStatusIDs,
+    toggleCustomerStatus,
+    deleteAreaManagerAssignment,
+  })
 
   async function saveAreaManager() {
     if (!areaManagerForm.username.trim()) {
@@ -1094,26 +592,6 @@ export function CustomerManagementModal(props: {
     setAreaManagerForm(emptyAreaManagerForm)
   }
 
-  function openCustomerCreateModal() {
-    setCustomerCreateForm({
-      ...emptyCustomerForm,
-      password: DEFAULT_ACCOUNT_PASSWORD,
-    })
-    setCustomerCreateModalOpen(true)
-  }
-
-  function openCustomerEditModal(record: CustomerAdminView) {
-    setSelectedCustomerID(record.id)
-    setCustomerForm({
-      username: record.username,
-      password: '',
-      display_name: record.display_name || record.username,
-      enabled: record.enabled,
-      front_proxy_node_ids: (record.front_proxies || []).map((item) => item.id),
-    })
-    setCustomerEditModalOpen(true)
-  }
-
   function openAssignmentManagerModal(record: CustomerAdminView) {
     setSelectedCustomerID(record.id)
     setEditingAssignmentID(null)
@@ -1124,197 +602,6 @@ export function CustomerManagementModal(props: {
   function openAssignmentViewModal(record: CustomerAdminView) {
     setSelectedCustomerID(record.id)
     setAssignmentViewModalOpen(true)
-  }
-
-  function openCustomerSubscriptionModal(record: CustomerAdminView) {
-    setSubscriptionCustomer(record)
-    setSelectedSubscriptionAssignmentIDs([])
-    setCustomerSubscriptionModalOpen(true)
-  }
-
-  function closeCustomerSubscriptionModal() {
-    setCustomerSubscriptionModalOpen(false)
-    setSubscriptionCustomer(null)
-    setSelectedSubscriptionAssignmentIDs([])
-  }
-
-  async function createCustomer() {
-    if (!customerCreateForm.username.trim()) {
-      message.warning('请填写用户用户名')
-      return
-    }
-    if (customerCreateForm.password.length < 8) {
-      message.warning('新用户密码至少 8 位')
-      return
-    }
-    setSavingCustomer(true)
-    try {
-      const created = await fetchJSON<CustomerAdminView>('/api/v1/admin/customers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: customerCreateForm.username.trim(),
-          password: customerCreateForm.password,
-          display_name: customerCreateForm.display_name.trim(),
-          enabled: customerCreateForm.enabled,
-          front_proxy_node_ids: customerCreateForm.front_proxy_node_ids,
-        }),
-      })
-      message.success('用户已创建')
-      setCustomerCreateModalOpen(false)
-      setCustomerCreateForm(emptyCustomerForm)
-      await loadCustomers()
-      setSelectedCustomerID(created.id)
-      if (canManageAreaManagers) {
-        await loadAreaManagers()
-      }
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '创建用户失败')
-    } finally {
-      setSavingCustomer(false)
-    }
-  }
-
-  async function toggleCustomerStatus(record: CustomerAdminView) {
-    if (customerStatusPendingRef.current.has(record.id)) {
-      return
-    }
-    customerStatusPendingRef.current.add(record.id)
-    setChangingCustomerStatusIDs((current) => [...current, record.id])
-    try {
-      const updated = await fetchJSON<CustomerAdminView>(`/api/v1/admin/customers/${record.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled: !record.enabled }),
-      })
-      setCustomers((current) => current.map((item) => item.id === updated.id ? updated : item))
-      setAreaManagers((current) => current.map((manager) => ({
-        ...manager,
-        customers: manager.customers?.map((item) => item.id === updated.id ? updated : item),
-      })))
-      setCustomerForm((current) => current.username === updated.username ? { ...current, enabled: updated.enabled } : current)
-      message.success(`用户已${updated.enabled ? '启用' : '禁用'}`)
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '切换用户状态失败')
-    } finally {
-      customerStatusPendingRef.current.delete(record.id)
-      setChangingCustomerStatusIDs((current) => current.filter((id) => id !== record.id))
-    }
-  }
-
-  async function saveCustomer() {
-    if (!customerForm.username.trim()) {
-      message.warning('请填写用户用户名')
-      return
-    }
-    if (!selectedCustomerID && customerForm.password.length < 8) {
-      message.warning('新用户密码至少 8 位')
-      return
-    }
-    setSavingCustomer(true)
-    try {
-      const payload = {
-        username: customerForm.username.trim(),
-        password: customerForm.password,
-        display_name: customerForm.display_name.trim(),
-        enabled: customerForm.enabled,
-        front_proxy_node_ids: customerForm.front_proxy_node_ids,
-      }
-      if (selectedCustomerID) {
-        await fetchJSON<CustomerAdminView>(`/api/v1/admin/customers/${selectedCustomerID}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
-        message.success('用户已更新')
-      } else {
-        const created = await fetchJSON<CustomerAdminView>('/api/v1/admin/customers', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
-        setSelectedCustomerID(created.id)
-        message.success('用户已创建')
-      }
-      setCustomerForm((current) => ({ ...current, password: '' }))
-      setCustomerEditModalOpen(false)
-      await loadCustomers()
-      if (canManageAreaManagers) {
-        await loadAreaManagers()
-      }
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '保存用户失败')
-    } finally {
-      setSavingCustomer(false)
-    }
-  }
-
-  async function deleteCustomer(customerID = selectedCustomerID) {
-    if (!customerID) {
-      return
-    }
-    setSavingCustomer(true)
-    try {
-      await fetchJSON(`/api/v1/admin/customers/${customerID}`, { method: 'DELETE' })
-      if (selectedCustomerID === customerID) {
-        setSelectedCustomerID(null)
-        setCustomerForm(emptyCustomerForm)
-        setAssignmentForm(emptyAssignmentForm)
-        setEditingAssignmentID(null)
-      }
-      setCustomerEditModalOpen(false)
-      setAssignmentManagerModalOpen(false)
-      setAssignmentViewModalOpen(false)
-      message.success('用户已删除')
-      await loadCustomers()
-      if (canManageAreaManagers) {
-        await loadAreaManagers()
-      }
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '删除用户失败')
-    } finally {
-      setSavingCustomer(false)
-    }
-  }
-
-  async function resetCustomerPassword(customerID: number) {
-    setResettingCustomerID(customerID)
-    try {
-      await fetchJSON<CustomerAdminView>(`/api/v1/admin/customers/${customerID}/reset-password`, { method: 'POST' })
-      message.success(`普通用户密码已初始化为 ${DEFAULT_ACCOUNT_PASSWORD}`)
-      await loadCustomers()
-      if (canManageAreaManagers) {
-        await loadAreaManagers()
-      }
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '初始化普通用户密码失败')
-    } finally {
-      setResettingCustomerID(null)
-    }
-  }
-
-  async function copyCustomerSubscription(customerID: number, assignmentIDs: number[]) {
-    if (assignmentIDs.length === 0) {
-      message.warning('请至少选择一个导出节点')
-      return
-    }
-    setCopyingSubscriptionCustomerID(customerID)
-    try {
-      const query = new URLSearchParams({ assignments: assignmentIDs.join(',') })
-      const data = await fetchJSON<CustomerSubscriptionURLResponse>(`/api/v1/admin/customers/${customerID}/subscription?${query.toString()}`)
-      const subscriptionURL = data.clash_subscription_url || data.mihomo_subscription_url || ''
-      if (!subscriptionURL) {
-        message.warning('当前用户没有可用的 Clash 订阅地址')
-        return
-      }
-      await navigator.clipboard.writeText(subscriptionURL)
-      message.success('Clash 订阅地址已复制')
-      closeCustomerSubscriptionModal()
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '复制 Clash 订阅地址失败')
-    } finally {
-      setCopyingSubscriptionCustomerID(null)
-    }
   }
 
   async function loadCustomerAssignmentSources() {
@@ -1586,147 +873,31 @@ export function CustomerManagementModal(props: {
     })
   }
 
-  const areaManagersPanel = canManageAreaManagers ? (
-    <Card className="customer-admin-card" bordered={false}>
-      <div className="customer-admin-card-head">
-        <div className="admin-help-title-group">
-          <Title level={5}>区域管理账号</Title>
-          <AdminHelpHint title={(
-            <>
-              <strong>区域账号权限</strong>
-              <br />
-              区域账号只能查看被分配的 Client，能下发 x-ui 转发规则，并且只能管理自己创建的普通用户；Admin 可见全部用户与区域账号。展开区域账号可直接查看其下属用户与链路。
-            </>
-          )} />
-        </div>
-        <Space>
-          <Button size="small" icon={<ReloadOutlined />} onClick={() => void loadAreaManagers()}>刷新区域账号</Button>
-          <Button size="small" icon={<PlusOutlined />} onClick={openAreaBatchModal}>新增授权</Button>
-          <Button size="small" type="primary" icon={<PlusOutlined />} onClick={openAreaManagerCreateModal}>新增区域账号</Button>
-        </Space>
-      </div>
-      <Modal
-        title={(
-          <div className="admin-help-title-group">
-            <span>新增授权 · 批量授权入口 / 出口</span>
-            <AdminHelpHint title="Realm / HAProxy 入口与 x-ui 出口节点可分别选择；HAProxy 主备会自动映射到校验一致的最终节点。" />
-          </div>
-        )}
-        open={areaBatchModalOpen}
-        onCancel={closeAreaBatchModal}
-        maskClosable={!savingAreaBatchAssignment}
-        keyboard={!savingAreaBatchAssignment}
-        closable={!savingAreaBatchAssignment}
-        width={1000}
-        styles={{ body: { maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' } }}
-        destroyOnClose
-        footer={(
-          <Space>
-            <Button disabled={savingAreaBatchAssignment} onClick={closeAreaBatchModal}>取消</Button>
-            <Button type="primary" icon={<SaveOutlined />} loading={savingAreaBatchAssignment} onClick={() => void batchAssignAreaManagerTargets()}>
-              保存授权
-            </Button>
-          </Space>
-        )}
-      >
-        <Row gutter={[12, 12]}>
-          <Col xs={24}>
-            <Text type="secondary">区域账号</Text>
-            <Select
-              style={{ width: '100%' }}
-              showSearch
-              placeholder="选择区域账号"
-              value={areaBatchForm.manager_id ?? undefined}
-              options={areaManagers.map((item) => ({ value: item.id, label: `${item.username} · ${item.display_name || item.username}` }))}
-              optionFilterProp="label"
-              onChange={(value) => setAreaBatchForm((current) => ({ ...current, manager_id: value, agent_id: '', xui_agent_id: '', selected_realm_keys: [], selected_xui_keys: [] }))}
-            />
-          </Col>
-          <Col xs={24} md={12}>
-            <Text type="secondary">转发入口 Client</Text>
-            <Select
-              style={{ width: '100%' }}
-              showSearch
-              placeholder="选择 GZ 入口"
-              value={areaBatchForm.agent_id || undefined}
-              options={areaManagers.find(item => item.id === areaBatchForm.manager_id)?.realm_enabled === false ? [] : realmAgentOptions}
-              disabled={!areaBatchForm.manager_id || areaManagers.find(item => item.id === areaBatchForm.manager_id)?.realm_enabled === false}
-              optionFilterProp="label"
-              onChange={(value) => setAreaBatchForm((current) => ({ ...current, agent_id: value, selected_realm_keys: [] }))}
-            />
-          </Col>
-          <Col xs={24} md={12}>
-            <Text type="secondary">x-ui 出口 Client</Text>
-            <Select
-              style={{ width: '100%' }}
-              showSearch
-              placeholder="选择 HK 出口"
-              value={areaBatchForm.xui_agent_id || undefined}
-              options={agentOptions.filter(option => {
-                const manager = areaManagers.find(item => item.id === areaBatchForm.manager_id)
-                return manager && (manager.line_enabled !== false && lineAgentOptions.some(item => item.value === option.value) || manager.landing_enabled !== false && landingAgentOptions.some(item => item.value === option.value))
-              })}
-              disabled={!areaBatchForm.manager_id}
-              optionFilterProp="label"
-              onChange={(value) => setAreaBatchForm((current) => ({ ...current, xui_agent_id: value, selected_xui_keys: [] }))}
-            />
-          </Col>
-          <Col xs={24} md={12}>
-            <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-              <Text type="secondary">转发入口</Text>
-              <Button size="small" disabled={!areaBatchForm.agent_id || !areaBatchRealmOptions.length} onClick={() => setAreaBatchForm((current) => ({ ...current, selected_realm_keys: areaBatchRealmOptions.map((option) => option.value) }))}>全选</Button>
-            </Space>
-            <Select
-              mode="multiple"
-              style={{ width: '100%' }}
-              showSearch
-              placeholder="选择 Realm / HAProxy 入口"
-              value={areaBatchForm.selected_realm_keys}
-              disabled={!areaBatchForm.agent_id}
-              options={areaBatchRealmOptions.map(({ value, label }) => ({ value, label }))}
-              optionFilterProp="label"
-              maxTagCount="responsive"
-              onChange={(values) => setAreaBatchForm((current) => ({ ...current, selected_realm_keys: values }))}
-            />
-          </Col>
-          <Col xs={24} md={12}>
-            <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-              <Text type="secondary">x-ui 客户端 / 节点</Text>
-              <Button size="small" disabled={!areaBatchXUIAgentID || !areaBatchClientTreeData.length} onClick={() => setAreaBatchForm((current) => ({ ...current, selected_xui_keys: assignmentTreeKeys(areaBatchXUIAgentID, areaBatchOverview, agents) }))}>全选</Button>
-            </Space>
-            <TreeSelect
-              multiple
-              treeCheckable
-              treeCheckStrictly
-              style={{ width: '100%' }}
-              showSearch
-              placeholder="按 Client / 节点 / 客户端授权"
-              value={areaBatchForm.selected_xui_keys}
-              loading={areaBatchOverviewLoading}
-              disabled={!areaBatchXUIAgentID}
-              treeData={areaBatchClientTreeData}
-              treeDefaultExpandAll
-              showCheckedStrategy={TreeSelect.SHOW_PARENT}
-              maxTagCount="responsive"
-              onChange={(values) => setAreaBatchForm((current) => ({ ...current, selected_xui_keys: normalizeAreaAssignmentTreeKeys(areaBatchXUIAgentID, values as string[], areaBatchOverview, agents) }))}
-            />
-          </Col>
-        </Row>
-      </Modal>
-      <Table
-        style={{ marginTop: 14 }}
-        rowKey={(record) => record.id}
-        columns={areaManagerColumns}
-        dataSource={areaManagers}
-        pagination={{ pageSize: 5, hideOnSinglePage: true }}
-        expandable={{
-          expandedRowRender: renderAreaManagerCustomers,
-          rowExpandable: (record) => Boolean(record.customers?.length || record.assignments?.length),
-        }}
-        locale={{ emptyText: <Empty description="暂无区域账号" /> }}
-      />
-    </Card>
-  ) : null
+  const areaManagersPanel = <AreaAccountPanel
+    canManageAreaManagers={canManageAreaManagers}
+    loadAreaManagers={loadAreaManagers}
+    openAreaBatchModal={openAreaBatchModal}
+    openAreaManagerCreateModal={openAreaManagerCreateModal}
+    areaBatchModalOpen={areaBatchModalOpen}
+    closeAreaBatchModal={closeAreaBatchModal}
+    savingAreaBatchAssignment={savingAreaBatchAssignment}
+    batchAssignAreaManagerTargets={batchAssignAreaManagerTargets}
+    areaBatchForm={areaBatchForm}
+    areaManagers={areaManagers}
+    setAreaBatchForm={setAreaBatchForm}
+    realmAgentOptions={realmAgentOptions}
+    agentOptions={agentOptions}
+    lineAgentOptions={lineAgentOptions}
+    landingAgentOptions={landingAgentOptions}
+    areaBatchRealmOptions={areaBatchRealmOptions}
+    areaBatchXUIAgentID={areaBatchXUIAgentID}
+    areaBatchClientTreeData={areaBatchClientTreeData}
+    areaBatchOverview={areaBatchOverview}
+    agents={agents}
+    areaBatchOverviewLoading={areaBatchOverviewLoading}
+    areaManagerColumns={areaManagerColumns}
+    renderAreaManagerCustomers={renderAreaManagerCustomers}
+  />
 
   const customersPanel = (
     <Card className="customer-admin-card" bordered={false}>
@@ -1767,7 +938,7 @@ export function CustomerManagementModal(props: {
         columns={customerColumns}
         dataSource={filteredCustomers}
         pagination={{ pageSize: 8, hideOnSinglePage: true }}
-        scroll={{ x: 1400 }}
+        scroll={{ x: 1400, y: '100%' }}
         locale={{ emptyText: <Empty description={customerSearch.trim() || customerStatusFilter !== 'all' ? '没有匹配的用户' : '暂无用户'} /> }}
       />
     </Card>
@@ -1908,7 +1079,7 @@ export function CustomerManagementModal(props: {
 
   const content = (
     <Spin spinning={loading || areaManagersLoading || operatorsLoading}>
-      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+      <div className="customer-management-body">
         <Tabs
           className="customer-admin-tabs"
           tabBarExtraContent={(
@@ -1927,7 +1098,7 @@ export function CustomerManagementModal(props: {
           items={managementTabs}
           onChange={(key) => setActiveManagementTab(key as ManagementTabKey)}
         />
-      </Space>
+      </div>
     </Spin>
   )
 

@@ -20,7 +20,7 @@ func TestEntryConnectionConfigAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	registered, err := s.RegisterAgent(model.AgentRegisterRequest{AgentID: "nat-node"})
+	registered, err := testRegisterAgent(s, model.AgentRegisterRequest{AgentID: "nat-node"})
 	if err != nil {
 		t.Fatal(err)
 	}

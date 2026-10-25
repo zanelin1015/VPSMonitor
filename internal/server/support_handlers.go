@@ -74,16 +74,7 @@ func (a *App) handleCustomerSupport(w http.ResponseWriter, r *http.Request, part
 		writeError(w, status, err.Error())
 		return
 	}
-	supportOnline := a.supportPresence.onlineForCustomer(user)
-	if !supportOnline {
-		claimed, claimErr := a.store.ClaimSupportNotification(conversation.ID, supportNotificationCooldown)
-		if claimErr != nil {
-			log.Printf("claim support notification: %v", claimErr)
-		} else if claimed {
-			baseURL := requestPublicBaseURL(r)
-			go a.sendOfflineSupportNotification(user, conversation, message, baseURL)
-		}
-	}
+	a.notifySupportMessage(user, conversation, message, requestPublicBaseURL(r))
 	writeJSON(w, http.StatusCreated, message)
 }
 
@@ -271,14 +262,44 @@ func supportOwnerScope(user model.AdminUser) (string, int64) {
 	return "", 0
 }
 
-func (a *App) sendOfflineSupportNotification(customer model.CustomerUser, conversation model.SupportConversation, message model.SupportMessage, baseURL string) {
+// Area owners receive their own messages even while the web console is online.
+// Root delivery keeps the existing offline-only policy and separate bot scope.
+func (a *App) notifySupportMessage(customer model.CustomerUser, conversation model.SupportConversation, message model.SupportMessage, baseURL string) {
 	if a == nil || a.alerts == nil {
 		return
 	}
-	text := formatOfflineSupportNotification(customer, conversation, message, baseURL)
-	if err := a.alerts.sendMessageToEnabledTelegramBots(text); err != nil {
-		log.Printf("send offline support notification: %v", err)
+	notifyRoot := !a.supportPresence.onlineForCustomer(customer)
+	ownedByArea := conversation.OwnerType == model.AdminRoleAreaManager && conversation.OwnerID > 0
+	if !notifyRoot && !ownedByArea {
+		return
 	}
+	claimed, err := a.store.ClaimSupportNotification(conversation.ID, supportNotificationCooldown)
+	if err != nil {
+		log.Printf("claim support notification: %v", err)
+		return
+	}
+	if !claimed {
+		return
+	}
+	go func() {
+		// Reload ownership before dispatch: URL changes never reassign a thread,
+		// and deleted/transferred conversations must not use a stale recipient.
+		current, found, err := a.store.GetSupportConversation(conversation.ID, model.SupportSenderAdmin)
+		if err != nil || !found {
+			return
+		}
+		text := formatOfflineSupportNotification(customer, current, message, baseURL)
+		if notifyRoot {
+			if err := a.alerts.sendMessageToEnabledTelegramBots(text, 0); err != nil {
+				log.Printf("send support notification to admin: %v", err)
+			}
+		}
+		if current.OwnerType == model.AdminRoleAreaManager && current.OwnerID > 0 {
+			if err := a.alerts.sendMessageToEnabledTelegramBots(text, current.OwnerID); err != nil {
+				log.Printf("send support notification to area %d: %v", current.OwnerID, err)
+			}
+		}
+	}()
 }
 
 func formatOfflineSupportNotification(customer model.CustomerUser, conversation model.SupportConversation, message model.SupportMessage, baseURL string) string {
@@ -293,6 +314,10 @@ func formatOfflineSupportNotification(customer model.CustomerUser, conversation 
 		"用户：" + name + " (" + customer.Username + ")",
 		"内容：" + body,
 		"时间：" + formatBeijingTime(message.CreatedAt),
+	}
+	if conversation.IsGuest {
+		lines[0] = "ZaneLin 访客新消息"
+		lines[1] = "访客 IP：" + conversation.GuestIP
 	}
 	if baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/"); baseURL != "" {
 		link := baseURL + "/?page=support&conversation=" + url.QueryEscape(strconv.FormatInt(conversation.ID, 10))

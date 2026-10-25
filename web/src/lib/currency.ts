@@ -15,12 +15,6 @@ export interface ExchangeRatesState {
   error: string
 }
 
-export interface MonthlyCostSummary {
-  total: number
-  count: number
-  missingCount: number
-}
-
 export interface MonthlyFinanceSummary {
   available: boolean
   error?: string
@@ -78,29 +72,6 @@ export interface MonthlyFinanceExcludedRevenueDetail extends MonthlyFinanceReven
 }
 
 type BillingConfig = Pick<VPSRenewalConfig, 'cost_amount' | 'cost_currency' | 'cost_cycle'>
-
-export function summarizeMonthlyCost(agents: AgentListItem[], targetCurrency: CurrencyCode, exchangeRates: ExchangeRatesState): MonthlyCostSummary {
-  return agents.reduce<MonthlyCostSummary>(
-    (summary, agent) => {
-      const renewal = normalizeCostConfig(agent.renewal)
-      const amount = Number(renewal.cost_amount || 0)
-      if (amount <= 0) {
-        summary.missingCount += 1
-        return summary
-      }
-      const monthlyAmount = amount / billingCycleMonths(renewal.cost_cycle || 'month')
-      const converted = convertCurrency(monthlyAmount, normalizeCurrencyCode(renewal.cost_currency), targetCurrency, exchangeRates)
-      if (converted === null) {
-        summary.missingCount += 1
-        return summary
-      }
-      summary.total += converted
-      summary.count += 1
-      return summary
-    },
-    { total: 0, count: 0, missingCount: 0 },
-  )
-}
 
 export function summarizeMonthlyFinance(
   agents: AgentListItem[],
@@ -794,14 +765,6 @@ function formatDateOnly(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
-}
-
-function normalizeCostConfig(config?: VPSRenewalConfig): Pick<VPSRenewalConfig, 'cost_amount' | 'cost_currency' | 'cost_cycle'> {
-  return {
-    cost_amount: Math.max(0, Number(config?.cost_amount || 0)),
-    cost_currency: normalizeCurrencyCode(config?.cost_currency),
-    cost_cycle: normalizeBillingCycleValue(config?.cost_cycle),
-  }
 }
 
 function normalizeBillingConfig(config?: VPSRenewalConfig): Required<BillingConfig> {

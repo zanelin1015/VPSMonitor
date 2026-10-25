@@ -186,11 +186,6 @@ func (c *XUIClient) updateMutableXrayConfig(ctx context.Context, mutableConfig m
 	}
 }
 
-func (c *XUIClient) getXrayTemplate(ctx context.Context) (map[string]any, error) {
-	mutable, err := c.getXrayTemplateWithSettings(ctx)
-	return mutable.config, err
-}
-
 func (c *XUIClient) getXrayTemplateWithSettings(ctx context.Context) (mutableXrayConfig, error) {
 	var lastErr error
 	for _, path := range []string{"/panel/xray/", "/panel/api/xray/"} {
@@ -255,10 +250,6 @@ func (c *XUIClient) getXrayTemplateAt(ctx context.Context, path string) (mutable
 	return mutable, nil
 }
 
-func (c *XUIClient) updateXrayTemplate(ctx context.Context, configJSON map[string]any) error {
-	return c.updateXrayTemplateWithTestURL(ctx, configJSON, nil)
-}
-
 func (c *XUIClient) updateXrayTemplateWithTestURL(ctx context.Context, configJSON map[string]any, testURL *string) error {
 	var lastErr error
 	for _, path := range []string{"/panel/xray/update", "/panel/api/xray/update"} {
@@ -303,90 +294,11 @@ func (c *XUIClient) updateXrayTemplateAt(ctx context.Context, path string, confi
 	return nil
 }
 
-func (c *XUIClient) restartIfRequested(ctx context.Context, payload map[string]any) (bool, error) {
-	restart, ok := payload["restart"].(bool)
-	if !ok {
-		restart = true
-	}
-	if !restart {
-		return false, nil
-	}
-	if err := c.restartXrayService(ctx); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
 func (c *XUIClient) restartXrayService(ctx context.Context) error {
 	if err := c.postFormAction(ctx, "/panel/api/server/restartXrayService", url.Values{}); err != nil {
 		return err
 	}
 	return nil
-}
-
-func restartLocalXUIService(ctx context.Context) error {
-	if runtime.GOOS == "windows" {
-		return fmt.Errorf("local x-ui restart is only supported on linux clients")
-	}
-	commands := [][]string{}
-	if commandAvailable("systemctl") {
-		commands = append(commands, []string{"systemctl", "restart", "x-ui"})
-	}
-	if commandAvailable("service") {
-		commands = append(commands, []string{"service", "x-ui", "restart"})
-	}
-	if commandAvailable("x-ui") {
-		commands = append(commands, []string{"x-ui", "restart"})
-	}
-	if len(commands) == 0 {
-		return fmt.Errorf("systemctl/service/x-ui command not found")
-	}
-	var errs []string
-	for _, command := range commands {
-		runCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		output, err := exec.CommandContext(runCtx, command[0], command[1:]...).CombinedOutput()
-		cancel()
-		outputText := string(output)
-		if err == nil && runCtx.Err() == nil {
-			return nil
-		}
-		if isLocalXUIRestartSuccessOutput(outputText) {
-			return nil
-		}
-		if runCtx.Err() != nil {
-			err = runCtx.Err()
-		}
-		errs = append(errs, fmt.Sprintf("%s: %v: %s", strings.Join(command, " "), err, strings.TrimSpace(outputText)))
-	}
-	return errors.New(strings.Join(errs, "; "))
-}
-
-func isLocalXUIRestartSuccessOutput(output string) bool {
-	normalized := strings.ToLower(stripANSIEscape(output))
-	return strings.Contains(normalized, "restarted successfully") ||
-		strings.Contains(normalized, "restart successfully") ||
-		strings.Contains(normalized, "restart successful")
-}
-
-func stripANSIEscape(value string) string {
-	var builder strings.Builder
-	builder.Grow(len(value))
-	inEscape := false
-	for i := 0; i < len(value); i++ {
-		char := value[i]
-		if inEscape {
-			if (char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') {
-				inEscape = false
-			}
-			continue
-		}
-		if char == 0x1b {
-			inEscape = true
-			continue
-		}
-		builder.WriteByte(char)
-	}
-	return builder.String()
 }
 
 func commandAvailable(name string) bool {

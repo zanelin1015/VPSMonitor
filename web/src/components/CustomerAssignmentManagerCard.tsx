@@ -4,7 +4,7 @@ import type { TreeSelectProps } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { SaveOutlined } from '@ant-design/icons'
 
-import type { CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft } from '../types'
+import type { CustomerAdminView, CustomerAssignment } from '../types'
 import { REVENUE_CURRENCIES } from '../lib/currency'
 import type { AssignmentFormState } from './CustomerManagementHelpers'
 import { emptyAssignmentForm } from './CustomerManagementHelpers'

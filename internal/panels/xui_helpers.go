@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-
-	"bridge-core/internal/model"
 )
 
 func extractObjectList(raw any) []map[string]any {
@@ -99,86 +97,6 @@ func int64Value(raw any) int64 {
 	default:
 		return 0
 	}
-}
-
-func decodeEnvelopeObject(raw json.RawMessage) any {
-	if len(raw) == 0 {
-		return nil
-	}
-	var value any
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return string(raw)
-	}
-	return value
-}
-
-func injectLocalCertificate(inbound map[string]any, payload map[string]any, localCertificates []model.XUILocalCertificate) (map[string]any, error) {
-	streamSettings, encoded, err := jsonObjectField(inbound["streamSettings"])
-	if err != nil {
-		return nil, fmt.Errorf("decode inbound streamSettings: %w", err)
-	}
-	security := strings.ToLower(stringFromMap(streamSettings, "security"))
-	if security != "tls" {
-		writeJSONField(inbound, "streamSettings", streamSettings, encoded)
-		return nil, nil
-	}
-
-	selector := objectMap(payload["tls_certificate"])
-	if len(selector) == 0 {
-		writeJSONField(inbound, "streamSettings", streamSettings, encoded)
-		return nil, nil
-	}
-
-	certificateFile, keyFile, resolved, err := resolveLocalCertificate(selector, streamSettings, localCertificates)
-	if err != nil {
-		return nil, err
-	}
-	if certificateFile == "" || keyFile == "" {
-		writeJSONField(inbound, "streamSettings", streamSettings, encoded)
-		return nil, nil
-	}
-
-	tlsSettings := objectMap(streamSettings["tlsSettings"])
-	tlsSettings["certificates"] = []map[string]any{
-		{
-			"certificateFile": certificateFile,
-			"keyFile":         keyFile,
-		},
-	}
-	streamSettings["tlsSettings"] = tlsSettings
-	writeJSONField(inbound, "streamSettings", streamSettings, encoded)
-	return resolved, nil
-}
-
-func jsonObjectField(raw any) (map[string]any, bool, error) {
-	switch value := raw.(type) {
-	case string:
-		if strings.TrimSpace(value) == "" {
-			return map[string]any{}, true, nil
-		}
-		var decoded map[string]any
-		if err := json.Unmarshal([]byte(value), &decoded); err != nil {
-			return nil, true, err
-		}
-		return decoded, true, nil
-	case map[string]any:
-		return value, false, nil
-	default:
-		return objectMap(raw), false, nil
-	}
-}
-
-func writeJSONField(target map[string]any, key string, value map[string]any, encoded bool) {
-	if !encoded {
-		target[key] = value
-		return
-	}
-	body, err := json.Marshal(value)
-	if err != nil {
-		target[key] = value
-		return
-	}
-	target[key] = string(body)
 }
 
 func validateOutboundConfig(outbound map[string]any) error {
@@ -289,93 +207,4 @@ func isPlaceholderValue(value string) bool {
 	default:
 		return false
 	}
-}
-
-func resolveLocalCertificate(selector map[string]any, streamSettings map[string]any, inventory []model.XUILocalCertificate) (string, string, map[string]any, error) {
-	mode := strings.ToLower(stringFromMap(selector, "mode"))
-	switch mode {
-	case "", "none":
-		return "", "", nil, nil
-	case "manual":
-		certificateFile := stringFromMap(selector, "certificate_file")
-		keyFile := stringFromMap(selector, "key_file")
-		if certificateFile == "" || keyFile == "" {
-			return "", "", nil, fmt.Errorf("manual tls certificate requires certificate_file and key_file")
-		}
-		return certificateFile, keyFile, map[string]any{
-			"mode":             mode,
-			"certificate_file": certificateFile,
-			"key_file":         keyFile,
-		}, nil
-	case "inventory":
-		inventoryID := stringFromMap(selector, "inventory_id")
-		if inventoryID == "" {
-			return "", "", nil, fmt.Errorf("inventory tls certificate requires inventory_id")
-		}
-		for _, cert := range inventory {
-			if cert.ID == inventoryID {
-				return cert.CertPath, cert.KeyPath, localCertificateResult(mode, cert), nil
-			}
-		}
-		return "", "", nil, fmt.Errorf("local tls certificate not found: %s", inventoryID)
-	case "domain_auto":
-		serverName := strings.TrimSpace(stringFromMap(selector, "domain"))
-		if serverName == "" {
-			tlsSettings := objectMap(streamSettings["tlsSettings"])
-			serverName = strings.TrimSpace(stringFromMap(tlsSettings, "serverName"))
-		}
-		if serverName == "" {
-			return "", "", nil, fmt.Errorf("auto tls certificate matching requires a server name")
-		}
-		for _, cert := range inventory {
-			if localCertificateMatchesDomain(cert, serverName) {
-				return cert.CertPath, cert.KeyPath, localCertificateResult(mode, cert), nil
-			}
-		}
-		return "", "", nil, fmt.Errorf("no local tls certificate matches domain %q", serverName)
-	default:
-		return "", "", nil, fmt.Errorf("unsupported tls certificate mode: %s", mode)
-	}
-}
-
-func localCertificateResult(mode string, cert model.XUILocalCertificate) map[string]any {
-	return map[string]any{
-		"mode":      mode,
-		"id":        cert.ID,
-		"name":      cert.Name,
-		"subject":   cert.Subject,
-		"cert_path": cert.CertPath,
-		"key_path":  cert.KeyPath,
-	}
-}
-
-func localCertificateMatchesDomain(cert model.XUILocalCertificate, domain string) bool {
-	domain = strings.ToLower(strings.TrimSpace(domain))
-	if domain == "" {
-		return false
-	}
-	if matchesCertificatePattern(strings.ToLower(cert.Subject), domain) {
-		return true
-	}
-	for _, name := range cert.DNSNames {
-		if matchesCertificatePattern(strings.ToLower(name), domain) {
-			return true
-		}
-	}
-	return false
-}
-
-func matchesCertificatePattern(pattern, domain string) bool {
-	pattern = strings.TrimSpace(pattern)
-	if pattern == "" {
-		return false
-	}
-	if pattern == domain {
-		return true
-	}
-	if strings.HasPrefix(pattern, "*.") {
-		suffix := strings.TrimPrefix(pattern, "*")
-		return strings.HasSuffix(domain, suffix)
-	}
-	return false
 }

@@ -393,10 +393,6 @@
   justify-self: start;
 }
 
-.admin-oa-nav-item .admin-support-nav-badge .anticon {
-  grid-row: auto;
-}
-
 @media (max-width: 760px) {
   .customer-support {
     right: max(14px, env(safe-area-inset-right));

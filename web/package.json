@@ -32,12 +32,14 @@
     "test:entry-connection": "node scripts/test-entry-connection.mjs",
     "test:admin-phase1": "node scripts/test-admin-phase1.mjs",
     "test:admin-state": "node scripts/test-admin-state.mjs",
-    "test:admin-realtime": "node scripts/test-admin-realtime.mjs"
+    "test:admin-realtime": "node scripts/test-admin-realtime.mjs",
+    "test:ui-cleanup": "node scripts/test-ui-cleanup.mjs",
+    "test:area-telegram": "node scripts/test-area-telegram.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "5.6.1",
-    "@ant-design/plots": "2.6.8",
-    "@ant-design/pro-components": "^2.8.10",
+    "@ant-design/pro-layout": "7.22.7",
+    "@ant-design/pro-table": "3.21.0",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
     "antd": "5.28.0",

@@ -31,7 +31,7 @@ func TestRoutingUpdateHTTPPermissionsAndVersionGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.RegisterAgent(model.AgentRegisterRequest{AgentID: "agent-1"}); err != nil {
+	if _, err := testRegisterAgent(s, model.AgentRegisterRequest{AgentID: "agent-1"}); err != nil {
 		t.Fatal(err)
 	}
 	enabled := true

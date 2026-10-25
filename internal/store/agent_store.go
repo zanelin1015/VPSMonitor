@@ -33,8 +33,8 @@ func (s *SQLiteStore) SeedAgents(agents []config.ServerAgentAuth) error {
 		_, err = s.db.Exec(`
 			INSERT INTO agents (
 				agent_id, agent_name, sort_order, agent_tags_json, agent_token, hostname, public_ipv4, public_ipv6,
-				created_at, updated_at, last_seen_at, xui_config_json, nezha_config_json, renewal_config_json, entry_config_json
-			) VALUES (?, ?, ?, '[]', ?, '', '', '', ?, ?, '', ?, ?, ?, ?)
+				created_at, updated_at, last_seen_at, xui_config_json, renewal_config_json, entry_config_json
+			) VALUES (?, ?, ?, '[]', ?, '', '', '', ?, ?, '', ?, ?, ?)
 			ON CONFLICT(agent_id) DO UPDATE SET
 				agent_name = CASE WHEN excluded.agent_name <> '' THEN excluded.agent_name ELSE agents.agent_name END,
 				agent_token = CASE WHEN excluded.agent_token <> '' THEN excluded.agent_token ELSE agents.agent_token END,
@@ -47,7 +47,6 @@ func (s *SQLiteStore) SeedAgents(agents []config.ServerAgentAuth) error {
 			now,
 			now,
 			xuiJSON,
-			mustJSON(config.NezhaConfig{}),
 			mustJSON(model.VPSRenewalConfig{}),
 			mustJSON(model.AgentEntryConfig{}),
 		)
@@ -58,32 +57,10 @@ func (s *SQLiteStore) SeedAgents(agents []config.ServerAgentAuth) error {
 	return nil
 }
 
-func (s *SQLiteStore) RegisterAgent(req model.AgentRegisterRequest) (model.AgentRegisterResponse, error) {
-	return s.registerAgent(req, "", false, false)
-}
-
-// RegisterAgentWithToken registers a new agent or refreshes an existing one.
-// Existing agent identities must prove possession of their per-agent token so
-// that a shared bootstrap token cannot be used to take over another agent ID.
-func (s *SQLiteStore) RegisterAgentWithToken(req model.AgentRegisterRequest, presentedAgentToken string) (model.AgentRegisterResponse, error) {
-	return s.RegisterAgentWithTokenOrLegacyBootstrap(req, presentedAgentToken, false)
-}
-
-// RegisterAgentWithLegacyBootstrap refreshes an existing identity through the
-// shared bootstrap token. It is only for pre-0.3.25 clients that cannot send
-// their issued per-agent token; newer callers must use RegisterAgentWithToken.
-func (s *SQLiteStore) RegisterAgentWithLegacyBootstrap(req model.AgentRegisterRequest) (model.AgentRegisterResponse, error) {
-	return s.RegisterAgentWithTokenOrLegacyBootstrap(req, "", true)
-}
-
 // RegisterAgentWithTokenOrLegacyBootstrap registers a new agent without a
 // per-agent token, or refreshes an existing legacy agent when explicitly
 // allowed by the caller. Existing agents otherwise require their token.
 func (s *SQLiteStore) RegisterAgentWithTokenOrLegacyBootstrap(req model.AgentRegisterRequest, presentedAgentToken string, allowLegacyBootstrap bool) (model.AgentRegisterResponse, error) {
-	return s.registerAgent(req, presentedAgentToken, true, allowLegacyBootstrap)
-}
-
-func (s *SQLiteStore) registerAgent(req model.AgentRegisterRequest, presentedAgentToken string, enforceExistingToken bool, allowLegacyBootstrap bool) (model.AgentRegisterResponse, error) {
 	if req.AgentID == "" {
 		return model.AgentRegisterResponse{}, fmt.Errorf("agent_id is required")
 	}
@@ -101,7 +78,7 @@ func (s *SQLiteStore) registerAgent(req model.AgentRegisterRequest, presentedAge
 	if err != nil {
 		return model.AgentRegisterResponse{}, err
 	}
-	if found && enforceExistingToken && !allowLegacyBootstrap && record.AgentToken != "" && subtle.ConstantTimeCompare([]byte(record.AgentToken), []byte(presentedAgentToken)) != 1 {
+	if found && !allowLegacyBootstrap && record.AgentToken != "" && subtle.ConstantTimeCompare([]byte(record.AgentToken), []byte(presentedAgentToken)) != 1 {
 		return model.AgentRegisterResponse{}, ErrAgentRegistrationUnauthorized
 	}
 
@@ -151,8 +128,8 @@ func (s *SQLiteStore) registerAgent(req model.AgentRegisterRequest, presentedAge
 		_, err = tx.Exec(`
 			INSERT INTO agents (
 				agent_id, agent_name, customer_display_name, sort_order, agent_tags_json, agent_token, hostname, public_ipv4, public_ipv6,
-				created_at, updated_at, last_seen_at, xui_config_json, nezha_config_json, renewal_config_json, entry_config_json
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?)
+				created_at, updated_at, last_seen_at, xui_config_json, renewal_config_json, entry_config_json
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?)
 		`,
 			record.AgentID,
 			record.AgentName,
@@ -166,7 +143,6 @@ func (s *SQLiteStore) registerAgent(req model.AgentRegisterRequest, presentedAge
 			nowText,
 			nowText,
 			xuiJSON,
-			mustJSON(config.NezhaConfig{}),
 			mustJSON(record.Config.Renewal),
 			mustJSON(record.Config.Entry),
 		)
@@ -233,7 +209,6 @@ func (s *SQLiteStore) registerAgent(req model.AgentRegisterRequest, presentedAge
 				public_ipv6 = CASE WHEN ? <> '' THEN ? ELSE public_ipv6 END,
 				updated_at = ?,
 				xui_config_json = ?,
-				nezha_config_json = ?,
 				renewal_config_json = ?,
 				entry_config_json = ?
 			WHERE agent_id = ?
@@ -250,7 +225,6 @@ func (s *SQLiteStore) registerAgent(req model.AgentRegisterRequest, presentedAge
 			req.PublicIPv6,
 			nowText,
 			xuiJSON,
-			mustJSON(config.NezhaConfig{}),
 			mustJSON(record.Config.Renewal),
 			mustJSON(record.Config.Entry),
 			req.AgentID,
@@ -314,10 +288,6 @@ func (s *SQLiteStore) GetAgentConfig(agentID string) (model.ManagedAgentConfig, 
 	return cfg, true, nil
 }
 
-func (s *SQLiteStore) UpdateAgentConfig(agentID string, cfg model.ManagedAgentConfig) (model.AgentRecord, error) {
-	return s.UpdateAgentConfigWithActor(agentID, cfg, "system")
-}
-
 func (s *SQLiteStore) updateAgentConfig(agentID string, cfg model.ManagedAgentConfig) (model.AgentRecord, error) {
 	if err := model.ValidateEntryConnection(cfg.Entry); err != nil {
 		return model.AgentRecord{}, err
@@ -366,7 +336,7 @@ func (s *SQLiteStore) updateAgentConfig(agentID string, cfg model.ManagedAgentCo
 	}
 	_, err = s.db.Exec(`
 		UPDATE agents
-		SET agent_name = ?, customer_display_name = ?, sort_order = ?, agent_tags_json = ?, updated_at = ?, xui_config_json = ?, nezha_config_json = ?, renewal_config_json = ?, entry_config_json = ?
+		SET agent_name = ?, customer_display_name = ?, sort_order = ?, agent_tags_json = ?, updated_at = ?, xui_config_json = ?, renewal_config_json = ?, entry_config_json = ?
 		WHERE agent_id = ?
 	`,
 		record.AgentName,
@@ -375,7 +345,6 @@ func (s *SQLiteStore) updateAgentConfig(agentID string, cfg model.ManagedAgentCo
 		managedTagsJSON(record.Config),
 		record.UpdatedAt.Format(time.RFC3339Nano),
 		xuiJSON,
-		mustJSON(config.NezhaConfig{}),
 		mustJSON(record.Config.Renewal),
 		mustJSON(record.Config.Entry),
 		agentID,
@@ -486,7 +455,6 @@ func (s *SQLiteStore) ListAgentsWithLatestSnapshots() ([]model.AgentRecord, []mo
 			a.updated_at,
 			a.last_seen_at,
 			a.xui_config_json,
-			a.nezha_config_json,
 			a.renewal_config_json,
 			a.entry_config_json,
 			ls.reported_at,
@@ -510,7 +478,6 @@ func (s *SQLiteStore) ListAgentsWithLatestSnapshots() ([]model.AgentRecord, []mo
 			lastSeenText   string
 			tagsJSON       string
 			xuiJSON        string
-			nezhaJSON      string
 			renewalJSON    string
 			entryJSON      string
 			reportedAtText sql.NullString
@@ -530,7 +497,6 @@ func (s *SQLiteStore) ListAgentsWithLatestSnapshots() ([]model.AgentRecord, []mo
 			&updatedAtText,
 			&lastSeenText,
 			&xuiJSON,
-			&nezhaJSON,
 			&renewalJSON,
 			&entryJSON,
 			&reportedAtText,
@@ -545,7 +511,7 @@ func (s *SQLiteStore) ListAgentsWithLatestSnapshots() ([]model.AgentRecord, []mo
 			lastSeen := parseTime(lastSeenText)
 			record.LastSeenAt = &lastSeen
 		}
-		record.Config, err = s.parseManagedConfig(record.AgentID, record.AgentName, record.CustomerDisplayName, record.SortOrder, tagsJSON, xuiJSON, nezhaJSON, renewalJSON, entryJSON)
+		record.Config, err = s.parseManagedConfig(record.AgentID, record.AgentName, record.CustomerDisplayName, record.SortOrder, tagsJSON, xuiJSON, renewalJSON, entryJSON)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -601,13 +567,12 @@ func (s *SQLiteStore) loadAgentQuery(db queryer, agentID string) (model.AgentRec
 		lastSeenText  string
 		tagsJSON      string
 		xuiJSON       string
-		nezhaJSON     string
 		renewalJSON   string
 		entryJSON     string
 	)
 	err := db.QueryRow(`
 		SELECT agent_id, agent_name, customer_display_name, sort_order, agent_tags_json, agent_token, hostname, public_ipv4, public_ipv6,
-		       created_at, updated_at, last_seen_at, xui_config_json, nezha_config_json, renewal_config_json, entry_config_json
+		       created_at, updated_at, last_seen_at, xui_config_json, renewal_config_json, entry_config_json
 		FROM agents
 		WHERE agent_id = ?
 	`, agentID).Scan(
@@ -624,7 +589,6 @@ func (s *SQLiteStore) loadAgentQuery(db queryer, agentID string) (model.AgentRec
 		&updatedAtText,
 		&lastSeenText,
 		&xuiJSON,
-		&nezhaJSON,
 		&renewalJSON,
 		&entryJSON,
 	)
@@ -641,7 +605,7 @@ func (s *SQLiteStore) loadAgentQuery(db queryer, agentID string) (model.AgentRec
 		lastSeen := parseTime(lastSeenText)
 		record.LastSeenAt = &lastSeen
 	}
-	record.Config, err = s.parseManagedConfig(record.AgentID, record.AgentName, record.CustomerDisplayName, record.SortOrder, tagsJSON, xuiJSON, nezhaJSON, renewalJSON, entryJSON)
+	record.Config, err = s.parseManagedConfig(record.AgentID, record.AgentName, record.CustomerDisplayName, record.SortOrder, tagsJSON, xuiJSON, renewalJSON, entryJSON)
 	if err != nil {
 		return model.AgentRecord{}, false, err
 	}

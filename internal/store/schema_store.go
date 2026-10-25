@@ -181,7 +181,6 @@ func (s *SQLiteStore) init() error {
 			username TEXT NOT NULL COLLATE NOCASE UNIQUE,
 			password_hash TEXT NOT NULL,
 			display_name TEXT NOT NULL DEFAULT '',
-			style_code TEXT NOT NULL DEFAULT '',
 			subscription_token TEXT NOT NULL DEFAULT '',
 			owner_type TEXT NOT NULL DEFAULT 'admin',
 			owner_id INTEGER NOT NULL DEFAULT 1,
@@ -355,6 +354,9 @@ func (s *SQLiteStore) init() error {
 		`
 		CREATE TABLE IF NOT EXISTS telegram_bots (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			area_manager_id INTEGER NOT NULL DEFAULT 0,
+			notify_expiry INTEGER NOT NULL DEFAULT 1,
+			notify_support INTEGER NOT NULL DEFAULT 1,
 			name TEXT NOT NULL,
 			bot_token TEXT NOT NULL DEFAULT '',
 			chat_id TEXT NOT NULL DEFAULT '',
@@ -489,9 +491,6 @@ func (s *SQLiteStore) init() error {
 	if err := s.ensureColumn("admin_sessions", "account_id", "INTEGER NOT NULL DEFAULT 1"); err != nil {
 		return err
 	}
-	if err := s.ensureColumn("customer_accounts", "style_code", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
 	if err := s.ensureColumn("customer_accounts", "subscription_token", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
@@ -577,7 +576,23 @@ func (s *SQLiteStore) init() error {
 			return err
 		}
 	}
+	for _, column := range []struct{ name, definition string }{
+		{"area_manager_id", "INTEGER NOT NULL DEFAULT 0"},
+		{"notify_expiry", "INTEGER NOT NULL DEFAULT 1"},
+		{"notify_support", "INTEGER NOT NULL DEFAULT 1"},
+	} {
+		if err := s.ensureColumn("telegram_bots", column.name, column.definition); err != nil {
+			return err
+		}
+	}
+	if _, err := s.db.Exec(`CREATE TRIGGER IF NOT EXISTS delete_area_manager_telegram_bots
+        AFTER DELETE ON area_manager_accounts BEGIN
+            DELETE FROM telegram_bots WHERE area_manager_id = OLD.id;
+        END`); err != nil {
+		return fmt.Errorf("init area telegram cleanup trigger: %w", err)
+	}
 	indexes := []string{
+		`CREATE INDEX IF NOT EXISTS idx_telegram_bots_owner ON telegram_bots(area_manager_id, enabled);`,
 		`CREATE INDEX IF NOT EXISTS idx_snapshots_agent_reported_at ON snapshots(agent_id, reported_at DESC, id DESC);`,
 		`CREATE INDEX IF NOT EXISTS idx_snapshot_component_events_agent_component ON snapshot_component_events(agent_id, component, id DESC);`,
 		`CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires_at ON admin_sessions(expires_at);`,
@@ -612,6 +627,17 @@ func (s *SQLiteStore) init() error {
 		if _, err := s.db.Exec(stmt); err != nil {
 			return fmt.Errorf("init index: %w", err)
 		}
+	}
+	// Retired installer credentials must not survive as unused plaintext or
+	// require decryption when opening a database created by an older version.
+	if _, err := s.db.Exec(`
+		UPDATE app_settings
+		SET value_json = json_set(json_remove(value_json,
+			'$.xui_username', '$.xui_password', '$.xui_panel_port',
+			'$.xui_web_path', '$.xui_install_script_url'), '$.xui_auto_install', json('false'))
+		WHERE key = 'client_install' AND json_valid(value_json)
+	`); err != nil {
+		return fmt.Errorf("retire x-ui installer settings: %w", err)
 	}
 	return s.retireLegacyTrafficResetActions()
 }

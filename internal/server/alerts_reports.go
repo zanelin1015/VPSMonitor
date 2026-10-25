@@ -19,7 +19,7 @@ func (s *alertService) SendDailyTrafficReport(day time.Time) {
 		log.Printf("daily traffic report: %v", err)
 		return
 	}
-	bots, err := s.store.ListEnabledTelegramBotSecrets()
+	bots, err := s.store.ListEnabledTelegramBotSecrets(0)
 	if err != nil {
 		log.Printf("daily traffic telegram bots: %v", err)
 		return

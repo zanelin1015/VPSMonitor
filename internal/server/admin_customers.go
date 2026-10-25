@@ -241,17 +241,10 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 				req.RevenueCurrency = ""
 				req.RevenueCycle = ""
 			}
-			legacyPriceSync := strings.TrimSpace(req.PriceMode) == "" && (req.RevenueAmount != nil || req.TrafficMultiplier != nil)
 			assignment, err := a.store.CreateCustomerAssignment(customerID, req)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
-			}
-			if (isRootAdmin(user) || isOperatorAdmin(user)) && legacyPriceSync {
-				if err := a.syncCustomerAssignmentRevenue(req, user.Username); err != nil {
-					writeError(w, http.StatusBadRequest, err.Error())
-					return
-				}
 			}
 			writeJSON(w, http.StatusOK, assignment)
 		default:
@@ -348,7 +341,6 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 			req.RevenueCurrency = ""
 			req.RevenueCycle = ""
 		}
-		legacyPriceSync := strings.TrimSpace(req.PriceMode) == "" && (req.RevenueAmount != nil || req.TrafficMultiplier != nil)
 		assignment, err := a.store.UpdateCustomerAssignment(customerID, assignmentID, req)
 		if err != nil {
 			status := http.StatusBadRequest
@@ -357,12 +349,6 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 			}
 			writeError(w, status, err.Error())
 			return
-		}
-		if (isRootAdmin(user) || isOperatorAdmin(user)) && legacyPriceSync {
-			if err := a.syncCustomerAssignmentRevenue(req, user.Username); err != nil {
-				writeError(w, http.StatusBadRequest, err.Error())
-				return
-			}
 		}
 		writeJSON(w, http.StatusOK, assignment)
 	case http.MethodDelete:
@@ -507,85 +493,6 @@ func customerAssignmentForwardingTargetAgents(links []model.TopologyLinkView) ma
 func customerAssignmentAgentTargetsForwarding(agentID string, targets map[string]struct{}) bool {
 	_, ok := targets[strings.ToLower(strings.TrimSpace(agentID))]
 	return ok
-}
-
-func (a *App) syncCustomerAssignmentRevenue(req model.CustomerAssignmentRequest, actor string) error {
-	if req.RevenueAmount == nil && req.TrafficMultiplier == nil {
-		return nil
-	}
-	if req.AgentID == "" || req.InboundID <= 0 {
-		return nil
-	}
-	cfg, found, err := a.store.GetAgentConfig(req.AgentID)
-	if err != nil {
-		return err
-	}
-	if !found {
-		return fmt.Errorf("agent not found")
-	}
-	amount := 0.0
-	currency := strings.ToUpper(strings.TrimSpace(req.RevenueCurrency))
-	if currency != "USDT" {
-		currency = "CNY"
-	}
-	cycle := strings.ToLower(strings.TrimSpace(req.RevenueCycle))
-	switch cycle {
-	case "quarter", "semiannual", "year":
-	case "halfyear", "half-year", "half_year", "half_yearly":
-		cycle = "semiannual"
-	default:
-		cycle = "month"
-	}
-	if req.RevenueAmount != nil {
-		amount = max(*req.RevenueAmount, 0)
-	}
-	trafficMultiplier := 1.0
-	if req.TrafficMultiplier != nil {
-		trafficMultiplier = normalizeClientTrafficMultiplier(*req.TrafficMultiplier)
-	}
-	billing := model.XUIClientBillingConfig{
-		ClientID:          strings.TrimSpace(req.ClientID),
-		InboundID:         req.InboundID,
-		InboundTag:        strings.TrimSpace(req.InboundTag),
-		Email:             strings.TrimSpace(req.ClientEmail),
-		TrafficMultiplier: trafficMultiplier,
-		RevenueAmount:     amount,
-		RevenueCurrency:   currency,
-		RevenueCycle:      cycle,
-		ExpireCycle:       cycle,
-	}
-	key := customerBillingKey(billing.InboundID, billing.InboundTag, billing.Email)
-	emailKey := customerBillingEmailKey(billing.InboundID, billing.Email)
-	replaced := false
-	for index, existing := range cfg.Renewal.ClientBillings {
-		if (billing.ClientID == "" || existing.ClientID != billing.ClientID) && customerBillingKey(existing.InboundID, existing.InboundTag, existing.Email) != key &&
-			(emailKey == "" || customerBillingEmailKey(existing.InboundID, existing.Email) != emailKey) {
-			continue
-		}
-		billing.StartTime = existing.StartTime
-		billing.ExpireTime = existing.ExpireTime
-		billing.ExpireAutoRenew = existing.ExpireAutoRenew
-		if req.RevenueAmount == nil {
-			billing.RevenueAmount = existing.RevenueAmount
-			billing.RevenueCurrency = existing.RevenueCurrency
-			billing.RevenueCycle = existing.RevenueCycle
-			billing.ExpireCycle = existing.ExpireCycle
-		}
-		if req.TrafficMultiplier == nil {
-			billing.TrafficMultiplier = normalizeClientTrafficMultiplier(existing.TrafficMultiplier)
-		}
-		cfg.Renewal.ClientBillings[index] = billing
-		replaced = true
-		break
-	}
-	if !replaced {
-		cfg.Renewal.ClientBillings = append(cfg.Renewal.ClientBillings, billing)
-	}
-	_, err = a.store.UpdateAgentConfigWithActor(req.AgentID, cfg, actor)
-	if err == nil {
-		a.clearCustomerOverviewCache()
-	}
-	return err
 }
 
 func normalizeClientTrafficMultiplier(value float64) float64 {

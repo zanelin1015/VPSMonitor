@@ -290,10 +290,6 @@ export function renderNodeClientHierarchySections(
   )
 }
 
-export function nodeClientSearchValue(node: XUINodeView): string {
-  return String(node.tag || node.remark || node.realm_target_inbound_tag || node.realm_target_inbound_id || node.id || '').trim()
-}
-
 function nodeMatchesClient(node: XUINodeView, client: XUIClientView): boolean {
   if (sameInboundIdentity(node.id, node.tag, client.inbound_id, client.inbound_tag)) {
     return true

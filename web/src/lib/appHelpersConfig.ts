@@ -1,4 +1,4 @@
-import type { AgentEntryConfig, AgentEntryMapping, HAProxyConfig, ManagedAgentConfig, RealmForwardConfig, VPSRenewalConfig, XUIOverview } from '../types'
+import type { AgentEntryConfig, AgentEntryMapping, HAProxyConfig, ManagedAgentConfig, RealmForwardConfig, XUIOverview } from '../types'
 import type { ConfigSectionKey } from './appHelperTypes'
 import { DEFAULT_COST_CURRENCY } from './currency'
 import { normalizeRenewalConfig } from './appHelpersBilling'

@@ -264,38 +264,32 @@ export function useAgentDetailData({
     }
   }
 
-  async function loadXUIActions(agentID = selectedAgentId, options: LoadOptions = {}) {
+  const actionRequestsRef = useRef(new Map<string, Promise<XUIAction[] | undefined>>())
+  async function loadXUIActions(agentID = selectedAgentId, options: LoadOptions = {}): Promise<XUIAction[] | undefined> {
     if (!agentID) {
       setXUIActions([])
       return
     }
-    const requestKey = `actions:${agentID}`
-    if (inFlightRequestsRef.current.has(requestKey)) {
-      return
-    }
-    inFlightRequestsRef.current.add(requestKey)
+    const existing = actionRequestsRef.current.get(agentID)
+    if (existing) return existing
     const silent = Boolean(options.silent)
-    if (!silent) {
-      setXUIActionsLoading(true)
-    }
-    try {
-      const data = await fetchJSON<XUIAction[]>(`/api/v1/agents/${agentID}/xui/actions?limit=30`)
-      if (!isCurrentAgentRequest(agentID)) {
-        return
+    if (!silent) setXUIActionsLoading(true)
+    const request = (async () => {
+      try {
+        const data = await fetchJSON<XUIAction[]>(`/api/v1/agents/${agentID}/xui/actions?limit=100`)
+        const actions = Array.isArray(data) ? data : []
+        if (isCurrentAgentRequest(agentID)) setXUIActions(actions)
+        return actions
+      } catch (error) {
+        if (isUnauthorized(error)) setAdminUser(null)
+        else if (!silent && isCurrentAgentRequest(agentID)) message.error(error instanceof Error ? error.message : '加载 x-ui 操作记录失败')
+      } finally {
+        if (!silent && isCurrentAgentRequest(agentID)) setXUIActionsLoading(false)
+        actionRequestsRef.current.delete(agentID)
       }
-      setXUIActions(Array.isArray(data) ? data : [])
-    } catch (error) {
-      if (isUnauthorized(error)) {
-        setAdminUser(null)
-      } else if (!silent && isCurrentAgentRequest(agentID)) {
-        message.error(error instanceof Error ? error.message : '加载 x-ui 操作记录失败')
-      }
-    } finally {
-      if (!silent && isCurrentAgentRequest(agentID)) {
-        setXUIActionsLoading(false)
-      }
-      inFlightRequestsRef.current.delete(requestKey)
-    }
+    })()
+    actionRequestsRef.current.set(agentID, request)
+    return request
   }
 
   async function loadAgentLogs(agentID = selectedAgentId, options: LoadOptions = {}) {

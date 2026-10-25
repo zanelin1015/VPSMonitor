@@ -184,7 +184,6 @@ function patchFromStreamSettings(stream: Record<string, unknown>, currentForm: X
   const ws = objectMap(stream.wsSettings)
   const wsHeaders = objectMap(ws.headers)
   const grpc = objectMap(stream.grpcSettings)
-  const tcp = objectMap(stream.tcpSettings)
   const http = objectMap(stream.httpSettings)
   return {
     security,

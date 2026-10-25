@@ -8,7 +8,6 @@
 }
 
 .customer-console-theme .customer-page-shell { background: var(--bg); }
-.customer-console-theme .customer-page-shell .page-background { display: none; }
 .customer-console-theme .customer-shell { padding-top: 0; }
 :root .customer-console-theme .customer-dashboard-header {
   align-items: center;

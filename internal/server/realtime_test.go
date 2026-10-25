@@ -41,7 +41,7 @@ func TestDispatchXUIActionRealtimeAttachesCurrentAPITokenWithoutPersistingIt(t *
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer sqliteStore.Close()
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "agent-token", AgentName: "Agent Token"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "agent-token", AgentName: "Agent Token"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
 	cfg, found, err := sqliteStore.GetAgentConfig("agent-token")
@@ -49,10 +49,10 @@ func TestDispatchXUIActionRealtimeAttachesCurrentAPITokenWithoutPersistingIt(t *
 		t.Fatalf("GetAgentConfig found=%v err=%v", found, err)
 	}
 	cfg.XUI = config.XUIConfig{Enabled: true, BaseURL: "https://xui.example", APIToken: "latest-server-token"}
-	if _, err := sqliteStore.UpdateAgentConfig("agent-token", cfg); err != nil {
+	if _, err := testUpdateAgentConfig(sqliteStore, "agent-token", cfg); err != nil {
 		t.Fatalf("UpdateAgentConfig: %v", err)
 	}
-	action, err := sqliteStore.CreateXUIAction("agent-token", model.XUIActionRequest{
+	action, err := testCreateXUIAction(sqliteStore, "agent-token", model.XUIActionRequest{
 		Kind: model.XUIActionUpdateClientTraffic,
 		Payload: map[string]any{
 			"inbound_id":  1,
@@ -94,7 +94,7 @@ func TestAttachXUIActionAuthOnlyTargetsPanelActions(t *testing.T) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer sqliteStore.Close()
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "agent-poll", AgentName: "Agent Poll"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "agent-poll", AgentName: "Agent Poll"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
 	cfg, found, err := sqliteStore.GetAgentConfig("agent-poll")
@@ -102,7 +102,7 @@ func TestAttachXUIActionAuthOnlyTargetsPanelActions(t *testing.T) {
 		t.Fatalf("GetAgentConfig found=%v err=%v", found, err)
 	}
 	cfg.XUI = config.XUIConfig{Enabled: true, APIToken: "poll-token"}
-	if _, err := sqliteStore.UpdateAgentConfig("agent-poll", cfg); err != nil {
+	if _, err := testUpdateAgentConfig(sqliteStore, "agent-poll", cfg); err != nil {
 		t.Fatalf("UpdateAgentConfig: %v", err)
 	}
 	actions := []model.XUIAction{
@@ -175,10 +175,10 @@ func TestDispatchXUIActionRealtimeSendsUpdateClient(t *testing.T) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer sqliteStore.Close()
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "agent-1", AgentName: "Agent 1"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "agent-1", AgentName: "Agent 1"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
-	action, err := sqliteStore.CreateXUIAction("agent-1", model.XUIActionRequest{
+	action, err := testCreateXUIAction(sqliteStore, "agent-1", model.XUIActionRequest{
 		Kind:    model.XUIActionUpdateClient,
 		Payload: map[string]any{"version": "0.2.38"},
 	})
@@ -220,10 +220,10 @@ func TestDispatchPendingXUIActionsRealtimeSendsExistingPendingUpdateClient(t *te
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer sqliteStore.Close()
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "agent-1", AgentName: "Agent 1"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "agent-1", AgentName: "Agent 1"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
-	action, err := sqliteStore.CreateXUIAction("agent-1", model.XUIActionRequest{
+	action, err := testCreateXUIAction(sqliteStore, "agent-1", model.XUIActionRequest{
 		Kind:    model.XUIActionUpdateClient,
 		Payload: map[string]any{"version": "0.2.38"},
 	})
@@ -531,7 +531,7 @@ func TestAreaManagerDashboardKeepsAuthorizedForwardingRelayOnly(t *testing.T) {
 	defer sqliteStore.Close()
 
 	for _, agentID := range []string{"gz", "hk-relay", "dmit", "unrelated"} {
-		if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: agentID, AgentName: agentID + " internal"}); err != nil {
+		if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: agentID, AgentName: agentID + " internal"}); err != nil {
 			t.Fatalf("RegisterAgent %s: %v", agentID, err)
 		}
 	}
@@ -547,7 +547,7 @@ func TestAreaManagerDashboardKeepsAuthorizedForwardingRelayOnly(t *testing.T) {
 		{AgentID: "gz", InboundID: 20001, InboundTag: "haproxy:20001", Enabled: &enabled},
 		{AgentID: "dmit", InboundID: 1, InboundTag: "in-20001-tcp", ClientEmail: "alice@example.com", Enabled: &enabled},
 	} {
-		if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, assignment); err != nil {
+		if _, err := testCreateAreaManagerAssignment(sqliteStore, manager.ID, assignment); err != nil {
 			t.Fatalf("CreateAreaManagerAssignment: %v", err)
 		}
 	}
@@ -597,7 +597,7 @@ func TestAreaManagerDashboardKeepsAuthorizedFinanceClientsForBindingDiagnostics(
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer sqliteStore.Close()
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "us", AgentName: "US"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "us", AgentName: "US"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
 	enabled := true
@@ -607,7 +607,7 @@ func TestAreaManagerDashboardKeepsAuthorizedFinanceClientsForBindingDiagnostics(
 	if err != nil {
 		t.Fatalf("CreateAreaManager: %v", err)
 	}
-	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+	if _, err := testCreateAreaManagerAssignment(sqliteStore, manager.ID, model.AreaManagerAssignmentRequest{
 		AgentID: "us", InboundID: 7, InboundTag: "in-36897-tcp", ClientEmail: "user1", Enabled: &enabled,
 	}); err != nil {
 		t.Fatalf("CreateAreaManagerAssignment: %v", err)
@@ -636,7 +636,7 @@ func TestAreaManagerXUIOverviewFiltersUnassignedClients(t *testing.T) {
 	}
 	defer sqliteStore.Close()
 
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{
 		AgentID:   "hk",
 		AgentName: "HK Internal",
 	}); err != nil {
@@ -657,7 +657,7 @@ func TestAreaManagerXUIOverviewFiltersUnassignedClients(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAreaManager: %v", err)
 	}
-	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+	if _, err := testCreateAreaManagerAssignment(sqliteStore, manager.ID, model.AreaManagerAssignmentRequest{
 		AgentID:          "hk",
 		InboundID:        1001,
 		InboundTag:       "HK:20001",
@@ -808,7 +808,7 @@ func TestAreaManagerDashboardTrafficUsesAssignedClients(t *testing.T) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer sqliteStore.Close()
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
 	enabled := true
@@ -818,7 +818,7 @@ func TestAreaManagerDashboardTrafficUsesAssignedClients(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAreaManager: %v", err)
 	}
-	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+	if _, err := testCreateAreaManagerAssignment(sqliteStore, manager.ID, model.AreaManagerAssignmentRequest{
 		AgentID: "hk", InboundID: 1, InboundTag: "node-1", ClientEmail: "assigned@example.com", Enabled: &enabled,
 	}); err != nil {
 		t.Fatalf("CreateAreaManagerAssignment: %v", err)
@@ -880,7 +880,7 @@ func TestAreaManagerDashboardTrafficIncludesAuthorizedRealmForwardedClients(t *t
 		{AgentID: "gz", AgentName: "GZ Entry", PublicIPv4: "192.0.2.10"},
 		{AgentID: "hk", AgentName: "HK Exit", PublicIPv4: "192.0.2.20"},
 	} {
-		if _, err := sqliteStore.RegisterAgent(agent); err != nil {
+		if _, err := testRegisterAgent(sqliteStore, agent); err != nil {
 			t.Fatalf("RegisterAgent %s: %v", agent.AgentID, err)
 		}
 	}
@@ -898,7 +898,7 @@ func TestAreaManagerDashboardTrafficIncludesAuthorizedRealmForwardedClients(t *t
 		TargetPort:    20001,
 		Network:       "tcp",
 	}}}
-	if _, err := sqliteStore.UpdateAgentConfig("gz", gzConfig); err != nil {
+	if _, err := testUpdateAgentConfig(sqliteStore, "gz", gzConfig); err != nil {
 		t.Fatalf("UpdateAgentConfig gz: %v", err)
 	}
 
@@ -913,7 +913,7 @@ func TestAreaManagerDashboardTrafficIncludesAuthorizedRealmForwardedClients(t *t
 		{AgentID: "gz", InboundID: 20001, InboundTag: "realm:gz-20001", Enabled: &enabled},
 		{AgentID: "hk", InboundID: 1001, InboundTag: "node-1", ClientEmail: "assigned@example.com", Enabled: &enabled},
 	} {
-		if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, assignment); err != nil {
+		if _, err := testCreateAreaManagerAssignment(sqliteStore, manager.ID, assignment); err != nil {
 			t.Fatalf("CreateAreaManagerAssignment: %v", err)
 		}
 	}
@@ -967,7 +967,7 @@ func TestAreaManagerDashboardTrafficIncludesAuthorizedHAProxyForwardedClients(t 
 	}
 	defer sqliteStore.Close()
 	for _, agentID := range []string{"gz", "hk-b", "hk-c", "dmit"} {
-		if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: agentID, AgentName: agentID}); err != nil {
+		if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: agentID, AgentName: agentID}); err != nil {
 			t.Fatalf("RegisterAgent %s: %v", agentID, err)
 		}
 	}
@@ -978,7 +978,7 @@ func TestAreaManagerDashboardTrafficIncludesAuthorizedHAProxyForwardedClients(t 
 			t.Fatalf("GetAgentConfig %s: found=%v err=%v", agentID, found, err)
 		}
 		mutate(&cfg)
-		if _, err := sqliteStore.UpdateAgentConfig(agentID, cfg); err != nil {
+		if _, err := testUpdateAgentConfig(sqliteStore, agentID, cfg); err != nil {
 			t.Fatalf("UpdateAgentConfig %s: %v", agentID, err)
 		}
 	}
@@ -1010,7 +1010,7 @@ func TestAreaManagerDashboardTrafficIncludesAuthorizedHAProxyForwardedClients(t 
 		{AgentID: "gz", InboundID: 10001, InboundTag: "haproxy:10001", Enabled: &enabled},
 		{AgentID: "dmit", InboundID: 7, InboundTag: "dmit-in", ClientEmail: "assigned@example.com", Enabled: &enabled},
 	} {
-		if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, assignment); err != nil {
+		if _, err := testCreateAreaManagerAssignment(sqliteStore, manager.ID, assignment); err != nil {
 			t.Fatalf("CreateAreaManagerAssignment: %v", err)
 		}
 	}
@@ -1072,7 +1072,7 @@ func TestAreaManagerXUIOverviewMigratesLegacyRealmPortGrantToHAProxy(t *testing.
 	}
 	defer sqliteStore.Close()
 	for _, agentID := range []string{"gz", "dmit"} {
-		if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: agentID, AgentName: agentID}); err != nil {
+		if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: agentID, AgentName: agentID}); err != nil {
 			t.Fatalf("RegisterAgent %s: %v", agentID, err)
 		}
 	}
@@ -1091,7 +1091,7 @@ func TestAreaManagerXUIOverviewMigratesLegacyRealmPortGrantToHAProxy(t *testing.
 		ID: "ha-20001", Enabled: true, ListenPort: 20001,
 		Primary: model.HAProxyRealmTarget{AgentID: "dmit", Port: 443},
 	}}}
-	if _, err := sqliteStore.UpdateAgentConfig("gz", gzConfig); err != nil {
+	if _, err := testUpdateAgentConfig(sqliteStore, "gz", gzConfig); err != nil {
 		t.Fatalf("UpdateAgentConfig gz: %v", err)
 	}
 
@@ -1109,7 +1109,7 @@ func TestAreaManagerXUIOverviewMigratesLegacyRealmPortGrantToHAProxy(t *testing.
 		{AgentID: "gz", InboundID: 20001, InboundTag: "realm:20001", Enabled: &enabled},
 		{AgentID: "dmit", InboundID: 1, InboundTag: "in-20001-tcp", ClientEmail: "VN-111", Enabled: &enabled},
 	} {
-		if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, assignment); err != nil {
+		if _, err := testCreateAreaManagerAssignment(sqliteStore, manager.ID, assignment); err != nil {
 			t.Fatalf("CreateAreaManagerAssignment: %v", err)
 		}
 	}
@@ -1158,10 +1158,10 @@ func TestAreaManagerXUIOverviewAllowsRealmForwardedClientsFromAssignedEntry(t *t
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer sqliteStore.Close()
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "gz", AgentName: "GZ Entry"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "gz", AgentName: "GZ Entry"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK Exit"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK Exit"}); err != nil {
 		t.Fatalf("RegisterAgent hk: %v", err)
 	}
 	gzConfig, found, err := sqliteStore.GetAgentConfig("gz")
@@ -1169,7 +1169,7 @@ func TestAreaManagerXUIOverviewAllowsRealmForwardedClientsFromAssignedEntry(t *t
 		t.Fatalf("GetAgentConfig gz: found=%v err=%v", found, err)
 	}
 	gzConfig.CustomerDisplayName = "GZ Public"
-	if _, err := sqliteStore.UpdateAgentConfig("gz", gzConfig); err != nil {
+	if _, err := testUpdateAgentConfig(sqliteStore, "gz", gzConfig); err != nil {
 		t.Fatalf("UpdateAgentConfig gz display name: %v", err)
 	}
 	hkConfig, found, err := sqliteStore.GetAgentConfig("hk")
@@ -1177,7 +1177,7 @@ func TestAreaManagerXUIOverviewAllowsRealmForwardedClientsFromAssignedEntry(t *t
 		t.Fatalf("GetAgentConfig hk: found=%v err=%v", found, err)
 	}
 	hkConfig.CustomerDisplayName = "HK Public"
-	if _, err := sqliteStore.UpdateAgentConfig("hk", hkConfig); err != nil {
+	if _, err := testUpdateAgentConfig(sqliteStore, "hk", hkConfig); err != nil {
 		t.Fatalf("UpdateAgentConfig hk display name: %v", err)
 	}
 	enabled := true
@@ -1190,7 +1190,7 @@ func TestAreaManagerXUIOverviewAllowsRealmForwardedClientsFromAssignedEntry(t *t
 	if err != nil {
 		t.Fatalf("CreateAreaManager: %v", err)
 	}
-	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+	if _, err := testCreateAreaManagerAssignment(sqliteStore, manager.ID, model.AreaManagerAssignmentRequest{
 		AgentID:     "gz",
 		InboundID:   20001,
 		InboundTag:  "realm:gz-20001",
@@ -1199,7 +1199,7 @@ func TestAreaManagerXUIOverviewAllowsRealmForwardedClientsFromAssignedEntry(t *t
 	}); err != nil {
 		t.Fatalf("CreateAreaManagerAssignment realm: %v", err)
 	}
-	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+	if _, err := testCreateAreaManagerAssignment(sqliteStore, manager.ID, model.AreaManagerAssignmentRequest{
 		AgentID:     "hk",
 		InboundID:   1001,
 		InboundTag:  "HK:20001",
@@ -1278,10 +1278,10 @@ func TestAreaManagerXUIOverviewRejectsRealmForwardedClientsWithoutTargetGrant(t 
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer sqliteStore.Close()
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "gz", AgentName: "GZ Entry"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "gz", AgentName: "GZ Entry"}); err != nil {
 		t.Fatalf("RegisterAgent gz: %v", err)
 	}
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK Exit"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK Exit"}); err != nil {
 		t.Fatalf("RegisterAgent hk: %v", err)
 	}
 	enabled := true
@@ -1294,7 +1294,7 @@ func TestAreaManagerXUIOverviewRejectsRealmForwardedClientsWithoutTargetGrant(t 
 	if err != nil {
 		t.Fatalf("CreateAreaManager: %v", err)
 	}
-	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+	if _, err := testCreateAreaManagerAssignment(sqliteStore, manager.ID, model.AreaManagerAssignmentRequest{
 		AgentID:     "gz",
 		InboundID:   20001,
 		InboundTag:  "realm:gz-20001",
@@ -1369,7 +1369,7 @@ func TestAreaManagerAssignmentPickerFiltersUnauthorizedClients(t *testing.T) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer sqliteStore.Close()
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
 	enabled := true
@@ -1382,7 +1382,7 @@ func TestAreaManagerAssignmentPickerFiltersUnauthorizedClients(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAreaManager: %v", err)
 	}
-	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+	if _, err := testCreateAreaManagerAssignment(sqliteStore, manager.ID, model.AreaManagerAssignmentRequest{
 		AgentID:     "hk",
 		InboundID:   1001,
 		InboundTag:  "HK:20001",
@@ -1437,7 +1437,7 @@ func TestAreaManagerAssignmentPickerKeepsWholeNodeClients(t *testing.T) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer sqliteStore.Close()
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
 	enabled := true
@@ -1450,7 +1450,7 @@ func TestAreaManagerAssignmentPickerKeepsWholeNodeClients(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAreaManager: %v", err)
 	}
-	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+	if _, err := testCreateAreaManagerAssignment(sqliteStore, manager.ID, model.AreaManagerAssignmentRequest{
 		AgentID:    "hk",
 		InboundID:  1001,
 		InboundTag: "HK:20001",

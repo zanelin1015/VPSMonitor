@@ -81,12 +81,7 @@ func (a *App) handlePublicSupport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, err.Error())
 		return
 	}
-	if !a.supportPresence.onlineForCustomer(user) {
-		claimed, claimErr := a.store.ClaimSupportNotification(conversation.ID, supportNotificationCooldown)
-		if claimErr == nil && claimed {
-			go a.sendOfflineSupportNotification(user, conversation, message, requestPublicBaseURL(r))
-		}
-	}
+	a.notifySupportMessage(user, conversation, message, requestPublicBaseURL(r))
 	writeJSON(w, http.StatusCreated, message)
 }
 

@@ -91,10 +91,6 @@ export function normalizeClientTrafficMultiplier(value?: number): number {
   return Math.min(100, Math.max(0.1, multiplier))
 }
 
-export function scaleClientTraffic(value: number, multiplier?: number): number {
-  return Math.max(0, Number(value || 0)) * normalizeClientTrafficMultiplier(multiplier)
-}
-
 export function findClientBilling(items: XUIClientBillingConfig[] | undefined, client: XUIClientView): XUIClientBillingConfig | undefined {
   if (client.client_id) {
     const byID = (items || []).find((item) => item.client_id === client.client_id)

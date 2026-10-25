@@ -19,13 +19,13 @@ func TestNativeClientResetAPIValidatesAndDispatches(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	r, err := s.RegisterAgent(model.AgentRegisterRequest{AgentID: "native-reset"})
+	r, err := testRegisterAgent(s, model.AgentRegisterRequest{AgentID: "native-reset"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	cfg := r.Config
 	cfg.XUI.Enabled, cfg.XUI.APIToken = true, "current-panel-token"
-	if _, err := s.UpdateAgentConfig(r.AgentID, cfg); err != nil {
+	if _, err := testUpdateAgentConfig(s, r.AgentID, cfg); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.EnsureAdminAccount("admin", "password123"); err != nil {

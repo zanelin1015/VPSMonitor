@@ -163,9 +163,6 @@ export function renderCNFlowPanel(props: {
   canRestartXUI: boolean
   xuiRestartLoading: boolean
   onRestartXUI: () => void
-  canUpdate3XUI: boolean
-  xuiUpdateLoading: boolean
-  onUpdate3XUI: () => void
   searchText: string
   onSearchTextChange: (value: string) => void
 }) {
@@ -186,9 +183,6 @@ export function renderCNFlowPanel(props: {
     canRestartXUI,
     xuiRestartLoading,
     onRestartXUI,
-    canUpdate3XUI,
-    xuiUpdateLoading,
-    onUpdate3XUI,
     searchText,
     onSearchTextChange,
   } = props
@@ -412,17 +406,7 @@ export function renderCNFlowPanel(props: {
             <Button icon={<ReloadOutlined />} type="primary" disabled={!canRefreshCurrentNode} loading={currentNodeLoading} onClick={onRefreshCurrentNode}>
               立即获取节点信息
             </Button>
-            <Popconfirm
-              title="升级 3x-ui？"
-              description="将通过在线 Client 执行 3x-ui 官方 update.sh 升级脚本，过程中可能短暂影响 x-ui / Xray。"
-              okText="升级"
-              cancelText="取消"
-              onConfirm={onUpdate3XUI}
-            >
-              <Button disabled={!canUpdate3XUI} loading={xuiUpdateLoading}>
-                升级 3x-ui
-              </Button>
-            </Popconfirm>
+
             <Popconfirm
               title="重启 x-ui / Xray？"
               description="将通过在线 Client 的 WebSocket 执行 x-ui 服务重启；失败日志会写入操作记录。"

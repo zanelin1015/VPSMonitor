@@ -110,7 +110,7 @@ func TestClientUpdateLogRecordsExecutionFailureAndLeaseTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.MarkXUIActionRunning("agent", action.ID); err != nil {
+	if _, claimed, err := s.ClaimXUIAction("agent", action.ID); err != nil || !claimed {
 		t.Fatal(err)
 	}
 	if _, err := s.db.Exec(`UPDATE xui_actions SET claimed_at=? WHERE id=?`, time.Now().Add(-time.Hour).UTC().Format(time.RFC3339Nano), action.ID); err != nil {

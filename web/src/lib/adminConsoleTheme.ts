@@ -1,6 +1,6 @@
-export { adminConsoleTheme, consolePalette, consoleCSSVariables } from '../theme/tokens'
+export { adminConsoleTheme, consoleCSSVariables, consolePalette } from '../theme/tokens'
 
-export function isInternalConsoleRoute(pathname: string, search = ''): boolean {
+export function isInternalConsoleRoute(pathname: string, _search = ''): boolean {
   return pathname !== '/customer' && pathname !== '/recommendations'
 }
 

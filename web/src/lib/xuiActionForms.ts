@@ -3,14 +3,6 @@ export const XUI_ACTION_KINDS = [
   { value: 'upsert_routing_rule', label: '新增 / 修改转发规则' },
 ]
 
-export interface TLSCertificateSelectionForm {
-  mode: 'none' | 'domain_auto' | 'inventory' | 'manual'
-  inventory_id: string
-  domain: string
-  certificate_file: string
-  key_file: string
-}
-
 export interface XUIInboundClientForm {
   email: string
   uuid: string
@@ -22,24 +14,6 @@ export interface XUIInboundClientForm {
   comment: string
   sub_id: string
   enabled: boolean
-}
-
-export interface XUIInboundActionForm {
-  remark: string
-  tag: string
-  enabled: boolean
-  listen: string
-  port: number
-  protocol: string
-  transport: string
-  security: string
-  server_name: string
-  ws_path: string
-  ws_host: string
-  sniffing: boolean
-  tls: TLSCertificateSelectionForm
-  clients: XUIInboundClientForm[]
-  restart: boolean
 }
 
 export interface XUIOutboundActionForm {
@@ -99,16 +73,6 @@ export interface XUIAddClientActionForm {
   restart: boolean
 }
 
-export function defaultTLSCertificateSelection(): TLSCertificateSelectionForm {
-  return {
-    mode: 'none',
-    inventory_id: '',
-    domain: '',
-    certificate_file: '',
-    key_file: '',
-  }
-}
-
 export function defaultInboundClientForm(): XUIInboundClientForm {
   return {
     email: 'user@example.com',
@@ -121,26 +85,6 @@ export function defaultInboundClientForm(): XUIInboundClientForm {
     comment: '',
     sub_id: '',
     enabled: true,
-  }
-}
-
-export function defaultInboundActionForm(): XUIInboundActionForm {
-  return {
-    remark: 'vless-auto-443',
-    tag: '',
-    enabled: true,
-    listen: '',
-    port: 443,
-    protocol: 'vless',
-    transport: 'tcp',
-    security: 'none',
-    server_name: '',
-    ws_path: '/',
-    ws_host: '',
-    sniffing: true,
-    tls: defaultTLSCertificateSelection(),
-    clients: [defaultInboundClientForm()],
-    restart: true,
   }
 }
 
@@ -267,79 +211,6 @@ export function buildUpsertRoutingActionPayload(form: XUIRoutingActionForm, outb
     rule.outboundTag = outboundTag
     delete rule.balancerTag
   }
-  return payload
-}
-
-export function buildInboundActionPayload(form: XUIInboundActionForm): Record<string, unknown> {
-  if (!form.port) {
-    throw new Error('入站端口不能为空')
-  }
-  if (!form.protocol) {
-    throw new Error('入站协议不能为空')
-  }
-
-  const protocol = normalizeOutboundProtocol(form.protocol)
-  const tag = form.tag.trim() || `in-${protocol}-${form.port}`
-  const clients = form.clients.map((client, index) => buildInboundClientPayload(client, protocol, index))
-  const settings: Record<string, unknown> = {
-    clients,
-    fallbacks: [],
-  }
-  if (protocol === 'vless') {
-    settings.decryption = 'none'
-  }
-
-  const streamSettings: Record<string, unknown> = {
-    network: form.transport,
-    security: form.security,
-    tcpSettings: { acceptProxyProtocol: false, header: { type: 'none' } },
-  }
-  if (form.transport === 'ws') {
-    streamSettings.wsSettings = {
-      path: form.ws_path || '/',
-      headers: form.ws_host ? { Host: form.ws_host } : {},
-    }
-  }
-  if (form.security === 'tls') {
-    streamSettings.tlsSettings = {
-      serverName: form.server_name.trim(),
-      alpn: ['h2', 'http/1.1'],
-      certificates: [],
-    }
-  }
-
-  const payload: Record<string, unknown> = {
-    inbound: {
-      remark: form.remark.trim(),
-      tag,
-      enable: form.enabled,
-      listen: form.listen.trim(),
-      port: form.port,
-      protocol,
-      total: 0,
-      expiryTime: 0,
-      settings: JSON.stringify(settings),
-      streamSettings: JSON.stringify(streamSettings),
-      sniffing: JSON.stringify({
-        enabled: form.sniffing,
-        destOverride: ['http', 'tls', 'quic', 'fakedns'],
-        metadataOnly: false,
-        routeOnly: false,
-      }),
-    },
-    restart: true,
-  }
-
-  if (form.security === 'tls' && form.tls.mode !== 'none') {
-    payload.tls_certificate = {
-      mode: form.tls.mode,
-      inventory_id: form.tls.inventory_id.trim(),
-      domain: (form.tls.domain || form.server_name).trim(),
-      certificate_file: form.tls.certificate_file.trim(),
-      key_file: form.tls.key_file.trim(),
-    }
-  }
-
   return payload
 }
 

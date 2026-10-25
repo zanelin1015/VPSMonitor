@@ -4,7 +4,7 @@ import { createServer } from 'vite'
 import { createElement as h } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { App as AntApp, ConfigProvider } from 'antd'
-import { getMenuData } from '@ant-design/pro-components'
+import { getMenuData } from '@ant-design/pro-layout'
 
 const originalWindow = globalThis.window
 const vite = await createServer({

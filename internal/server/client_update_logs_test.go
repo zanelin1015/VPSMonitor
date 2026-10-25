@@ -85,7 +85,7 @@ func TestClientUpdateBatchPersistsSkippedClientsAndMatchesPreview(t *testing.T) 
 	}
 	defer s.Close()
 	for _, id := range []string{"new-client", "old-client", "latest-client"} {
-		if _, err := s.RegisterAgent(model.AgentRegisterRequest{AgentID: id, AgentName: id}); err != nil {
+		if _, err := testRegisterAgent(s, model.AgentRegisterRequest{AgentID: id, AgentName: id}); err != nil {
 			t.Fatal(err)
 		}
 		version := "0.3.35"
@@ -134,7 +134,7 @@ func TestClientUpdateLogRequiresNewVersionReportBeforeSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if _, err := s.RegisterAgent(model.AgentRegisterRequest{AgentID: "agent"}); err != nil {
+	if _, err := testRegisterAgent(s, model.AgentRegisterRequest{AgentID: "agent"}); err != nil {
 		t.Fatal(err)
 	}
 	_, action, err := s.RecordClientUpdate(model.ClientUpdateLog{AgentID: "agent", Decision: "dispatched", TargetVersion: "0.3.36"}, map[string]any{"version": "v0.3.36"})

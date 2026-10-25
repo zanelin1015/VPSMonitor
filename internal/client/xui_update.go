@@ -3,11 +3,8 @@ package client
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
 	"strconv"
 	"strings"
-	"time"
 )
 
 func update3XUI(ctx context.Context, payload map[string]any) (map[string]any, error) {
@@ -22,29 +19,6 @@ func update3XUI(ctx context.Context, payload map[string]any) (map[string]any, er
 		"reason":         "the upstream 3x-ui updater does not publish a verifiable package digest",
 	}
 	return result, fmt.Errorf("automatic 3x-ui updates are disabled because the upstream updater does not publish a verifiable package digest")
-}
-
-func detectLocal3XUIVersion(ctx context.Context) string {
-	candidates := [][]string{}
-	if commandExists("x-ui") {
-		candidates = append(candidates, []string{"x-ui", "version"})
-	}
-	for _, path := range []string{"/usr/local/x-ui/x-ui", "/usr/bin/x-ui"} {
-		if _, err := os.Stat(path); err == nil {
-			candidates = append(candidates, []string{path, "version"})
-		}
-	}
-	for _, command := range candidates {
-		runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		output, err := exec.CommandContext(runCtx, command[0], command[1:]...).CombinedOutput()
-		cancel()
-		if err == nil && runCtx.Err() == nil {
-			if version := normalize3XUIVersion(string(output)); version != "" {
-				return version
-			}
-		}
-	}
-	return ""
 }
 
 func normalize3XUIVersion(value string) string {

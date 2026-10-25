@@ -12,25 +12,6 @@ import (
 	"bridge-core/internal/model"
 )
 
-func (a *App) handlePublicFrontendSettings(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	settings, _, err := a.store.GetFrontendSettings()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	// Customer announcements are only exposed through the authenticated
-	// customer overview endpoint.
-	settings.Announcements = nil
-	// Announcement history is an admin-only audit trail and must not be
-	// exposed through the public settings endpoint either.
-	settings.AnnouncementHistory = nil
-	writeJSON(w, http.StatusOK, settings)
-}
-
 func (a *App) handleAdminFrontendSettings(w http.ResponseWriter, r *http.Request) {
 	if _, _, ok := a.requireRootAdmin(w, r); !ok {
 		return
@@ -317,16 +298,7 @@ func validateClientInstallSettings(req model.ClientInstallSettingsRequest) (mode
 	req.PollInterval = strings.TrimSpace(req.PollInterval)
 	req.RealmVersion = strings.TrimSpace(req.RealmVersion)
 	req.RealmDownloadBaseURL = strings.TrimRight(strings.TrimSpace(req.RealmDownloadBaseURL), "/")
-	req.XUIUsername = strings.TrimSpace(req.XUIUsername)
-	req.XUIPassword = strings.TrimSpace(req.XUIPassword)
-	req.XUIInstallScriptURL = strings.TrimSpace(req.XUIInstallScriptURL)
-	req.XUIWebPath = normalizeXUIWebPath(req.XUIWebPath)
 	req.XUIAutoInstall = false
-	req.XUIUsername = ""
-	req.XUIPassword = ""
-	req.XUIPanelPort = 0
-	req.XUIWebPath = ""
-	req.XUIInstallScriptURL = ""
 	if req.RealmAutoInstall && req.HAProxyAutoInstall {
 		return req, fmt.Errorf("HAProxy 与 Realm 只能选择一个自动安装")
 	}
@@ -363,18 +335,6 @@ func validateClientInstallSettings(req model.ClientInstallSettingsRequest) (mode
 		}
 	}
 	return req, nil
-}
-
-func normalizeXUIWebPath(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return ""
-	}
-	value = "/" + strings.Trim(value, "/")
-	if value == "/" {
-		return ""
-	}
-	return value + "/"
 }
 
 func validateHTTPURL(value, label string) error {

@@ -107,6 +107,7 @@ export function OperatorManagementPanel(props: {
         loading={loading}
         columns={columns}
         dataSource={operators}
+        scroll={{ x: 1000, y: '100%' }}
         pagination={false}
         locale={{ emptyText: '暂无运营管理员' }}
       />

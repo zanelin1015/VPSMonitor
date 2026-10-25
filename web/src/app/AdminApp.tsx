@@ -37,7 +37,6 @@ import { AgentRail } from '../components/DashboardAgentRail'
 import { OverviewSummaryCard } from '../components/DashboardOverviewSummary'
 import { renderCNFlowPanel } from '../components/DashboardTopologyPanels'
 import { LoginScreen } from '../components/LoginScreen'
-import { VisualEffects } from '../components/VisualEffects'
 
 const AssetsPage = lazy(() => import('../pages/admin/AssetsPage').then((module) => ({ default: module.AssetsPage })))
 const CustomerManagementModal = lazy(() =>
@@ -152,9 +151,9 @@ export function AdminApp() {
 
   const currentOverview = overview?.agent_id === selectedAgentId ? overview : null
 
-  const composer = useXUIActionComposer({ ...session, ...navigationState, ...details, currentOverview, message })
+  const composer = useXUIActionComposer({ ...session, ...navigationState, ...dashboard, ...details, currentOverview, message })
   const { xuiActionModalOpen, importURLClient } = composer
-  const systemTools = useAdminSystemTools(setAdminUser)
+  const systemTools = useAdminSystemTools(setAdminUser, adminUser)
   const {
     accessLogFilters,
     accessLogs,
@@ -163,7 +162,6 @@ export function AdminApp() {
     clientInstallModalOpen,
     frontendSettingsForm,
     frontendSettingsLoading,
-    frontendSettingsModalOpen,
     frontendSettingsSaving,
     scheduledTasks,
     scheduledTasksLoading,
@@ -172,7 +170,6 @@ export function AdminApp() {
     updateModalOpen,
     loadAccessLogs,
     openClientInstallModal,
-    openFrontendSettingsModal,
     saveFrontendSettings,
     saveScheduledTasks,
     setAccessLogFilters,
@@ -181,7 +178,7 @@ export function AdminApp() {
     setUpdateModalOpen,
   } = systemTools
   const remote = useXUIRemoteActions({ ...session, ...navigationState, ...dashboard, ...details, ...composer })
-  const { xuiRestartLoading, xuiUpdateLoading, restartXUIService, update3XUI } = remote
+  const { xuiRestartLoading, restartXUIService } = remote
 
   const centerPanelOpen = topologyVisible || Boolean(selectedAgent)
   const navigation = createAppNavigationHandlers({ ...navigationState, ...dashboard, runTransition: startTransition })
@@ -256,7 +253,6 @@ export function AdminApp() {
   if (sessionLoading) {
     return (
       <>
-        <VisualEffects />
         <div className="login-shell">
           <Spin size="large" />
         </div>
@@ -267,7 +263,6 @@ export function AdminApp() {
   if (!adminUser) {
     return (
       <>
-        <VisualEffects />
         <LoginScreen
           consoleAppearance
           loginForm={loginForm}
@@ -283,7 +278,6 @@ export function AdminApp() {
     accountModalOpen ||
     clientInstallModalOpen ||
     customerModalOpen ||
-    frontendSettingsModalOpen ||
     Boolean(importURLClient) ||
     telegramBotModalOpen ||
     updateModalOpen ||
@@ -342,12 +336,11 @@ export function AdminApp() {
     serverVersionLabel,
     onOpenAccount: openAccountModal,
     onOpenClientInstall: () => void openClientInstallModal(),
-    onOpenTelegram: () => setTelegramBotModalOpen(true),
+    onOpenTelegram: () => { setTelegramBotModalOpen(true); void systemTools.loadTelegramBots() },
     onOpenCustomers: openCustomersPage,
     onOpenRecommendations: openRecommendationsPage,
     onOpenFrontProxies: openFrontProxiesPage,
     onOpenSupport: openSupportPage,
-    onOpenFrontendSettings: () => void openFrontendSettingsModal(true),
     onOpenAnnouncements: openSettingsPage,
     onOpenUpdates: () => setUpdateModalOpen(true),
     onLogout: () => void logout(),
@@ -574,13 +567,6 @@ export function AdminApp() {
         onRestartXUI: () => {
           if (selectedAgentId) {
             void restartXUIService(selectedAgentId)
-          }
-        },
-        canUpdate3XUI: !isAreaManagerAccount && Boolean(selectedAgentId),
-        xuiUpdateLoading,
-        onUpdate3XUI: () => {
-          if (selectedAgentId) {
-            void update3XUI(selectedAgentId)
           }
         },
         searchText: topologySearch,

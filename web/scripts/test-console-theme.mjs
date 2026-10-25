@@ -57,7 +57,7 @@ assert.doesNotMatch(css, /--bg:|--blue:|--green:/, 'the console stylesheet canno
 const provider = await readFile(new URL('../src/components/AdminConsoleTheme.tsx', import.meta.url), 'utf8')
 const login = await readFile(new URL('../src/components/LoginScreen.tsx', import.meta.url), 'utf8')
 const customer = await readFile(new URL('../src/components/CustomerPortal.tsx', import.meta.url), 'utf8')
-const detail = await readFile(new URL('../src/components/AgentDetailPanel.tsx', import.meta.url), 'utf8')
+const detail = (await readFile(new URL('../src/components/AgentDetailPanel.tsx', import.meta.url), 'utf8')) + '\n' + (await readFile(new URL('../src/components/AgentClientTables.tsx', import.meta.url), 'utf8')) + '\n' + (await readFile(new URL('../src/components/useAgentRoutingTools.tsx', import.meta.url), 'utf8'))
 const railCSS = await readFile(new URL('../src/styles/agent-rail.css', import.meta.url), 'utf8')
 assert.match(detail, /<Switch\s+className="client-enabled-switch"\s+checked=\{configuredEnabled\}/, 'configured client enablement uses the themed switch')
 assert.match(railCSS, /\.client-enabled-switch:focus-visible\s*\{[^}]*outline: 2px solid var\(--blue\);/, 'the switch retains a visible themed keyboard focus')

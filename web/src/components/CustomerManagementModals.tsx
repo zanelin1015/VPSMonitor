@@ -3,13 +3,11 @@ import { Button, Card, Checkbox, Col, Empty, Input, InputNumber, Modal, Row, Sel
 import type { ColumnsType } from 'antd/es/table'
 import { SaveOutlined } from '@ant-design/icons'
 
-import type { AreaManagerAssignment, CustomerAdminView, CustomerAssignment } from '../types'
+import type { CustomerAdminView, CustomerAssignment } from '../types'
 import { REVENUE_CURRENCIES } from '../lib/currency'
 import { customerEntryURL } from '../lib/appBasePath'
 import type { AreaManagerFormState, AssignmentFormState, CustomerFormState } from './CustomerManagementHelpers'
 import {
-  areaAssignmentKey,
-  DEFAULT_ACCOUNT_PASSWORD,
   emptyAssignmentForm,
   emptyCustomerForm,
   isRealmAssignmentDraft,

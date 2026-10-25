@@ -106,7 +106,7 @@ type rowsScanner interface {
 	Close() error
 }
 
-func (s *SQLiteStore) parseManagedConfig(agentID, agentName, customerDisplayName string, sortOrder int, tagsJSON, xuiJSON, nezhaJSON, renewalJSON, entryJSON string) (model.ManagedAgentConfig, error) {
+func (s *SQLiteStore) parseManagedConfig(agentID, agentName, customerDisplayName string, sortOrder int, tagsJSON, xuiJSON, renewalJSON, entryJSON string) (model.ManagedAgentConfig, error) {
 	cfg := model.ManagedAgentConfig{
 		AgentID:             agentID,
 		AgentName:           agentName,
@@ -471,19 +471,6 @@ func calculateClientBillingExpireTime(startMillis int64, cycle string, now time.
 		months = 1
 	}
 	return model.ClientBillingCycleBoundary(time.UnixMilli(startMillis), months).UnixMilli()
-}
-
-func addClientBillingCycle(value time.Time, cycle string) time.Time {
-	switch cycle {
-	case "quarter":
-		return value.AddDate(0, 3, 0)
-	case "semiannual":
-		return value.AddDate(0, 6, 0)
-	case "year":
-		return value.AddDate(1, 0, 0)
-	default:
-		return value.AddDate(0, 1, 0)
-	}
 }
 
 func hasRenewalConfig(cfg model.VPSRenewalConfig) bool {

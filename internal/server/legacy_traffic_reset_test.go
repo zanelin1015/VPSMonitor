@@ -19,7 +19,7 @@ func TestLegacyTrafficResetEndpointsCannotResumeOrQueueReset(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	agent, err := s.RegisterAgent(model.AgentRegisterRequest{AgentID: "agent"})
+	agent, err := testRegisterAgent(s, model.AgentRegisterRequest{AgentID: "agent"})
 	if err != nil {
 		t.Fatal(err)
 	}

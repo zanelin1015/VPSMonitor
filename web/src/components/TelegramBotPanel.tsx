@@ -8,6 +8,7 @@ import { formatDateTime } from '../lib/appHelpers'
 const { Text, Title } = Typography
 
 export function TelegramBotPanel(props: {
+  areaManager?: boolean
   bots: TelegramBot[]
   loading: boolean
   saving: boolean
@@ -21,7 +22,7 @@ export function TelegramBotPanel(props: {
   onDelete: (id: number) => void
   onTest: (id: number) => void
 }) {
-  const { bots, loading, saving, editingID, form, onFormChange, onSave, onRefresh, onEdit, onCancelEdit, onDelete, onTest } = props
+  const { areaManager = false, bots, loading, saving, editingID, form, onFormChange, onSave, onRefresh, onEdit, onCancelEdit, onDelete, onTest } = props
   const update = (patch: Partial<TelegramBotForm>) => onFormChange({ ...form, ...patch })
   return (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -29,7 +30,7 @@ export function TelegramBotPanel(props: {
         type="info"
         showIcon
         message="告警发送方式"
-        description="Client 离线和用户在线客服消息会即时推送；X-UI 采集异常、Xray 异常、X-UI Client 到期、续费周期和流量告警统一在每天北京时间 09:00 推送。同一告警默认 6 小时内不会重复刷屏。"
+        description={areaManager ? "仅通知当前区域账号有权限的客户端，以及归属本区域的访客和用户消息。客户端到期在每天北京时间 09:00 推送，提前 7 天提醒、3 天内紧急提醒；访客和用户留言即时推送，同一会话每 30 秒最多推送一次，可在客服页面查看完整消息。" : "Client 离线和用户在线客服消息会即时推送；X-UI 采集异常、Xray 异常、X-UI Client 到期、续费周期和流量告警统一在每天北京时间 09:00 推送。同一告警默认 6 小时内不会重复刷屏。"}
       />
       <Card className="config-section-card" bordered={false}>
         <Title level={4}>{editingID ? '编辑机器人' : '新增机器人'}</Title>
@@ -52,10 +53,14 @@ export function TelegramBotPanel(props: {
           </Col>
           <Col xs={24} md={8}>
             <div className="switch-row">
-              <span>启用告警</span>
+              <span>启用通知</span>
               <Switch checked={form.enabled} onChange={(checked) => update({ enabled: checked })} />
             </div>
           </Col>
+          {areaManager ? <>
+            <Col xs={24} md={12}><div className="switch-row"><span>客户端到期提醒</span><Switch aria-label="客户端到期提醒" checked={form.notify_expiry} onChange={checked => update({ notify_expiry: checked })} /></div></Col>
+            <Col xs={24} md={12}><div className="switch-row"><span>访客 / 用户消息</span><Switch aria-label="访客和用户消息通知" checked={form.notify_support} onChange={checked => update({ notify_support: checked })} /></div></Col>
+          </> : null}
         </Row>
         <Space style={{ marginTop: 16 }}>
           <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={onSave}>

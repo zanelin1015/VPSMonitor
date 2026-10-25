@@ -2223,7 +2223,7 @@ func TestXUIExecuteAddClientUsesAddClientAPI(t *testing.T) {
 				if added["email"] != "bob@example.com" {
 					t.Fatalf("unexpected added client: %#v", added)
 				}
-				if !looksLikeUUID(stringValue(added["id"])) || shouldGenerateInboundClientUUID(stringValue(added["id"])) {
+				if !looksLikeUUID(stringValue(added["id"])) {
 					t.Fatalf("expected random client uuid, got %#v", added["id"])
 				}
 				if added["id"] == "11111111-2222-4333-8444-555555555555" {
@@ -2759,16 +2759,6 @@ func TestXUIExecuteDeleteClientFallsBackToInboundUpdate(t *testing.T) {
 	clients := settings["clients"].([]any)
 	if len(clients) != 1 || clients[0].(map[string]any)["email"] != "bob@example.com" {
 		t.Fatalf("expected only bob to remain, got %#v", clients)
-	}
-}
-
-func TestLocalXUIRestartSuccessOutput(t *testing.T) {
-	output := "The OS release is: debian \x1b[0;32m[INF] x-ui and xray Restarted successfully \x1b[0m"
-	if !isLocalXUIRestartSuccessOutput(output) {
-		t.Fatalf("expected success output to be recognized")
-	}
-	if isLocalXUIRestartSuccessOutput("x-ui restart failed") {
-		t.Fatalf("did not expect failed output to be recognized")
 	}
 }
 

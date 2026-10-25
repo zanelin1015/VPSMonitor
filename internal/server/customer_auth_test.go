@@ -21,7 +21,7 @@ func customerAuthFixture(t *testing.T) (*App, model.CustomerAdminView) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.Close() })
-	customer, err := s.CreateCustomer(model.CustomerAccountRequest{Username: "alice", Password: "password123"})
+	customer, err := testCreateCustomer(s, model.CustomerAccountRequest{Username: "alice", Password: "password123"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,3 +1,4 @@
+import { bestAgentAddress } from '../lib/managedConfigHelpers'
 import { Alert, Badge, Button, Card, Col, Input, InputNumber, List, Row, Select, Space, Switch, Tag, Tooltip, Typography } from 'antd'
 import { DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 
@@ -361,8 +362,4 @@ function realmTargetValue(target?: HAProxyRealmTarget): string {
 
 function emptyTarget(): HAProxyRealmTarget {
   return { agent_id: '', realm_rule_id: '', address: '', port: 0 }
-}
-
-function bestAgentAddress(agent: AgentListItem): string {
-  return agent.entry?.import_domain || agent.entry?.addresses?.find(Boolean) || agent.summary?.observed_ip || agent.summary?.public_ipv4 || agent.summary?.public_ipv6 || ''
 }

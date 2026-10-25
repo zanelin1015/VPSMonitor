@@ -16,7 +16,6 @@ func TestFrontendSettingsPersistCustomerAnnouncements(t *testing.T) {
 	defer store.Close()
 
 	saved, err := store.SaveFrontendSettings(model.FrontendSettings{
-		CustomCode: "<style>body { color: red; }</style>",
 		Announcements: []model.CustomerAnnouncement{
 			{
 				Enabled:   true,
@@ -53,7 +52,7 @@ func TestFrontendSettingsPersistCustomerAnnouncements(t *testing.T) {
 	if len(loaded.AnnouncementHistory) == 0 {
 		t.Fatalf("expected announcement history to be seeded for the current announcement")
 	}
-	legacySave, err := store.SaveFrontendSettings(model.FrontendSettings{CustomCode: "legacy client"})
+	legacySave, err := store.SaveFrontendSettings(model.FrontendSettings{})
 	if err != nil {
 		t.Fatalf("SaveFrontendSettings without announcements: %v", err)
 	}
@@ -62,7 +61,6 @@ func TestFrontendSettingsPersistCustomerAnnouncements(t *testing.T) {
 	}
 
 	if _, err := store.SaveFrontendSettings(model.FrontendSettings{
-		CustomCode:    "<style>body { color: red; }</style>",
 		Announcements: []model.CustomerAnnouncement{},
 	}); err != nil {
 		t.Fatalf("SaveFrontendSettings after removal: %v", err)

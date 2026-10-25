@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -13,6 +14,78 @@ import (
 	"bridge-core/internal/model"
 	"bridge-core/internal/store"
 )
+
+func TestCustomerAssignmentPricingDoesNotMutateSharedClientBilling(t *testing.T) {
+	s, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.EnsureAdminAccount("admin", "password123"); err != nil {
+		t.Fatal(err)
+	}
+	user, ok, err := s.AuthenticateAdmin("admin", "password123")
+	if err != nil || !ok {
+		t.Fatalf("authenticate: ok=%v err=%v", ok, err)
+	}
+	token, _, err := s.CreateAdminSession(user, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testRegisterAgent(s, model.AgentRegisterRequest{AgentID: "shared-agent", AgentName: "Shared"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := s.GetAgentConfig("shared-agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Renewal.ClientBillings = []model.XUIClientBillingConfig{{InboundID: 7, Email: "shared@example.com", TrafficMultiplier: 2, RevenueAmount: 99, RevenueCurrency: "CNY", RevenueCycle: "month"}}
+	if _, err := testUpdateAgentConfig(s, "shared-agent", cfg); err != nil {
+		t.Fatal(err)
+	}
+	before, _, err := s.GetAgentConfig("shared-agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	customer, err := testCreateCustomer(s, model.CustomerAccountRequest{Username: "buyer", Password: "password123"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &App{store: s}
+	baseURL := "https://monitor.example/api/v1/admin/customers/" + strconv.FormatInt(customer.ID, 10) + "/assignments"
+	request := func(method, url, body string) model.CustomerAssignment {
+		t.Helper()
+		req := httptest.NewRequest(method, url, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: adminSessionCookieName, Value: token})
+		rec := httptest.NewRecorder()
+		app.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s assignment: %d %s", method, rec.Code, rec.Body.String())
+		}
+		var assignment model.CustomerAssignment
+		if err := json.Unmarshal(rec.Body.Bytes(), &assignment); err != nil {
+			t.Fatal(err)
+		}
+		after, _, err := s.GetAgentConfig("shared-agent")
+		if err != nil || !reflect.DeepEqual(before, after) {
+			t.Fatalf("customer assignment changed shared client config: err=%v before=%#v after=%#v", err, before, after)
+		}
+		return assignment
+	}
+	// Old callers may still send pricing and multiplier without an explicit price mode.
+	legacyBody := `{"agent_id":"shared-agent","inbound_id":7,"client_email":"shared@example.com","revenue_amount":188,"traffic_multiplier":8}`
+	assignment := request(http.MethodPost, baseURL, legacyBody)
+	if assignment.PriceMode != "inherit" || assignment.RevenueAmount != nil {
+		t.Fatalf("legacy assignment should inherit pricing: %#v", assignment)
+	}
+	url := baseURL + "/" + strconv.FormatInt(assignment.ID, 10)
+	request(http.MethodPut, url, legacyBody)
+	override := request(http.MethodPut, url, `{"agent_id":"shared-agent","inbound_id":7,"client_email":"shared@example.com","price_mode":"override","revenue_amount":188,"revenue_currency":"USDT","revenue_cycle":"quarter"}`)
+	if override.PriceMode != "override" || override.RevenueAmount == nil || *override.RevenueAmount != 188 || override.RevenueCurrency != "USDT" {
+		t.Fatalf("customer-specific price should remain supported: %#v", override)
+	}
+}
 
 func TestAdminCustomerSubscriptionURLIsScopedToVisibleCustomers(t *testing.T) {
 	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
@@ -32,7 +105,7 @@ func TestAdminCustomerSubscriptionURLIsScopedToVisibleCustomers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAreaManager: %v", err)
 	}
-	rootCustomer, err := sqliteStore.CreateCustomer(model.CustomerAccountRequest{Username: "root-subscription", Password: "password123"})
+	rootCustomer, err := testCreateCustomer(sqliteStore, model.CustomerAccountRequest{Username: "root-subscription", Password: "password123"})
 	if err != nil {
 		t.Fatalf("CreateCustomer: %v", err)
 	}
@@ -81,58 +154,6 @@ func TestAdminCustomerSubscriptionURLIsScopedToVisibleCustomers(t *testing.T) {
 	}
 }
 
-func TestSyncCustomerAssignmentRevenueCreatesBilling(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "bridge.db")
-	sqliteStore, err := store.NewSQLiteStore(dbPath)
-	if err != nil {
-		t.Fatalf("NewSQLiteStore: %v", err)
-	}
-	defer sqliteStore.Close()
-
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{
-		AgentID:   "hk-01",
-		AgentName: "HK 01",
-	}); err != nil {
-		t.Fatalf("RegisterAgent: %v", err)
-	}
-	app := &App{store: sqliteStore}
-	amount := 188.5
-	multiplier := 2.0
-	if err := app.syncCustomerAssignmentRevenue(model.CustomerAssignmentRequest{
-		AgentID:           "hk-01",
-		InboundID:         7,
-		InboundTag:        "entry-hk",
-		ClientEmail:       "alice@example.com",
-		TrafficMultiplier: &multiplier,
-		RevenueAmount:     &amount,
-		RevenueCurrency:   "usdt",
-		RevenueCycle:      "semiannual",
-	}, "admin"); err != nil {
-		t.Fatalf("syncCustomerAssignmentRevenue: %v", err)
-	}
-
-	cfg, found, err := sqliteStore.GetAgentConfig("hk-01")
-	if err != nil {
-		t.Fatalf("GetAgentConfig: %v", err)
-	}
-	if !found {
-		t.Fatalf("expected agent config")
-	}
-	if len(cfg.Renewal.ClientBillings) != 1 {
-		t.Fatalf("expected 1 billing, got %#v", cfg.Renewal.ClientBillings)
-	}
-	billing := cfg.Renewal.ClientBillings[0]
-	if billing.InboundID != 7 || billing.InboundTag != "entry-hk" || billing.Email != "alice@example.com" {
-		t.Fatalf("unexpected billing target: %#v", billing)
-	}
-	if billing.TrafficMultiplier != 2 || billing.RevenueAmount != amount || billing.RevenueCurrency != "USDT" || billing.RevenueCycle != "semiannual" {
-		t.Fatalf("unexpected billing revenue: %#v", billing)
-	}
-	if billing.ExpireCycle != "semiannual" {
-		t.Fatalf("expected expire cycle to follow revenue cycle, got %#v", billing)
-	}
-}
-
 func TestReconcileCustomerAssignmentUsesStableClientIDBeforeLegacyEmail(t *testing.T) {
 	clients := []model.XUIClientView{{
 		ClientID:   "client-uuid-current",
@@ -169,141 +190,5 @@ func TestReconcileCustomerAssignmentUsesStableClientIDBeforeLegacyEmail(t *testi
 	}, clients)
 	if status != "mismatch" || client == nil {
 		t.Fatalf("comment-based assignment should be flagged for repair: status=%s client=%#v", status, client)
-	}
-}
-
-func TestSyncCustomerAssignmentRevenueMatchesExistingBillingByEmail(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "bridge.db")
-	sqliteStore, err := store.NewSQLiteStore(dbPath)
-	if err != nil {
-		t.Fatalf("NewSQLiteStore: %v", err)
-	}
-	defer sqliteStore.Close()
-
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{
-		AgentID:   "us-01",
-		AgentName: "US 01",
-		SeedConfig: model.ManagedAgentConfig{
-			Renewal: model.VPSRenewalConfig{
-				ClientBillings: []model.XUIClientBillingConfig{
-					{
-						InboundID:         9,
-						InboundTag:        "",
-						Email:             "bob@example.com",
-						TrafficMultiplier: 2,
-						RevenueAmount:     30,
-						RevenueCurrency:   "CNY",
-						RevenueCycle:      "month",
-						ExpireTime:        1760000000000,
-						ExpireCycle:       "year",
-						ExpireAutoRenew:   true,
-					},
-				},
-			},
-		},
-	}); err != nil {
-		t.Fatalf("RegisterAgent: %v", err)
-	}
-	app := &App{store: sqliteStore}
-	amount := 45.5
-	if err := app.syncCustomerAssignmentRevenue(model.CustomerAssignmentRequest{
-		AgentID:         "us-01",
-		InboundID:       9,
-		InboundTag:      "us-west-entry",
-		ClientEmail:     "bob@example.com",
-		RevenueAmount:   &amount,
-		RevenueCurrency: "cny",
-		RevenueCycle:    "year",
-	}, "admin"); err != nil {
-		t.Fatalf("syncCustomerAssignmentRevenue: %v", err)
-	}
-
-	cfg, found, err := sqliteStore.GetAgentConfig("us-01")
-	if err != nil {
-		t.Fatalf("GetAgentConfig: %v", err)
-	}
-	if !found {
-		t.Fatalf("expected agent config")
-	}
-	if len(cfg.Renewal.ClientBillings) != 1 {
-		t.Fatalf("expected existing billing to be updated in place, got %#v", cfg.Renewal.ClientBillings)
-	}
-	billing := cfg.Renewal.ClientBillings[0]
-	if billing.InboundTag != "us-west-entry" {
-		t.Fatalf("expected inbound tag to be refreshed, got %#v", billing)
-	}
-	if billing.RevenueAmount != amount || billing.RevenueCycle != "year" || billing.RevenueCurrency != "CNY" {
-		t.Fatalf("unexpected refreshed revenue: %#v", billing)
-	}
-	if billing.ExpireTime != 1760000000000 || billing.ExpireCycle != "year" || !billing.ExpireAutoRenew {
-		t.Fatalf("expected expiry fields to be preserved, got %#v", billing)
-	}
-	if billing.TrafficMultiplier != 2 {
-		t.Fatalf("expected existing traffic multiplier to be preserved, got %#v", billing)
-	}
-}
-
-func TestSyncCustomerAssignmentRevenueUpdatesOnlyTrafficMultiplier(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "bridge.db")
-	sqliteStore, err := store.NewSQLiteStore(dbPath)
-	if err != nil {
-		t.Fatalf("NewSQLiteStore: %v", err)
-	}
-	defer sqliteStore.Close()
-
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{
-		AgentID:   "vn-01",
-		AgentName: "VN 01",
-		SeedConfig: model.ManagedAgentConfig{
-			Renewal: model.VPSRenewalConfig{
-				ClientBillings: []model.XUIClientBillingConfig{{
-					InboundID:       11,
-					InboundTag:      "vn-entry",
-					Email:           "alice@example.com",
-					RevenueAmount:   90,
-					RevenueCurrency: "USDT",
-					RevenueCycle:    "quarter",
-					StartTime:       1750000000000,
-					ExpireTime:      1760000000000,
-					ExpireCycle:     "quarter",
-					ExpireAutoRenew: true,
-				}},
-			},
-		},
-	}); err != nil {
-		t.Fatalf("RegisterAgent: %v", err)
-	}
-
-	beforeCfg, found, err := sqliteStore.GetAgentConfig("vn-01")
-	if err != nil || !found {
-		t.Fatalf("GetAgentConfig before update: found=%v err=%v", found, err)
-	}
-	before := beforeCfg.Renewal.ClientBillings[0]
-
-	app := &App{store: sqliteStore}
-	multiplier := 2.5
-	if err := app.syncCustomerAssignmentRevenue(model.CustomerAssignmentRequest{
-		AgentID:           "vn-01",
-		InboundID:         11,
-		InboundTag:        "vn-entry",
-		ClientEmail:       "alice@example.com",
-		TrafficMultiplier: &multiplier,
-	}, "admin"); err != nil {
-		t.Fatalf("syncCustomerAssignmentRevenue: %v", err)
-	}
-
-	cfg, found, err := sqliteStore.GetAgentConfig("vn-01")
-	if err != nil || !found {
-		t.Fatalf("GetAgentConfig: found=%v err=%v", found, err)
-	}
-	billing := cfg.Renewal.ClientBillings[0]
-	if billing.TrafficMultiplier != 2.5 {
-		t.Fatalf("expected updated traffic multiplier, got %#v", billing)
-	}
-	if billing.RevenueAmount != before.RevenueAmount || billing.RevenueCurrency != before.RevenueCurrency || billing.RevenueCycle != before.RevenueCycle {
-		t.Fatalf("expected revenue fields to stay unchanged, got %#v", billing)
-	}
-	if billing.StartTime != before.StartTime || billing.ExpireTime != before.ExpireTime || billing.ExpireCycle != before.ExpireCycle || billing.ExpireAutoRenew != before.ExpireAutoRenew {
-		t.Fatalf("expected expiry fields to stay unchanged, got %#v", billing)
 	}
 }

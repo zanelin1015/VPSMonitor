@@ -99,14 +99,23 @@ func (a *App) handleAreaManagerPasswordUpdate(w http.ResponseWriter, r *http.Req
 }
 
 func (a *App) handleAdminTelegramBots(w http.ResponseWriter, r *http.Request, parts []string) {
-	if _, _, ok := a.requireRootAdmin(w, r); !ok {
+	user, _, ok := a.requireAdmin(w, r)
+	if !ok {
 		return
+	}
+	if !isRootAdmin(user) && !isAreaManager(user) {
+		writeError(w, http.StatusForbidden, "telegram settings are not available to this role")
+		return
+	}
+	var ownerID int64
+	if isAreaManager(user) {
+		ownerID = user.ID
 	}
 
 	if len(parts) == 0 || parts[0] == "" {
 		switch r.Method {
 		case http.MethodGet:
-			bots, err := a.store.ListTelegramBots()
+			bots, err := a.store.ListTelegramBots(ownerID)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
@@ -114,11 +123,11 @@ func (a *App) handleAdminTelegramBots(w http.ResponseWriter, r *http.Request, pa
 			writeJSON(w, http.StatusOK, bots)
 		case http.MethodPost:
 			var req model.TelegramBotRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16*1024)).Decode(&req); err != nil {
 				writeError(w, http.StatusBadRequest, fmt.Sprintf("decode telegram bot: %v", err))
 				return
 			}
-			bot, err := a.store.CreateTelegramBot(req)
+			bot, err := a.store.CreateTelegramBot(req, ownerID)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
@@ -139,11 +148,11 @@ func (a *App) handleAdminTelegramBots(w http.ResponseWriter, r *http.Request, pa
 		switch r.Method {
 		case http.MethodPut:
 			var req model.TelegramBotRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16*1024)).Decode(&req); err != nil {
 				writeError(w, http.StatusBadRequest, fmt.Sprintf("decode telegram bot: %v", err))
 				return
 			}
-			bot, err := a.store.UpdateTelegramBot(id, req)
+			bot, err := a.store.UpdateTelegramBot(id, req, ownerID)
 			if err != nil {
 				status := http.StatusBadRequest
 				if strings.Contains(err.Error(), "not found") {
@@ -154,7 +163,7 @@ func (a *App) handleAdminTelegramBots(w http.ResponseWriter, r *http.Request, pa
 			}
 			writeJSON(w, http.StatusOK, bot)
 		case http.MethodDelete:
-			if err := a.store.DeleteTelegramBot(id); err != nil {
+			if err := a.store.DeleteTelegramBot(id, ownerID); err != nil {
 				status := http.StatusBadRequest
 				if strings.Contains(err.Error(), "not found") {
 					status = http.StatusNotFound
@@ -174,7 +183,7 @@ func (a *App) handleAdminTelegramBots(w http.ResponseWriter, r *http.Request, pa
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
-		bot, found, err := a.store.GetTelegramBotSecret(id)
+		bot, found, err := a.store.GetTelegramBotSecret(id, ownerID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return

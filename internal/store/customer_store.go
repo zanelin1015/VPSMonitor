@@ -26,7 +26,7 @@ func (s *SQLiteStore) ListCustomersForOwner(ownerType string, ownerID int64) ([]
 
 func (s *SQLiteStore) listCustomers(ownerType string, ownerID int64) ([]model.CustomerAdminView, error) {
 	query := `
-		SELECT id, username, display_name, style_code, owner_type, owner_id, enabled, created_at, updated_at
+		SELECT id, username, display_name, owner_type, owner_id, enabled, created_at, updated_at
 		FROM customer_accounts
 		WHERE guest_ip = ''
 	`
@@ -105,8 +105,8 @@ func (s *SQLiteStore) GetOrCreateGuestCustomer(ip string, ttl time.Duration, own
 		}
 		_, err = s.db.Exec(`
 			INSERT OR IGNORE INTO customer_accounts
-			(username, password_hash, display_name, style_code, subscription_token, owner_type, owner_id, enabled, guest_ip, guest_expires_at, created_at, updated_at)
-			VALUES (?, ?, ?, '', '', ?, ?, 1, ?, ?, ?, ?)
+			(username, password_hash, display_name, subscription_token, owner_type, owner_id, enabled, guest_ip, guest_expires_at, created_at, updated_at)
+			VALUES (?, ?, ?, '', ?, ?, 1, ?, ?, ?, ?)
 		`, username, hash, displayName, ownerType, ownerID, ip, expiresAt.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
 		if err != nil {
 			return model.CustomerUser{}, fmt.Errorf("create guest customer: %w", err)
@@ -125,7 +125,7 @@ func (s *SQLiteStore) GetOrCreateGuestCustomer(ip string, ttl time.Duration, own
 		return model.CustomerUser{}, fmt.Errorf("refresh guest customer: %w", err)
 	}
 	user, err := scanCustomerUser(s.db.QueryRow(`
-		SELECT id, username, display_name, style_code, owner_type, owner_id, enabled, created_at, updated_at
+		SELECT id, username, display_name, owner_type, owner_id, enabled, created_at, updated_at
 		FROM customer_accounts WHERE username = ? AND owner_type = ? AND owner_id = ?
 	`, username, ownerType, ownerID))
 	if err != nil {
@@ -205,7 +205,7 @@ func (s *SQLiteStore) GetCustomer(id int64) (model.CustomerAdminView, bool, erro
 		return model.CustomerAdminView{}, false, nil
 	}
 	row := s.db.QueryRow(`
-		SELECT id, username, display_name, style_code, owner_type, owner_id, enabled, created_at, updated_at
+		SELECT id, username, display_name, owner_type, owner_id, enabled, created_at, updated_at
 		FROM customer_accounts
 		WHERE id = ?
 	`, id)
@@ -225,10 +225,6 @@ func (s *SQLiteStore) GetCustomer(id int64) (model.CustomerAdminView, bool, erro
 		return model.CustomerAdminView{}, false, err
 	}
 	return model.CustomerAdminView{CustomerUser: user, Assignments: assignments, FrontProxies: frontProxies}, true, nil
-}
-
-func (s *SQLiteStore) CreateCustomer(req model.CustomerAccountRequest) (model.CustomerAdminView, error) {
-	return s.CreateCustomerForOwner(req, model.AdminRoleRoot, adminAccountID)
 }
 
 func (s *SQLiteStore) CreateCustomerForOwner(req model.CustomerAccountRequest, ownerType string, ownerID int64) (model.CustomerAdminView, error) {
@@ -256,8 +252,8 @@ func (s *SQLiteStore) CreateCustomerForOwner(req model.CustomerAccountRequest, o
 		return model.CustomerAdminView{}, err
 	}
 	result, err := s.db.Exec(`
-		INSERT INTO customer_accounts (username, password_hash, display_name, style_code, subscription_token, owner_type, owner_id, enabled, created_at, updated_at)
-		VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, ?)
+		INSERT INTO customer_accounts (username, password_hash, display_name, subscription_token, owner_type, owner_id, enabled, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, username, hash, displayName, subscriptionToken, ownerType, ownerID, boolInt(enabled), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
 	if err != nil {
 		return model.CustomerAdminView{}, fmt.Errorf("create customer: %w", err)
@@ -349,7 +345,7 @@ func (s *SQLiteStore) GetCustomerBySubscriptionToken(token string) (model.Custom
 		return model.CustomerUser{}, false, nil
 	}
 	row := s.db.QueryRow(`
-		SELECT id, username, display_name, style_code, owner_type, owner_id, enabled, created_at, updated_at
+		SELECT id, username, display_name, owner_type, owner_id, enabled, created_at, updated_at
 		FROM customer_accounts
 		WHERE subscription_token = ? AND enabled = 1
 	`, token)
@@ -486,10 +482,10 @@ func (s *SQLiteStore) UpdateCustomerPassword(customerID int64, req model.Custome
 		createdAtText, updatedAtText string
 	)
 	err := s.db.QueryRow(`
-		SELECT id, username, password_hash, display_name, style_code, enabled, created_at, updated_at
+		SELECT id, username, password_hash, display_name, enabled, created_at, updated_at
 		FROM customer_accounts
 		WHERE id = ?
-	`, customerID).Scan(&user.ID, &user.Username, &currentHash, &user.DisplayName, &user.StyleCode, &enabled, &createdAtText, &updatedAtText)
+	`, customerID).Scan(&user.ID, &user.Username, &currentHash, &user.DisplayName, &enabled, &createdAtText, &updatedAtText)
 	if err == sql.ErrNoRows {
 		return model.CustomerUser{}, fmt.Errorf("customer not found")
 	}
@@ -565,10 +561,10 @@ func (s *SQLiteStore) AuthenticateCustomer(username, password string) (model.Cus
 	var enabled int
 	var createdAtText, updatedAtText string
 	err := s.db.QueryRow(`
-		SELECT id, username, password_hash, display_name, style_code, enabled, created_at, updated_at
+		SELECT id, username, password_hash, display_name, enabled, created_at, updated_at
 		FROM customer_accounts
 		WHERE username = ?
-	`, username).Scan(&user.ID, &user.Username, &passwordHash, &user.DisplayName, &user.StyleCode, &enabled, &createdAtText, &updatedAtText)
+	`, username).Scan(&user.ID, &user.Username, &passwordHash, &user.DisplayName, &enabled, &createdAtText, &updatedAtText)
 	if err == sql.ErrNoRows {
 		return model.CustomerUser{}, false, nil
 	}
@@ -627,13 +623,13 @@ func (s *SQLiteStore) ValidateCustomerSession(token string) (model.CustomerUser,
 	)
 	tokenHash := sessionTokenHash(token)
 	err := s.db.QueryRow(`
-		SELECT c.id, c.username, c.display_name, c.style_code, c.owner_type, c.owner_id, c.enabled, c.created_at, c.updated_at,
+		SELECT c.id, c.username, c.display_name, c.owner_type, c.owner_id, c.enabled, c.created_at, c.updated_at,
 		       s.created_at, s.expires_at, s.refresh_token_hash, COALESCE(f.expires_at, '')
 		FROM customer_sessions s
 		JOIN customer_accounts c ON c.id = s.customer_id
 		LEFT JOIN customer_refresh_sessions f ON f.token_hash = s.refresh_token_hash AND f.customer_id = s.customer_id
 		WHERE s.token_hash = ?
-	`, tokenHash).Scan(&user.ID, &user.Username, &user.DisplayName, &user.StyleCode, &user.OwnerType, &user.OwnerID, &enabled, &createdAtText, &updatedAtText, &sCreatedAtText, &sExpiresAtText, &refreshHash, &refreshExpiresAt)
+	`, tokenHash).Scan(&user.ID, &user.Username, &user.DisplayName, &user.OwnerType, &user.OwnerID, &enabled, &createdAtText, &updatedAtText, &sCreatedAtText, &sExpiresAtText, &refreshHash, &refreshExpiresAt)
 	if err == sql.ErrNoRows {
 		return model.CustomerUser{}, model.CustomerSession{}, false, nil
 	}
@@ -856,33 +852,6 @@ func (s *SQLiteStore) UpdateCustomerAssignmentRemark(customerID, assignmentID in
 	return assignment, nil
 }
 
-func (s *SQLiteStore) UpdateCustomerStyle(customerID int64, styleCode string) (model.CustomerUser, error) {
-	styleCode = strings.TrimSpace(styleCode)
-	if len(styleCode) > 64*1024 {
-		return model.CustomerUser{}, fmt.Errorf("style code is too long")
-	}
-	now := time.Now().UTC()
-	result, err := s.db.Exec(`
-		UPDATE customer_accounts
-		SET style_code = ?, updated_at = ?
-		WHERE id = ? AND enabled = 1
-	`, styleCode, now.Format(time.RFC3339Nano), customerID)
-	if err != nil {
-		return model.CustomerUser{}, fmt.Errorf("update customer style: %w", err)
-	}
-	if affected, _ := result.RowsAffected(); affected == 0 {
-		return model.CustomerUser{}, fmt.Errorf("customer not found")
-	}
-	customer, found, err := s.GetCustomer(customerID)
-	if err != nil {
-		return model.CustomerUser{}, err
-	}
-	if !found {
-		return model.CustomerUser{}, fmt.Errorf("customer not found")
-	}
-	return customer.CustomerUser, nil
-}
-
 func normalizeCustomerAccountRequest(req model.CustomerAccountRequest, creating bool) (string, string, bool, error) {
 	username := strings.TrimSpace(req.Username)
 	if username == "" {
@@ -974,7 +943,7 @@ func scanCustomerUser(scanner rowScanner) (model.CustomerUser, error) {
 		createdAtText string
 		updatedAtText string
 	)
-	if err := scanner.Scan(&user.ID, &user.Username, &user.DisplayName, &user.StyleCode, &user.OwnerType, &user.OwnerID, &enabled, &createdAtText, &updatedAtText); err != nil {
+	if err := scanner.Scan(&user.ID, &user.Username, &user.DisplayName, &user.OwnerType, &user.OwnerID, &enabled, &createdAtText, &updatedAtText); err != nil {
 		return model.CustomerUser{}, err
 	}
 	user.Enabled = enabled != 0

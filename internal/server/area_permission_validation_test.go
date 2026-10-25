@@ -22,7 +22,7 @@ func TestAreaPermissionCandidatesAndSwitches(t *testing.T) {
 	for id, role := range map[string]string{"line": model.AgentRoleLine, "landing": model.AgentRoleLanding} {
 		cfg, _, _ := db.GetAgentConfig(id)
 		cfg.Tags = []string{role}
-		if _, err := db.UpdateAgentConfig(id, cfg); err != nil {
+		if _, err := testUpdateAgentConfig(db, id, cfg); err != nil {
 			t.Fatal(err)
 		}
 	}

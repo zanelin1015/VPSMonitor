@@ -6,7 +6,6 @@ type CustomerUser struct {
 	ID          int64     `json:"id"`
 	Username    string    `json:"username"`
 	DisplayName string    `json:"display_name,omitempty"`
-	StyleCode   string    `json:"style_code,omitempty"`
 	OwnerType   string    `json:"owner_type,omitempty"`
 	OwnerID     int64     `json:"owner_id,omitempty"`
 	Enabled     bool      `json:"enabled"`
@@ -65,7 +64,6 @@ type CustomerAssignmentRequest struct {
 	ClientEmail       string   `json:"client_email,omitempty"`
 	PublicClientName  string   `json:"public_client_name,omitempty"`
 	PriceMode         string   `json:"price_mode,omitempty"`
-	TrafficMultiplier *float64 `json:"traffic_multiplier,omitempty"`
 	RevenueAmount     *float64 `json:"revenue_amount,omitempty"`
 	RevenueCurrency   string   `json:"revenue_currency,omitempty"`
 	RevenueCycle      string   `json:"revenue_cycle,omitempty"`
@@ -86,10 +84,6 @@ type CustomerAdminView struct {
 
 type CustomerRemarkRequest struct {
 	Remark string `json:"remark"`
-}
-
-type CustomerStyleRequest struct {
-	StyleCode string `json:"style_code"`
 }
 
 type CustomerPasswordUpdateRequest struct {

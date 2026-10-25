@@ -31,17 +31,17 @@ func TestHandleAgentReplacementRequiresRootAndDispatchesUpdatedConfigs(t *testin
 		t.Fatalf("CreateAdminSession admin: %v", err)
 	}
 	for _, agentID := range []string{"old", "new", "entry"} {
-		if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: agentID}); err != nil {
+		if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: agentID}); err != nil {
 			t.Fatalf("RegisterAgent %s: %v", agentID, err)
 		}
 	}
-	if _, err := sqliteStore.UpdateAgentConfig("new", model.ManagedAgentConfig{
+	if _, err := testUpdateAgentConfig(sqliteStore, "new", model.ManagedAgentConfig{
 		AgentID: "new",
 		Entry:   model.AgentEntryConfig{ImportDomain: "new.example.com"},
 	}); err != nil {
 		t.Fatalf("UpdateAgentConfig new: %v", err)
 	}
-	if _, err := sqliteStore.UpdateAgentConfig("entry", model.ManagedAgentConfig{
+	if _, err := testUpdateAgentConfig(sqliteStore, "entry", model.ManagedAgentConfig{
 		AgentID: "entry",
 		Entry: model.AgentEntryConfig{PortForwarding: model.RealmForwardConfig{
 			Enabled: true,

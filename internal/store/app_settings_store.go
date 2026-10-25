@@ -36,20 +36,12 @@ func (s *SQLiteStore) GetClientInstallSettings() (model.ClientInstallSettingsReq
 	if err := json.Unmarshal([]byte(raw), &settings); err != nil {
 		return model.ClientInstallSettingsRequest{}, false, fmt.Errorf("decode client install settings: %w", err)
 	}
-	settings, err = s.decryptClientInstallSettings(settings)
-	if err != nil {
-		return model.ClientInstallSettingsRequest{}, false, fmt.Errorf("decrypt client install settings: %w", err)
-	}
 	return normalizeClientInstallSettings(settings), true, nil
 }
 
 func (s *SQLiteStore) SaveClientInstallSettings(settings model.ClientInstallSettingsRequest) (model.ClientInstallSettingsRequest, error) {
 	settings = normalizeClientInstallSettings(settings)
-	stored, err := s.encryptClientInstallSettings(settings)
-	if err != nil {
-		return model.ClientInstallSettingsRequest{}, err
-	}
-	data, err := json.Marshal(stored)
+	data, err := json.Marshal(settings)
 	if err != nil {
 		return model.ClientInstallSettingsRequest{}, fmt.Errorf("encode client install settings: %w", err)
 	}
@@ -65,62 +57,20 @@ func (s *SQLiteStore) SaveClientInstallSettings(settings model.ClientInstallSett
 	return settings, nil
 }
 
-func (s *SQLiteStore) encryptClientInstallSettings(settings model.ClientInstallSettingsRequest) (model.ClientInstallSettingsRequest, error) {
-	if s.secrets == nil || settings.XUIPassword == "" || strings.HasPrefix(settings.XUIPassword, encryptedValuePrefix) {
-		return settings, nil
-	}
-	encrypted, err := s.secrets.EncryptString(settings.XUIPassword)
-	if err != nil {
-		return model.ClientInstallSettingsRequest{}, fmt.Errorf("encrypt x-ui bootstrap password: %w", err)
-	}
-	settings.XUIPassword = encrypted
-	return settings, nil
-}
-
-func (s *SQLiteStore) decryptClientInstallSettings(settings model.ClientInstallSettingsRequest) (model.ClientInstallSettingsRequest, error) {
-	if s.secrets == nil || settings.XUIPassword == "" || !strings.HasPrefix(settings.XUIPassword, encryptedValuePrefix) {
-		return settings, nil
-	}
-	decrypted, err := s.secrets.DecryptString(settings.XUIPassword)
-	if err != nil {
-		return model.ClientInstallSettingsRequest{}, err
-	}
-	settings.XUIPassword = decrypted
-	return settings, nil
-}
-
 func normalizeClientInstallSettings(settings model.ClientInstallSettingsRequest) model.ClientInstallSettingsRequest {
+	settings.XUIAutoInstall = false
 	settings.ServerURL = strings.TrimSpace(settings.ServerURL)
 	settings.InstallScriptURL = strings.TrimSpace(settings.InstallScriptURL)
 	settings.PollInterval = strings.TrimSpace(settings.PollInterval)
 	settings.RealmVersion = strings.TrimSpace(settings.RealmVersion)
 	settings.RealmDownloadBaseURL = strings.TrimRight(strings.TrimSpace(settings.RealmDownloadBaseURL), "/")
-	settings.XUIUsername = strings.TrimSpace(settings.XUIUsername)
-	settings.XUIPassword = strings.TrimSpace(settings.XUIPassword)
-	settings.XUIWebPath = normalizeXUIBootstrapWebPath(settings.XUIWebPath)
-	settings.XUIInstallScriptURL = strings.TrimSpace(settings.XUIInstallScriptURL)
 	if settings.HAProxyAutoInstall {
 		settings.RealmAutoInstall = false
 	}
 	if settings.RequestTimeoutSeconds < 0 {
 		settings.RequestTimeoutSeconds = 0
 	}
-	if settings.XUIPanelPort < 0 || settings.XUIPanelPort > 65535 {
-		settings.XUIPanelPort = 0
-	}
 	return settings
-}
-
-func normalizeXUIBootstrapWebPath(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return ""
-	}
-	value = "/" + strings.Trim(value, "/")
-	if value == "/" {
-		return ""
-	}
-	return value + "/"
 }
 
 func (s *SQLiteStore) GetExchangeRatesCache() (model.ExchangeRatesResponse, bool, error) {
@@ -260,7 +210,7 @@ func (s *SQLiteStore) SaveFrontendSettings(settings model.FrontendSettings) (mod
 	if err != nil {
 		return model.FrontendSettings{}, err
 	}
-	// Older clients may save only custom_code. Omission must not erase notices;
+	// Omission must not erase notices;
 	// an explicit empty array is required to remove all current announcements.
 	if found && settings.Announcements == nil {
 		settings.Announcements = previous.Announcements

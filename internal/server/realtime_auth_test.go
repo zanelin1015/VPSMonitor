@@ -17,7 +17,7 @@ func TestAgentMetricsWSRejectsTokenInQuery(t *testing.T) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer sqliteStore.Close()
-	registered, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "agent-query-token"})
+	registered, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "agent-query-token"})
 	if err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}

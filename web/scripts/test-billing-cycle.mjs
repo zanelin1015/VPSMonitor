@@ -11,7 +11,7 @@ try {
     const code = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText.replaceAll("'./currency'", "'./currency.mjs'").replaceAll("'./traffic'", "'./traffic.mjs'")
     await writeFile(join(dir, `${name}.mjs`), code)
   }
-  const { dateInputToStartMillis, clientBillingPatchFromStart, effectiveClientBillingExpiryTime, normalizeClientBillings, scaleClientTraffic } = await import(`file://${join(dir, 'appHelpersBilling.mjs')}`)
+  const { dateInputToStartMillis, clientBillingPatchFromStart, effectiveClientBillingExpiryTime, normalizeClientBillings } = await import(`file://${join(dir, 'appHelpersBilling.mjs')}`)
   const { defaultScheduledTaskSettings, normalizeScheduledTaskSettings } = await import(`file://${join(dir, 'scheduledTasks.mjs')}`)
   for (const tz of ['UTC', 'Asia/Shanghai', 'America/New_York']) {
     process.env.TZ = tz
@@ -24,8 +24,6 @@ try {
     assert.equal(effectiveClientBillingExpiryTime(fixed, 99999), 12345, 'rendering must preserve expired dates')
     assert.equal(effectiveClientBillingExpiryTime({ ...fixed, expire_time: 0 }, 99999), 0, 'manual unlimited override preserved')
   }
-  assert.equal(scaleClientTraffic(200 * 1024 ** 3, 2), 400 * 1024 ** 3)
-  assert.equal(scaleClientTraffic(0, 2), 0)
   assert.deepEqual(Object.keys(defaultScheduledTaskSettings()).sort(), ['alert_sweep', 'daily_traffic_report'])
   const upgraded = normalizeScheduledTaskSettings({
     traffic_reset: { enabled: true, catch_up_minutes: 360 },

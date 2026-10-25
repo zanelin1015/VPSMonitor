@@ -19,6 +19,13 @@ try {
   const initial = lib.createClientConfigDraft(record, billing)
   assert.equal(initial.enabled, true, 'configured enablement is independent of runtime exhausted/expired state')
   assert.deepEqual(lib.buildClientConfigRequest(record, billing, initial, initial, 'request-unchanged').changes, {}, 'unmodified fields never get dispatched')
+  for (const period of ['never', 'hourly', 'daily', 'weekly', 'monthly']) {
+    const reset = lib.buildClientConfigRequest(record, billing, initial, { ...initial, resetChoice: period, resetDay: 31 }, `reset-${period}`)
+    assert.equal(reset.changes.traffic_reset, period)
+    assert.equal(reset.changes.traffic_reset_day, 31)
+    assert.equal(reset.changes.total_bytes, undefined, 'reset changes preserve the quota')
+    assert.equal(reset.changes.expiry_time, undefined, 'reset changes preserve the expiry')
+  }
   const draft = lib.editClientBilling({ ...initial, enabled: false, totalGB: 100, resetChoice: 'monthly_from_start' }, { start_time: Date.parse('2026-10-10T00:00:00+08:00') })
   const request = lib.buildClientConfigRequest(record, billing, initial, draft, 'request-all')
   assert.equal(request.changes.enabled, false)

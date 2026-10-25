@@ -231,11 +231,6 @@ type ClientInstallInfo struct {
 	RealmDownloadBaseURL  string `json:"realm_download_base_url,omitempty"`
 	HAProxyAutoInstall    bool   `json:"haproxy_auto_install"`
 	XUIAutoInstall        bool   `json:"xui_auto_install"`
-	XUIUsername           string `json:"xui_username,omitempty"`
-	XUIPassword           string `json:"xui_password,omitempty"`
-	XUIPanelPort          int    `json:"xui_panel_port,omitempty"`
-	XUIWebPath            string `json:"xui_web_path,omitempty"`
-	XUIInstallScriptURL   string `json:"xui_install_script_url,omitempty"`
 }
 
 type ClientInstallSettingsRequest struct {
@@ -249,11 +244,6 @@ type ClientInstallSettingsRequest struct {
 	RealmDownloadBaseURL  string `json:"realm_download_base_url,omitempty"`
 	HAProxyAutoInstall    bool   `json:"haproxy_auto_install"`
 	XUIAutoInstall        bool   `json:"xui_auto_install"`
-	XUIUsername           string `json:"xui_username,omitempty"`
-	XUIPassword           string `json:"xui_password,omitempty"`
-	XUIPanelPort          int    `json:"xui_panel_port,omitempty"`
-	XUIWebPath            string `json:"xui_web_path,omitempty"`
-	XUIInstallScriptURL   string `json:"xui_install_script_url,omitempty"`
 }
 
 type ExchangeRatesResponse struct {
@@ -280,7 +270,6 @@ type AreaAgentTagsResponse struct {
 }
 
 type FrontendSettings struct {
-	CustomCode          string                        `json:"custom_code"`
 	Announcements       []CustomerAnnouncement        `json:"announcements,omitempty"`
 	AnnouncementHistory []CustomerAnnouncementHistory `json:"announcement_history,omitempty"`
 }
@@ -366,25 +355,17 @@ type UpdateLatestInfo struct {
 	LatestServerTag            string              `json:"latest_server_tag,omitempty"`
 	LatestClientVersion        string              `json:"latest_client_version,omitempty"`
 	LatestClientTag            string              `json:"latest_client_tag,omitempty"`
-	Latest3XUIVersion          string              `json:"latest_3xui_version,omitempty"`
-	Latest3XUITag              string              `json:"latest_3xui_tag,omitempty"`
-	Latest3XUIError            string              `json:"latest_3xui_error,omitempty"`
 	ServerUpdateAvailable      bool                `json:"server_update_available"`
 	ClientUpdateAvailableCount int                 `json:"client_update_available_count"`
-	XUIUpdateAvailableCount    int                 `json:"xui_update_available_count"`
 	SupportedClientCount       int                 `json:"supported_client_count"`
 	UnknownClientCount         int                 `json:"unknown_client_count"`
 	UnsupportedClientCount     int                 `json:"unsupported_client_count"`
-	SupportedXUICount          int                 `json:"supported_xui_count"`
-	UnknownXUICount            int                 `json:"unknown_xui_count"`
-	UnsupportedXUICount        int                 `json:"unsupported_xui_count"`
 	Assets                     []string            `json:"assets,omitempty"`
 	ServerAssets               []string            `json:"server_assets,omitempty"`
 	ClientAssets               []string            `json:"client_assets,omitempty"`
 	ServerAssetDigests         map[string]string   `json:"server_asset_digests,omitempty"`
 	ClientAssetDigests         map[string]string   `json:"client_asset_digests,omitempty"`
 	AgentStatus                []UpdateAgentStatus `json:"agent_status,omitempty"`
-	XUIAgentStatus             []UpdateAgentStatus `json:"xui_agent_status,omitempty"`
 	FetchedAt                  time.Time           `json:"fetched_at"`
 	CacheExpiresAt             *time.Time          `json:"cache_expires_at,omitempty"`
 	RateLimitResetAt           *time.Time          `json:"rate_limit_reset_at,omitempty"`

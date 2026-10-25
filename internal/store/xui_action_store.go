@@ -28,10 +28,6 @@ func (s *SQLiteStore) retireLegacyTrafficResetActions() error {
 	return nil
 }
 
-func (s *SQLiteStore) CreateXUIAction(agentID string, req model.XUIActionRequest) (model.XUIAction, error) {
-	return s.CreateXUIActionWithActor(agentID, req, model.XUIActionActor{})
-}
-
 func (s *SQLiteStore) CreateXUIActionWithActor(agentID string, req model.XUIActionRequest, actor model.XUIActionActor) (model.XUIAction, error) {
 	if agentID == "" {
 		return model.XUIAction{}, fmt.Errorf("agent_id is required")
@@ -322,25 +318,6 @@ func expireStaleXUIActionsTx(tx *sql.Tx, agentID string, maxAge time.Duration) (
 		return 0, fmt.Errorf("read stale x-ui action expiry count: %w", err)
 	}
 	return affected, nil
-}
-
-func (s *SQLiteStore) MarkXUIActionRunning(agentID string, id int64) (model.XUIAction, error) {
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	if _, err := s.db.Exec(`
-		UPDATE xui_actions
-		SET status = ?, updated_at = ?, claimed_at = ?
-		WHERE agent_id = ? AND id = ? AND status = ? AND kind <> ?
-	`, model.XUIActionStatusRunning, now, now, agentID, id, model.XUIActionStatusPending, model.XUIActionResetClientTraffic); err != nil {
-		return model.XUIAction{}, fmt.Errorf("mark x-ui action running: %w", err)
-	}
-	action, found, err := s.GetXUIAction(agentID, id)
-	if err != nil {
-		return model.XUIAction{}, err
-	}
-	if !found {
-		return model.XUIAction{}, fmt.Errorf("x-ui action not found")
-	}
-	return action, nil
 }
 
 // ClaimXUIAction atomically transitions one pending action to running. It is

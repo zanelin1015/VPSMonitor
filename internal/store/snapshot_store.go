@@ -43,10 +43,10 @@ func (s *SQLiteStore) SaveSnapshot(snapshot model.AgentSnapshot) error {
 	_, err = tx.Exec(`
 		INSERT INTO snapshots (
 			agent_id, agent_name, reported_at, hostname, public_ipv4, public_ipv6, cpu, mem_used, mem_total,
-			xray_state, inbound_count, outbound_count, routing_rule_count, nezha_server_id, nezha_server_name,
+			xray_state, inbound_count, outbound_count, routing_rule_count,
 			last_collection_err, disk_used, disk_total, net_traffic_sent, net_traffic_recv, net_traffic_total,
 			net_io_up, net_io_down, history_version, snapshot_json
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		snapshot.AgentID,
 		snapshot.AgentName,
@@ -61,8 +61,6 @@ func (s *SQLiteStore) SaveSnapshot(snapshot model.AgentSnapshot) error {
 		summary.InboundCount,
 		summary.OutboundCount,
 		summary.RoutingRuleCount,
-		summary.NezhaServerID,
-		summary.NezhaServerName,
 		summary.LastCollectionErr,
 		summary.DiskUsed,
 		summary.DiskTotal,
@@ -81,9 +79,9 @@ func (s *SQLiteStore) SaveSnapshot(snapshot model.AgentSnapshot) error {
 	_, err = tx.Exec(`
 		INSERT INTO latest_snapshots (
 			agent_id, agent_name, reported_at, hostname, public_ipv4, public_ipv6, cpu, mem_used, mem_total,
-			xray_state, inbound_count, outbound_count, routing_rule_count, nezha_server_id, nezha_server_name,
+			xray_state, inbound_count, outbound_count, routing_rule_count,
 			last_collection_err, snapshot_json
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(agent_id) DO UPDATE SET
 			agent_name = excluded.agent_name,
 			reported_at = excluded.reported_at,
@@ -97,8 +95,6 @@ func (s *SQLiteStore) SaveSnapshot(snapshot model.AgentSnapshot) error {
 			inbound_count = excluded.inbound_count,
 			outbound_count = excluded.outbound_count,
 			routing_rule_count = excluded.routing_rule_count,
-			nezha_server_id = excluded.nezha_server_id,
-			nezha_server_name = excluded.nezha_server_name,
 			last_collection_err = excluded.last_collection_err,
 			snapshot_json = excluded.snapshot_json
 	`,
@@ -115,8 +111,6 @@ func (s *SQLiteStore) SaveSnapshot(snapshot model.AgentSnapshot) error {
 		summary.InboundCount,
 		summary.OutboundCount,
 		summary.RoutingRuleCount,
-		summary.NezhaServerID,
-		summary.NezhaServerName,
 		summary.LastCollectionErr,
 		string(latestBody),
 	)
@@ -142,8 +136,8 @@ func (s *SQLiteStore) SaveSnapshot(snapshot model.AgentSnapshot) error {
 	_, err = tx.Exec(`
 		INSERT INTO agents (
 			agent_id, agent_name, sort_order, agent_tags_json, agent_token, hostname, public_ipv4, public_ipv6,
-			created_at, updated_at, last_seen_at, xui_config_json, nezha_config_json, renewal_config_json, entry_config_json
-		) VALUES (?, ?, ?, '[]', '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			created_at, updated_at, last_seen_at, xui_config_json, renewal_config_json, entry_config_json
+		) VALUES (?, ?, ?, '[]', '', ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(agent_id) DO UPDATE SET
 			agent_name = CASE WHEN excluded.agent_name <> '' THEN excluded.agent_name ELSE agents.agent_name END,
 			hostname = CASE WHEN excluded.hostname <> '' THEN excluded.hostname ELSE agents.hostname END,
@@ -162,7 +156,6 @@ func (s *SQLiteStore) SaveSnapshot(snapshot model.AgentSnapshot) error {
 		nowText,
 		reportedAt,
 		emptyXUIJSON,
-		mustJSON(config.NezhaConfig{}),
 		mustJSON(model.VPSRenewalConfig{}),
 		mustJSON(model.AgentEntryConfig{}),
 	)

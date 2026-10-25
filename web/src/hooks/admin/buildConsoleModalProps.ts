@@ -31,10 +31,6 @@ type Options = Pick<
     | 'clientWindowsCMDCommand'
     | 'clientWindowsPowerShellCommand'
     | 'editingTelegramBotId'
-    | 'frontendSettingsForm'
-    | 'frontendSettingsLoading'
-    | 'frontendSettingsModalOpen'
-    | 'frontendSettingsSaving'
     | 'telegramBotForm'
     | 'telegramBotModalOpen'
     | 'telegramBotSaving'
@@ -48,7 +44,6 @@ type Options = Pick<
     | 'setClientInstallCommandKind'
     | 'setClientInstallForm'
     | 'setClientInstallModalOpen'
-    | 'setFrontendSettingsModalOpen'
     | 'setTelegramBotModalOpen'
     | 'setUpdateModalOpen'
     | 'copyClientInstallCommand'
@@ -56,13 +51,11 @@ type Options = Pick<
     | 'loadUpdateLatestInfo'
     | 'loadTelegramBots'
     | 'saveClientInstallSettings'
-    | 'saveFrontendSettings'
     | 'saveTelegramBot'
     | 'setTelegramBotForm'
     | 'setEditingTelegramBotId'
     | 'testTelegramBot'
     | 'updateAllClientsOnline'
-    | 'setFrontendSettingsForm'
     | 'updateServerOnline'
   > &
   Pick<
@@ -122,10 +115,6 @@ export function buildConsoleModalProps({
   customerModalOpen,
   customerAssignmentDraft,
   editingTelegramBotId,
-  frontendSettingsForm,
-  frontendSettingsLoading,
-  frontendSettingsModalOpen,
-  frontendSettingsSaving,
   importURLClient,
   nodeImportTarget,
   setNodeImportTarget,
@@ -158,7 +147,6 @@ export function buildConsoleModalProps({
   setClientInstallModalOpen,
   setCustomerModalOpen,
   setCustomerAssignmentDraft,
-  setFrontendSettingsModalOpen,
   setImportURLClient,
   setTelegramBotModalOpen,
   setUpdateModalOpen,
@@ -173,14 +161,12 @@ export function buildConsoleModalProps({
   loadTelegramBots,
   saveAccount,
   saveClientInstallSettings,
-  saveFrontendSettings,
   saveTelegramBot,
   createXUIAction,
   setTelegramBotForm,
   setEditingTelegramBotId,
   testTelegramBot,
   updateAllClientsOnline,
-  setFrontendSettingsForm,
   setAddClientActionForm,
   setOutboundActionForm,
   setRoutingActionForm,
@@ -205,10 +191,6 @@ export function buildConsoleModalProps({
     customerModalOpen: customerModalOpen,
     customerAssignmentDraft: customerAssignmentDraft,
     editingTelegramBotId: editingTelegramBotId,
-    frontendSettingsForm: frontendSettingsForm,
-    frontendSettingsLoading: frontendSettingsLoading,
-    frontendSettingsModalOpen: frontendSettingsModalOpen,
-    frontendSettingsSaving: frontendSettingsSaving,
     importURLClient: importURLClient,
     nodeImportTarget: nodeImportTarget,
     onNodeImportTargetChange: setNodeImportTarget,
@@ -244,7 +226,6 @@ export function buildConsoleModalProps({
       setCustomerAssignmentDraft(null)
     },
     onCustomerAssignmentDraftApplied: () => setCustomerAssignmentDraft(null),
-    onCloseFrontendSettings: () => setFrontendSettingsModalOpen(false),
     onCloseImportURL: () => setImportURLClient(null),
     onCloseTelegramBot: () => setTelegramBotModalOpen(false),
     onCloseUpdateModal: () => setUpdateModalOpen(false),
@@ -262,7 +243,6 @@ export function buildConsoleModalProps({
     onRefreshTelegramBots: () => void loadTelegramBots(),
     onSaveAccount: () => void saveAccount(),
     onSaveClientInstallSettings: () => void saveClientInstallSettings(),
-    onSaveFrontendSettings: saveFrontendSettings,
     onSaveTelegramBot: saveTelegramBot,
     onSubmitXUIAction: () => void createXUIAction(),
     onTelegramBotFormChange: setTelegramBotForm,
@@ -270,7 +250,6 @@ export function buildConsoleModalProps({
     onTestTelegramBot: (id) => void testTelegramBot(id),
     onUpdateAllClients: () => void updateAllClientsOnline(),
     onForceUpdateAllClients: () => void updateAllClientsOnline(true),
-    onUpdateFrontendSettingsFormChange: setFrontendSettingsForm,
     onUpdateAddClientActionForm: setAddClientActionForm,
     onUpdateOutboundActionForm: setOutboundActionForm,
     onUpdateRoutingActionForm: setRoutingActionForm,

@@ -52,11 +52,10 @@ export function PersonalCenterDropdown(props: {
   onOpenClientInstall: () => void
   onOpenTelegram: () => void
   onOpenCustomers: () => void
-  onOpenFrontendSettings: () => void
   onOpenUpdates: () => void
   onLogout: () => void
 }) {
-  const { adminUser, systemInfo, canManageSystem = true, onOpenAccount, onOpenClientInstall, onOpenTelegram, onOpenCustomers, onOpenFrontendSettings, onOpenUpdates, onLogout } = props
+  const { adminUser, systemInfo, canManageSystem = true, onOpenAccount, onOpenClientInstall, onOpenTelegram, onOpenCustomers, onOpenUpdates, onLogout } = props
   const items: MenuProps['items'] = [
     {
       key: 'profile',
@@ -81,9 +80,8 @@ export function PersonalCenterDropdown(props: {
     ...(canManageSystem ? [{ key: 'account', icon: <EditOutlined />, label: '账号与头像' }] : []),
     ...(adminUser.role === 'area_manager' ? [{ key: 'account', icon: <LockOutlined />, label: '修改密码' }] : []),
     ...(canManageSystem ? [{ key: 'client-install', icon: <CloudDownloadOutlined />, label: 'Client 安装命令' }] : []),
-    ...(canManageSystem ? [{ key: 'telegram', icon: <BellOutlined />, label: 'TG 告警机器人' }] : []),
+    ...((canManageSystem || adminUser.role === 'area_manager') ? [{ key: 'telegram', icon: <BellOutlined />, label: 'TG 告警机器人' }] : []),
     { key: 'customers', icon: <TeamOutlined />, label: '人员管理' },
-    ...(canManageSystem ? [{ key: 'frontend', icon: <SettingOutlined />, label: '前端样式自定义' }] : []),
     ...(canManageSystem ? [{ key: 'updates', icon: <SettingOutlined />, label: '在线升级' }] : []),
     { type: 'divider' },
     { key: 'logout', danger: true, icon: <LogoutOutlined />, label: '退出登录' },
@@ -101,9 +99,6 @@ export function PersonalCenterDropdown(props: {
         break
       case 'customers':
         onOpenCustomers()
-        break
-      case 'frontend':
-        onOpenFrontendSettings()
         break
       case 'updates':
         onOpenUpdates()
@@ -414,45 +409,6 @@ export function AccountSettingsModal(props: {
   )
 }
 
-export function FrontendSettingsModal(props: {
-  open: boolean
-  loading: boolean
-  saving: boolean
-  form: FrontendSettingsForm
-  onClose: () => void
-  onSave: (form?: FrontendSettingsForm) => Promise<boolean>
-  onFormChange: (form: FrontendSettingsForm) => void
-}) {
-  const { open, loading, saving, form, onClose, onSave, onFormChange } = props
-
-  return (
-    <Modal
-      title="前端样式自定义"
-      open={open}
-      onCancel={() => { if (!saving) onClose() }}
-      closable={!saving}
-      maskClosable={!saving}
-      keyboard={!saving}
-      width={920}
-      footer={[
-        <Button key="cancel" disabled={saving} onClick={onClose}>关闭</Button>,
-        <Button key="save" type="primary" disabled={loading} loading={saving} onClick={() => void onSave()}>保存并应用</Button>,
-      ]}
-    >
-      <Spin spinning={loading}>
-        <Text strong>管理员后台自定义代码（样式和脚本）</Text>
-        <Input.TextArea
-          value={form.custom_code}
-          disabled={loading || saving}
-          onChange={(event) => onFormChange({ ...form, custom_code: event.target.value })}
-          autoSize={{ minRows: 16, maxRows: 28 }}
-          placeholder={`<style>\n:root { --green: #2563eb; }\n</style>`}
-        />
-      </Spin>
-    </Modal>
-  )
-}
-
 export function FrontendSettingsPanel(props: {
   loading: boolean
   saving: boolean
@@ -737,6 +693,7 @@ export function ScheduledTasksPanel(props: {
 }
 
 export function TelegramBotSettingsModal(props: {
+  areaManager?: boolean
   open: boolean
   bots: TelegramBot[]
   loading: boolean
@@ -751,11 +708,12 @@ export function TelegramBotSettingsModal(props: {
   onDelete: (id: number) => void
   onTest: (id: number) => void
 }) {
-  const { open, bots, loading, saving, editingID, form, onClose, onFormChange, onSave, onRefresh, onEditIDChange, onDelete, onTest } = props
+  const { areaManager = false, open, bots, loading, saving, editingID, form, onClose, onFormChange, onSave, onRefresh, onEditIDChange, onDelete, onTest } = props
 
   return (
     <Modal title="Telegram 告警机器人" open={open} onCancel={onClose} footer={null} width={920}>
       <TelegramBotPanel
+        areaManager={areaManager}
         bots={bots}
         loading={loading}
         saving={saving}
@@ -766,7 +724,7 @@ export function TelegramBotSettingsModal(props: {
         onRefresh={onRefresh}
         onEdit={(bot) => {
           onEditIDChange(bot.id)
-          onFormChange({ name: bot.name, bot_token: '', chat_id: bot.chat_id, enabled: bot.enabled })
+          onFormChange({ name: bot.name, bot_token: '', chat_id: bot.chat_id, enabled: bot.enabled, notify_expiry: bot.notify_expiry !== false, notify_support: bot.notify_support !== false })
         }}
         onCancelEdit={() => {
           onEditIDChange(null)

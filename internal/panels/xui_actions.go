@@ -77,34 +77,6 @@ func (c *XUIClient) executeActionAuthenticated(ctx context.Context, action model
 	}
 }
 
-func (c *XUIClient) addInbound(ctx context.Context, payload map[string]any, localCertificates []model.XUILocalCertificate) (map[string]any, error) {
-	inbound, err := payloadObject(payload, "inbound")
-	if err != nil {
-		return nil, err
-	}
-	inbounds, err := c.loadInboundsForAction(ctx)
-	if err != nil {
-		return nil, err
-	}
-	normalizeNewInboundPayloadClients(inbound, collectInboundClientUUIDs(inbounds))
-	resolvedCertificate, err := injectLocalCertificate(inbound, payload, localCertificates)
-	if err != nil {
-		return nil, err
-	}
-	result, err := c.postJSON(ctx, "/panel/api/inbounds/add", inbound)
-	if err != nil {
-		return nil, err
-	}
-	response := map[string]any{
-		"message": result.Msg,
-		"obj":     decodeEnvelopeObject(result.Obj),
-	}
-	if resolvedCertificate != nil {
-		response["certificate"] = resolvedCertificate
-	}
-	return response, nil
-}
-
 func (c *XUIClient) addClient(ctx context.Context, payload map[string]any) (map[string]any, error) {
 	inboundID := intValue(payload["inbound_id"])
 	inboundTag := strings.TrimSpace(stringFromMap(payload, "inbound_tag"))
@@ -714,39 +686,6 @@ func replaceRoutingOutboundTag(configJSON map[string]any, oldTag string, newTag 
 	return updated
 }
 
-func replaceRoutingUser(configJSON map[string]any, oldEmail string, newEmail string) int {
-	oldEmail = strings.TrimSpace(oldEmail)
-	newEmail = strings.TrimSpace(newEmail)
-	if oldEmail == "" || newEmail == "" || oldEmail == newEmail {
-		return 0
-	}
-	routing := objectMap(configJSON["routing"])
-	rules := objectSlice(routing["rules"])
-	updated := 0
-	for _, rule := range rules {
-		users := stringListValue(rule["user"])
-		if len(users) == 0 {
-			continue
-		}
-		changed := false
-		for index, user := range users {
-			if strings.TrimSpace(user) == oldEmail {
-				users[index] = newEmail
-				changed = true
-			}
-		}
-		if changed {
-			rule["user"] = users
-			updated++
-		}
-	}
-	if updated > 0 {
-		routing["rules"] = rules
-		configJSON["routing"] = routing
-	}
-	return updated
-}
-
 func removeRoutingUser(configJSON map[string]any, email string) int {
 	email = strings.TrimSpace(email)
 	if email == "" {
@@ -1153,24 +1092,6 @@ func (c *XUIClient) removeRoutingUserReferences(ctx context.Context, email strin
 	return updated, nil
 }
 
-func (c *XUIClient) replaceRoutingUserReferences(ctx context.Context, oldEmail string, newEmail string) (int, error) {
-	if strings.TrimSpace(oldEmail) == "" || strings.TrimSpace(newEmail) == "" || strings.TrimSpace(oldEmail) == strings.TrimSpace(newEmail) {
-		return 0, nil
-	}
-	mutableConfig, err := c.getMutableXrayConfig(ctx)
-	if err != nil {
-		return 0, err
-	}
-	updated := replaceRoutingUser(mutableConfig.config, oldEmail, newEmail)
-	if updated == 0 {
-		return 0, nil
-	}
-	if err := c.updateMutableXrayConfig(ctx, mutableConfig); err != nil {
-		return 0, err
-	}
-	return updated, nil
-}
-
 func clientMatchesDeletePayload(client map[string]any, email string, clientID string) bool {
 	if email != "" && strings.TrimSpace(stringValue(client["email"])) == email {
 		return true
@@ -1200,52 +1121,6 @@ func ensureNewInboundClientAuth(client map[string]any, protocol string, usedUUID
 		return
 	}
 	client["id"] = generateUniqueInboundClientUUID(usedUUIDs)
-}
-
-func normalizeNewInboundPayloadClients(inbound map[string]any, usedUUIDs map[string]struct{}) {
-	protocol := strings.TrimSpace(stringValue(inbound["protocol"]))
-	settings, settingsText, err := decodeInboundSettings(inbound["settings"])
-	if err != nil {
-		return
-	}
-	clients := objectSlice(settings["clients"])
-	if len(clients) == 0 {
-		return
-	}
-	for _, client := range clients {
-		ensureNewInboundClientAuth(client, protocol, usedUUIDs)
-	}
-	settings["clients"] = clients
-	if settingsText {
-		if data, err := json.Marshal(settings); err == nil {
-			inbound["settings"] = string(data)
-		}
-		return
-	}
-	inbound["settings"] = settings
-}
-
-func shouldGenerateInboundClientUUID(id string) bool {
-	id = strings.TrimSpace(id)
-	if id == "" || id == "00000000-0000-0000-0000-000000000000" {
-		return true
-	}
-	if strings.HasPrefix(id, "00000000-0000-0000-0000-") {
-		suffix := strings.TrimPrefix(id, "00000000-0000-0000-0000-")
-		if len(suffix) == 12 {
-			allDigits := true
-			for _, ch := range suffix {
-				if ch < '0' || ch > '9' {
-					allDigits = false
-					break
-				}
-			}
-			if allDigits {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func collectInboundClientUUIDs(inbounds []map[string]any) map[string]struct{} {

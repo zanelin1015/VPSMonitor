@@ -67,7 +67,7 @@ export function AdminPageRouter(props: AdminPageRouterProps) {
       content = props.workspace
   }
   return (
-    <main className="admin-pro-route">
+    <main className={`admin-pro-route${props.page === 'customers' ? ' admin-customers-route' : ''}`}>
       <Suspense
         fallback={
           <Spin tip="正在加载页面">

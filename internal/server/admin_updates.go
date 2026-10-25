@@ -133,7 +133,6 @@ func cloneUpdateLatestInfo(info *model.UpdateLatestInfo) *model.UpdateLatestInfo
 	cloned.ServerAssetDigests = cloneStringMap(info.ServerAssetDigests)
 	cloned.ClientAssetDigests = cloneStringMap(info.ClientAssetDigests)
 	cloned.AgentStatus = append([]model.UpdateAgentStatus(nil), info.AgentStatus...)
-	cloned.XUIAgentStatus = append([]model.UpdateAgentStatus(nil), info.XUIAgentStatus...)
 	if info.CacheExpiresAt != nil {
 		value := *info.CacheExpiresAt
 		cloned.CacheExpiresAt = &value
@@ -611,7 +610,6 @@ func (a *App) fetchUpdateLatestInfo(repo string, packagePrefix string) (*model.U
 			info.ClientUpdateAvailableCount++
 		}
 	}
-	a.populate3XUIUpdateInfo(info, agents)
 	return info, nil
 }
 
@@ -619,157 +617,6 @@ func (a *App) create3XUIUpdateActions(req model.UpdateRequest) (model.UpdateResp
 	_ = a
 	_ = req
 	return model.UpdateResponse{}, fmt.Errorf("automatic 3x-ui updates are disabled because the upstream updater does not publish a verifiable package digest")
-}
-
-func shouldCreate3XUIUpdateAction(status model.UpdateAgentStatus, force bool) bool {
-	if force {
-		return status.Supported
-	}
-	return status.UpdateAvailable || (status.Supported && status.Version == "")
-}
-
-func (a *App) populate3XUIUpdateInfo(info *model.UpdateLatestInfo, agents []model.AgentRecord) {
-	latest, err := fetchLatest3XUIRelease()
-	if err != nil {
-		info.Latest3XUIError = err.Error()
-		return
-	}
-	info.Latest3XUIVersion = latest.Version
-	info.Latest3XUITag = latest.Tag
-	info.XUIAgentStatus = a.build3XUIUpdateStatuses(agents, latest.Version)
-	for _, status := range info.XUIAgentStatus {
-		switch {
-		case status.Version == "":
-			info.UnknownXUICount++
-		case !status.Supported:
-			info.UnsupportedXUICount++
-		default:
-			info.SupportedXUICount++
-		}
-		if status.UpdateAvailable {
-			info.XUIUpdateAvailableCount++
-		}
-	}
-}
-
-func (a *App) build3XUIUpdateStatuses(agents []model.AgentRecord, latestVersion string) []model.UpdateAgentStatus {
-	snapshots := a.store.ListLatest()
-	snapshotByAgent := make(map[string]model.AgentSnapshot, len(snapshots))
-	for _, snapshot := range snapshots {
-		snapshotByAgent[snapshot.AgentID] = snapshot
-	}
-	statuses := make([]model.UpdateAgentStatus, 0, len(agents))
-	for _, agent := range agents {
-		statuses = append(statuses, build3XUIUpdateAgentStatus(agent, snapshotByAgent[agent.AgentID], latestVersion))
-	}
-	return statuses
-}
-
-func build3XUIUpdateAgentStatus(agent model.AgentRecord, snapshot model.AgentSnapshot, latestVersion string) model.UpdateAgentStatus {
-	osName := strings.ToLower(strings.TrimSpace(firstNonEmptyString(snapshot.OS, agent.OS)))
-	version := ""
-	if snapshot.XUI != nil {
-		version = normalizeVersion(snapshot.XUI.AppVersion)
-	}
-	status := model.UpdateAgentStatus{
-		AgentID:     agent.AgentID,
-		AgentName:   agent.AgentName,
-		Version:     version,
-		OS:          osName,
-		Arch:        strings.ToLower(strings.TrimSpace(firstNonEmptyString(snapshot.Arch, agent.Arch))),
-		PackageName: "3x-ui official update.sh",
-	}
-	if !agent.Config.XUI.Enabled {
-		status.Reason = "x-ui config is disabled"
-		return status
-	}
-	if osName == "" {
-		status.Reason = "client has not reported os yet"
-		return status
-	}
-	if osName != "linux" {
-		status.Reason = "3x-ui official updater only supports linux"
-		return status
-	}
-	status.Supported = true
-	if version == "" {
-		status.Reason = "3x-ui version has not been reported yet"
-		return status
-	}
-	if latestVersion == "" {
-		status.Reason = "latest 3x-ui version unavailable"
-		return status
-	}
-	if !isVersionNewer(latestVersion, version) {
-		status.Reason = "3x-ui is already up to date"
-		return status
-	}
-	status.UpdateAvailable = true
-	status.Reason = "update available"
-	return status
-}
-
-func fetchLatest3XUIRelease() (releaseUpdateInfo, error) {
-	return fetchLatestSemverRelease("MHSanaei/3x-ui")
-}
-
-func fetchLatestSemverRelease(repo string) (releaseUpdateInfo, error) {
-	repo = strings.Trim(strings.TrimSpace(repo), "/")
-	if repo == "" || !strings.Contains(repo, "/") {
-		return releaseUpdateInfo{}, fmt.Errorf("invalid repo: %s", repo)
-	}
-	ctx := contextWithTimeout(15 * time.Second)
-	defer ctx.cancel()
-	req, err := http.NewRequestWithContext(ctx.ctx, http.MethodGet, "https://api.github.com/repos/"+repo+"/releases?per_page=20", nil)
-	if err != nil {
-		return releaseUpdateInfo{}, fmt.Errorf("build release request: %w", err)
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "VPSMonitor")
-	addGitHubAuthHeader(req)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return releaseUpdateInfo{}, fmt.Errorf("fetch releases: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return releaseUpdateInfo{}, githubHTTPError("fetch releases", resp)
-	}
-	var releases []struct {
-		TagName string `json:"tag_name"`
-		Name    string `json:"name"`
-		Assets  []struct {
-			Name string `json:"name"`
-		} `json:"assets"`
-	}
-	body, err := readExternalJSONResponse(resp.Body)
-	if err != nil {
-		return releaseUpdateInfo{}, fmt.Errorf("read releases: %w", err)
-	}
-	if err := json.Unmarshal(body, &releases); err != nil {
-		return releaseUpdateInfo{}, fmt.Errorf("decode releases: %w", err)
-	}
-	var latest releaseUpdateInfo
-	for _, release := range releases {
-		tag := firstNonEmptyString(release.TagName, release.Name)
-		version := normalizeVersion(tag)
-		if _, ok := parseSemver(version); !ok {
-			continue
-		}
-		assets := make([]string, 0, len(release.Assets))
-		for _, asset := range release.Assets {
-			if strings.TrimSpace(asset.Name) != "" {
-				assets = append(assets, asset.Name)
-			}
-		}
-		if latest.Version == "" || isVersionNewer(version, latest.Version) {
-			latest = releaseUpdateInfo{Tag: tag, Version: version, Assets: assets}
-		}
-	}
-	if latest.Version == "" {
-		return releaseUpdateInfo{}, fmt.Errorf("latest release has no semver tag")
-	}
-	return latest, nil
 }
 
 func addGitHubAuthHeader(req *http.Request) {

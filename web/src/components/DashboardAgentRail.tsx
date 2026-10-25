@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Alert, Button, Card, Empty, Input, List, Segmented, Space, Tag } from 'antd'
 import { ApartmentOutlined, BarsOutlined, CloudServerOutlined, FilterOutlined, ReloadOutlined } from '@ant-design/icons'
 
-import type { DashboardAgentView, DashboardTagView } from '../types'
+import type { DashboardAgentView } from '../types'
+import type { AgentListProps } from '../lib/agentList'
 import type { AgentViewMode } from '../lib/appHelpers'
 import {
   agentCountryCode,
@@ -29,43 +30,16 @@ import { MiniProgress } from './MiniProgress'
 import { CountryFlag } from './CountryFlag'
 import { agentHealthFilterLabel, normalizeAgentHealthFilter, type AgentHealthFilter } from '../lib/agentHealth'
 import { matchingAgentClients } from '../lib/agentSearch'
+import { useListPagination } from '../hooks/useListPagination'
 
-export function AgentRail(props: {
-  agents: DashboardAgentView[]
-  loading: boolean
-  error: string
-  selectedTag: string
-  healthFilter: AgentHealthFilter
-  selectedAgentId: string
-  tagFilterOptions: DashboardTagView[]
-  viewMode: AgentViewMode
-  panelExpanded: boolean
-  topologyVisible: boolean
-  restrictedView?: boolean
-  onToggleViewMode: () => void
-  onToggleTopology: () => void
-  onRefresh: () => void
-  onSelectTag: (tag: string) => void
-  onHealthFilterChange: (filter: AgentHealthFilter) => void
-  onSelectAgent: (agentID: string, active: boolean) => void
-  searchText: string
-  onSearchTextChange: (value: string) => void
-}) {
+export function AgentRail(props: AgentListProps) {
   const { agents, loading, error, selectedTag, healthFilter, selectedAgentId, tagFilterOptions, viewMode, panelExpanded, topologyVisible, restrictedView = false, searchText, onToggleViewMode, onToggleTopology, onRefresh, onSelectTag, onHealthFilterChange, onSelectAgent, onSearchTextChange } = props
   const effectiveViewMode: AgentViewMode = panelExpanded ? 'list' : viewMode
   const [compactFiltersOpen, setCompactFiltersOpen] = useState(false)
-  const [agentPage, setAgentPage] = useState(1)
-  const [agentPageSize, setAgentPageSize] = useState(10)
+  const { page: agentPage, pageSize: agentPageSize, onChange: onPageChange } = useListPagination(
+    agents.length, JSON.stringify([selectedTag, healthFilter, effectiveViewMode, searchText]),
+  )
   const filtersVisible = !panelExpanded || compactFiltersOpen
-
-  useEffect(() => {
-    setAgentPage(1)
-  }, [selectedTag, healthFilter, effectiveViewMode, searchText])
-
-  useEffect(() => {
-    const maxPage = Math.max(1, Math.ceil(agents.length / agentPageSize))
-    setAgentPage((current) => Math.min(current, maxPage))
-  }, [agents.length, agentPageSize])
 
   return (
     <aside className="agent-rail">
@@ -177,18 +151,7 @@ export function AgentRail(props: {
               },
               pageSizeOptions: [5, 10, 20],
               locale: { items_per_page: '/页' },
-              onChange: (page, nextPageSize) => {
-                if (nextPageSize !== agentPageSize) {
-                  setAgentPageSize(nextPageSize)
-                  setAgentPage(1)
-                  return
-                }
-                setAgentPage(page)
-              },
-              onShowSizeChange: (_, nextPageSize) => {
-                setAgentPageSize(nextPageSize)
-                setAgentPage(1)
-              },
+              onChange: onPageChange,
               showTotal: (total, range) => `第 ${range[0]}-${range[1]} 台 / 共 ${total} 台`,
             }}
             renderItem={(item, index) => (

@@ -56,7 +56,7 @@
 .admin-pro-page-body {
   min-width: 0;
 }
-.admin-pro-page-body .admin-content-page {
+.admin-pro-page-body .admin-pro-route {
   height: auto;
   overflow: visible;
 }
@@ -315,4 +315,28 @@
     animation: none !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* The route owns the remaining desktop height; only user table bodies scroll. */
+@media (min-width: 981px) {
+  .admin-pro-customers-layout { overflow: hidden; }
+  .admin-pro-customers-layout .ant-pro-layout,
+  .admin-pro-customers-layout .ant-pro-layout > .ant-layout { height: 100%; }
+  .admin-pro-customers-layout :is(
+    .ant-pro-layout-container, .ant-pro-layout-content, .admin-pro-page,
+    .ant-pro-grid-content, .ant-pro-grid-content-children,
+    .ant-pro-page-container-children-container, .admin-pro-page-body, .admin-pro-route
+  ) { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+  .admin-pro-customers-layout .admin-pro-page > .ant-pro-page-container-warp { flex: 0 0 auto; }
+  .admin-pro-customers-layout .admin-pro-route { overflow: hidden; }
+}
+.admin-agent-drawer .tabs-card .ant-tabs-content-holder {
+  min-width: 0;
+  overflow-x: clip;
+  overflow-y: visible;
+  overscroll-behavior-x: none;
+}
+.customer-management-body { display: flex; min-width: 0; flex-direction: column; gap: 16px; }
+@media (min-width: 981px) {
+  .admin-customers-route .ant-table-header { flex: 0 0 auto; }
 }

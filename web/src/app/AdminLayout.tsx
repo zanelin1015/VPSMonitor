@@ -12,7 +12,7 @@ import {
   ReloadOutlined,
   TeamOutlined,
 } from '@ant-design/icons'
-import { PageContainer, ProLayout } from '@ant-design/pro-components'
+import { PageContainer, ProLayout } from '@ant-design/pro-layout'
 import { Badge, Button, Space, Typography } from 'antd'
 import { useState, type ReactNode } from 'react'
 import { AdminHeaderActions, type AdminShellNavigationProps } from '../components/AdminShellNavigation'
@@ -51,7 +51,7 @@ export function AdminLayout({
   const pathFor = (key: Parameters<typeof adminMenuHref>[0]) => adminMenuHref(key)
 
   return (
-    <div className={`admin-pro-layout page-shell admin-page-shell${current.key === 'dashboard' ? ' admin-pro-workbench-layout' : ''}`}>
+    <div className={`admin-pro-layout page-shell admin-page-shell${current.key === 'dashboard' ? ' admin-pro-workbench-layout' : current.key === 'customers' ? ' admin-pro-customers-layout' : ''}`}>
       <ProLayout
         title="ZaneLin"
         logo={

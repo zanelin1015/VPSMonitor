@@ -99,7 +99,7 @@ func TestLegacyResetCannotBeCreatedOrClaimed(t *testing.T) {
 	if _, claimed, err := s.ClaimXUIAction("agent", legacy.ID); err != nil || claimed {
 		t.Fatalf("realtime claimed removed reset: %v %v", claimed, err)
 	}
-	if action, err := s.MarkXUIActionRunning("agent", legacy.ID); err != nil || action.Status != model.XUIActionStatusPending {
+	if action, found, err := s.GetXUIAction("agent", legacy.ID); err != nil || !found || action.Status != model.XUIActionStatusPending {
 		t.Fatalf("removed reset was marked running: %+v %v", action, err)
 	}
 	if actions, err := s.ClaimPendingXUIActions("agent", 20); err != nil || len(actions) != 0 {

@@ -41,6 +41,25 @@ const vite = await createServer({
 })
 let renderer
 try {
+  const { useListPagination } = await vite.ssrLoadModule('/src/hooks/useListPagination.ts')
+  let pagination
+  function PaginationHarness({ total, scope }) {
+    pagination = useListPagination(total, scope)
+    return null
+  }
+  await act(async () => { renderer = create(h(PaginationHarness, { total: 23, scope: 'all' })) })
+  await act(async () => { pagination.onChange(3) })
+  assert.equal(pagination.page, 3)
+  await act(async () => { renderer.update(h(PaginationHarness, { total: 11, scope: 'all' })) })
+  assert.equal(pagination.page, 2, 'removing Clients clamps the page to the last available result')
+  await act(async () => { renderer.update(h(PaginationHarness, { total: 11, scope: 'filtered' })) })
+  assert.equal(pagination.page, 1, 'changing filters returns both Client lists to the first page')
+  await act(async () => { pagination.onChange(2) })
+  await act(async () => { pagination.onChange(2, 20) })
+  assert.equal(pagination.page, 1, 'changing the page size returns to the first page')
+  assert.equal(pagination.pageSize, 20)
+  await act(async () => { renderer.unmount() })
+
   const { useAdminLifecycle } = await vite.ssrLoadModule('/src/hooks/admin/useAdminLifecycle.ts')
   const calls = []
   const stub =
@@ -60,7 +79,7 @@ try {
       'setActiveAdminPage',
       'setActiveTabKey',
       'loadScheduledTasks',
-      'openFrontendSettingsModal',
+      'loadFrontendSettings',
       'loadAccessLogs',
       'setSelectedAgentId',
       'logoutSession',
@@ -212,31 +231,25 @@ try {
   })
   assert.equal(detail.managedConfig.agent_name, 'unsaved-draft', 'background refresh preserves an unsaved config draft')
   assert.equal(detail.savedManagedConfig.agent_name, 'remote-b')
+  const previousFetch = globalThis.fetch
+  let receiptReads = 0, releaseReceipts
+  globalThis.fetch = async () => {
+    receiptReads++
+    return new Promise(resolve => { releaseReceipts = () => resolve(Response.json([{ id: 42, agent_id: 'forward-target', status: 'succeeded' }])) })
+  }
+  const firstRead = detail.loadXUIActions('forward-target', { silent: true })
+  const secondRead = detail.loadXUIActions('forward-target', { silent: true })
+  assert.equal(receiptReads, 1, 'concurrent consumers share one action request')
+  let actionResults
+  await act(async () => { releaseReceipts(); actionResults = await Promise.all([firstRead, secondRead]) })
+  assert.equal(actionResults[0][0].id, 42)
+  assert.deepEqual(actionResults[1], actionResults[0], 'both callers receive the receipt list')
+  assert.ok(detail.xuiActions.every(action => action.agent_id !== 'forward-target'), 'forwarded-target receipts cannot replace the selected Client list')
+  globalThis.fetch = previousFetch
+
   await act(async () => {
     renderer.unmount()
   })
-  const { useXUIActionComposer } = await vite.ssrLoadModule('/src/hooks/admin/useXUIActionComposer.ts')
-  const refreshes = []
-  let composer
-  function ComposerHarness() {
-    composer = useXUIActionComposer({
-      adminUser: { id: 2, role: 'area_manager' }, currentOverview: null,
-      selectedAgentId: 'sample-b', message: detailOptions.message, setAdminUser: no,
-      loadXUIActions: async (...args) => refreshes.push(['actions', ...args]),
-      loadOverview: async (...args) => refreshes.push(['overview', ...args]),
-    })
-    return null
-  }
-  await act(async () => { renderer = create(h(ComposerHarness)) })
-  timers.clear()
-  composer.scheduleXUIActionResultRefresh('sample-b')
-  assert.equal(timers.size, 6, 'mutations retry while the Client collects its new snapshot')
-  await act(async () => { for (const timer of timers.values()) timer.fn() })
-  assert.equal(refreshes.filter(call => call[0] === 'actions').length, 6)
-  assert.equal(refreshes.filter(call => call[0] === 'overview').length, 6, 'result polling also reloads the visible client list')
-  assert.ok(refreshes.every(call => call[1] === 'sample-b' && call[2].silent === true))
-  timers.clear()
-  await act(async () => renderer.unmount())
   console.log('admin deep links, role restrictions, timer cleanup, stale responses and unsaved drafts passed')
 } finally {
   renderer?.unmount()

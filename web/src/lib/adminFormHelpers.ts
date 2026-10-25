@@ -4,6 +4,8 @@ import { appBasePath } from './appBasePath'
 export type ClientInstallCommandKind = 'linux' | 'openwrt' | 'windows-powershell' | 'windows-cmd'
 
 export interface TelegramBotForm {
+  notify_expiry: boolean
+  notify_support: boolean
   name: string
   bot_token: string
   chat_id: string
@@ -21,22 +23,17 @@ export interface ClientInstallCommandForm {
   realm_version: string
   realm_download_base_url: string
   haproxy_auto_install: boolean
-  xui_auto_install: boolean
-  xui_username: string
-  xui_password: string
-  xui_panel_port: number
-  xui_web_path: string
-  xui_install_script_url: string
 }
 
 export interface FrontendSettingsForm {
-  custom_code: string
   announcements: CustomerAnnouncement[]
   announcement_history: CustomerAnnouncementHistory[]
 }
 
 export function defaultTelegramBotForm(): TelegramBotForm {
   return {
+    notify_expiry: true,
+    notify_support: true,
     name: '',
     bot_token: '',
     chat_id: '',
@@ -56,12 +53,6 @@ export function defaultClientInstallCommandForm(): ClientInstallCommandForm {
     realm_version: 'v2.9.4',
     realm_download_base_url: '',
     haproxy_auto_install: false,
-    xui_auto_install: false,
-    xui_username: 'admin',
-    xui_password: '',
-    xui_panel_port: 2053,
-    xui_web_path: '/xui/',
-    xui_install_script_url: 'https://raw.githubusercontent.com/MHSanaei/3x-ui/master/install.sh',
   }
 }
 
@@ -78,22 +69,15 @@ export function normalizeClientInstallCommandForm(info: ClientInstallInfo): Clie
     realm_version: info.realm_version || 'v2.9.4',
     realm_download_base_url: info.realm_download_base_url || '',
     haproxy_auto_install: haproxyAutoInstall,
-    xui_auto_install: Boolean(info.xui_auto_install),
-    xui_username: info.xui_username || 'admin',
-    xui_password: info.xui_password || '',
-    xui_panel_port: Number(info.xui_panel_port || 2053),
-    xui_web_path: info.xui_web_path || '/xui/',
-    xui_install_script_url: info.xui_install_script_url || defaultClientInstallCommandForm().xui_install_script_url,
   }
 }
 
 export function defaultFrontendSettingsForm(): FrontendSettingsForm {
-  return { custom_code: '', announcements: [], announcement_history: [] }
+  return { announcements: [], announcement_history: [] }
 }
 
 export function normalizeFrontendSettingsForm(settings: FrontendSettings): FrontendSettingsForm {
   return {
-    custom_code: settings.custom_code || '',
     announcements: (settings.announcements || []).map((item) => ({
       ...item,
       level: item.level || 'info',
@@ -106,7 +90,6 @@ export function normalizeFrontendSettingsForm(settings: FrontendSettings): Front
 
 export function serializeFrontendSettingsForm(form: FrontendSettingsForm): FrontendSettings {
   return {
-    custom_code: form.custom_code,
     announcements: form.announcements.map((item) => ({
       ...item,
       starts_at: announcementISOString(item.starts_at),

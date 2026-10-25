@@ -39,7 +39,6 @@ type App struct {
 	configLoadMu           sync.Mutex
 	registrationPersisted  bool
 	networkPolicySignature string
-	xuiBootstrapSignature  string
 	realmForwardSignature  string
 	haProxySignature       string
 	accessLogState         accessLogTailState
@@ -102,7 +101,6 @@ func (a *App) runOnceWithConfig(ctx context.Context, effectiveConfig model.Manag
 	a.applyNetworkPolicyIfNeeded(ctx, effectiveConfig.Entry.NetworkPolicy)
 	a.applyRealmForwardingIfNeeded(ctx, effectiveConfig.Entry.PortForwarding)
 	a.applyHAProxyIfNeeded(ctx, effectiveConfig.Entry.HAProxy)
-	a.ensureXUIBootstrapIfNeeded(ctx, effectiveConfig.XUI)
 	a.executePendingXUIActions(ctx, effectiveConfig)
 	snapshot := a.collect(ctx, effectiveConfig)
 	if err := a.pushSnapshot(ctx, snapshot); err != nil {
@@ -843,37 +841,4 @@ func cloneStrings(values []string) []string {
 		return nil
 	}
 	return append([]string(nil), values...)
-}
-
-func stringValue(v any) string {
-	s, _ := v.(string)
-	return s
-}
-
-func floatValue(v any) float64 {
-	switch n := v.(type) {
-	case float64:
-		return n
-	case int:
-		return float64(n)
-	case int64:
-		return float64(n)
-	default:
-		return 0
-	}
-}
-
-func uintValue(v any) uint64 {
-	switch n := v.(type) {
-	case float64:
-		return uint64(n)
-	case int:
-		return uint64(n)
-	case int64:
-		return uint64(n)
-	case uint64:
-		return n
-	default:
-		return 0
-	}
 }

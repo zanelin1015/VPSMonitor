@@ -207,7 +207,7 @@ func TestSupportHandlersEnforceAreaOwnershipAndSendOfflineTelegram(t *testing.T)
 	if err != nil {
 		t.Fatalf("CreateCustomerForOwner: %v", err)
 	}
-	if _, err := s.CreateTelegramBot(model.TelegramBotRequest{Name: "Support", BotToken: "token", ChatID: "123", Enabled: true}); err != nil {
+	if _, err := s.CreateTelegramBot(model.TelegramBotRequest{Name: "Support", BotToken: "token", ChatID: "123", Enabled: true}, 0); err != nil {
 		t.Fatalf("CreateTelegramBot: %v", err)
 	}
 

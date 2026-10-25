@@ -80,7 +80,6 @@ type Options = Pick<
   Pick<
     ReturnType<typeof useXUIRemoteActions>,
     | 'xuiRestartLoading'
-    | 'xuiUpdateLoading'
     | 'remoteCommandLoading'
     | 'xuiClientDeleteLoadingKey'
     | 'routingRuleDeleteLoadingAgentId'
@@ -95,7 +94,6 @@ type Options = Pick<
     | 'setXUIClientEnabled'
     | 'manualResetXUIClientTraffic'
     | 'restartXUIService'
-    | 'update3XUI'
     | 'executeRemoteCommand'
   > &
   Pick<
@@ -142,11 +140,10 @@ export function buildAgentDetailProps({
   configError,
   configLoading,
   configSavingSection,
-  currencyOptions,
   overviewLoading,
+  currencyOptions,
   agentRefreshLoading,
   xuiRestartLoading,
-  xuiUpdateLoading,
   realmCopyLoading,
   remoteCommandLoading,
   dashboardView,
@@ -208,7 +205,6 @@ export function buildAgentDetailProps({
   manualResetXUIClientTraffic,
   requestAgentSnapshot,
   restartXUIService,
-  update3XUI,
   executeRemoteCommand,
   loadXUIActions,
   copyRealmConfigToAgent,
@@ -243,7 +239,6 @@ export function buildAgentDetailProps({
     currencyOptions: currencyOptions,
     currentAgentLoading: overviewLoading || configLoading || agentRefreshLoading,
     xuiRestartLoading: xuiRestartLoading,
-    xuiUpdateLoading: xuiUpdateLoading,
     realmCopyLoading: realmCopyLoading,
     remoteCommandLoading: remoteCommandLoading,
     dashboardView: dashboardView,
@@ -255,7 +250,6 @@ export function buildAgentDetailProps({
     newTagName: newTagName,
     overview: currentOverview,
     overviewError: overviewError,
-    overviewLoading: overviewLoading,
     selectedAgent,
     selectedAgentId: selectedAgentId,
     selectedNodeAnchor: selectedNodeAnchor,
@@ -343,17 +337,12 @@ export function buildAgentDetailProps({
     onDeleteXUIClient: (client) => void deleteXUIClient(client, selectedAgentId),
     onDeleteRoutingRules: (payload) => deleteRoutingRules(payload, selectedAgentId),
     onUpdateRoutingRule: (payload) => updateRoutingRule(payload, selectedAgentId),
-    onRoutingRuleUpdated: () => {
-      ;[0, 1000, 3000].forEach((delay) =>
-        window.setTimeout(() => void loadOverview(selectedAgentId, { silent: true }), delay),
-      )
-    },
+    onRoutingRuleUpdated: () => scheduleXUIActionResultRefresh(selectedAgentId, { delays: [0, 1000, 3000] }),
     onDeleteOutbounds: (payload) => deleteOutbounds(payload, selectedAgentId),
     onSetXUIClientEnabled: (client, enabled) => void setXUIClientEnabled(client, enabled, selectedAgentId),
     onManualResetXUIClientTraffic: (client) => manualResetXUIClientTraffic(client, selectedAgentId),
     onRefreshCurrentAgent: () => void requestAgentSnapshot(selectedAgentId),
     onRestartXUI: () => void restartXUIService(selectedAgentId),
-    onUpdate3XUI: () => void update3XUI(selectedAgentId),
     onExecuteRemoteCommand: (command, shell, timeoutSeconds) =>
       void executeRemoteCommand(command, shell, timeoutSeconds, selectedAgentId),
     onRefreshXUIActions: () => void loadXUIActions(),

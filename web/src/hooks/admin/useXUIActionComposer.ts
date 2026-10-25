@@ -1,3 +1,4 @@
+import { useXUIActionResultRefresh } from '../useXUIActionResultRefresh'
 import type { MessageInstance } from 'antd/es/message/interface'
 import type { Dispatch, SetStateAction } from 'react'
 import { useEffect, useState } from 'react'
@@ -23,8 +24,11 @@ interface Options {
   currentOverview: XUIOverview | null
   selectedAgentId: string
   message: MessageInstance
-  loadXUIActions: (agentID?: string, options?: LoadOptions) => Promise<void>
+  xuiActions: XUIAction[]
+  loadXUIActions: (agentID?: string, options?: LoadOptions) => Promise<XUIAction[] | undefined>
   loadOverview: (agentID: string, options?: LoadOptions) => Promise<void>
+  loadAgents?: (options?: LoadOptions) => Promise<void>
+  loadAgentLogs?: (agentID: string, options?: LoadOptions) => Promise<void>
   setAdminUser: Dispatch<SetStateAction<AdminUser | null>>
 }
 
@@ -34,9 +38,13 @@ export function useXUIActionComposer({
   selectedAgentId,
   message,
   loadXUIActions,
+  xuiActions,
   loadOverview,
+  loadAgents,
+  loadAgentLogs,
   setAdminUser,
 }: Options) {
+  const { scheduleXUIActionResultRefresh, refreshXUIActionResult, waitForXUIAction } = useXUIActionResultRefresh({ loadXUIActions, loadOverview, loadAgents, loadAgentLogs, observedAgentID: selectedAgentId, actions: xuiActions })
   const [xuiActionModalOpen, setXUIActionModalOpen] = useState(false)
 
   const [xuiActionSaving, setXUIActionSaving] = useState(false)
@@ -143,15 +151,6 @@ export function useXUIActionComposer({
     }
   }
 
-  function scheduleXUIActionResultRefresh(agentID: string) {
-    ;[500, 1000, 2000, 4000, 8000, 15000].forEach((delay) => {
-      window.setTimeout(() => {
-        void loadXUIActions(agentID, { silent: true })
-        void loadOverview(agentID, { silent: true })
-      }, delay)
-    })
-  }
-
   async function copyImportURL(client: XUIClientView) {
     const importURL = nodeImportURL(client, nodeImportTarget)
     if (!importURL) {
@@ -194,6 +193,8 @@ export function useXUIActionComposer({
     setNodeImportTarget,
     createXUIAction,
     scheduleXUIActionResultRefresh,
+    refreshXUIActionResult,
+    waitForXUIAction,
     copyImportURL,
   }
 }

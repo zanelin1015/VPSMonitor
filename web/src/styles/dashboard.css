@@ -5,7 +5,7 @@
   min-width: 0;
 }
 
-.admin-workbench-page {
+.admin-pro-workbench-layout .admin-pro-route {
   display: flex;
   height: 100%;
   min-width: 0;
@@ -623,6 +623,7 @@
 
 .workbench-speed-trend {
   display: grid;
+  height: 100%;
   min-width: 0;
   min-height: 0;
   flex: 1 1 auto;
@@ -693,8 +694,8 @@
 
 .workbench-speed-chart {
   position: relative;
+  min-height: 100px;
   min-width: 0;
-  min-height: 0;
   flex: 1 1 auto;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
@@ -707,11 +708,6 @@
   backdrop-filter: blur(14px);
 }
 
-.workbench-speed-chart > div {
-  width: 100%;
-  height: 100%;
-  min-height: 100%;
-}
 
 .workbench-speed-scale {
   display: flex;
@@ -964,7 +960,7 @@
 }
 
 @media (max-width: 1180px) {
-  .admin-workbench-page {
+  .admin-pro-workbench-layout .admin-pro-route {
     overflow-x: clip;
     overflow-y: auto;
   }
@@ -991,7 +987,7 @@
 }
 
 @media (max-width: 900px) {
-  .admin-workbench-page {
+  .admin-pro-workbench-layout .admin-pro-route {
     overflow-x: clip;
     overflow-y: auto;
   }
@@ -1014,7 +1010,7 @@
 }
 
 @media (max-width: 760px) {
-  .admin-workbench-page {
+  .admin-pro-workbench-layout .admin-pro-route {
     height: auto;
     overflow: visible;
   }
@@ -1078,7 +1074,7 @@
   }
 
   .finance-detail-panel .ant-table,
-  .admin-content-page .ant-table {
+  .admin-pro-route .ant-table {
     min-width: 760px;
   }
 }
@@ -1630,3 +1626,14 @@
   padding: 12px;
   background: transparent;
 }
+
+.speed-history-plot { position: absolute; inset: 0; }
+.speed-history-plot svg { display: block; width: 100%; height: 100%; }
+.speed-history-plot text { fill: var(--muted); font-size: 10px; }
+.speed-history-grid { stroke: var(--border); stroke-dasharray: 3 6; }
+.speed-history-series { fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.speed-history-upload { stroke: #0f9f8f; }
+.speed-history-download { stroke: #f97316; }
+.speed-history-plot circle { fill: var(--card); stroke-width: 2; }
+.speed-history-crosshair { stroke: var(--muted); stroke-dasharray: 3 3; }
+.speed-history-tooltip { position: absolute; top: 12px; display: grid; gap: 4px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--text); box-shadow: var(--shadow); font-size: 12px; pointer-events: none; }

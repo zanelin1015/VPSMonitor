@@ -1,5 +1,5 @@
 import { App as AntdApp } from 'antd'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type {
   AccessLogEntry,
@@ -33,7 +33,6 @@ import {
   serializeFrontendSettingsForm,
 } from '../lib/appHelpers'
 import { defaultScheduledTaskSettings, normalizeScheduledTaskSettings } from '../lib/scheduledTasks'
-import { applyCustomFrontendCode } from '../components/VisualEffects'
 
 interface LoadOptions {
   silent?: boolean
@@ -55,20 +54,33 @@ const defaultAccessLogFilters: AccessLogFilters = {
   limit: 100,
 }
 
-export function useAdminSystemTools(setAdminUser: (user: AdminUser | null) => void) {
+export function useAdminSystemTools(setAdminUser: (user: AdminUser | null) => void, adminUser: AdminUser | null) {
   const { message } = AntdApp.useApp()
+  const telegramOwner = adminUser ? `${adminUser.role}:${adminUser.id}` : ''
+  const telegramOwnerRef = useRef(telegramOwner)
+  telegramOwnerRef.current = telegramOwner
+  const [telegramDataOwner, setTelegramDataOwner] = useState(telegramOwner)
   const [telegramBots, setTelegramBots] = useState<TelegramBot[]>([])
   const [telegramBotsLoading, setTelegramBotsLoading] = useState(false)
   const [telegramBotModalOpen, setTelegramBotModalOpen] = useState(false)
   const [telegramBotSaving, setTelegramBotSaving] = useState(false)
   const [editingTelegramBotId, setEditingTelegramBotId] = useState<number | null>(null)
   const [telegramBotForm, setTelegramBotForm] = useState<TelegramBotForm>(() => defaultTelegramBotForm())
+  useEffect(() => {
+    setTelegramBots([])
+    setTelegramBotsLoading(false)
+    setTelegramBotSaving(false)
+    setTelegramDataOwner(telegramOwner)
+    setTelegramBotForm(defaultTelegramBotForm())
+    setEditingTelegramBotId(null)
+    setTelegramBotModalOpen(false)
+  }, [telegramOwner])
+
   const [clientInstallModalOpen, setClientInstallModalOpen] = useState(false)
   const [clientInstallLoading, setClientInstallLoading] = useState(false)
   const [clientInstallSaving, setClientInstallSaving] = useState(false)
   const [clientInstallForm, setClientInstallForm] = useState<ClientInstallCommandForm>(() => defaultClientInstallCommandForm())
   const [clientInstallCommandKind, setClientInstallCommandKind] = useState<ClientInstallCommandKind>('linux')
-  const [frontendSettingsModalOpen, setFrontendSettingsModalOpen] = useState(false)
   const [frontendSettingsLoading, setFrontendSettingsLoading] = useState(false)
   const [frontendSettingsLoaded, setFrontendSettingsLoaded] = useState(false)
   const [frontendSettingsSaving, setFrontendSettingsSaving] = useState(false)
@@ -138,10 +150,7 @@ export function useAdminSystemTools(setAdminUser: (user: AdminUser | null) => vo
     }
   }
 
-  async function openFrontendSettingsModal(showModal = true) {
-    if (showModal) {
-      setFrontendSettingsModalOpen(true)
-    }
+  async function loadFrontendSettings() {
     setFrontendSettingsLoading(true)
     setFrontendSettingsLoaded(false)
     try {
@@ -171,7 +180,6 @@ export function useAdminSystemTools(setAdminUser: (user: AdminUser | null) => vo
         body: JSON.stringify(serializeFrontendSettingsForm(nextForm)),
       })
       setFrontendSettingsForm(normalizeFrontendSettingsForm(data))
-      applyCustomFrontendCode(data.custom_code || '')
       message.success('设置已保存')
       return true
     } catch (error) {
@@ -249,19 +257,23 @@ export function useAdminSystemTools(setAdminUser: (user: AdminUser | null) => vo
   }
 
   async function loadTelegramBots(options: LoadOptions = {}) {
+    const requestOwner = telegramOwner
     const silent = Boolean(options.silent)
     if (!silent) {
       setTelegramBotsLoading(true)
     }
     try {
       const data = await fetchJSON<TelegramBot[]>('/api/v1/admin/telegram-bots')
+      if (telegramOwnerRef.current !== requestOwner) return
+      setTelegramDataOwner(requestOwner)
       setTelegramBots(Array.isArray(data) ? data : [])
     } catch (error) {
+      if (telegramOwnerRef.current !== requestOwner) return
       if (!handleUnauthorized(error) && !silent) {
         message.error(error instanceof Error ? error.message : '加载 Telegram 机器人失败')
       }
     } finally {
-      if (!silent) {
+      if (!silent && telegramOwnerRef.current === requestOwner) {
         setTelegramBotsLoading(false)
       }
     }
@@ -335,6 +347,7 @@ export function useAdminSystemTools(setAdminUser: (user: AdminUser | null) => vo
   }
 
   async function saveTelegramBot() {
+    const requestOwner = telegramOwner
     if (!telegramBotForm.name.trim() || !telegramBotForm.chat_id.trim()) {
       message.error('机器人名称和 Chat ID 必填')
       return
@@ -350,49 +363,50 @@ export function useAdminSystemTools(setAdminUser: (user: AdminUser | null) => vo
         bot_token: telegramBotForm.bot_token.trim(),
         chat_id: telegramBotForm.chat_id.trim(),
         enabled: telegramBotForm.enabled,
+        notify_expiry: telegramBotForm.notify_expiry,
+        notify_support: telegramBotForm.notify_support,
       }
-      if (editingTelegramBotId) {
-        await fetchJSON<TelegramBot>(`/api/v1/admin/telegram-bots/${editingTelegramBotId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
-        message.success('Telegram 机器人已更新')
-      } else {
-        await fetchJSON<TelegramBot>('/api/v1/admin/telegram-bots', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
-        message.success('Telegram 机器人已新增')
-      }
+      await fetchJSON<TelegramBot>(editingTelegramBotId ? `/api/v1/admin/telegram-bots/${editingTelegramBotId}` : '/api/v1/admin/telegram-bots', {
+        method: editingTelegramBotId ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (telegramOwnerRef.current !== requestOwner) return
+      message.success(editingTelegramBotId ? 'Telegram 机器人已更新' : 'Telegram 机器人已新增')
       setEditingTelegramBotId(null)
       setTelegramBotForm(defaultTelegramBotForm())
       await loadTelegramBots()
     } catch (error) {
+      if (telegramOwnerRef.current !== requestOwner) return
       handleUnauthorized(error)
       message.error(error instanceof Error ? error.message : '保存 Telegram 机器人失败')
     } finally {
-      setTelegramBotSaving(false)
+      if (telegramOwnerRef.current === requestOwner) setTelegramBotSaving(false)
     }
   }
 
   async function deleteTelegramBot(id: number) {
+    const requestOwner = telegramOwner
     try {
       await fetchJSON<{ status: string }>(`/api/v1/admin/telegram-bots/${id}`, { method: 'DELETE' })
+      if (telegramOwnerRef.current !== requestOwner) return
       message.success('Telegram 机器人已删除')
       await loadTelegramBots()
     } catch (error) {
+      if (telegramOwnerRef.current !== requestOwner) return
       handleUnauthorized(error)
       message.error(error instanceof Error ? error.message : '删除 Telegram 机器人失败')
     }
   }
 
   async function testTelegramBot(id: number) {
+    const requestOwner = telegramOwner
     try {
       await fetchJSON<{ status: string }>(`/api/v1/admin/telegram-bots/${id}/test`, { method: 'POST' })
+      if (telegramOwnerRef.current !== requestOwner) return
       message.success('测试消息已发送')
     } catch (error) {
+      if (telegramOwnerRef.current !== requestOwner) return
       handleUnauthorized(error)
       message.error(error instanceof Error ? error.message : '发送测试消息失败')
     }
@@ -416,7 +430,6 @@ export function useAdminSystemTools(setAdminUser: (user: AdminUser | null) => vo
     frontendSettingsForm,
     frontendSettingsLoading,
     frontendSettingsLoaded,
-    frontendSettingsModalOpen,
     frontendSettingsSaving,
     scheduledTasks,
     scheduledTasksLoading,
@@ -424,7 +437,7 @@ export function useAdminSystemTools(setAdminUser: (user: AdminUser | null) => vo
     telegramBotForm,
     telegramBotModalOpen,
     telegramBotSaving,
-    telegramBots,
+    telegramBots: telegramDataOwner === telegramOwner ? telegramBots : [],
     telegramBotsLoading,
     updateLatestError,
     updateLatestInfo,
@@ -438,7 +451,7 @@ export function useAdminSystemTools(setAdminUser: (user: AdminUser | null) => vo
     loadTelegramBots,
     loadUpdateLatestInfo,
     openClientInstallModal,
-    openFrontendSettingsModal,
+    loadFrontendSettings,
     saveClientInstallSettings,
     saveFrontendSettings,
     saveScheduledTasks,
@@ -449,7 +462,6 @@ export function useAdminSystemTools(setAdminUser: (user: AdminUser | null) => vo
     setClientInstallModalOpen,
     setEditingTelegramBotId,
     setFrontendSettingsForm,
-    setFrontendSettingsModalOpen,
     setScheduledTasks,
     setTelegramBotForm,
     setTelegramBotModalOpen,

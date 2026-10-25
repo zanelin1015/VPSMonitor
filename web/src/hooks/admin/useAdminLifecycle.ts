@@ -20,7 +20,7 @@ type Options = Pick<ReturnType<typeof useAdminSession>, 'loadSession' | 'adminUs
     | 'updateModalOpen'
     | 'loadUpdateLatestInfo'
     | 'loadScheduledTasks'
-    | 'openFrontendSettingsModal'
+    | 'loadFrontendSettings'
     | 'loadAccessLogs'
     | 'setTelegramBots'
   > &
@@ -76,7 +76,7 @@ export function useAdminLifecycle(options: Options) {
     activeTabKey,
     setActiveTabKey,
     loadScheduledTasks,
-    openFrontendSettingsModal,
+    loadFrontendSettings,
     loadAccessLogs,
     agents,
     selectedAgentId,
@@ -191,7 +191,7 @@ export function useAdminLifecycle(options: Options) {
 
   useEffect(() => {
     if (adminUser && canManageSystem && activeAdminPage === 'settings') {
-      void openFrontendSettingsModal(false)
+      void loadFrontendSettings()
     }
   }, [activeAdminPage, adminUser, canManageSystem])
 

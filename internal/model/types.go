@@ -20,7 +20,6 @@ type AgentSnapshot struct {
 	Realm              *RealmSnapshot         `json:"realm,omitempty"`
 	HAProxy            *HAProxySnapshot       `json:"haproxy,omitempty"`
 	NetworkPolicy      *NetworkPolicySnapshot `json:"network_policy,omitempty"`
-	Nezha              *NezhaSnapshot         `json:"nezha,omitempty"`
 	Logs               []AgentLogEntry        `json:"logs,omitempty"`
 }
 
@@ -58,8 +57,6 @@ type VPSSummary struct {
 	InboundCount      int     `json:"inbound_count,omitempty"`
 	OutboundCount     int     `json:"outbound_count,omitempty"`
 	RoutingRuleCount  int     `json:"routing_rule_count,omitempty"`
-	NezhaServerID     uint64  `json:"nezha_server_id,omitempty"`
-	NezhaServerName   string  `json:"nezha_server_name,omitempty"`
 	LastCollectionErr string  `json:"last_collection_err,omitempty"`
 }
 
@@ -235,16 +232,6 @@ type XUIAppStats struct {
 	Threads uint32 `json:"threads"`
 	Mem     uint64 `json:"mem"`
 	Uptime  uint64 `json:"uptime"`
-}
-
-type NezhaSnapshot struct {
-	BaseURL     string         `json:"base_url"`
-	CollectedAt time.Time      `json:"collected_at"`
-	Error       string         `json:"error,omitempty"`
-	ServerID    uint64         `json:"server_id,omitempty"`
-	ServerUUID  string         `json:"server_uuid,omitempty"`
-	ServerName  string         `json:"server_name,omitempty"`
-	RawServer   map[string]any `json:"raw_server,omitempty"`
 }
 
 type AgentListItem struct {

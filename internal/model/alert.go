@@ -3,20 +3,24 @@ package model
 import "time"
 
 type TelegramBot struct {
-	ID          int64     `json:"id"`
-	Name        string    `json:"name"`
-	ChatID      string    `json:"chat_id"`
-	Enabled     bool      `json:"enabled"`
-	HasBotToken bool      `json:"has_bot_token"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID            int64     `json:"id"`
+	Name          string    `json:"name"`
+	ChatID        string    `json:"chat_id"`
+	Enabled       bool      `json:"enabled"`
+	HasBotToken   bool      `json:"has_bot_token"`
+	NotifyExpiry  bool      `json:"notify_expiry"`
+	NotifySupport bool      `json:"notify_support"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 type TelegramBotRequest struct {
-	Name     string `json:"name"`
-	BotToken string `json:"bot_token,omitempty"`
-	ChatID   string `json:"chat_id"`
-	Enabled  bool   `json:"enabled"`
+	Name          string `json:"name"`
+	BotToken      string `json:"bot_token,omitempty"`
+	ChatID        string `json:"chat_id"`
+	Enabled       bool   `json:"enabled"`
+	NotifyExpiry  *bool  `json:"notify_expiry,omitempty"`
+	NotifySupport *bool  `json:"notify_support,omitempty"`
 }
 
 type ConfigAuditLog struct {

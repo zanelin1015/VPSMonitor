@@ -435,47 +435,6 @@ func (s *SQLiteStore) ListAreaManagerAgentIDs(managerID int64) ([]string, error)
 	return agentIDs, nil
 }
 
-func (s *SQLiteStore) AreaManagerCanAccessAgent(managerID int64, agentID string) (bool, error) {
-	agentID = strings.TrimSpace(agentID)
-	if managerID <= 0 || agentID == "" {
-		return false, nil
-	}
-	var exists int
-	err := s.db.QueryRow(`
-		SELECT 1
-		FROM area_manager_agents
-		WHERE manager_id = ? AND agent_id = ?
-		LIMIT 1
-	`, managerID, agentID).Scan(&exists)
-	if err == sql.ErrNoRows {
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("check area manager agent access: %w", err)
-	}
-	return exists == 1, nil
-}
-
-func (s *SQLiteStore) AddAreaManagerAgents(managerID int64, agentIDs []string) error {
-	if managerID <= 0 {
-		return fmt.Errorf("invalid area manager id")
-	}
-	agentIDs, err := s.normalizeAreaManagerAgentIDs(agentIDs)
-	if err != nil {
-		return err
-	}
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	for _, agentID := range agentIDs {
-		if _, err := s.db.Exec(`
-			INSERT OR IGNORE INTO area_manager_agents (manager_id, agent_id, created_at)
-			VALUES (?, ?, ?)
-		`, managerID, agentID, now); err != nil {
-			return fmt.Errorf("assign agent %s to area manager: %w", agentID, err)
-		}
-	}
-	return nil
-}
-
 func (s *SQLiteStore) ListAreaManagerAssignments(managerID int64) ([]model.AreaManagerAssignment, error) {
 	if managerID <= 0 {
 		return nil, nil
@@ -504,17 +463,6 @@ func (s *SQLiteStore) ListAreaManagerAssignments(managerID int64) ([]model.AreaM
 		return nil, fmt.Errorf("iterate area manager assignments: %w", err)
 	}
 	return items, nil
-}
-
-func (s *SQLiteStore) CreateAreaManagerAssignment(managerID int64, req model.AreaManagerAssignmentRequest) (model.AreaManagerAssignment, error) {
-	items, err := s.CreateAreaManagerAssignments(managerID, []model.AreaManagerAssignmentRequest{req})
-	if err != nil {
-		return model.AreaManagerAssignment{}, err
-	}
-	if len(items) == 0 {
-		return model.AreaManagerAssignment{}, fmt.Errorf("created area manager assignment not found")
-	}
-	return items[0], nil
 }
 
 func (s *SQLiteStore) CreateAreaManagerAssignments(managerID int64, requests []model.AreaManagerAssignmentRequest) ([]model.AreaManagerAssignment, error) {

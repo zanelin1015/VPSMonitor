@@ -94,7 +94,7 @@ func TestAreaManagerXUIActionAllowedIncludesAddClient(t *testing.T) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer sqliteStore.Close()
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "agent-1", AgentName: "Agent 1"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "agent-1", AgentName: "Agent 1"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
 	enabled := true
@@ -107,7 +107,7 @@ func TestAreaManagerXUIActionAllowedIncludesAddClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAreaManager: %v", err)
 	}
-	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+	if _, err := testCreateAreaManagerAssignment(sqliteStore, manager.ID, model.AreaManagerAssignmentRequest{
 		AgentID:     "agent-1",
 		InboundID:   7,
 		InboundTag:  "node-7",
@@ -154,7 +154,7 @@ func TestAreaManagerXUIActionAllowedIncludesAddClient(t *testing.T) {
 	}) {
 		t.Fatal("expected area manager to be allowed to delete a client under a node")
 	}
-	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+	if _, err := testCreateAreaManagerAssignment(sqliteStore, manager.ID, model.AreaManagerAssignmentRequest{
 		AgentID:     "agent-1",
 		InboundID:   8,
 		InboundTag:  "node-8",
@@ -208,7 +208,7 @@ func TestAreaManagerCustomerAssignmentRequiresGrantedOrCreatedClient(t *testing.
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer sqliteStore.Close()
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "agent-1", AgentName: "Agent 1"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "agent-1", AgentName: "Agent 1"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
 	enabled := true
@@ -221,7 +221,7 @@ func TestAreaManagerCustomerAssignmentRequiresGrantedOrCreatedClient(t *testing.
 	if err != nil {
 		t.Fatalf("CreateAreaManager: %v", err)
 	}
-	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+	if _, err := testCreateAreaManagerAssignment(sqliteStore, manager.ID, model.AreaManagerAssignmentRequest{
 		AgentID:     "agent-1",
 		InboundID:   7,
 		InboundTag:  "node-7",
@@ -230,7 +230,7 @@ func TestAreaManagerCustomerAssignmentRequiresGrantedOrCreatedClient(t *testing.
 	}); err != nil {
 		t.Fatalf("CreateAreaManagerAssignment exact client: %v", err)
 	}
-	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+	if _, err := testCreateAreaManagerAssignment(sqliteStore, manager.ID, model.AreaManagerAssignmentRequest{
 		AgentID:    "agent-1",
 		InboundID:  8,
 		InboundTag: "node-8",
@@ -342,7 +342,7 @@ func TestXUIOverviewForOutboundAuthorizationAllowsForwardingOnlyEntry(t *testing
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer sqliteStore.Close()
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "entry", AgentName: "Entry"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "entry", AgentName: "Entry"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
 	if err := sqliteStore.SaveSnapshot(model.AgentSnapshot{AgentID: "entry", AgentName: "Entry", ReportedAt: time.Now()}); err != nil {
@@ -368,13 +368,13 @@ func TestAreaManagerXUIActionEnforcesOutboundScope(t *testing.T) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer sqliteStore.Close()
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "agent-1", AgentName: "Agent 1"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "agent-1", AgentName: "Agent 1"}); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "source-1", AgentName: "Source 1"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "source-1", AgentName: "Source 1"}); err != nil {
 		t.Fatalf("RegisterAgent source: %v", err)
 	}
-	if _, err := sqliteStore.UpdateAgentConfig("source-1", model.ManagedAgentConfig{
+	if _, err := testUpdateAgentConfig(sqliteStore, "source-1", model.ManagedAgentConfig{
 		AgentID: "source-1",
 		Entry:   model.AgentEntryConfig{ImportDomain: "source.example.com"},
 	}); err != nil {
@@ -394,7 +394,7 @@ func TestAreaManagerXUIActionEnforcesOutboundScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAreaManager: %v", err)
 	}
-	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+	if _, err := testCreateAreaManagerAssignment(sqliteStore, manager.ID, model.AreaManagerAssignmentRequest{
 		AgentID:     "source-1",
 		InboundID:   9,
 		InboundTag:  "source-node",
@@ -543,10 +543,10 @@ func TestAreaManagerXUIActionAllowedUsesAssignmentScopeWhenAgentListIsStale(t *t
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer sqliteStore.Close()
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "gz", AgentName: "GZ Entry"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "gz", AgentName: "GZ Entry"}); err != nil {
 		t.Fatalf("RegisterAgent gz: %v", err)
 	}
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK Exit"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK Exit"}); err != nil {
 		t.Fatalf("RegisterAgent hk: %v", err)
 	}
 	enabled := true
@@ -559,7 +559,7 @@ func TestAreaManagerXUIActionAllowedUsesAssignmentScopeWhenAgentListIsStale(t *t
 	if err != nil {
 		t.Fatalf("CreateAreaManager: %v", err)
 	}
-	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+	if _, err := testCreateAreaManagerAssignment(sqliteStore, manager.ID, model.AreaManagerAssignmentRequest{
 		AgentID:     "hk",
 		InboundID:   1001,
 		InboundTag:  "HK:20001",
@@ -595,10 +595,10 @@ func TestAreaManagerDashboardFiltersUseAssignmentScopeWhenAgentListIsStale(t *te
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer sqliteStore.Close()
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "gz", AgentName: "GZ Entry"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "gz", AgentName: "GZ Entry"}); err != nil {
 		t.Fatalf("RegisterAgent gz: %v", err)
 	}
-	if _, err := sqliteStore.RegisterAgent(model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK Exit"}); err != nil {
+	if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: "hk", AgentName: "HK Exit"}); err != nil {
 		t.Fatalf("RegisterAgent hk: %v", err)
 	}
 	enabled := true
@@ -611,7 +611,7 @@ func TestAreaManagerDashboardFiltersUseAssignmentScopeWhenAgentListIsStale(t *te
 	if err != nil {
 		t.Fatalf("CreateAreaManager: %v", err)
 	}
-	if _, err := sqliteStore.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{
+	if _, err := testCreateAreaManagerAssignment(sqliteStore, manager.ID, model.AreaManagerAssignmentRequest{
 		AgentID:    "hk",
 		InboundID:  1001,
 		InboundTag: "HK:20001",
@@ -646,7 +646,7 @@ func TestAreaManagerSeesOnlyAuthorizedClientDisplayConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if _, err := db.RegisterAgent(model.AgentRegisterRequest{AgentID: "display"}); err != nil {
+	if _, err := testRegisterAgent(db, model.AgentRegisterRequest{AgentID: "display"}); err != nil {
 		t.Fatal(err)
 	}
 	enabled := true
@@ -654,7 +654,7 @@ func TestAreaManagerSeesOnlyAuthorizedClientDisplayConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{AgentID: "display", InboundID: 7, InboundTag: "node-7", ClientEmail: "allowed@example.com", Enabled: &enabled}); err != nil {
+	if _, err := testCreateAreaManagerAssignment(db, manager.ID, model.AreaManagerAssignmentRequest{AgentID: "display", InboundID: 7, InboundTag: "node-7", ClientEmail: "allowed@example.com", Enabled: &enabled}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.SaveSnapshot(realtimeTrafficSnapshot("display", "node-7", time.Now())); err != nil {

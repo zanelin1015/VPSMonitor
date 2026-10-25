@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { WorkbenchSpeedTrend } from './WorkbenchSpeedTrend'
+import { useAnimatedNumber } from '../hooks/useAnimatedNumber'
+import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button, Card, Empty, Modal, Tag, Typography } from 'antd'
 import { EyeInvisibleOutlined, EyeOutlined } from '@ant-design/icons'
-import { Line } from '@ant-design/plots'
-import type { LineConfig } from '@ant-design/plots'
 
 import type { DashboardAgentView, GlobalDashboardView } from '../types'
 import {
@@ -28,8 +28,6 @@ import {
 import { MiniProgress } from './MiniProgress'
 import { agentHealthCategory, type AgentHealthCategory } from '../lib/agentHealth'
 import { readFinanceVisibilityPreference, writeFinanceVisibilityPreference } from '../lib/financeVisibility'
-import { useAppTheme } from '../theme'
-import { consolePalette } from '../lib/adminConsoleTheme'
 
 const { Text } = Typography
 
@@ -56,28 +54,6 @@ type WorkbenchFinanceBar = {
   value: number
   tone: 'income' | 'cost' | 'profit' | 'loss'
 }
-
-type SpeedHistoryPoint = {
-  up: number
-  down: number
-  time: number
-  samples: number
-}
-
-type SpeedChartPoint = {
-  name: '上传' | '下载'
-  speed: number
-  time: string
-}
-
-type SpeedAxisInfo = {
-  maxValue: number
-  unit: string
-  divisor: number
-}
-
-const SPEED_BUCKET_MS = 5 * 60 * 1000
-const SPEED_HISTORY_POINTS = 24
 
 export function AdminWorkbenchDashboard(props: {
   agents: DashboardAgentView[]
@@ -391,146 +367,6 @@ function WorkbenchStatusDonut(props: { online: number; warning: number; offline:
   )
 }
 
-function WorkbenchSpeedTrend(props: { up: number; down: number }) {
-  const { up, down } = props
-  const { effectiveMode } = useAppTheme()
-  const palette = consolePalette[effectiveMode]
-  const animatedUp = useAnimatedNumber(up)
-  const animatedDown = useAnimatedNumber(down)
-  const [history, setHistory] = useState<SpeedHistoryPoint[]>(() => createInitialSpeedHistory(up, down))
-  const animatedTotal = animatedUp + animatedDown
-  const chartRows = history.map((point, index) => (
-    index === history.length - 1 && point.time === speedBucketStart(Date.now())
-      ? { ...point, up: animatedUp, down: animatedDown }
-      : point
-  ))
-  const axis = speedAxisInfo(chartRows)
-  const chartData = chartRows.flatMap<SpeedChartPoint>((point) => {
-    const time = formatChartTime(point.time)
-    return [
-      { name: '上传', speed: point.up / axis.divisor, time },
-      { name: '下载', speed: point.down / axis.divisor, time },
-    ]
-  })
-  const chartConfig: LineConfig = {
-    theme: effectiveMode === 'dark' ? 'dark' : 'light',
-    data: chartData,
-    xField: 'time',
-    yField: 'speed',
-    colorField: 'name',
-    shapeField: 'smooth',
-    autoFit: true,
-    padding: [18, 16, 34, 48],
-    scale: {
-      y: {
-        domain: [0, axis.maxValue / axis.divisor],
-        nice: false,
-        tickCount: 4,
-      },
-      color: {
-        range: ['#0f9f8f', '#f97316'],
-      },
-    },
-    axis: {
-      x: {
-        title: false,
-        tick: false,
-        labelAutoHide: true,
-        labelAutoRotate: false,
-        labelFill: palette.secondary,
-        labelFontSize: 10,
-        line: true,
-        lineStroke: 'rgba(148, 163, 184, 0.34)',
-      },
-      y: {
-        title: false,
-        labelAutoHide: true,
-        labelFormatter: (value: string | number) => formatChartAxisValue(Number(value), axis.unit),
-        labelFill: palette.secondary,
-        labelFontSize: 10,
-        grid: true,
-        gridStroke: 'rgba(148, 163, 184, 0.18)',
-        gridLineDash: [3, 6],
-      },
-    },
-    legend: false,
-    tooltip: {
-      title: 'time',
-      items: [
-        {
-          channel: 'y',
-          valueFormatter: (value: number) => formatChartAxisValue(value, axis.unit),
-        },
-      ],
-    },
-    style: {
-      lineWidth: 1.2,
-      lineCap: 'round',
-      lineJoin: 'round',
-    },
-    point: {
-      shapeField: 'circle',
-      sizeField: 2.2,
-      style: {
-        stroke: 'rgba(255,255,255,0.82)',
-        lineWidth: 1,
-      },
-    },
-    interaction: {
-      tooltip: {
-        shared: true,
-        crosshairs: true,
-      },
-    },
-  }
-
-  useEffect(() => {
-    setHistory((current) => {
-      const now = Date.now()
-      const bucket = speedBucketStart(now)
-      const safeUp = Number.isFinite(up) ? Math.max(0, up) : 0
-      const safeDown = Number.isFinite(down) ? Math.max(0, down) : 0
-      const last = current[current.length - 1]
-      if (last?.time === bucket) {
-        const samples = Math.max(1, last.samples || 1)
-        const nextSamples = samples + 1
-        return [
-          ...current.slice(0, -1),
-          {
-            time: bucket,
-            samples: nextSamples,
-            up: ((last.up * samples) + safeUp) / nextSamples,
-            down: ((last.down * samples) + safeDown) / nextSamples,
-          },
-        ]
-      }
-      return [...current, { up: safeUp, down: safeDown, time: bucket, samples: 1 }].slice(-SPEED_HISTORY_POINTS)
-    })
-  }, [down, up])
-
-  return (
-    <div className="workbench-speed-trend">
-      <div className="workbench-speed-current">
-        <div className="workbench-speed-current-total">
-          <span>当前总网速</span>
-          <strong>{formatSpeed(animatedTotal)}</strong>
-        </div>
-        <div className="workbench-speed-legend">
-          <span className="workbench-speed-upload-pill"><i className="legend-dot legend-upload" />上传 {formatSpeed(animatedUp)}</span>
-          <span className="workbench-speed-download-pill"><i className="legend-dot legend-download" />下载 {formatSpeed(animatedDown)}</span>
-        </div>
-      </div>
-      <div className="workbench-speed-chart" aria-label={`实时网速，上传 ${formatSpeed(animatedUp)}，下载 ${formatSpeed(animatedDown)}`}>
-        <Line {...chartConfig} />
-      </div>
-      <div className="workbench-speed-scale">
-        <span>最近 {SPEED_HISTORY_POINTS} 个 5 分钟均值</span>
-        <span>纵轴单位 {axis.unit}/s · 峰值 {formatSpeed(axis.maxValue)}</span>
-      </div>
-    </div>
-  )
-}
-
 function WorkbenchTrafficList(props: {
   rows: WorkbenchMetricRow[]
   maxValue: number
@@ -723,115 +559,8 @@ function trafficRiskScore(row: WorkbenchMetricRow, maxTraffic: number): number {
   return percentOf(row.traffic.total.used, maxTraffic)
 }
 
-function createInitialSpeedHistory(up: number, down: number): SpeedHistoryPoint[] {
-  const currentBucket = speedBucketStart(Date.now())
-  const safeUp = Number.isFinite(up) ? Math.max(0, up) : 0
-  const safeDown = Number.isFinite(down) ? Math.max(0, down) : 0
-  return Array.from({ length: SPEED_HISTORY_POINTS }, (_, index) => ({
-    up: safeUp,
-    down: safeDown,
-    samples: 1,
-    time: currentBucket - (SPEED_HISTORY_POINTS - 1 - index) * SPEED_BUCKET_MS,
-  }))
-}
-
-function speedBucketStart(value: number): number {
-  return Math.floor(value / SPEED_BUCKET_MS) * SPEED_BUCKET_MS
-}
-
-function speedAxisInfo(rows: SpeedHistoryPoint[]): SpeedAxisInfo {
-  const rawMax = Math.max(1, ...rows.flatMap((row) => [row.up, row.down]))
-  const unitInfo = speedUnitInfo(rawMax)
-  const niceMax = niceAxisMax(rawMax / unitInfo.divisor) * unitInfo.divisor
-  return {
-    maxValue: niceMax,
-    unit: unitInfo.unit,
-    divisor: unitInfo.divisor,
-  }
-}
-
-function speedUnitInfo(maxValue: number): { unit: string; divisor: number } {
-  if (maxValue >= 1024 * 1024 * 1024) {
-    return { unit: 'GB', divisor: 1024 * 1024 * 1024 }
-  }
-  if (maxValue >= 1024 * 1024) {
-    return { unit: 'MB', divisor: 1024 * 1024 }
-  }
-  if (maxValue >= 1024) {
-    return { unit: 'KB', divisor: 1024 }
-  }
-  return { unit: 'B', divisor: 1 }
-}
-
-function niceAxisMax(value: number): number {
-  if (value <= 0) {
-    return 1
-  }
-  const exponent = Math.floor(Math.log10(value))
-  const base = 10 ** exponent
-  const normalized = value / base
-  const nice = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10
-  return nice * base
-}
-
-function formatChartAxisValue(value: number, unit: string): string {
-  const safeValue = Number.isFinite(value) ? value : 0
-  if (safeValue === 0) {
-    return `0 ${unit}/s`
-  }
-  return `${safeValue >= 10 ? safeValue.toFixed(0) : safeValue.toFixed(1)} ${unit}/s`
-}
-
-function formatChartTime(value: number): string {
-  return new Intl.DateTimeFormat('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).format(new Date(value))
-}
-
 function agentWorkbenchName(agent: DashboardAgentView): string {
   return agent.agent_name || agent.summary.hostname || agent.agent_id
-}
-
-function useAnimatedNumber(target: number, duration = 950): number {
-  const safeTarget = Number.isFinite(target) ? Math.max(0, target) : 0
-  const [value, setValue] = useState(safeTarget)
-  const currentRef = useRef(safeTarget)
-
-  useEffect(() => {
-    const from = currentRef.current
-    const delta = safeTarget - from
-    if (Math.abs(delta) < 0.5) {
-      currentRef.current = safeTarget
-      setValue(safeTarget)
-      return undefined
-    }
-
-    let frame = 0
-    const startedAt = performance.now()
-    const tick = (now: number) => {
-      const progress = Math.min(1, Math.max(0, (now - startedAt) / duration))
-      const eased = 1 - Math.pow(1 - progress, 3)
-      const next = from + delta * eased
-      currentRef.current = next
-      setValue(next)
-      if (progress < 1) {
-        frame = requestAnimationFrame(tick)
-      } else {
-        currentRef.current = safeTarget
-        setValue(safeTarget)
-      }
-    }
-
-    frame = requestAnimationFrame(tick)
-    return () => {
-      cancelAnimationFrame(frame)
-    }
-  }, [duration, safeTarget])
-
-  return value
 }
 
 function percentOf(value: number, maxValue: number): number {

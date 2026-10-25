@@ -23,7 +23,7 @@ func TestAreaManagerCanRefreshOnlyAssignedAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"allowed", "other"} {
-		if _, err := db.RegisterAgent(model.AgentRegisterRequest{AgentID: id}); err != nil {
+		if _, err := testRegisterAgent(db, model.AgentRegisterRequest{AgentID: id}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -77,7 +77,7 @@ func TestAddClientSuccessRequestsSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	agent, err := db.RegisterAgent(model.AgentRegisterRequest{AgentID: "refresh"})
+	agent, err := testRegisterAgent(db, model.AgentRegisterRequest{AgentID: "refresh"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestAddClientSuccessRequestsSnapshot(t *testing.T) {
 	session := app.realtime.registerAgentControl("refresh")
 	defer app.realtime.unregisterAgentControl("refresh", session)
 	for _, status := range []string{model.XUIActionStatusSucceeded, model.XUIActionStatusFailed} {
-		action, err := db.CreateXUIAction("refresh", model.XUIActionRequest{Kind: model.XUIActionAddClient, Payload: map[string]any{"inbound_id": 1, "client": map[string]any{"email": "COMMON"}}})
+		action, err := testCreateXUIAction(db, "refresh", model.XUIActionRequest{Kind: model.XUIActionAddClient, Payload: map[string]any{"inbound_id": 1, "client": map[string]any{"email": "COMMON"}}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -116,7 +116,7 @@ func TestAreaManagerOwnCreatedClientsDefaultVisible(t *testing.T) {
 	}
 	defer db.Close()
 	for _, id := range []string{"att", "other"} {
-		if _, err := db.RegisterAgent(model.AgentRegisterRequest{AgentID: id}); err != nil {
+		if _, err := testRegisterAgent(db, model.AgentRegisterRequest{AgentID: id}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -125,7 +125,7 @@ func TestAreaManagerOwnCreatedClientsDefaultVisible(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{AgentID: "att", InboundID: 4, InboundTag: "in-25319", ClientEmail: "Test", Enabled: &enabled}); err != nil {
+	if _, err := testCreateAreaManagerAssignment(db, manager.ID, model.AreaManagerAssignmentRequest{AgentID: "att", InboundID: 4, InboundTag: "in-25319", ClientEmail: "Test", Enabled: &enabled}); err != nil {
 		t.Fatal(err)
 	}
 	user := model.AdminUser{ID: manager.ID, Role: model.AdminRoleAreaManager, AgentIDs: []string{"att"}}
@@ -175,7 +175,7 @@ func TestAreaManagerNodeOnlyCanCreateWithoutSeeingExistingClients(t *testing.T) 
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if _, err := db.RegisterAgent(model.AgentRegisterRequest{AgentID: "node-only"}); err != nil {
+	if _, err := testRegisterAgent(db, model.AgentRegisterRequest{AgentID: "node-only"}); err != nil {
 		t.Fatal(err)
 	}
 	enabled := true
@@ -183,7 +183,7 @@ func TestAreaManagerNodeOnlyCanCreateWithoutSeeingExistingClients(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	grant, err := db.CreateAreaManagerAssignment(manager.ID, model.AreaManagerAssignmentRequest{AgentID: "node-only", InboundID: 4, InboundTag: "in-4", NodeOnly: true, Enabled: &enabled})
+	grant, err := testCreateAreaManagerAssignment(db, manager.ID, model.AreaManagerAssignmentRequest{AgentID: "node-only", InboundID: 4, InboundTag: "in-4", NodeOnly: true, Enabled: &enabled})
 	if err != nil {
 		t.Fatal(err)
 	}
