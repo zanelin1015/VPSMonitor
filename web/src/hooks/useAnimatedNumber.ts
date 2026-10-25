@@ -38,4 +38,3 @@ export function useAnimatedNumber(target: number, duration = 950): number {
 
   return value
 }
-

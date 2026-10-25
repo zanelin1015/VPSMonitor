@@ -62,4 +62,3 @@ export function WorkbenchSpeedTrend(props: { up: number; down: number }) {
     </div>
   )
 }
-

@@ -81,4 +81,3 @@ export function formatChartTime(value: number): string {
     hour12: false,
   }).format(new Date(value))
 }
-
