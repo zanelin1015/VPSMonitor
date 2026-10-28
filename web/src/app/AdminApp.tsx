@@ -620,7 +620,11 @@ export function AdminApp() {
               </section>
             </div>
           ) : (
-            <AssetsPage {...agentRailProps} accountKey={String(adminUser.id)} />
+            <AssetsPage
+              {...agentRailProps}
+              accountKey={String(adminUser.id)}
+              onOpenClientInstall={canManageSystem ? () => void openClientInstallModal() : undefined}
+            />
           )
         }
       />

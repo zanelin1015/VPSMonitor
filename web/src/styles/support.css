@@ -102,16 +102,68 @@
   box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.14);
 }
 
+.support-message-viewport {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.support-scroll-latest {
+  position: absolute;
+  right: 18px;
+  bottom: 12px;
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 18px;
+  background: var(--surface-strong);
+  color: var(--text);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, .18);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.support-scroll-latest:hover {
+  border-color: var(--blue);
+}
+
+.support-scroll-latest:focus-visible,
+.support-message-viewport > :focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+
 .customer-support-messages,
 .support-thread-messages {
   display: flex;
+  min-width: 0;
   min-height: 0;
   flex-direction: column;
   gap: 12px;
-  overflow-y: auto;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
   background: color-mix(in srgb, var(--surface-soft) 72%, transparent);
-  scrollbar-color: color-mix(in srgb, var(--blue) 38%, transparent) transparent;
+  scrollbar-color: var(--muted) transparent;
   scrollbar-width: thin;
+}
+
+.customer-support-messages::-webkit-scrollbar,
+.support-thread-messages::-webkit-scrollbar {
+  width: 8px;
+}
+
+.customer-support-messages::-webkit-scrollbar-thumb,
+.support-thread-messages::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: var(--muted);
+  background-clip: padding-box;
 }
 
 .customer-support-messages {
@@ -128,7 +180,9 @@
 .customer-support-message,
 .support-thread-message {
   width: fit-content;
+  min-width: 0;
   max-width: 82%;
+  flex: 0 0 auto;
   align-self: flex-start;
 }
 
@@ -146,6 +200,7 @@
   margin-bottom: 4px;
   color: var(--muted);
   font-size: 10px;
+  flex-wrap: wrap;
 }
 
 .customer-support-message p,
@@ -199,12 +254,16 @@
 
 .support-admin-page {
   display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
   flex-direction: column;
   overflow: hidden;
 }
 
 .support-admin-toolbar {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
@@ -231,6 +290,7 @@
 }
 
 .support-admin-error {
+  flex: 0 0 auto;
   margin-bottom: 8px;
   padding: 8px 12px;
   border: 1px solid color-mix(in srgb, var(--red) 42%, var(--border));
@@ -409,23 +469,34 @@
   }
 
   .support-admin-page {
-    overflow: visible;
+    overflow: hidden;
   }
 
   .support-admin-toolbar {
     align-items: flex-start;
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .support-admin-toolbar .ant-typography {
+    font-size: 20px;
   }
 
   .support-admin-layout {
     display: grid;
-    min-height: 820px;
+    min-height: 0;
     grid-template-columns: 1fr;
-    grid-template-rows: 340px 520px;
-    overflow: visible;
+    grid-template-rows: minmax(120px, 30%) minmax(0, 1fr);
+    overflow: hidden;
   }
 
   .support-conversation-pane {
     border-right: 0;
     border-bottom: 1px solid var(--border);
   }
+
+  .support-thread-header { min-height: 48px; padding: 8px 12px; }
+  .support-thread-messages { padding: 12px; }
+  .support-thread-composer { padding: 8px 10px; }
+  .support-scroll-latest { min-height: 44px; }
 }

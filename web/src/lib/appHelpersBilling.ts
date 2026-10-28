@@ -155,6 +155,7 @@ export function effectiveClientBillingExpiryTime(billing: XUIClientBillingConfig
 export function calculateRenewalStatus(config?: VPSRenewalConfig): {
   remainingLabel: string
   endLabel: string
+  endTime: number
   level: 'ok' | 'warn' | 'bad'
   autoRenew: boolean
   percent: number
@@ -167,12 +168,13 @@ export function calculateRenewalStatus(config?: VPSRenewalConfig): {
   if (!period) {
     return null
   }
+  const expiry = { endLabel: `到期 ${formatLocalDate(period.end)}`, endTime: period.end.getTime() }
   const now = startOfLocalDay(new Date())
   if (now < period.start) {
     const daysUntilStart = daysBetween(now, period.start)
     return {
       remainingLabel: `${daysUntilStart} 天后开始`,
-      endLabel: `到期 ${formatLocalDate(period.end)}`,
+      ...expiry,
       level: 'ok',
       autoRenew: Boolean(normalized.auto_renew),
       percent: 0,
@@ -183,7 +185,7 @@ export function calculateRenewalStatus(config?: VPSRenewalConfig): {
     const overdueDays = Math.abs(remainingDays)
     return {
       remainingLabel: `已过期 ${overdueDays} 天`,
-      endLabel: `到期 ${formatLocalDate(period.end)}`,
+      ...expiry,
       level: 'bad',
       autoRenew: Boolean(normalized.auto_renew),
       percent: 100,
@@ -193,7 +195,7 @@ export function calculateRenewalStatus(config?: VPSRenewalConfig): {
   const remainingPercent = (Math.max(0, remainingDays) / totalDays) * 100
   return {
     remainingLabel: remainingDays === 0 ? '今天到期' : `剩余 ${remainingDays} 天`,
-    endLabel: `到期 ${formatLocalDate(period.end)}`,
+    ...expiry,
     level: remainingDays <= 3 ? 'bad' : remainingDays <= 7 ? 'warn' : 'ok',
     autoRenew: Boolean(normalized.auto_renew),
     percent: clampMetricPercent(remainingPercent),

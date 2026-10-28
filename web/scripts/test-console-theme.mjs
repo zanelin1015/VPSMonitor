@@ -37,6 +37,15 @@ for (const dark of [false, true]) {
   assert.ok(contrast(theme.components.Button.primaryColor, palette.accent) >= 4.5, 'primary button text contrast')
   assert.ok(contrast(theme.components.Button.dangerColor, palette.error) >= 4.5, 'danger button text contrast')
   assert.ok(contrast(palette.accent, consoleCSSVariables(dark)['--blue-soft']) >= 4.5, 'selected navigation text contrast')
+  if (dark) {
+    const checkbox = theme.components.Checkbox
+    for (const background of [palette.raised, palette.surface, theme.components.Table.rowSelectedBg, theme.components.Table.rowSelectedHoverBg]) {
+      assert.ok(contrast(checkbox.colorBorder, background) >= 3, 'unchecked dark checkbox boundary remains visible')
+      assert.ok(contrast(checkbox.colorPrimary, background) >= 3, 'checked dark checkbox remains visible')
+    }
+    assert.ok(contrast(checkbox.colorWhite, checkbox.colorPrimary) >= 4.5, 'checkmark is readable on the selected fill')
+    assert.ok(contrast(checkbox.colorWhite, checkbox.colorPrimaryHover) >= 4.5, 'hover preserves checkmark contrast')
+  }
 }
 
 const css = await readFile(new URL('../src/styles/console.css', import.meta.url), 'utf8')

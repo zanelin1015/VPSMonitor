@@ -5,7 +5,6 @@ import {
   CloudServerOutlined,
   CompassOutlined,
   DashboardOutlined,
-  DeploymentUnitOutlined,
   DollarOutlined,
   FileSearchOutlined,
   MessageOutlined,
@@ -51,7 +50,7 @@ export function AdminLayout({
   const pathFor = (key: Parameters<typeof adminMenuHref>[0]) => adminMenuHref(key)
 
   return (
-    <div className={`admin-pro-layout page-shell admin-page-shell${current.key === 'dashboard' ? ' admin-pro-workbench-layout' : current.key === 'customers' ? ' admin-pro-customers-layout' : ''}`}>
+    <div className={`admin-pro-layout page-shell admin-page-shell${current.key === 'dashboard' ? ' admin-pro-workbench-layout' : current.key === 'customers' ? ' admin-pro-customers-layout' : current.key === 'assets' ? ' admin-pro-assets-layout' : current.key === 'support' ? ' admin-pro-support-layout' : ''}`}>
       <ProLayout
         title="ZaneLin"
         logo={
@@ -112,6 +111,7 @@ export function AdminLayout({
       >
         <PageContainer
           className="admin-pro-page"
+          pageHeaderRender={current.key === 'assets' || current.key === 'support' ? false : undefined}
           title={current.title}
           breadcrumbRender={false}
           content={<Typography.Text type="secondary">{current.description}</Typography.Text>}
@@ -120,11 +120,6 @@ export function AdminLayout({
               <Button icon={<ReloadOutlined />} loading={navigation.agentsLoading} onClick={navigation.onRefreshAgents}>
                 刷新
               </Button>
-              {navigation.canManageSystem && current.key === 'assets' ? (
-                <Button type="primary" icon={<DeploymentUnitOutlined />} onClick={navigation.onOpenClientInstall}>
-                  安装 Client
-                </Button>
-              ) : null}
             </Space>
           }
         >

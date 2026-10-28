@@ -34,6 +34,7 @@
     "test:admin-state": "node scripts/test-admin-state.mjs",
     "test:admin-realtime": "node scripts/test-admin-realtime.mjs",
     "test:ui-cleanup": "node scripts/test-ui-cleanup.mjs",
+    "test:support-scroll": "node scripts/test-support-scroll.mjs",
     "test:area-telegram": "node scripts/test-area-telegram.mjs"
   },
   "dependencies": {

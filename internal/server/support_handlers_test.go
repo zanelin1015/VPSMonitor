@@ -47,8 +47,8 @@ func TestPublicGuestSupportBindsTemporaryConversationToIP(t *testing.T) {
 		t.Fatalf("guest support get status=%d body=%s", getRecorder.Code, getRecorder.Body.String())
 	}
 	guestCookie := authCookie(t, getRecorder, guestSupportCookieName)
-	if guestCookie == nil || guestCookie.Value == "" || guestCookie.Path != "/api/v1/public/" {
-		t.Fatalf("expected scoped guest support cookie, got %#v", guestCookie)
+	if guestCookie == nil || guestCookie.Value == "" || guestCookie.Path != "/api/v1/" {
+		t.Fatalf("expected API-scoped guest support cookie, got %#v", guestCookie)
 	}
 
 	post := httptest.NewRequest(http.MethodPost, "https://monitor.example/api/v1/public/support/messages", bytes.NewBufferString(`{"body":"Guest question"}`))
@@ -80,6 +80,84 @@ func TestPublicGuestSupportBindsTemporaryConversationToIP(t *testing.T) {
 		t.Fatalf("list customers: %v", err)
 	} else if len(customers) != 0 {
 		t.Fatalf("guest account should stay out of customer management, got %#v", customers)
+	}
+}
+
+func TestCustomerLoginClaimsGuestSupportConversation(t *testing.T) {
+	tempDir := t.TempDir()
+	s, err := store.NewSQLiteStore(filepath.Join(tempDir, "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer s.Close()
+	customer, err := s.CreateCustomerForOwner(model.CustomerAccountRequest{
+		Username: "alice", Password: "password123", DisplayName: "Alice",
+	}, model.AdminRoleRoot, 1)
+	if err != nil {
+		t.Fatalf("CreateCustomerForOwner: %v", err)
+	}
+	app := &App{store: s, loginLimiter: newLoginRateLimiter(), supportPresence: newSupportPresenceHub()}
+	handler := app.Handler()
+
+	guestGet := httptest.NewRequest(http.MethodGet, "https://monitor.example/api/v1/public/support", nil)
+	guestGet.RemoteAddr = "198.51.100.25:443"
+	guestGetRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(guestGetRecorder, guestGet)
+	if guestGetRecorder.Code != http.StatusOK {
+		t.Fatalf("guest support get status=%d body=%s", guestGetRecorder.Code, guestGetRecorder.Body.String())
+	}
+	guestCookie := authCookie(t, guestGetRecorder, guestSupportCookieName)
+	guestPost := httptest.NewRequest(http.MethodPost, "https://monitor.example/api/v1/public/support/messages", bytes.NewBufferString(`{"body":"Before login"}`))
+	guestPost.RemoteAddr = "198.51.100.25:443"
+	guestPost.Header.Set("Content-Type", "application/json")
+	guestPost.AddCookie(guestCookie)
+	guestPostRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(guestPostRecorder, guestPost)
+	if guestPostRecorder.Code != http.StatusCreated {
+		t.Fatalf("guest support post status=%d body=%s", guestPostRecorder.Code, guestPostRecorder.Body.String())
+	}
+	guestConversations, err := s.ListSupportConversations(model.AdminRoleRoot, 1)
+	if err != nil || len(guestConversations) != 1 || !guestConversations[0].IsGuest {
+		t.Fatalf("expected guest conversation before login: %#v err=%v", guestConversations, err)
+	}
+	guestID := guestConversations[0].CustomerID
+
+	login := httptest.NewRequest(http.MethodPost, "https://monitor.example/api/v1/customer/login", strings.NewReader(`{"username":"alice","password":"password123"}`))
+	login.AddCookie(guestCookie)
+	loginRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(loginRecorder, login)
+	if loginRecorder.Code != http.StatusOK {
+		t.Fatalf("customer login status=%d body=%s", loginRecorder.Code, loginRecorder.Body.String())
+	}
+	var linked model.CustomerLoginResponse
+	if err := json.Unmarshal(loginRecorder.Body.Bytes(), &linked); err != nil {
+		t.Fatalf("decode customer login: %v", err)
+	}
+	if linked.User.ID != customer.ID {
+		t.Fatalf("login returned customer %d, want %d", linked.User.ID, customer.ID)
+	}
+	linkedConversation, found, err := s.GetSupportConversationByCustomer(customer.ID, model.SupportSenderAdmin)
+	if err != nil || !found || linkedConversation.IsGuest {
+		t.Fatalf("guest conversation was not linked to customer: %#v found=%v err=%v", linkedConversation, found, err)
+	}
+	messages, err := s.ListSupportMessages(linkedConversation.ID)
+	if err != nil || len(messages) != 1 || messages[0].Body != "Before login" || messages[0].SenderAccountID != customer.ID {
+		t.Fatalf("linked conversation did not preserve guest message: %#v err=%v", messages, err)
+	}
+	if conversations, err := s.ListSupportConversations(model.AdminRoleRoot, 1); err != nil || len(conversations) != 1 || conversations[0].CustomerID != customer.ID {
+		t.Fatalf("expected one linked conversation after login: %#v err=%v", conversations, err)
+	}
+	if _, found, err := s.GetSupportConversationByCustomer(guestID, model.SupportSenderAdmin); err != nil || found {
+		t.Fatalf("guest conversation should be removed after linking: found=%v err=%v", found, err)
+	}
+	guestCleared := false
+	for _, cookie := range loginRecorder.Result().Cookies() {
+		if cookie.Name == guestSupportCookieName && cookie.Path == "/api/v1/" && cookie.MaxAge < 0 {
+			guestCleared = true
+		}
+	}
+	if !guestCleared {
+		t.Fatal("login should clear the root-scoped guest support cookie")
 	}
 }
 

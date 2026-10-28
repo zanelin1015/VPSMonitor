@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"bridge-core/internal/model"
@@ -33,6 +34,10 @@ func (a *App) handleCustomerLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.loginLimiter.success(accountKey)
+	if err := a.claimGuestSupportConversation(w, r, user.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	pair, err := a.store.CreateCustomerSessionPair(user.ID, customerSessionTTL, customerRefreshTTL)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -41,6 +46,47 @@ func (a *App) handleCustomerLogin(w http.ResponseWriter, r *http.Request) {
 	a.setCustomerSessionCookie(w, r, pair.AccessToken, pair.AccessExpiresAt)
 	a.setCustomerRefreshCookie(w, r, pair.RefreshToken, pair.RefreshExpiresAt)
 	writeJSON(w, http.StatusOK, model.CustomerLoginResponse{User: user})
+}
+
+func (a *App) claimGuestSupportConversation(w http.ResponseWriter, r *http.Request, customerID int64) error {
+	cookie, err := r.Cookie(guestSupportCookieName)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return nil
+	}
+	guest, _, valid, validateErr := a.store.ValidateCustomerSession(cookie.Value)
+	if validateErr != nil {
+		return validateErr
+	}
+	if !valid {
+		a.clearGuestSupportCookies(w, r)
+		return nil
+	}
+	if _, err := a.store.LinkGuestSupportConversation(guest.ID, customerID); err != nil {
+		return err
+	}
+	// Clear both the current root-scoped cookie and the path used by older
+	// releases. This also prevents a later logout from resurrecting the guest
+	// conversation as a separate identity.
+	a.clearGuestSupportCookies(w, r)
+	return nil
+}
+
+func (a *App) clearGuestSupportCookies(w http.ResponseWriter, r *http.Request) {
+	for _, path := range []string{
+		requestPublicPrefix(r) + "/api/v1/",
+		requestPublicPrefix(r) + "/api/v1/public/",
+	} {
+		http.SetCookie(w, &http.Cookie{
+			Name:     guestSupportCookieName,
+			Value:    "",
+			Path:     path,
+			Expires:  time.Unix(0, 0),
+			MaxAge:   -1,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			Secure:   a.isSecureRequest(r),
+		})
+	}
 }
 
 func (a *App) handleCustomerRefresh(w http.ResponseWriter, r *http.Request) {

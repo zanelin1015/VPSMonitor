@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, App, Button, Input, Modal, Space, Table, Tag, Typography } from 'antd'
+import { LockOutlined } from '@ant-design/icons'
+import { Alert, App, Button, Input, Modal, Space, Table, Tag, Tooltip, Typography } from 'antd'
 import type { CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft } from '../types'
 import { fetchJSON } from '../lib/appHelpers'
 import { authorizeCustomersBatch, customerMatchesSearch, existingCustomerAuthorization } from '../lib/customerBatchAuthorization'
@@ -101,7 +102,17 @@ export function CustomerBatchAuthorizationModal(props: {
         rowSelection={{
           selectedRowKeys: selectedIDs, preserveSelectedRowKeys: true,
           onChange: keys => setSelectedIDs(keys.map(Number)),
-          getCheckboxProps: customer => ({ disabled: saving || Boolean(existingCustomerAuthorization(customer, draft)) }),
+          getCheckboxProps: customer => ({
+            disabled: saving || Boolean(existingCustomerAuthorization(customer, draft)),
+            'aria-label': `选择用户 ${customer.username}`,
+          }),
+          renderCell: (_checked, customer, _index, checkbox) => existingCustomerAuthorization(customer, draft) ? (
+            <Tooltip title="已授权，无需重复选择">
+              <span className="customer-authorization-locked" role="img" aria-label={`${customer.username} 已授权，无需重复选择`}>
+                <LockOutlined aria-hidden />
+              </span>
+            </Tooltip>
+          ) : checkbox,
         }}
         columns={[
           { title: '用户名', dataIndex: 'username', render: (username: string) => <span style={{ overflowWrap: 'anywhere' }}>{username}</span> },

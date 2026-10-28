@@ -166,6 +166,42 @@ try {
   assert.match(full, /aria-label="内存 50%"/)
   assert.match(full, /aria-label="硬盘 34%"/)
   assert.match(full, /↑ 1.0 KB\/s/)
+  const { calculateRenewalStatus, formatLocalDate } = await vite.ssrLoadModule('/src/lib/appHelpersBilling.ts')
+  const RealDate = Date
+  const today = new RealDate(2026, 9, 26, 12)
+  globalThis.Date = class extends RealDate {
+    constructor(...args) { super(...(args.length ? args : [today.getTime()])) }
+    static now() { return today.getTime() }
+  }
+  try {
+    const cases = [
+      [{ expire_date: '2026-10-31', cycle: 'month' }, '2026/10/31', '剩余 5 天'],
+      [{ expire_date: '2026-10-26', cycle: 'month' }, '2026/10/26', '今天到期'],
+      [{ expire_date: '2026-10-23', cycle: 'month' }, '2026/10/23', '已过期 3 天'],
+      [{ start_date: '2026-10-01', cycle: 'month' }, '2026/11/01', '剩余 6 天'],
+      [{ expire_date: '2026-09-30', cycle: 'month', auto_renew: true }, '2026/10/30', '剩余 4 天'],
+    ]
+    for (const [renewal, date, remaining] of cases) {
+      const status = calculateRenewalStatus(renewal)
+      assert.equal(formatLocalDate(new Date(status.endTime)), date, 'sorting uses the effective renewal date')
+      assert.equal(status.remainingLabel, remaining)
+      const markup = render(false, [{ ...agent, renewal }])
+      assert.equal(markup.split(`<time dateTime="${date.replaceAll('/', '-')}">${date}</time>`).length - 1, 2, 'desktop and mobile show the same expiry')
+      assert.ok(markup.includes(remaining))
+      const scoped = render(true, [{ ...agent, renewal }])
+      assert.doesNotMatch(scoped, /到期时间|admin-assets-expiry|<time /, 'restricted accounts cannot see VPS renewal data')
+    }
+    for (const renewal of [undefined, { enabled: true }, { expire_date: '2026-02-30' }]) {
+      assert.equal(calculateRenewalStatus(renewal), null)
+      const markup = render(false, [{ ...agent, renewal }])
+      assert.doesNotMatch(markup, /<time /, 'missing or invalid dates are not rendered as an expiry')
+      assert.equal(markup.split('>未设置<').length - 1, 2)
+    }
+    const offlineExpiry = render(false, [{ ...agent, last_seen_at: '2020-01-01T00:00:00Z', reported_at: '2020-01-01T00:00:00Z', renewal: cases[0][0] }])
+    assert.match(offlineExpiry, /2026\/10\/31/, 'offline clients retain their renewal date')
+  } finally {
+    globalThis.Date = RealDate
+  }
   const offlineAgent = {
     ...agent,
     last_seen_at: '2020-01-01T00:00:00Z',

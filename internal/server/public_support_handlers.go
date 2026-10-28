@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"bridge-core/internal/model"
 	"bridge-core/internal/store"
@@ -91,10 +92,15 @@ func (a *App) requireGuestSupport(w http.ResponseWriter, r *http.Request, ownerT
 		ip = "unknown"
 	}
 	if cookie, err := r.Cookie(guestSupportCookieName); err == nil && cookie.Value != "" {
-		user, _, valid, validateErr := a.store.ValidateCustomerSession(cookie.Value)
+		user, session, valid, validateErr := a.store.ValidateCustomerSession(cookie.Value)
 		if validateErr == nil && valid {
 			matches, matchErr := a.store.GuestCustomerMatchesIP(user.ID, ip, ownerType, ownerID)
 			if matchErr == nil && matches {
+				// Older releases scoped this cookie to /api/v1/public/, which
+				// prevents the login endpoint from seeing it. Re-issue a root API
+				// cookie whenever the visitor returns so the next login can claim
+				// the conversation without requiring a second browser flow.
+				a.setGuestSupportCookie(w, r, cookie.Value, session.ExpiresAt)
 				return user, cookie.Value, true
 			}
 		}
@@ -109,15 +115,27 @@ func (a *App) requireGuestSupport(w http.ResponseWriter, r *http.Request, ownerT
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return model.CustomerUser{}, "", false
 	}
+	a.setGuestSupportCookie(w, r, token, session.ExpiresAt)
+	return user, token, true
+}
+
+func (a *App) setGuestSupportCookie(w http.ResponseWriter, r *http.Request, token string, expiresAt time.Time) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     guestSupportCookieName,
 		Value:    token,
-		Path:     requestPublicPrefix(r) + "/api/v1/public/",
-		Expires:  session.ExpiresAt,
-		MaxAge:   int(guestSupportSessionTTL.Seconds()),
+		Path:     requestPublicPrefix(r) + "/api/v1/",
+		Expires:  expiresAt,
+		MaxAge:   maxCookieAge(expiresAt),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 		Secure:   a.isSecureRequest(r),
 	})
-	return user, token, true
+}
+
+func maxCookieAge(expiresAt time.Time) int {
+	seconds := int(time.Until(expiresAt).Seconds())
+	if seconds < 1 {
+		return 1
+	}
+	return seconds
 }

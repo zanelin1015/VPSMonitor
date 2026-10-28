@@ -58,6 +58,23 @@
 .admin-console-theme .ant-tag { border-radius: 7px; }
 .admin-console-theme .mini-progress-track { background: var(--progress-bg); }
 
+/* Disabled boxes have a different outline, including inside modal portals. */
+:root.dark:where([data-console-theme='soft']) .ant-checkbox-disabled .ant-checkbox-inner {
+  border-color: var(--border-strong);
+  border-style: dashed;
+}
+.customer-authorization-locked {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--muted-strong);
+  font-size: 16px;
+  vertical-align: middle;
+  cursor: not-allowed;
+}
+
 /* Portals are themed by the console provider, not by moving them inside tables. */
 :root:where([data-console-theme='soft']) :is(.ant-modal-content, .personal-center-dropdown .ant-dropdown-menu) {
   border: 1px solid color-mix(in srgb, var(--border) 65%, transparent);

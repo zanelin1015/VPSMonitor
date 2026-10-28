@@ -70,6 +70,7 @@ export function useSupportThread(identity: SupportIdentity, scopeToken?: string)
       if (!mountedRef.current) return
       setDraft('')
       await refresh(true)
+      return true
     } catch (requestError) {
       if (mountedRef.current) setError(requestError instanceof Error ? requestError.message : '消息发送失败')
     } finally {

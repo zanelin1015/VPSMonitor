@@ -85,16 +85,20 @@
 }
 .admin-assets-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   min-width: 0;
 }
 .admin-assets-summary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-}
-.admin-assets-summary .ant-statistic-content {
+  margin-inline-start: auto;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+.admin-assets-filter-card > .ant-card-body {
+  padding: 12px 16px;
+}
+.admin-assets-mobile-install {
+  display: none;
 }
 .admin-assets-filters {
   display: flex;
@@ -153,7 +157,8 @@
 .admin-assets-traffic-value > span {
   white-space: nowrap;
 }
-.admin-assets-speed {
+.admin-assets-speed,
+.admin-assets-expiry {
   display: grid;
   gap: 4px;
   white-space: nowrap;
@@ -244,16 +249,12 @@
     gap: 8px;
   }
   .admin-assets-summary {
-    gap: 8px;
+    margin-inline-start: 0;
   }
-  .admin-assets-summary .ant-card-body {
-    padding: 12px;
-  }
-  .admin-assets-summary .ant-statistic-title {
-    font-size: 12px;
-  }
-  .admin-assets-summary .ant-statistic-content {
-    font-size: 22px;
+  .admin-assets-mobile-install {
+    display: inline-flex;
+    margin-top: 12px;
+    min-height: 44px;
   }
   .admin-assets-desktop {
     display: none;
@@ -307,6 +308,88 @@
   }
   .admin-pro-page-body .workbench-speed-card {
     grid-column: auto;
+  }
+}
+
+/* Bound the support panes to the viewport so long conversations scroll inside. */
+.admin-pro-support-layout { overflow: hidden; }
+.admin-pro-support-layout .ant-pro-layout,
+.admin-pro-support-layout .ant-pro-layout > .ant-layout { height: 100%; min-height: 0; }
+.admin-pro-support-layout :is(
+  .ant-pro-layout-container, .ant-pro-layout-content, .admin-pro-page,
+  .ant-pro-grid-content, .ant-pro-grid-content-children,
+  .ant-pro-page-container-children-container, .admin-pro-page-body, .admin-pro-route
+) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.admin-pro-support-layout .admin-pro-route { overflow: hidden; }
+
+/* Keep the asset header and pagination on screen; only table rows scroll. */
+@media (min-width: 768px) {
+  .admin-pro-assets-layout { overflow: hidden; }
+  .admin-pro-assets-layout .ant-pro-layout,
+  .admin-pro-assets-layout .ant-pro-layout > .ant-layout { height: 100%; }
+  .admin-pro-assets-layout :is(
+    .ant-pro-layout-container, .ant-pro-layout-content, .admin-pro-page,
+    .ant-pro-grid-content, .ant-pro-grid-content-children,
+    .ant-pro-page-container-children-container, .admin-pro-page-body, .admin-pro-route
+  ) {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+  }
+  .admin-pro-assets-layout .admin-pro-route { overflow: hidden; }
+  .admin-pro-assets-layout .admin-assets-page {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    gap: 12px;
+  }
+  .admin-pro-assets-layout .admin-assets-page > :is(.ant-alert, .admin-assets-filter-card) {
+    flex: 0 0 auto;
+  }
+  .admin-pro-assets-layout .admin-assets-desktop,
+  .admin-pro-assets-layout .admin-assets-desktop :is(
+    .ant-pro-table, .ant-pro-card, .ant-pro-card-body, .ant-table-wrapper,
+    .ant-spin-nested-loading, .ant-spin-container, .ant-table, .ant-table-container
+  ) {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+  }
+  .admin-pro-assets-layout .admin-assets-desktop .ant-table-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .admin-pro-assets-layout .admin-assets-desktop :is(
+    .ant-pro-table-list-toolbar, .ant-pro-table-alert, .ant-table-header, .ant-pagination
+  ) { flex: 0 0 auto; }
+  .admin-pro-assets-layout .admin-assets-desktop .ant-pagination {
+    margin-block: 12px;
+  }
+  .admin-pro-assets-layout .admin-assets-desktop .ant-table.ant-table-small .ant-table-tbody > tr > td {
+    padding-block: 5px;
+  }
+  .admin-assets-desktop .admin-assets-name { gap: 2px; }
+  .admin-assets-desktop .admin-assets-name button { line-height: 20px; }
+  .admin-assets-desktop :is(.admin-assets-address, .admin-assets-name small) {
+    line-height: 16px;
+  }
+  .admin-assets-desktop .admin-assets-name small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -10,6 +10,7 @@ import type {
   SupportThreadResponse,
 } from '../types'
 import { fetchJSON, formatDateTime } from '../lib/appHelpers'
+import { SupportMessageList, type SupportMessageListHandle } from './SupportMessageList'
 
 const { Text, Title } = Typography
 
@@ -29,7 +30,7 @@ export function AdminSupportPage({ onUnreadCountChange }: AdminSupportPageProps)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'open' | 'all'>('open')
   const [error, setError] = useState('')
-  const messageListRef = useRef<HTMLDivElement | null>(null)
+  const messageListRef = useRef<SupportMessageListHandle>(null)
   const listRequestIDRef = useRef(0)
   const threadRequestIDRef = useRef(0)
 
@@ -109,11 +110,6 @@ export function AdminSupportPage({ onUnreadCountChange }: AdminSupportPageProps)
     }
   }, [selectedID])
 
-  useEffect(() => {
-    const element = messageListRef.current
-    if (element) element.scrollTop = element.scrollHeight
-  }, [thread?.messages.length, lastMessageID(thread?.messages)])
-
   async function sendMessage() {
     const body = draft.trim()
     if (!selectedID || !body || sending) return
@@ -126,6 +122,7 @@ export function AdminSupportPage({ onUnreadCountChange }: AdminSupportPageProps)
       })
       setDraft('')
       await Promise.all([loadThread(selectedID, true), loadConversations(true)])
+      messageListRef.current?.scrollToLatest()
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : '回复发送失败')
     } finally {
@@ -253,10 +250,11 @@ export function AdminSupportPage({ onUnreadCountChange }: AdminSupportPageProps)
                   >重新打开</Button>
                 )}
               </header>
-              <div ref={messageListRef} className="support-thread-messages">
+              <SupportMessageList ref={messageListRef} className="support-thread-messages"
+                conversationID={thread.conversation.id} lastMessageID={lastMessageID(thread.messages)} messageCount={thread.messages.length}>
                 {!thread.messages.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="等待用户发送消息" /> : null}
                 {thread.messages.map((message) => <AdminSupportMessage key={message.id} message={message} />)}
-              </div>
+              </SupportMessageList>
               <footer className="support-thread-composer">
                 <Input.TextArea
                   value={draft}

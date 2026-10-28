@@ -120,3 +120,46 @@ func TestSupportStoreValidatesMessageLengthAndRate(t *testing.T) {
 		t.Fatalf("expected rate limit error, got %v", err)
 	}
 }
+
+func TestSupportStoreLinksGuestConversationIntoExistingCustomerThread(t *testing.T) {
+	s, err := NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer s.Close()
+	target, err := s.CreateCustomer(model.CustomerAccountRequest{Username: "linked-user", Password: "password123", DisplayName: "Linked User"})
+	if err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
+	guest, err := s.GetOrCreateGuestCustomer("198.51.100.40", time.Hour, model.CustomerOwnerGuest, 0)
+	if err != nil {
+		t.Fatalf("GetOrCreateGuestCustomer: %v", err)
+	}
+	if _, _, err := s.AddSupportMessage(target.ID, model.SupportSenderCustomer, target.ID, target.DisplayName, "Existing account message"); err != nil {
+		t.Fatalf("AddSupportMessage target: %v", err)
+	}
+	if _, _, err := s.AddSupportMessage(guest.ID, model.SupportSenderCustomer, guest.ID, guest.DisplayName, "Guest message"); err != nil {
+		t.Fatalf("AddSupportMessage guest: %v", err)
+	}
+	linked, err := s.LinkGuestSupportConversation(guest.ID, target.ID)
+	if err != nil || !linked {
+		t.Fatalf("LinkGuestSupportConversation linked=%v err=%v", linked, err)
+	}
+	conversation, found, err := s.GetSupportConversationByCustomer(target.ID, model.SupportSenderAdmin)
+	if err != nil || !found || conversation.IsGuest || conversation.LastMessagePreview != "Guest message" {
+		t.Fatalf("unexpected linked conversation: %#v found=%v err=%v", conversation, found, err)
+	}
+	messages, err := s.ListSupportMessages(conversation.ID)
+	if err != nil || len(messages) != 2 {
+		t.Fatalf("linked messages = %#v err=%v", messages, err)
+	}
+	for _, message := range messages {
+		if message.SenderRole == model.SupportSenderCustomer && message.SenderAccountID != target.ID {
+			t.Fatalf("guest sender metadata was not reassigned: %#v", message)
+		}
+	}
+	var guestCount int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM customer_accounts WHERE id = ?`, guest.ID).Scan(&guestCount); err != nil || guestCount != 0 {
+		t.Fatalf("linked guest account should be removed: count=%d err=%v", guestCount, err)
+	}
+}

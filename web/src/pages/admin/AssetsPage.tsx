@@ -1,4 +1,4 @@
-import { CopyOutlined } from '@ant-design/icons'
+import { CopyOutlined, DeploymentUnitOutlined } from '@ant-design/icons'
 import { ProTable, type ProColumns } from '@ant-design/pro-table'
 import {
   Alert,
@@ -12,7 +12,6 @@ import {
   Progress,
   Select,
   Space,
-  Statistic,
   Tag,
   Typography,
   theme,
@@ -22,7 +21,7 @@ import type { AgentListProps } from '../../lib/agentList'
 import { CountryFlag } from '../../components/CountryFlag'
 import { useListPagination } from '../../hooks/useListPagination'
 import { agentHealthCategory, agentHealthFilterLabel } from '../../lib/agentHealth'
-import { agentCountryCode, formatAgentLocation } from '../../lib/appHelpers'
+import { agentCountryCode, calculateRenewalStatus, formatAgentLocation, formatLocalDate } from '../../lib/appHelpers'
 import {
   calculateDiskPercent,
   calculateMemoryPercent,
@@ -32,7 +31,7 @@ import {
 } from '../../lib/traffic'
 import type { DashboardAgentView } from '../../types'
 
-export type AssetsPageProps = AgentListProps & { accountKey: string }
+export type AssetsPageProps = AgentListProps & { accountKey: string; onOpenClientInstall?: () => void }
 const healthOptions = (['all', 'healthy', 'warning', 'offline'] as const).map((value) => ({
   value,
   label: agentHealthFilterLabel(value),
@@ -86,6 +85,20 @@ function TrafficMetric({ agent, restrictedView }: { agent: DashboardAgentView; r
   )
 }
 
+function ExpiryMetric({ agent }: { agent: DashboardAgentView }) {
+  const status = calculateRenewalStatus(agent.renewal)
+  if (!status) return <Typography.Text type="secondary">未设置</Typography.Text>
+  const date = formatLocalDate(new Date(status.endTime))
+  return (
+    <div className="admin-assets-expiry" title={status.autoRenew ? '到期后自动刷新下一周期' : undefined}>
+      <time dateTime={date.replace(/\//g, '-')}>{date}</time>
+      <Typography.Text type={status.level === 'ok' ? 'secondary' : 'warning'}>
+        {status.remainingLabel}
+      </Typography.Text>
+    </div>
+  )
+}
+
 export function AssetsPage(props: AssetsPageProps) {
   const { message } = App.useApp()
   const [selected, setSelected] = useState<React.Key[]>([])
@@ -125,7 +138,7 @@ export function AssetsPage(props: AssetsPageProps) {
             >
               {address || 'IP 未上报'}
             </Typography.Text>
-            <small>{location}</small>
+            <small title={location}>{location}</small>
           </>
         ) : null}
       </div>
@@ -214,6 +227,23 @@ export function AssetsPage(props: AssetsPageProps) {
       sorter: (a, b) => calculateTrafficStatus(a).total.used - calculateTrafficStatus(b).total.used,
       render: (_, agent) => <TrafficMetric agent={agent} restrictedView={props.restrictedView} />,
     },
+    ...(!props.restrictedView
+      ? [{
+          title: '到期时间',
+          key: 'expiry',
+          width: 145,
+          sorter: (a: DashboardAgentView, b: DashboardAgentView, order?: 'ascend' | 'descend' | null) => {
+            const aTime = calculateRenewalStatus(a.renewal)?.endTime
+            const bTime = calculateRenewalStatus(b.renewal)?.endTime
+            // Keep unconfigured dates last in either sorting direction.
+            if (aTime === undefined && bTime === undefined) return 0
+            if (aTime === undefined) return order === 'descend' ? -1 : 1
+            if (bTime === undefined) return order === 'descend' ? 1 : -1
+            return aTime - bTime
+          },
+          render: (_: unknown, agent: DashboardAgentView) => <ExpiryMetric agent={agent} />,
+        }]
+      : []),
     {
       title: '节点 / 客户端',
       key: 'nodes',
@@ -281,29 +311,31 @@ export function AssetsPage(props: AssetsPageProps) {
           重置筛选
         </Button>
       ) : null}
+      <Space className="admin-assets-summary" size={16} wrap>
+        <Typography.Text type="secondary">当前结果 <strong>{props.agents.length}</strong> 台</Typography.Text>
+        <Typography.Text type="secondary">在线 <strong>{online}</strong> 台</Typography.Text>
+        <Typography.Text type={warning ? 'warning' : 'secondary'}>告警 <strong>{warning}</strong> 台</Typography.Text>
+      </Space>
     </div>
   )
   return (
     <section className="admin-assets-page" aria-label="Client 资产列表">
-      <div className="admin-assets-summary">
-        <Card>
-          <Statistic title="当前结果" value={props.agents.length} suffix="台" />
-        </Card>
-        <Card>
-          <Statistic title="在线 Client" value={online} suffix="台" />
-        </Card>
-        <Card>
-          <Statistic title="运行告警" value={warning} suffix="台" />
-        </Card>
-      </div>
       {props.error ? (
         <Alert type="error" showIcon message={props.error} action={<Button onClick={props.onRefresh}>重试</Button>} />
       ) : null}
-      <Card>{filters}</Card>
+      <Card className="admin-assets-filter-card">
+        {filters}
+        {props.onOpenClientInstall ? (
+          <Button className="admin-assets-mobile-install" icon={<DeploymentUnitOutlined />} onClick={props.onOpenClientInstall}>
+            安装 Client
+          </Button>
+        ) : null}
+      </Card>
       <div className="admin-assets-desktop">
         <ProTable<DashboardAgentView>
           rowKey="agent_id"
           headerTitle="Client 列表"
+          defaultSize="small"
           columns={columns}
           dataSource={props.agents}
           loading={props.loading}
@@ -313,6 +345,11 @@ export function AssetsPage(props: AssetsPageProps) {
             persistenceType: 'localStorage',
           }}
           options={{ reload: props.onRefresh, density: true, setting: true, fullScreen: false }}
+          toolBarRender={() => props.onOpenClientInstall ? [
+            <Button key="install" type="primary" icon={<DeploymentUnitOutlined />} onClick={props.onOpenClientInstall}>
+              安装 Client
+            </Button>,
+          ] : []}
           rowSelection={{ selectedRowKeys: selected, onChange: setSelected }}
           tableAlertRender={({ selectedRowKeys }) => (
             <Space wrap>
@@ -334,7 +371,7 @@ export function AssetsPage(props: AssetsPageProps) {
             showTotal: (total) => `共 ${total} 台`,
             onChange: onPageChange,
           }}
-          scroll={{ x: props.restrictedView ? 910 : 1250 }}
+          scroll={{ x: props.restrictedView ? 910 : 1432, y: '100%' }}
           locale={{ emptyText: <Empty description="没有匹配的 Client" /> }}
         />
       </div>
@@ -370,6 +407,12 @@ export function AssetsPage(props: AssetsPageProps) {
                 <Typography.Text type="secondary">实时网速</Typography.Text>
                 <SpeedMetric agent={agent} />
               </div>
+              {!props.restrictedView ? (
+                <div>
+                  <Typography.Text type="secondary">到期时间</Typography.Text>
+                  <ExpiryMetric agent={agent} />
+                </div>
+              ) : null}
             </div>
             <Space wrap>
               {agent.tags?.map((tag) => (

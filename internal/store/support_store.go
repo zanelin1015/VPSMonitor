@@ -104,6 +104,165 @@ func (s *SQLiteStore) GetSupportConversationByCustomer(customerID int64, audienc
 	return item, true, nil
 }
 
+// LinkGuestSupportConversation moves a guest's support history to an
+// authenticated customer account. Guest accounts are temporary records used
+// only to keep an anonymous browser conversation stable; once the visitor
+// logs in, the conversation should follow the real account instead of
+// remaining stranded in the admin guest inbox.
+func (s *SQLiteStore) LinkGuestSupportConversation(guestCustomerID, customerID int64) (bool, error) {
+	if guestCustomerID <= 0 || customerID <= 0 || guestCustomerID == customerID {
+		return false, nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, fmt.Errorf("begin guest support link: %w", err)
+	}
+	defer tx.Rollback()
+
+	var guestIP string
+	if err := tx.QueryRow(`
+		SELECT guest_ip FROM customer_accounts
+		WHERE id = ? AND COALESCE(guest_ip, '') <> ''
+	`, guestCustomerID).Scan(&guestIP); err == sql.ErrNoRows {
+		return false, nil
+	} else if err != nil {
+		return false, fmt.Errorf("load guest customer: %w", err)
+	}
+	var targetExists int
+	if err := tx.QueryRow(`
+		SELECT 1 FROM customer_accounts
+		WHERE id = ? AND COALESCE(guest_ip, '') = ''
+	`, customerID).Scan(&targetExists); err == sql.ErrNoRows {
+		return false, nil
+	} else if err != nil {
+		return false, fmt.Errorf("load target customer: %w", err)
+	}
+
+	guestConversation, found, err := loadSupportConversationMergeRecord(tx, guestCustomerID)
+	if err != nil {
+		return false, err
+	}
+	if !found {
+		return false, nil
+	}
+	targetConversation, targetFound, err := loadSupportConversationMergeRecord(tx, customerID)
+	if err != nil {
+		return false, err
+	}
+
+	// Reassign both the conversation and historical customer message metadata
+	// in one transaction so the account sees the complete thread immediately.
+	if _, err := tx.Exec(`
+		UPDATE support_messages
+		SET conversation_id = ?,
+		    sender_account_id = CASE WHEN sender_role = ? THEN ? ELSE sender_account_id END,
+		    sender_name = CASE WHEN sender_role = ? THEN (SELECT display_name FROM customer_accounts WHERE id = ?) ELSE sender_name END
+		WHERE conversation_id = ?
+	`, func() int64 {
+		if targetFound {
+			return targetConversation.ID
+		}
+		return guestConversation.ID
+	}(), model.SupportSenderCustomer, customerID, model.SupportSenderCustomer, customerID, guestConversation.ID); err != nil {
+		return false, fmt.Errorf("move guest support messages: %w", err)
+	}
+
+	if targetFound {
+		merged := mergeSupportConversationRecords(targetConversation, guestConversation)
+		if _, err := tx.Exec(`
+			UPDATE support_conversations
+			SET status = ?, last_message_id = ?, last_message_preview = ?, last_sender_role = ?,
+			    last_message_at = ?, admin_read_message_id = ?, customer_read_message_id = ?,
+			    last_notified_at = ?, created_at = ?, updated_at = ?
+			WHERE id = ?
+		`, merged.Status, merged.LastMessageID, merged.LastMessagePreview, merged.LastSenderRole,
+			merged.LastMessageAt, merged.AdminReadMessageID, merged.CustomerReadMessageID,
+			merged.LastNotifiedAt, merged.CreatedAt, merged.UpdatedAt, targetConversation.ID); err != nil {
+			return false, fmt.Errorf("merge support conversations: %w", err)
+		}
+		if _, err := tx.Exec(`DELETE FROM support_conversations WHERE id = ?`, guestConversation.ID); err != nil {
+			return false, fmt.Errorf("remove merged guest conversation: %w", err)
+		}
+	} else {
+		if _, err := tx.Exec(`UPDATE support_conversations SET customer_id = ? WHERE id = ?`, customerID, guestConversation.ID); err != nil {
+			return false, fmt.Errorf("reassign guest support conversation: %w", err)
+		}
+	}
+	if _, err := tx.Exec(`DELETE FROM customer_accounts WHERE id = ?`, guestCustomerID); err != nil {
+		return false, fmt.Errorf("remove linked guest customer: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit guest support link: %w", err)
+	}
+	return true, nil
+}
+
+type supportConversationMergeRecord struct {
+	ID                    int64
+	Status                string
+	LastMessageID         int64
+	LastMessagePreview    string
+	LastSenderRole        string
+	LastMessageAt         string
+	AdminReadMessageID    int64
+	CustomerReadMessageID int64
+	LastNotifiedAt        string
+	CreatedAt             string
+	UpdatedAt             string
+}
+
+func loadSupportConversationMergeRecord(tx *sql.Tx, customerID int64) (supportConversationMergeRecord, bool, error) {
+	var item supportConversationMergeRecord
+	err := tx.QueryRow(`
+		SELECT id, status, last_message_id, last_message_preview, last_sender_role,
+		       last_message_at, admin_read_message_id, customer_read_message_id,
+		       last_notified_at, created_at, updated_at
+		FROM support_conversations WHERE customer_id = ?
+	`, customerID).Scan(
+		&item.ID, &item.Status, &item.LastMessageID, &item.LastMessagePreview,
+		&item.LastSenderRole, &item.LastMessageAt, &item.AdminReadMessageID,
+		&item.CustomerReadMessageID, &item.LastNotifiedAt, &item.CreatedAt, &item.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return supportConversationMergeRecord{}, false, nil
+	}
+	if err != nil {
+		return supportConversationMergeRecord{}, false, fmt.Errorf("load support conversation for merge: %w", err)
+	}
+	return item, true, nil
+}
+
+func mergeSupportConversationRecords(target, guest supportConversationMergeRecord) supportConversationMergeRecord {
+	merged := target
+	if guest.Status == model.SupportConversationOpen || target.Status == model.SupportConversationOpen {
+		merged.Status = model.SupportConversationOpen
+	} else {
+		merged.Status = model.SupportConversationClosed
+	}
+	if guest.LastMessageID > target.LastMessageID {
+		merged.LastMessageID = guest.LastMessageID
+		merged.LastMessagePreview = guest.LastMessagePreview
+		merged.LastSenderRole = guest.LastSenderRole
+		merged.LastMessageAt = guest.LastMessageAt
+	}
+	if guest.AdminReadMessageID > merged.AdminReadMessageID {
+		merged.AdminReadMessageID = guest.AdminReadMessageID
+	}
+	if guest.CustomerReadMessageID > merged.CustomerReadMessageID {
+		merged.CustomerReadMessageID = guest.CustomerReadMessageID
+	}
+	if guest.LastNotifiedAt > merged.LastNotifiedAt {
+		merged.LastNotifiedAt = guest.LastNotifiedAt
+	}
+	if merged.CreatedAt == "" || (guest.CreatedAt != "" && guest.CreatedAt < merged.CreatedAt) {
+		merged.CreatedAt = guest.CreatedAt
+	}
+	if guest.UpdatedAt > merged.UpdatedAt {
+		merged.UpdatedAt = guest.UpdatedAt
+	}
+	return merged
+}
+
 func (s *SQLiteStore) ListSupportMessages(conversationID int64) ([]model.SupportMessage, error) {
 	rows, err := s.db.Query(`
 		SELECT id, conversation_id, sender_role, sender_account_id, sender_name, body, created_at
