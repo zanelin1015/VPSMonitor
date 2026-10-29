@@ -19,11 +19,20 @@ VPSMonitor 是一套围绕 `x-ui / 3x-ui` 的 VPS 集中管理系统。它不替
 - 从一台 Client 导入另一台 Client 的节点客户端，配置 Realm 中转或 HAProxy 主备转发。
 - 拓扑图和 Client 链路追踪；工作台和 Client 页面会对同一条转发链路去重，避免网速与流量重复累加。
 - Client 收费周期、流量上限、收入、成本和利润统计。
+- sing-box 专线配置管理：支持 Snell 节点、客户端和转发规则。
 - 客户账号、节点授权、Clash/Mihomo 订阅、前置代理组和在线客服。
 - 客户公告历史、按账号的已读状态和访问日志排查。
 - Server 和 Client 的 GitHub Release 检查、校验和升级。Client 可以在管理台中逐台选择升级。
 
 节点和入站仍在对应的 x-ui 面板中维护。VPSMonitor 通过 x-ui API 读取和编排数据；需要新增入站时，从 Client 详情页打开对应的 x-ui 面板即可。
+
+## sing-box / Snell 专线
+
+VPSMonitor 可以把 sing-box 作为 Client 上的独立托管服务。管理员在 Client 详情的“基础信息 → sing-box 配置”中启用采集，填写配置文件路径（默认 `/etc/sing-box/config.json`）和服务名（默认 `sing-box`），保存后 Client 会读取并上报 sing-box 的 `outbounds`、`inbounds` 和 `route.rules`。
+
+启用后，详情页的“sing-box / Snell”页可以下发添加出站节点、添加 Snell 客户端和添加转发规则三类操作。出站节点的 `server` 只接受 IPv4/IPv6，不接受域名；备注会作为 sing-box 的 `tag` 保存。Snell 客户端写入 `inbounds`，每个客户端必须且只能绑定一个 `listen_port`，重复端口会被拒绝。转发规则会校验目标 outbound 已存在。Client 写入配置前会保留其它 JSON 字段，并在保存后执行 `sing-box check -c <config>`（如果本机有 sing-box 二进制）和服务重载。
+
+对应 API 为 `GET /api/v1/agents/{agent_id}/singbox/overview`、`GET/POST /api/v1/agents/{agent_id}/singbox/actions`。操作使用现有的持久化任务队列和 WebSocket/轮询执行机制；旧版 Client 会把未知的 sing-box 任务标记为失败，需要升级到包含 sing-box 支持的 Client。
 
 ## 架构与注册流程
 
@@ -35,7 +44,7 @@ bridge-client  -- HTTPS polling / realtime -->  bridge-server
 
 Client 第一次启动时使用 Server 的共享 `registration_token` 注册，Server 返回该 Client 专属的 `agent_token`。Client 会把专属 Token 写回 `client.json`，后续请求使用专属 Token；共享注册 Token 只用于首次注册。
 
-Server 会保存 Client 基本信息、最近快照、历史快照、x-ui 托管配置、操作记录、访问日志和客户公告已读记录。x-ui API Token 和兼容旧配置的密码使用 `credential_key_path` 指定的本地密钥加密后写入 SQLite，数据库和密钥文件需要一起备份。
+Server 会保存 Client 基本信息、最近快照、历史快照、x-ui / sing-box 托管配置、操作记录、访问日志和客户公告已读记录。x-ui API Token 和兼容旧配置的密码使用 `credential_key_path` 指定的本地密钥加密后写入 SQLite，数据库和密钥文件需要一起备份。
 
 ## 生产环境安装
 

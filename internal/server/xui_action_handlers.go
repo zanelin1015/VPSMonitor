@@ -36,6 +36,14 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 				if !isRootAdmin(user) && !isOperatorAdmin(user) {
 					actions = filterRootOnlyXUIActions(actions)
 				}
+				if !isRootAdmin(user) {
+					for index := range actions {
+						if strings.HasPrefix(actions[index].Kind, "singbox_") {
+							actions[index].Payload = nil
+							actions[index].Result = nil
+						}
+					}
+				}
 				writeJSON(w, http.StatusOK, actions)
 				return
 			}
@@ -213,7 +221,7 @@ func (a *App) handleXUIActions(w http.ResponseWriter, r *http.Request, agentID s
 			// where saving worked but restarting Xray did not.
 			a.realtime.sendAgentControl(agentID, model.AgentControlMessage{Type: model.AgentControlCollectNow})
 		}
-		if action.Kind == model.XUIActionAddClient && action.Status == model.XUIActionStatusSucceeded && a.realtime != nil {
+		if (action.Kind == model.XUIActionAddClient || action.Kind == model.SingBoxActionAddNode || action.Kind == model.SingBoxActionAddClient || action.Kind == model.SingBoxActionAddForwardingRule) && action.Status == model.XUIActionStatusSucceeded && a.realtime != nil {
 			a.realtime.sendAgentControl(agentID, model.AgentControlMessage{Type: model.AgentControlCollectNow})
 		}
 		if (action.Kind == model.XUIActionUpdateClientConfig || action.Kind == model.XUIActionManualResetClientTraffic) && a.realtime != nil {
@@ -239,7 +247,7 @@ func filterRootOnlyXUIActions(actions []model.XUIAction) []model.XUIAction {
 
 func isRootOnlyXUIActionKind(kind string) bool {
 	switch kind {
-	case model.XUIActionManualResetClientTraffic, model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI, model.XUIActionDeleteRoutingRules, model.XUIActionDeleteOutbounds, model.XUIActionUpdateRoutingRule, model.XUIActionUpdateClientConfig:
+	case model.XUIActionManualResetClientTraffic, model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI, model.XUIActionDeleteRoutingRules, model.XUIActionDeleteOutbounds, model.XUIActionUpdateRoutingRule, model.XUIActionUpdateClientConfig, model.SingBoxActionAddNode, model.SingBoxActionAddClient, model.SingBoxActionAddForwardingRule, model.SingBoxActionReload:
 		return true
 	default:
 		return false
@@ -274,6 +282,11 @@ func realtimeXUIActionAllowed(kind string) bool {
 		model.XUIActionUpdateClient,
 		model.XUIActionExecuteCommand,
 		model.XUIActionUpdate3XUI:
+		return true
+	case model.SingBoxActionAddNode,
+		model.SingBoxActionAddClient,
+		model.SingBoxActionAddForwardingRule,
+		model.SingBoxActionReload:
 		return true
 	default:
 		return false

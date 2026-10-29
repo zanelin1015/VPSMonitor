@@ -18,6 +18,7 @@ import { ManagedConfigPanel } from './ManagedConfigPanel';
 
 import { XUINodeList } from './XUINodeList';
 import { XUIClientConfigModal } from './XUIClientConfigModal';
+import { SingBoxActionPanel } from './SingBoxActionPanel'
 
 import { buildHAProxyForwardClients, buildHAProxyForwardNodes, buildRealmForwardClients, buildRealmForwardNodes, filterRealmForwardClients, renderNodeClientHierarchySections } from './AgentDetailHelpers';
 import type { AgentDetailPanelProps } from './AgentDetailPanel.types';
@@ -108,6 +109,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onTagsChange,
     onSaveAreaTags,
     onXUIChange,
+    onSingBoxChange,
     onFeatureChange,
   } = props
   const canManageClients = canManageConfig || restrictedView
@@ -148,6 +150,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const currentPrimaryDomain = managedConfig?.entry?.import_domain || selectedAgent.entry?.import_domain || ''
   const featureEnabled = {
     xui: Boolean(managedConfig?.features?.xui),
+    singbox: Boolean(managedConfig?.features?.singbox),
     realm: Boolean(managedConfig?.features?.realm),
     haproxy: Boolean(managedConfig?.features?.haproxy),
     nat: Boolean(managedConfig?.features?.nat),
@@ -181,6 +184,13 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
             <span className="network-down">↓ {formatSpeed(Number(internalSummary.net_io_down || 0))}</span>
           </div>
           <div className="overview-stat-foot">总速 {formatSpeed(Number(internalSummary.net_io_up || 0) + Number(internalSummary.net_io_down || 0))}</div>
+        </section>
+      ) : null}
+      {featureEnabled.singbox ? (
+        <section className="overview-stat-card overview-stat-blue">
+          <div className="overview-stat-title">sing-box 专线</div>
+          <div className="overview-stat-value"><span className="overview-stat-dot" /><strong>{selectedAgent.summary.singbox_node_count || 0}</strong></div>
+          <div className="overview-stat-foot">客户端 {selectedAgent.summary.singbox_client_count || 0} · 规则 {selectedAgent.summary.singbox_rule_count || 0}</div>
         </section>
       ) : null}
       {featureEnabled.realm && realmRuleCount > 0 ? (
@@ -304,7 +314,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     },
   ]
 
-  function renderManagedConfigSection(section: 'basic' | 'xui' | 'nat' | 'network' | 'realm' | 'haproxy' | 'audit') {
+  function renderManagedConfigSection(section: 'basic' | 'xui' | 'singbox' | 'nat' | 'network' | 'realm' | 'haproxy' | 'audit') {
     return (
       <ManagedConfigPanel
         selectedAgent={selectedAgent}
@@ -333,6 +343,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         onEntryAddressesTextChange={onEntryAddressesTextChange}
         onEntryChange={onEntryChange}
         onXUIChange={onXUIChange}
+        onSingBoxChange={onSingBoxChange}
         onCopyRealmConfig={onCopyRealmConfig}
         realmCopyLoading={realmCopyLoading}
         configAudits={configAudits}
@@ -351,6 +362,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       </div>
       <Space wrap>
         <FeatureSwitch label="x-ui" checked={featureEnabled.xui} onChange={(checked) => onFeatureChange('xui', checked)} />
+        <FeatureSwitch label="sing-box" checked={featureEnabled.singbox} onChange={(checked) => onFeatureChange('singbox', checked)} />
         <FeatureSwitch label="Realm" checked={featureEnabled.realm} onChange={(checked) => onFeatureChange('realm', checked)} />
         <FeatureSwitch label="HAProxy" checked={featureEnabled.haproxy} onChange={(checked) => onFeatureChange('haproxy', checked)} />
         <FeatureSwitch label="NAT" checked={featureEnabled.nat} onChange={(checked) => onFeatureChange('nat', checked)} />
@@ -462,6 +474,12 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     },
     ...routingTabs,
   ] : []
+
+  const singBoxTabs: TabsProps['items'] = featureEnabled.singbox ? [{
+    key: 'singbox',
+    label: 'sing-box / Snell',
+    children: <SingBoxActionPanel agentID={selectedAgentId} enabled={Boolean(managedConfig?.singbox?.enabled)} canManage={canManageConfig && !restrictedView} actions={xuiActions} actionsLoading={xuiActionsLoading} onRefreshActions={onRefreshXUIActions} />,
+  }] : []
 
   const realmTabs: TabsProps['items'] = featureEnabled.realm ? [
     ...(canManageConfig ? [{
@@ -619,12 +637,18 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         label: `配置记录 (${configAudits.length})`,
         children: renderManagedConfigSection('audit'),
       },
+      {
+        key: 'config-singbox',
+        label: 'sing-box 配置',
+        children: renderManagedConfigSection('singbox'),
+      },
     ] : []),
   ]
 
   const detailTabs: TabsProps['items'] = [
     overviewTab,
     ...xuiTabs,
+    ...singBoxTabs,
     ...realmTabs,
     ...haProxyTabs,
     ...natTabs,

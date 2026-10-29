@@ -21,6 +21,7 @@ import (
 	"bridge-core/internal/model"
 	"bridge-core/internal/panels"
 	"bridge-core/internal/realmconfig"
+	"bridge-core/internal/singbox"
 	"bridge-core/internal/version"
 )
 
@@ -159,6 +160,20 @@ func (a *App) executePendingXUIActions(ctx context.Context, effectiveConfig mode
 func (a *App) executeXUIAction(ctx context.Context, effectiveConfig model.ManagedAgentConfig, xuiClient *panels.XUIClient, xuiErr error, action model.XUIAction) model.XUIActionResultRequest {
 	result := model.XUIActionResultRequest{Status: model.XUIActionStatusSucceeded}
 	switch action.Kind {
+	case model.SingBoxActionAddNode, model.SingBoxActionAddClient, model.SingBoxActionAddForwardingRule, model.SingBoxActionReload:
+		if !effectiveConfig.SingBox.Enabled {
+			result.Status = model.XUIActionStatusFailed
+			result.Error = "sing-box config is disabled"
+			break
+		}
+		actionCtx, actionCancel := context.WithTimeout(ctx, a.xuiActionTimeout(action.Kind))
+		output, actionErr := singbox.NewManager(effectiveConfig.SingBox).ExecuteAction(actionCtx, action)
+		actionCancel()
+		result.Result = output
+		if actionErr != nil {
+			result.Status = model.XUIActionStatusFailed
+			result.Error = actionErr.Error()
+		}
 	case model.XUIActionResetClientTraffic:
 		result.Status = model.XUIActionStatusFailed
 		result.Error = model.LegacyTrafficResetRemovedMessage
@@ -236,7 +251,11 @@ func (a *App) xuiActionTimeout(kind string) time.Duration {
 		model.XUIActionManualResetClientTraffic,
 		model.XUIActionUpdateClientConfig,
 		model.XUIActionSetClientEnabled,
-		model.XUIActionDeleteClient:
+		model.XUIActionDeleteClient,
+		model.SingBoxActionAddNode,
+		model.SingBoxActionAddClient,
+		model.SingBoxActionAddForwardingRule,
+		model.SingBoxActionReload:
 		if timeout < 90*time.Second {
 			timeout = 90 * time.Second
 		}
@@ -511,6 +530,16 @@ func (a *App) collect(ctx context.Context, effectiveConfig model.ManagedAgentCon
 				lastErrs = append(lastErrs, xuiErr)
 				snapshot.Logs = append(snapshot.Logs, xuiLogEntry(xuiErr))
 			}
+		}
+	}
+	if effectiveConfig.SingBox.Enabled {
+		singBoxCtx, cancel := context.WithTimeout(ctx, a.requestTimeout)
+		snapshot.SingBox = singbox.NewManager(effectiveConfig.SingBox).Collect(singBoxCtx)
+		cancel()
+		if snapshot.SingBox != nil && snapshot.SingBox.Error != "" {
+			singBoxErr := "sing-box: " + snapshot.SingBox.Error
+			lastErrs = append(lastErrs, singBoxErr)
+			snapshot.Logs = append(snapshot.Logs, model.AgentLogEntry{Time: time.Now().UTC(), Level: "error", Source: "sing-box", Message: singBoxErr})
 		}
 	}
 	snapshot.Realm = collectRealmSnapshot(effectiveConfig.Entry.PortForwarding)
@@ -793,6 +822,11 @@ func buildSummary(snapshot model.AgentSnapshot) model.VPSSummary {
 		summary.InboundCount = len(snapshot.XUI.Inbounds)
 		summary.OutboundCount = len(snapshot.XUI.Outbounds)
 		summary.RoutingRuleCount = len(snapshot.XUI.RoutingRules)
+	}
+	if snapshot.SingBox != nil {
+		summary.SingBoxNodeCount = len(snapshot.SingBox.Nodes)
+		summary.SingBoxClientCount = len(snapshot.SingBox.Clients)
+		summary.SingBoxRuleCount = len(snapshot.SingBox.ForwardingRules)
 	}
 	if summary.DiskTotal == 0 {
 		if diskUsed, diskTotal, ok := readDiskUsage(); ok {

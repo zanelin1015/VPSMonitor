@@ -121,10 +121,12 @@ func (s *SQLiteStore) parseManagedConfig(agentID, agentName, customerDisplayName
 				Tags             []string                 `json:"tags"`
 				Features         model.AgentFeatureConfig `json:"features"`
 				ExplicitFeatures []string                 `json:"explicit_features"`
+				SingBox          config.SingBoxConfig     `json:"singbox"`
 			}
 			if err := json.Unmarshal([]byte(tagsJSON), &tagPayload); err == nil {
 				cfg.Tags = normalizeTags(tagPayload.Tags)
 				cfg.Features = tagPayload.Features
+				cfg.SingBox = normalizeSingBoxConfig(tagPayload.SingBox)
 				cfg.Features.RealmExplicitlyConfigured = containsStringFold(tagPayload.ExplicitFeatures, "realm")
 				cfg.Features.HAProxyExplicitlyConfigured = containsStringFold(tagPayload.ExplicitFeatures, "haproxy")
 			}
@@ -166,27 +168,32 @@ func mustJSON(v any) string {
 }
 
 func managedTagsJSON(cfg model.ManagedAgentConfig) string {
-	if cfg.Features.Configured || hasAgentFeatures(cfg.Features) || cfg.Features.RealmExplicitlyConfigured || cfg.Features.HAProxyExplicitlyConfigured {
+	if cfg.Features.Configured || hasAgentFeatures(cfg.Features) || cfg.Features.RealmExplicitlyConfigured || cfg.Features.HAProxyExplicitlyConfigured || hasSingBoxConfig(cfg.SingBox) {
 		return mustJSON(struct {
 			Tags             []string                 `json:"tags"`
 			Features         model.AgentFeatureConfig `json:"features"`
 			ExplicitFeatures []string                 `json:"explicit_features,omitempty"`
+			SingBox          config.SingBoxConfig     `json:"singbox,omitempty"`
 		}{
 			Tags:             cfg.Tags,
 			Features:         cfg.Features,
 			ExplicitFeatures: explicitAgentFeatures(cfg.Features),
+			SingBox:          normalizeSingBoxConfig(cfg.SingBox),
 		})
 	}
 	return mustJSON(cfg.Tags)
 }
 
 func explicitAgentFeatures(features model.AgentFeatureConfig) []string {
-	values := make([]string, 0, 2)
+	values := make([]string, 0, 3)
 	if features.RealmExplicitlyConfigured {
 		values = append(values, "realm")
 	}
 	if features.HAProxyExplicitlyConfigured {
 		values = append(values, "haproxy")
+	}
+	if features.SingBox {
+		values = append(values, "singbox")
 	}
 	return values
 }
@@ -305,16 +312,17 @@ func normalizeTags(tags []string) []string {
 }
 
 func hasManagedConfig(cfg model.ManagedAgentConfig) bool {
-	return hasXUIConfig(cfg.XUI) || hasRenewalConfig(cfg.Renewal) || hasEntryConfig(cfg.Entry) || hasAgentFeatures(cfg.Features)
+	return hasXUIConfig(cfg.XUI) || hasSingBoxConfig(cfg.SingBox) || hasRenewalConfig(cfg.Renewal) || hasEntryConfig(cfg.Entry) || hasAgentFeatures(cfg.Features)
 }
 
 func hasAgentFeatures(features model.AgentFeatureConfig) bool {
-	return features.XUI || features.Realm || features.HAProxy || features.NAT || features.PortPolicy
+	return features.XUI || features.SingBox || features.Realm || features.HAProxy || features.NAT || features.PortPolicy
 }
 
 func mergeAgentFeatures(base model.AgentFeatureConfig, incoming model.AgentFeatureConfig) model.AgentFeatureConfig {
 	return model.AgentFeatureConfig{
 		XUI:                         base.XUI || incoming.XUI,
+		SingBox:                     base.SingBox || incoming.SingBox,
 		Realm:                       base.Realm || incoming.Realm,
 		HAProxy:                     base.HAProxy || incoming.HAProxy,
 		NAT:                         base.NAT || incoming.NAT,
@@ -326,6 +334,10 @@ func mergeAgentFeatures(base model.AgentFeatureConfig, incoming model.AgentFeatu
 }
 
 func applyAgentCapabilities(features model.AgentFeatureConfig, capabilities model.AgentCapabilities) model.AgentFeatureConfig {
+	if capabilities.SingBox {
+		features.SingBox = true
+		features.Configured = true
+	}
 	if capabilities.Realm && !features.RealmExplicitlyConfigured {
 		features.Realm = true
 		features.Configured = true
@@ -595,6 +607,18 @@ func normalizeEntryProtocol(protocol string) string {
 func hasEntryConfig(cfg model.AgentEntryConfig) bool {
 	cfg = normalizeEntryConfig(cfg)
 	return cfg.Connection != (model.EntryConnectionConfig{}) || len(cfg.Addresses) > 0 || cfg.ImportDomain != "" || len(cfg.Mappings) > 0 || hasNetworkPolicyConfig(cfg.NetworkPolicy) || hasRealmForwardConfig(cfg.PortForwarding) || hasHAProxyConfig(cfg.HAProxy)
+}
+
+func normalizeSingBoxConfig(cfg config.SingBoxConfig) config.SingBoxConfig {
+	cfg.ConfigPath = strings.TrimSpace(cfg.ConfigPath)
+	cfg.BinaryPath = strings.TrimSpace(cfg.BinaryPath)
+	cfg.ServiceName = strings.TrimSpace(cfg.ServiceName)
+	return cfg
+}
+
+func hasSingBoxConfig(cfg config.SingBoxConfig) bool {
+	cfg = normalizeSingBoxConfig(cfg)
+	return cfg.Enabled || cfg.ConfigPath != "" || cfg.BinaryPath != "" || cfg.ServiceName != ""
 }
 
 func normalizeHAProxyConfig(cfg model.HAProxyConfig) model.HAProxyConfig {
@@ -915,7 +939,7 @@ func hasXUIConfig(cfg config.XUIConfig) bool {
 
 func isValidXUIActionKind(kind string) bool {
 	switch kind {
-	case model.XUIActionManualResetClientTraffic, model.XUIActionAddOutbound, model.XUIActionAddClient, model.XUIActionAddRoutingRule, model.XUIActionUpsertRoutingRule, model.XUIActionUpdateRoutingRule, model.XUIActionDeleteRoutingRules, model.XUIActionDeleteOutbounds, model.XUIActionUpdateClientExpiry, model.XUIActionUpdateClientTraffic, model.XUIActionUpdateClientTrafficReset, model.XUIActionUpdateClientConfig, model.XUIActionSetClientEnabled, model.XUIActionDeleteClient, model.XUIActionUpdateClient, model.XUIActionRestartXUI, model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI:
+	case model.XUIActionManualResetClientTraffic, model.XUIActionAddOutbound, model.XUIActionAddClient, model.XUIActionAddRoutingRule, model.XUIActionUpsertRoutingRule, model.XUIActionUpdateRoutingRule, model.XUIActionDeleteRoutingRules, model.XUIActionDeleteOutbounds, model.XUIActionUpdateClientExpiry, model.XUIActionUpdateClientTraffic, model.XUIActionUpdateClientTrafficReset, model.XUIActionUpdateClientConfig, model.XUIActionSetClientEnabled, model.XUIActionDeleteClient, model.XUIActionUpdateClient, model.XUIActionRestartXUI, model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI, model.SingBoxActionAddNode, model.SingBoxActionAddClient, model.SingBoxActionAddForwardingRule, model.SingBoxActionReload:
 		return true
 	default:
 		return false

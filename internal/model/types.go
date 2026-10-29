@@ -17,6 +17,7 @@ type AgentSnapshot struct {
 	ReportedAt         time.Time              `json:"reported_at"`
 	Summary            VPSSummary             `json:"summary"`
 	XUI                *XUISnapshot           `json:"xui,omitempty"`
+	SingBox            *SingBoxSnapshot       `json:"singbox,omitempty"`
 	Realm              *RealmSnapshot         `json:"realm,omitempty"`
 	HAProxy            *HAProxySnapshot       `json:"haproxy,omitempty"`
 	NetworkPolicy      *NetworkPolicySnapshot `json:"network_policy,omitempty"`
@@ -38,26 +39,29 @@ type AgentLogsResponse struct {
 }
 
 type VPSSummary struct {
-	Hostname          string  `json:"hostname,omitempty"`
-	ObservedIP        string  `json:"observed_ip,omitempty"`
-	ServerSeenIP      string  `json:"server_seen_ip,omitempty"`
-	PublicIPv4        string  `json:"public_ipv4,omitempty"`
-	PublicIPv6        string  `json:"public_ipv6,omitempty"`
-	CPU               float64 `json:"cpu,omitempty"`
-	MemUsed           uint64  `json:"mem_used,omitempty"`
-	MemTotal          uint64  `json:"mem_total,omitempty"`
-	DiskUsed          uint64  `json:"disk_used,omitempty"`
-	DiskTotal         uint64  `json:"disk_total,omitempty"`
-	NetTrafficSent    uint64  `json:"net_traffic_sent,omitempty"`
-	NetTrafficRecv    uint64  `json:"net_traffic_recv,omitempty"`
-	NetTrafficTotal   uint64  `json:"net_traffic_total,omitempty"`
-	NetIOUp           uint64  `json:"net_io_up,omitempty"`
-	NetIODown         uint64  `json:"net_io_down,omitempty"`
-	XrayState         string  `json:"xray_state,omitempty"`
-	InboundCount      int     `json:"inbound_count,omitempty"`
-	OutboundCount     int     `json:"outbound_count,omitempty"`
-	RoutingRuleCount  int     `json:"routing_rule_count,omitempty"`
-	LastCollectionErr string  `json:"last_collection_err,omitempty"`
+	Hostname           string  `json:"hostname,omitempty"`
+	ObservedIP         string  `json:"observed_ip,omitempty"`
+	ServerSeenIP       string  `json:"server_seen_ip,omitempty"`
+	PublicIPv4         string  `json:"public_ipv4,omitempty"`
+	PublicIPv6         string  `json:"public_ipv6,omitempty"`
+	CPU                float64 `json:"cpu,omitempty"`
+	MemUsed            uint64  `json:"mem_used,omitempty"`
+	MemTotal           uint64  `json:"mem_total,omitempty"`
+	DiskUsed           uint64  `json:"disk_used,omitempty"`
+	DiskTotal          uint64  `json:"disk_total,omitempty"`
+	NetTrafficSent     uint64  `json:"net_traffic_sent,omitempty"`
+	NetTrafficRecv     uint64  `json:"net_traffic_recv,omitempty"`
+	NetTrafficTotal    uint64  `json:"net_traffic_total,omitempty"`
+	NetIOUp            uint64  `json:"net_io_up,omitempty"`
+	NetIODown          uint64  `json:"net_io_down,omitempty"`
+	XrayState          string  `json:"xray_state,omitempty"`
+	InboundCount       int     `json:"inbound_count,omitempty"`
+	OutboundCount      int     `json:"outbound_count,omitempty"`
+	RoutingRuleCount   int     `json:"routing_rule_count,omitempty"`
+	SingBoxNodeCount   int     `json:"singbox_node_count,omitempty"`
+	SingBoxClientCount int     `json:"singbox_client_count,omitempty"`
+	SingBoxRuleCount   int     `json:"singbox_rule_count,omitempty"`
+	LastCollectionErr  string  `json:"last_collection_err,omitempty"`
 }
 
 type XUISnapshot struct {
@@ -74,6 +78,22 @@ type XUISnapshot struct {
 	OutboundTraffic  []map[string]any      `json:"outbound_traffic,omitempty"`
 	Certificates     []XUILocalCertificate `json:"certificates,omitempty"`
 	RawConfig        map[string]any        `json:"raw_config,omitempty"`
+}
+
+// SingBoxSnapshot is the normalized view of a sing-box JSON configuration.
+// RawConfig preserves fields that are outside the management UI so adding a
+// node, client or route never discards unrelated sing-box settings.
+type SingBoxSnapshot struct {
+	ConfigPath      string           `json:"config_path,omitempty"`
+	ServiceName     string           `json:"service_name,omitempty"`
+	BinaryPath      string           `json:"binary_path,omitempty"`
+	Running         bool             `json:"running"`
+	CollectedAt     time.Time        `json:"collected_at"`
+	Error           string           `json:"error,omitempty"`
+	Nodes           []map[string]any `json:"nodes,omitempty"`
+	Clients         []map[string]any `json:"clients,omitempty"`
+	ForwardingRules []map[string]any `json:"forwarding_rules,omitempty"`
+	RawConfig       map[string]any   `json:"raw_config,omitempty"`
 }
 
 type XUILocalCertificate struct {

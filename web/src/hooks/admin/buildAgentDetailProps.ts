@@ -382,6 +382,11 @@ export function buildAgentDetailProps({
     },
     onSaveAreaTags: (values) => void saveAreaAgentTags(values),
     onXUIChange: (patch) => updateManagedConfig((current) => ({ ...current, xui: { ...current.xui, ...patch } })),
+    onSingBoxChange: (patch) => updateManagedConfig((current) => ({
+      ...current,
+      singbox: { ...(current.singbox || { enabled: false }), ...patch, enabled: patch.enabled ?? Boolean(current.singbox?.enabled) },
+      features: patch.enabled === undefined ? current.features : { ...current.features, singbox: patch.enabled },
+    })),
     onFeatureChange: (feature, enabled) =>
       updateManagedConfig((current) => {
         const features = { ...current.features, [feature]: enabled }
@@ -394,7 +399,12 @@ export function buildAgentDetailProps({
           features.realm = false
           entry.port_forwarding = { ...entry.port_forwarding, enabled: false, backend: 'none' }
         }
-        return { ...current, features, entry }
+        return {
+          ...current,
+          features,
+          entry,
+          ...(feature === 'singbox' ? { singbox: { ...(current.singbox || { enabled: false }), enabled } } : {}),
+        }
       }),
   }
 }

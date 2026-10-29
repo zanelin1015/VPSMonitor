@@ -116,8 +116,12 @@ func (s *SQLiteStore) RegisterAgentWithTokenOrLegacyBootstrap(req model.AgentReg
 				Renewal:             normalizeRenewalConfig(req.SeedConfig.Renewal),
 				Entry:               normalizeEntryConfig(req.SeedConfig.Entry),
 				XUI:                 req.SeedConfig.XUI,
+				SingBox:             req.SeedConfig.SingBox,
 			},
 			HasConfig: hasManagedConfig(req.SeedConfig),
+		}
+		if record.Config.SingBox.Enabled {
+			record.Config.Features.SingBox = true
 		}
 		record.CustomerDisplayName = record.Config.CustomerDisplayName
 		record.Config.XUI = normalizeRegisteredXUIConfigForOS(record.Config.XUI, req.OS)
@@ -170,6 +174,12 @@ func (s *SQLiteStore) RegisterAgentWithTokenOrLegacyBootstrap(req model.AgentReg
 		}
 		if !hasXUIConfig(record.Config.XUI) && hasXUIConfig(req.SeedConfig.XUI) {
 			record.Config.XUI = req.SeedConfig.XUI
+		}
+		if !hasSingBoxConfig(record.Config.SingBox) && hasSingBoxConfig(req.SeedConfig.SingBox) {
+			record.Config.SingBox = req.SeedConfig.SingBox
+		}
+		if record.Config.SingBox.Enabled {
+			record.Config.Features.SingBox = true
 		}
 		record.Config.XUI = normalizeRegisteredXUIConfigForOS(record.Config.XUI, req.OS)
 		if len(record.Config.Tags) == 0 && len(req.SeedConfig.Tags) > 0 {
@@ -253,6 +263,7 @@ func (s *SQLiteStore) RegisterAgentWithTokenOrLegacyBootstrap(req model.AgentReg
 			Renewal:             record.Config.Renewal,
 			Entry:               record.Config.Entry,
 			XUI:                 record.Config.XUI,
+			SingBox:             record.Config.SingBox,
 		},
 	}, nil
 }
@@ -321,6 +332,10 @@ func (s *SQLiteStore) updateAgentConfig(agentID string, cfg model.ManagedAgentCo
 		Renewal:             normalizeRenewalConfig(cfg.Renewal),
 		Entry:               normalizeEntryConfig(cfg.Entry),
 		XUI:                 cfg.XUI,
+		SingBox:             normalizeSingBoxConfig(cfg.SingBox),
+	}
+	if record.Config.SingBox.Enabled {
+		record.Config.Features.SingBox = true
 	}
 	record.Tags = cloneStrings(record.Config.Tags)
 	record.UpdatedAt = time.Now().UTC()

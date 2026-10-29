@@ -111,6 +111,9 @@ func (a *App) sanitizeManagedConfigForAdmin(user model.AdminUser, cfg model.Mana
 	cfg.XUI = config.XUIConfig{
 		Enabled: cfg.XUI.Enabled,
 	}
+	cfg.SingBox = config.SingBoxConfig{
+		Enabled: cfg.SingBox.Enabled,
+	}
 	return cfg
 }
 

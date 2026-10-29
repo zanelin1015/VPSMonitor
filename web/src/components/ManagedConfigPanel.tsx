@@ -3,7 +3,7 @@ import { useId, useState } from 'react'
 import { Alert, Button, Card, Col, Collapse, Empty, Input, InputNumber, List, Row, Select, Space, Spin, Switch, Typography } from 'antd'
 import { DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 
-import type { AgentEntryConfig, AgentListItem, ConfigAuditLog, ManagedAgentConfig, NetworkPortPolicyRule, RealmForwardRule, VPSRenewalConfig, XUIConfig, XUILocalCertificate, XUINodeView } from '../types'
+import type { AgentEntryConfig, AgentListItem, ConfigAuditLog, ManagedAgentConfig, NetworkPortPolicyRule, RealmForwardRule, SingBoxConfig, VPSRenewalConfig, XUIConfig, XUILocalCertificate, XUINodeView } from '../types'
 import { DEFAULT_COST_CURRENCY, type CurrencyCode } from '../lib/currency'
 import { bytesToGB, gbToBytes } from '../lib/traffic'
 import type { ConfigSectionKey } from '../lib/appHelpers'
@@ -14,7 +14,7 @@ import { HAProxyConfigSection } from './HAProxyConfigSection'
 
 const { Text, Title } = Typography
 
-export type ConfigPanelSection = 'all' | 'basic' | 'xui' | 'nat' | 'network' | 'realm' | 'haproxy' | 'audit'
+export type ConfigPanelSection = 'all' | 'basic' | 'xui' | 'singbox' | 'nat' | 'network' | 'realm' | 'haproxy' | 'audit'
 
 export interface ConfigPanelProps {
   selectedAgent?: AgentListItem
@@ -40,6 +40,7 @@ export interface ConfigPanelProps {
   onEntryAddressesTextChange: (value: string) => void
   onEntryChange: (patch: Partial<AgentEntryConfig>) => void
   onXUIChange: (patch: Partial<XUIConfig>) => void
+  onSingBoxChange: (patch: Partial<SingBoxConfig>) => void
   onCopyRealmConfig?: (targetAgentID: string) => void
   realmCopyLoading?: boolean
   configAudits: ConfigAuditLog[]
@@ -73,6 +74,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
     onEntryAddressesTextChange,
     onEntryChange,
     onXUIChange,
+    onSingBoxChange,
     onCopyRealmConfig,
     realmCopyLoading = false,
     configAudits,
@@ -83,6 +85,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
   const [realmCopyTargetAgentID, setRealmCopyTargetAgentID] = useState('')
   const [networkPolicyEditedAgentID, setNetworkPolicyEditedAgentID] = useState('')
   const xuiFieldID = useId()
+  const singBoxFieldID = useId()
 
   if (!selectedAgent) {
     return <Empty description="先选择一个 client" />
@@ -523,6 +526,45 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
                 ),
               }]}
             />
+          </Col>
+        </Row>
+      </Card>
+
+      <Card className="config-section-card xui-config-card" bordered={false} style={hiddenSectionStyle('singbox')}>
+        <div className="section-title-row">
+          <Title level={4}>sing-box 托管配置</Title>
+          {sectionSaveButton('singbox', '保存 sing-box 配置')}
+        </div>
+        <Alert
+          type="info"
+          showIcon
+          message="专线节点使用 Snell"
+          description="Client 会直接读取并维护本机 sing-box JSON。新增节点、客户端和转发规则后会校验配置并重载 sing-box。"
+        />
+        <Row gutter={[16, 12]} style={{ marginTop: 12 }}>
+          <Col xs={24}>
+            <label className="xui-config-option" htmlFor={`${singBoxFieldID}-enabled`}>
+              <span>启用 sing-box 采集与操作</span>
+              <Switch id={`${singBoxFieldID}-enabled`} aria-label="启用 sing-box" checked={Boolean(managedConfig.singbox?.enabled)} onChange={(checked) => onSingBoxChange({ enabled: checked })} />
+            </label>
+          </Col>
+          <Col xs={24} md={12}>
+            <div className="xui-config-field">
+              <label htmlFor={`${singBoxFieldID}-config-path`}><Text type="secondary">配置文件路径</Text></label>
+              <Input id={`${singBoxFieldID}-config-path`} value={managedConfig.singbox?.config_path || ''} placeholder="默认 /etc/sing-box/config.json" onChange={(event) => onSingBoxChange({ config_path: event.target.value })} />
+            </div>
+          </Col>
+          <Col xs={24} md={12}>
+            <div className="xui-config-field">
+              <label htmlFor={`${singBoxFieldID}-service-name`}><Text type="secondary">服务名</Text></label>
+              <Input id={`${singBoxFieldID}-service-name`} value={managedConfig.singbox?.service_name || ''} placeholder="默认 sing-box" onChange={(event) => onSingBoxChange({ service_name: event.target.value })} />
+            </div>
+          </Col>
+          <Col xs={24}>
+            <div className="xui-config-field">
+              <label htmlFor={`${singBoxFieldID}-binary-path`}><Text type="secondary">sing-box 二进制路径（可选）</Text></label>
+              <Input id={`${singBoxFieldID}-binary-path`} value={managedConfig.singbox?.binary_path || ''} placeholder="默认从 PATH 查找 sing-box" onChange={(event) => onSingBoxChange({ binary_path: event.target.value })} />
+            </div>
           </Col>
         </Row>
       </Card>

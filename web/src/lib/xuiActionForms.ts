@@ -568,6 +568,14 @@ export function actionKindLabel(kind: string): string {
       return '修改 Client 自动流量重置'
     case 'update_client_config':
       return '统一修改客户端配置'
+    case 'singbox_add_node':
+      return 'sing-box 添加出站节点'
+    case 'singbox_add_client':
+      return 'sing-box 添加 Snell 客户端'
+    case 'singbox_add_forwarding_rule':
+      return 'sing-box 添加转发规则'
+    case 'singbox_reload':
+      return '重载 sing-box'
     default:
       return kind
   }

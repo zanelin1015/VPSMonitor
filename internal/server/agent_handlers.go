@@ -237,6 +237,16 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 			overview.ClientConfigSaves = visible
 		}
 		writeJSON(w, http.StatusOK, overview)
+	case "singbox", "sing-box":
+		if len(parts) >= 3 && parts[2] == "actions" {
+			a.handleSingBoxActions(w, r, agentID, parts[3:])
+			return
+		}
+		if len(parts) == 3 && parts[2] == "overview" {
+			a.handleSingBoxOverview(w, r, agentID)
+			return
+		}
+		writeError(w, http.StatusNotFound, "route not found")
 	default:
 		writeError(w, http.StatusNotFound, "route not found")
 	}

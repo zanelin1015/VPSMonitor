@@ -72,6 +72,7 @@ export function buildSectionSavePayload(base: ManagedAgentConfig, draft: Managed
       haproxy: normalizeHAProxyConfig(base.entry?.haproxy),
     },
     xui: { ...base.xui },
+    singbox: { ...(base.singbox || { enabled: false }), enabled: Boolean(base.singbox?.enabled) },
   }
   switch (section) {
     case 'client':
@@ -80,6 +81,7 @@ export function buildSectionSavePayload(base: ManagedAgentConfig, draft: Managed
       payload.sort_order = Number(draft.sort_order || base.sort_order || 0)
       payload.tags = [...(draft.tags || [])]
       payload.features = { ...(draft.features || {}) }
+      payload.singbox = { ...(base.singbox || { enabled: false }), ...(draft.singbox || {}), enabled: Boolean(draft.singbox?.enabled) }
       const entry = payload.entry!
       if (payload.features.realm) {
         entry.haproxy = { ...entry.haproxy, enabled: false }
@@ -93,6 +95,10 @@ export function buildSectionSavePayload(base: ManagedAgentConfig, draft: Managed
       break
     case 'xui':
       payload.xui = { ...draft.xui }
+      break
+    case 'singbox':
+      payload.singbox = { ...(base.singbox || { enabled: false }), ...(draft.singbox || {}), enabled: Boolean(draft.singbox?.enabled) }
+      payload.features = { ...(draft.features || base.features || {}) }
       break
     case 'entry':
       payload.entry = {
@@ -128,6 +134,9 @@ export function mergeSavedSectionIntoDraft(draft: ManagedAgentConfig, saved: Man
     case 'xui':
       next.xui = { ...saved.xui }
       break
+    case 'singbox':
+      next.singbox = { ...(saved.singbox || { enabled: false }), enabled: Boolean(saved.singbox?.enabled) }
+      break
     case 'entry':
       next.entry = {
         connection: { ...(saved.entry?.connection || {}) },
@@ -151,6 +160,8 @@ export function configSectionLabel(section: ConfigSectionKey): string {
       return 'VPS 信息'
     case 'xui':
       return 'X-UI 配置'
+    case 'singbox':
+      return 'sing-box 配置'
     case 'entry':
       return '连接与端口'
   }
@@ -173,6 +184,7 @@ export function createEmptyManagedConfig(agentID: string, agentName?: string): M
       haproxy: false,
       nat: false,
       port_policy: false,
+      singbox: false,
     },
     renewal: {
       enabled: false,
@@ -233,6 +245,12 @@ export function createEmptyManagedConfig(agentID: string, agentName?: string): M
       access_log_path: '',
       access_log_retention_days: 7,
     },
+    singbox: {
+      enabled: false,
+      config_path: '',
+      binary_path: '',
+      service_name: '',
+    },
   }
 }
 
@@ -254,6 +272,14 @@ export function normalizeManagedConfig(config: ManagedAgentConfig, agentID: stri
       skip_tls_verify: Boolean(config.xui?.skip_tls_verify),
       access_log_enabled: Boolean(config.xui?.access_log_enabled),
       access_log_retention_days: Math.min(30, Math.max(1, Number(config.xui?.access_log_retention_days || 7))),
+    },
+    singbox: {
+      ...base.singbox,
+      ...config.singbox,
+      enabled: Boolean(config.singbox?.enabled),
+      config_path: String(config.singbox?.config_path || '').trim(),
+      binary_path: String(config.singbox?.binary_path || '').trim(),
+      service_name: String(config.singbox?.service_name || '').trim(),
     },
   }
 }
@@ -344,8 +370,10 @@ function normalizeNetworkPolicyConfig(config?: AgentEntryConfig['network_policy'
 function normalizeAgentFeatures(features: ManagedAgentConfig['features'], config?: ManagedAgentConfig): NonNullable<ManagedAgentConfig['features']> {
   const entry = config?.entry
   const xui = config?.xui
+  const singbox = config?.singbox
   return {
     xui: features?.xui ?? Boolean(xui?.enabled || xui?.base_url || xui?.db_path || xui?.api_token),
+    singbox: features?.singbox ?? Boolean(singbox?.enabled || singbox?.config_path || singbox?.binary_path || singbox?.service_name),
     realm: features?.realm ?? Boolean(entry?.port_forwarding?.enabled || (entry?.port_forwarding?.rules || []).length),
     haproxy: features?.haproxy ?? Boolean(entry?.haproxy?.enabled || (entry?.haproxy?.rules || []).length),
     nat: features?.nat ?? Boolean((entry?.mappings || []).length || (entry?.addresses || []).length || entry?.import_domain || Object.keys(entry?.connection || {}).length),

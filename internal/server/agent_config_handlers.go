@@ -172,11 +172,15 @@ func disableXUIAutoInstall(cfg model.ManagedAgentConfig) model.ManagedAgentConfi
 
 func inferLegacyAgentFeatures(cfg model.ManagedAgentConfig, snapshot *model.AgentSnapshot) model.ManagedAgentConfig {
 	if cfg.Features.Configured {
+		if !cfg.Features.SingBox && legacySingBoxConfigPresent(cfg) {
+			cfg.Features.SingBox = true
+		}
 		return cfg
 	}
 	entry := cfg.Entry
 	cfg.Features = model.AgentFeatureConfig{
-		XUI: legacyXUIConfigPresent(cfg) || snapshotHasXUI(snapshot),
+		XUI:     legacyXUIConfigPresent(cfg) || snapshotHasXUI(snapshot),
+		SingBox: legacySingBoxConfigPresent(cfg) || snapshotHasSingBox(snapshot),
 		Realm: entry.PortForwarding.Enabled ||
 			len(entry.PortForwarding.Rules) > 0 ||
 			strings.TrimSpace(entry.PortForwarding.ConfigPath) != "" ||
@@ -205,6 +209,11 @@ func legacyXUIConfigPresent(cfg model.ManagedAgentConfig) bool {
 		strings.TrimSpace(xui.Username) != ""
 }
 
+func legacySingBoxConfigPresent(cfg model.ManagedAgentConfig) bool {
+	singBox := cfg.SingBox
+	return singBox.Enabled || strings.TrimSpace(singBox.ConfigPath) != "" || strings.TrimSpace(singBox.BinaryPath) != "" || strings.TrimSpace(singBox.ServiceName) != ""
+}
+
 func snapshotHasXUI(snapshot *model.AgentSnapshot) bool {
 	if snapshot == nil || snapshot.XUI == nil {
 		return false
@@ -218,6 +227,10 @@ func snapshotHasXUI(snapshot *model.AgentSnapshot) bool {
 		snapshot.Summary.InboundCount > 0 ||
 		snapshot.Summary.OutboundCount > 0 ||
 		snapshot.Summary.RoutingRuleCount > 0
+}
+
+func snapshotHasSingBox(snapshot *model.AgentSnapshot) bool {
+	return snapshot != nil && snapshot.SingBox != nil && (len(snapshot.SingBox.Nodes) > 0 || len(snapshot.SingBox.Clients) > 0 || len(snapshot.SingBox.ForwardingRules) > 0 || snapshot.SingBox.Error == "")
 }
 
 func snapshotHasRealm(snapshot *model.AgentSnapshot) bool {

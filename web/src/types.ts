@@ -18,6 +18,9 @@ export interface VPSSummary {
   inbound_count?: number
   outbound_count?: number
   routing_rule_count?: number
+  singbox_node_count?: number
+  singbox_client_count?: number
+  singbox_rule_count?: number
   last_collection_err?: string
 }
 
@@ -142,6 +145,13 @@ export interface XUIConfig {
   access_log_retention_days?: number
 }
 
+export interface SingBoxConfig {
+  enabled: boolean
+  config_path?: string
+  binary_path?: string
+  service_name?: string
+}
+
 export interface AccessLogEntry {
   id?: number
   agent_id: string
@@ -182,14 +192,32 @@ export interface ManagedAgentConfig {
   renewal?: VPSRenewalConfig
   entry?: AgentEntryConfig
   xui: XUIConfig
+  singbox: SingBoxConfig
 }
 
 export interface AgentFeatureConfig {
   xui?: boolean
+  singbox?: boolean
   realm?: boolean
   haproxy?: boolean
   nat?: boolean
   port_policy?: boolean
+}
+
+export interface SingBoxOverview {
+  agent_id: string
+  agent_name?: string
+  config_path?: string
+  service_name?: string
+  binary_path?: string
+  running: boolean
+  reported_at: string
+  collected_at: string
+  nodes: Record<string, unknown>[]
+  clients: Record<string, unknown>[]
+  forwarding_rules: Record<string, unknown>[]
+  raw_config?: Record<string, unknown>
+  error?: string
 }
 
 export interface AgentEntryConfig {

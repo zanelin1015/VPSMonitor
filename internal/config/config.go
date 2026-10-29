@@ -85,6 +85,16 @@ type XUIConfig struct {
 	AccessLogRetentionDays int    `json:"access_log_retention_days,omitempty"`
 }
 
+// SingBoxConfig describes the locally managed sing-box service.  The Client
+// reads and writes the JSON file directly so the Server never needs access to
+// the VPS filesystem.
+type SingBoxConfig struct {
+	Enabled     bool   `json:"enabled"`
+	ConfigPath  string `json:"config_path,omitempty"`
+	BinaryPath  string `json:"binary_path,omitempty"`
+	ServiceName string `json:"service_name,omitempty"`
+}
+
 func LoadServerConfig(path string) (ServerConfig, error) {
 	var cfg ServerConfig
 	if err := loadJSON(path, &cfg); err != nil {
