@@ -443,7 +443,7 @@ export function SingBoxActionPanel(props: {
       <Modal title="添加入站节点" open={editor === 'inbound'} onCancel={() => setEditor(null)} onOk={() => void submit()} confirmLoading={saving} okText="下发" cancelText="取消">
         <Row gutter={[12, 12]}>
           <Col xs={24} md={12}><Text type="secondary">标签</Text><Input value={inbound.tag} placeholder="例如 proxy-1080" onChange={(event) => setInbound({ ...inbound, tag: event.target.value })} /></Col>
-          <Col xs={24} md={12}><Text type="secondary">类型</Text><Select style={{ width: '100%' }} value="snell" options={[{ value: 'snell', label: 'Snell' }]} disabled /></Col>
+          <Col xs={24} md={12}><Text type="secondary">类型</Text><Select style={{ width: '100%' }} value={outbound.type.trim().toLowerCase() || 'snell'} options={[{ value: 'snell', label: 'Snell' }, ...(outbound.type.trim().toLowerCase() && outbound.type.trim().toLowerCase() !== 'snell' ? [{ value: outbound.type.trim().toLowerCase(), label: `${outbound.type}（来源配置）` }] : [])]} disabled /></Col>
           <Col xs={24} md={12}><Text type="secondary">监听地址</Text><Input value={inbound.listen} placeholder="默认 ::" onChange={(event) => setInbound({ ...inbound, listen: event.target.value })} /></Col>
           <Col xs={24} md={12}><Text type="secondary">监听端口</Text><InputNumber style={{ width: '100%' }} min={1} max={65535} value={inbound.listen_port} onChange={(value) => setInbound({ ...inbound, listen_port: Number(value || 0) })} /></Col>
           {inbound.type.trim().toLowerCase() === 'snell' ? <>
