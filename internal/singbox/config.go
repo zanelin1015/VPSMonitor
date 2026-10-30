@@ -95,14 +95,26 @@ func (m *Manager) ExecuteAction(ctx context.Context, action model.XUIAction) (ma
 	switch action.Kind {
 	case model.SingBoxActionAddNode:
 		changed, err = addObject(cfg, "outbounds", action.Payload, "node", validateNode)
+	case model.SingBoxActionUpdateNode:
+		changed, err = updateObject(cfg, "outbounds", action.Payload, "node", validateNode)
+	case model.SingBoxActionDeleteNode:
+		changed, err = deleteObject(cfg, "outbounds", action.Payload, "node")
 	case model.SingBoxActionAddClient:
 		changed, err = addObject(cfg, "inbounds", action.Payload, "client", validateClient)
+	case model.SingBoxActionUpdateClient:
+		changed, err = updateObject(cfg, "inbounds", action.Payload, "client", validateClient)
+	case model.SingBoxActionDeleteClient:
+		changed, err = deleteObject(cfg, "inbounds", action.Payload, "client")
 	case model.SingBoxActionAddUser:
 		changed, err = addUser(cfg, action.Payload)
 	case model.SingBoxActionDeleteUser:
 		changed, err = deleteUser(cfg, action.Payload)
 	case model.SingBoxActionAddForwardingRule:
 		changed, err = addForwardingRule(cfg, action.Payload)
+	case model.SingBoxActionUpdateForwardingRule:
+		changed, err = updateForwardingRule(cfg, action.Payload)
+	case model.SingBoxActionDeleteForwardingRule:
+		changed, err = deleteForwardingRule(cfg, action.Payload)
 	case model.SingBoxActionReload:
 		changed = "reload"
 	default:
@@ -191,6 +203,71 @@ func addObject(cfg map[string]any, listKey string, payload map[string]any, paylo
 	return tag, nil
 }
 
+func updateObject(cfg map[string]any, listKey string, payload map[string]any, payloadKey string, validate func(map[string]any) error) (string, error) {
+	value, ok := payload[payloadKey].(map[string]any)
+	if !ok || value == nil {
+		return "", fmt.Errorf("%s must be an object", payloadKey)
+	}
+	item := cloneObject(value)
+	if remark := strings.TrimSpace(stringValue(item["remark"])); remark != "" {
+		if strings.TrimSpace(stringValue(item["tag"])) == "" {
+			item["tag"] = remark
+		}
+		delete(item, "remark")
+	}
+	if err := validate(item); err != nil {
+		return "", err
+	}
+	tag := strings.TrimSpace(stringValue(item["tag"]))
+	items := objectList(cfg[listKey])
+	index := -1
+	for i, existing := range items {
+		if strings.EqualFold(tag, strings.TrimSpace(stringValue(existing["tag"]))) {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		return "", fmt.Errorf("sing-box %s not found: %s", listKey, tag)
+	}
+	for i, existing := range items {
+		if i == index {
+			continue
+		}
+		if strings.EqualFold(tag, strings.TrimSpace(stringValue(existing["tag"]))) {
+			return "", fmt.Errorf("sing-box %s tag already exists: %s", listKey, tag)
+		}
+		if listKey == "inbounds" && intValue(item["listen_port"]) > 0 && intValue(existing["listen_port"]) == intValue(item["listen_port"]) {
+			return "", fmt.Errorf("sing-box client listen_port already exists: %d", intValue(item["listen_port"]))
+		}
+	}
+	items[index] = item
+	cfg[listKey] = items
+	return tag, nil
+}
+
+func deleteObject(cfg map[string]any, listKey string, payload map[string]any, payloadKey string) (string, error) {
+	tag := strings.TrimSpace(stringValue(payload["tag"]))
+	if tag == "" {
+		if item, ok := payload[payloadKey].(map[string]any); ok {
+			tag = strings.TrimSpace(stringValue(item["tag"]))
+		}
+	}
+	if tag == "" {
+		return "", errors.New("sing-box delete requires tag")
+	}
+	items := objectList(cfg[listKey])
+	for index, item := range items {
+		if !strings.EqualFold(tag, strings.TrimSpace(stringValue(item["tag"]))) {
+			continue
+		}
+		items = append(items[:index], items[index+1:]...)
+		cfg[listKey] = items
+		return tag, nil
+	}
+	return "", fmt.Errorf("sing-box %s not found: %s", listKey, tag)
+}
+
 func addForwardingRule(cfg map[string]any, payload map[string]any) (string, error) {
 	value, ok := payload["rule"].(map[string]any)
 	if !ok || value == nil {
@@ -229,6 +306,47 @@ func addForwardingRule(cfg map[string]any, payload map[string]any) (string, erro
 	rules = append(rules, rule)
 	route["rules"] = rules
 	return fingerprint, nil
+}
+
+func updateForwardingRule(cfg map[string]any, payload map[string]any) (string, error) {
+	index := intValue(payload["index"])
+	ruleValue, ok := payload["rule"].(map[string]any)
+	if index < 0 || !ok || ruleValue == nil {
+		return "", errors.New("sing-box update rule requires index and rule")
+	}
+	rule := cloneObject(ruleValue)
+	if err := validateForwardingRule(rule, cfg); err != nil {
+		return "", err
+	}
+	route, ok := cfg["route"].(map[string]any)
+	if !ok || route == nil {
+		return "", errors.New("sing-box route not found")
+	}
+	rules := objectList(route["rules"])
+	if index >= len(rules) {
+		return "", fmt.Errorf("sing-box forwarding rule index not found: %d", index)
+	}
+	rules[index] = rule
+	route["rules"] = rules
+	return objectFingerprint(rule), nil
+}
+
+func deleteForwardingRule(cfg map[string]any, payload map[string]any) (string, error) {
+	index := intValue(payload["index"])
+	if index < 0 {
+		return "", errors.New("sing-box delete rule requires index")
+	}
+	route, ok := cfg["route"].(map[string]any)
+	if !ok || route == nil {
+		return "", errors.New("sing-box route not found")
+	}
+	rules := objectList(route["rules"])
+	if index >= len(rules) {
+		return "", fmt.Errorf("sing-box forwarding rule index not found: %d", index)
+	}
+	removed := objectFingerprint(rules[index])
+	route["rules"] = append(rules[:index], rules[index+1:]...)
+	return removed, nil
 }
 
 func outboundTagExists(cfg map[string]any, tag string) bool {

@@ -446,11 +446,14 @@ export interface CustomerAuthResponse {
 export interface CustomerAssignment {
   id: number
   customer_id: number
+  source_type?: 'xui' | 'singbox' | string
   agent_id: string
   inbound_id: number
   inbound_tag?: string
   client_id?: string
   client_email?: string
+  singbox_inbound_tag?: string
+  singbox_client_key?: string
   price_mode?: 'inherit' | 'override' | string
   revenue_amount?: number
   revenue_currency?: 'CNY' | 'USDT' | string
@@ -508,6 +511,7 @@ export interface FrontProxyNodeView {
 }
 
 export interface CustomerAssignmentDraft {
+  source_type?: 'xui' | 'singbox' | string
   agent_id: string
   inbound_id: number
   inbound_tag?: string
@@ -519,6 +523,8 @@ export interface CustomerAssignmentDraft {
   revenue_currency?: 'CNY' | 'USDT'
   revenue_cycle?: 'month' | 'quarter' | 'semiannual' | 'year'
   front_proxy_node_ids?: number[]
+  singbox_inbound_tag?: string
+  singbox_client_key?: string
 }
 
 export interface CustomerAdminView extends CustomerUser {
@@ -529,6 +535,7 @@ export interface CustomerAdminView extends CustomerUser {
 export interface CustomerSubscriptionURLResponse {
   clash_subscription_url: string
   mihomo_subscription_url: string
+  singbox_subscription_url?: string
 }
 
 export interface CustomerBillingDiagnostic {
@@ -596,11 +603,13 @@ export interface CustomerLinkStep {
 
 export interface CustomerLinkView {
   assignment_id: number
+  source_type?: 'xui' | 'singbox' | string
   entry_client_name: string
   inbound_tag?: string
   client_email?: string
   client_remark?: string
   import_url?: string
+  singbox_config?: Record<string, unknown>
   shadowrocket_import_url?: string
   remark?: string
   summary: string
@@ -635,6 +644,7 @@ export interface CustomerOverviewResponse {
   generated_at: string
   clash_subscription_url?: string
   mihomo_subscription_url?: string
+  singbox_subscription_url?: string
   announcements?: CustomerAnnouncement[]
   read_announcement_ids?: string[]
   links: CustomerLinkView[]

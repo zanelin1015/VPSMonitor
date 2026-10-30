@@ -198,8 +198,9 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 			return
 		}
 		writeJSON(w, http.StatusOK, model.CustomerSubscriptionURLResponse{
-			ClashSubscriptionURL:  customerSubscriptionURLForAssignments(r, token, "clash.yaml", assignmentIDs),
-			MihomoSubscriptionURL: customerSubscriptionURLForAssignments(r, token, "mihomo.yaml", assignmentIDs),
+			ClashSubscriptionURL:   customerSubscriptionURLForAssignments(r, token, "clash.yaml", assignmentIDs),
+			MihomoSubscriptionURL:  customerSubscriptionURLForAssignments(r, token, "mihomo.yaml", assignmentIDs),
+			SingBoxSubscriptionURL: customerSubscriptionURLForAssignments(r, token, "sing-box.json", assignmentIDs),
 		})
 		return
 	}

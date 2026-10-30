@@ -364,6 +364,20 @@ export function CustomerPortal() {
     }
   }
 
+  async function copySingBoxSubscriptionURL() {
+    const subscriptionURL = overview?.singbox_subscription_url || ''
+    if (!subscriptionURL) {
+      message.warning('当前没有可用的 sing-box 订阅，请先给客户分配 sing-box 客户端')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(new URL(subscriptionURL, window.location.origin).toString())
+      message.success('sing-box 订阅已复制')
+    } catch {
+      message.error('复制失败，请手动复制')
+    }
+  }
+
   if (sessionLoading) {
     return (
       <div className="login-shell">
@@ -399,6 +413,7 @@ export function CustomerPortal() {
           <div className="customer-mobile-actions">
             <CustomerThemeButton />
             <Button shape="circle" aria-label="复制 Clash/Mihomo 订阅" icon={<CopyOutlined />} title="复制 Clash/Mihomo 订阅" onClick={openClashSubscriptionModal} />
+            <Button shape="circle" aria-label="复制 sing-box 订阅" icon={<CopyOutlined />} title="复制 sing-box 订阅" onClick={() => void copySingBoxSubscriptionURL()} />
             <Button shape="circle" aria-label="修改密码" title="修改密码" icon={<LockOutlined />} onClick={openPasswordModal} />
             <Button shape="circle" aria-label="刷新" title="刷新" icon={<ReloadOutlined />} loading={overviewLoading || usageLoading} onClick={() => void refreshCustomerData()} />
             <Button shape="circle" aria-label="退出" title="退出" icon={<LogoutOutlined />} onClick={() => void logout()} />
@@ -426,6 +441,7 @@ export function CustomerPortal() {
           <Space wrap className="customer-header-actions">
             <CustomerThemeButton />
             <Button icon={<CopyOutlined />} onClick={openClashSubscriptionModal}>复制 Clash/Mihomo 订阅</Button>
+            <Button icon={<CopyOutlined />} onClick={() => void copySingBoxSubscriptionURL()}>复制 sing-box 订阅</Button>
             <Button icon={<LockOutlined />} onClick={openPasswordModal}>修改密码</Button>
             <Button icon={<ReloadOutlined />} loading={overviewLoading || usageLoading} onClick={() => void refreshCustomerData()}>刷新</Button>
             <Button icon={<LogoutOutlined />} onClick={() => void logout()}>退出</Button>

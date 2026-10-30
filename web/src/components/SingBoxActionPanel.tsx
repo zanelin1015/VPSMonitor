@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Alert, Button, Card, Col, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Table, Tabs, Tag, Typography, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { DeleteOutlined, PlusOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons'
+import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons'
 
-import type { AgentListItem, ManagedAgentConfig, SingBoxClientMetadata, SingBoxConfig, SingBoxOverview, XUIAction, XUIOverview } from '../types'
+import type { AgentListItem, CustomerAdminView, ManagedAgentConfig, SingBoxClientMetadata, SingBoxConfig, SingBoxOverview, XUIAction, XUIOverview } from '../types'
 import { fetchJSON } from '../lib/api'
 import { actionStatusColor, actionStatusLabel, formatExpiryTime, formatRelativeTime, shortJSON } from '../lib/appHelpers'
 import { formatBytes } from '../lib/traffic'
@@ -48,9 +48,17 @@ export function SingBoxActionPanel(props: {
   const [ruleXUIClientKey, setRuleXUIClientKey] = useState('')
   const [metadataUser, setMetadataUser] = useState<Record<string, unknown> | null>(null)
   const [metadataDraft, setMetadataDraft] = useState({ remark: '', totalGB: 0, trafficMultiplier: 1, expiryTime: 0, lastActive: 0 })
+  const [editingInboundTag, setEditingInboundTag] = useState('')
+  const [editingOutboundTag, setEditingOutboundTag] = useState('')
+  const [editingRuleIndex, setEditingRuleIndex] = useState(-1)
+  const [customers, setCustomers] = useState<CustomerAdminView[]>([])
+  const [assignmentUser, setAssignmentUser] = useState<Record<string, unknown> | null>(null)
+  const [assignmentCustomerID, setAssignmentCustomerID] = useState<number | null>(null)
+  const [assignmentLoading, setAssignmentLoading] = useState(false)
 
   const openInboundEditor = () => {
     setInbound({ ...inbound, type: 'snell', psk: randomPSK() })
+    setEditingInboundTag('')
     setEditor('inbound')
   }
 
@@ -60,7 +68,117 @@ export function SingBoxActionPanel(props: {
     setOutboundSourceTag('')
     setOutboundSourceXUIInboundKey('')
     setOutboundSourceXUIClientKey('')
+    setEditingOutboundTag('')
     setEditor('outbound')
+  }
+
+  const openInboundEdit = (item: Record<string, unknown>) => {
+    const tag = String(item.tag || '').trim()
+    if (!tag) return
+    const raw = { ...item }
+    for (const key of ['type', 'tag', 'listen', 'listen_port', 'version', 'psk', 'obfs_mode', 'mode']) delete raw[key]
+    setInbound({
+      tag,
+      type: String(item.type || 'snell'),
+      listen: String(item.listen || '::'),
+      listen_port: Number(item.listen_port || 0),
+      version: Number(item.version || 5),
+      psk: String(item.psk || ''),
+      obfs_mode: String(item.obfs_mode || 'none'),
+      mode: String(item.mode || 'default'),
+      raw: Object.keys(raw).length ? JSON.stringify(raw, null, 2) : '',
+    })
+    setEditingInboundTag(tag)
+    setEditor('inbound')
+  }
+
+  const openOutboundEdit = (item: Record<string, unknown>) => {
+    const tag = String(item.tag || '').trim()
+    if (!tag) return
+    const raw = { ...item }
+    for (const key of ['type', 'tag', 'server', 'server_port', 'version', 'psk', 'userkey', 'reuse', 'network', 'obfs_mode', 'obfs_host', 'mode']) delete raw[key]
+    setOutbound({
+      tag,
+      type: String(item.type || 'snell'),
+      server: String(item.server || ''),
+      server_port: Number(item.server_port || 443),
+      version: Number(item.version || 4),
+      psk: String(item.psk || ''),
+      userkey: String(item.userkey || ''),
+      reuse: Boolean(item.reuse),
+      network: String(item.network || ''),
+      obfs_mode: String(item.obfs_mode || 'none'),
+      obfs_host: String(item.obfs_host || 'bing.com'),
+      mode: String(item.mode || 'default'),
+      raw: Object.keys(raw).length ? JSON.stringify(raw, null, 2) : '',
+    })
+    setEditingOutboundTag(tag)
+    setOutboundSourceTag('')
+    setEditor('outbound')
+  }
+
+  const openRuleEdit = (item: Record<string, unknown>, index: number) => {
+    const outboundTag = String(item.outbound || '').trim()
+    const raw = { ...item }
+    for (const key of ['__index', 'outbound', 'domain', 'domain_suffix', 'domain_keyword', 'domain_regex', 'ip_cidr', 'port', 'port_range', 'inbound', 'action']) delete raw[key]
+    setRule({
+      source_agent_id: agentID,
+      domain: listValue(item.domain || item.domain_suffix || item.domain_keyword || item.domain_regex),
+      ip: listValue(item.ip_cidr),
+      port: listValue(item.port || item.port_range),
+      inbound: listValue(item.inbound),
+      outbound: outboundTag,
+      raw: Object.keys(raw).length ? JSON.stringify(raw, null, 2) : '',
+    })
+    setRuleSourceSelection(outboundTag ? `singbox:${outboundTag}` : '')
+    setRuleXUIInboundKey('')
+    setRuleXUIClientKey('')
+    setEditingRuleIndex(index)
+    setEditor('rule')
+  }
+
+  const openAssignment = async (item: Record<string, unknown>) => {
+    const inboundTag = String(item.inbound_tag || '').trim()
+    const clientKey = String(item.user_key || '').trim()
+    if (!inboundTag || !clientKey) return
+    setAssignmentUser(item)
+    setAssignmentCustomerID(null)
+    try {
+      setCustomers(await fetchJSON<CustomerAdminView[]>('/api/v1/admin/customers'))
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '加载客户列表失败')
+    }
+  }
+
+  const submitAssignment = async () => {
+    if (!assignmentUser || !assignmentCustomerID) {
+      message.error('请选择客户')
+      return
+    }
+    setAssignmentLoading(true)
+    try {
+      await fetchJSON(`/api/v1/admin/customers/${assignmentCustomerID}/assignments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source_type: 'singbox',
+          agent_id: agentID,
+          inbound_id: 0,
+          inbound_tag: String(assignmentUser.inbound_tag || ''),
+          singbox_inbound_tag: String(assignmentUser.inbound_tag || ''),
+          singbox_client_key: String(assignmentUser.user_key || ''),
+          client_email: String(assignmentUser.user_key || ''),
+          public_client_name: String(assignmentUser.remark || assignmentUser.name || assignmentUser.user_key || ''),
+          enabled: true,
+        }),
+      })
+      message.success('sing-box 客户端已分配给客户')
+      setAssignmentUser(null)
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '分配 sing-box 客户端失败')
+    } finally {
+      setAssignmentLoading(false)
+    }
   }
 
   const selectOutboundSource = (value?: string) => {
@@ -166,7 +284,7 @@ export function SingBoxActionPanel(props: {
   const selectRuleXUIClientSource = (value?: string) => {
     setRuleXUIClientKey(value || '')
   }
-  const [rule, setRule] = useState({ source_agent_id: agentID, domain: '', ip: '', port: '', inbound: '', outbound: '' })
+  const [rule, setRule] = useState({ source_agent_id: agentID, domain: '', ip: '', port: '', inbound: '', outbound: '', raw: '' })
 
   const load = async () => {
     try {
@@ -221,7 +339,7 @@ export function SingBoxActionPanel(props: {
         Object.assign(client, { version: inbound.version, psk: inbound.psk })
         if (inbound.version === 6) { client.mode = inbound.mode; delete client.obfs_mode } else { client.obfs_mode = inbound.obfs_mode; delete client.mode }
       }
-      kind = 'singbox_add_client'
+      kind = editingInboundTag ? 'singbox_update_client' : 'singbox_add_client'
       payload = { client }
     } else if (editor === 'outbound') {
       if (!outbound.tag.trim()) { message.error('出站节点需要填写标签'); return }
@@ -235,7 +353,7 @@ export function SingBoxActionPanel(props: {
         if (outbound.network) node.network = outbound.network
         if (outbound.version === 6) { node.mode = outbound.mode; delete node.obfs_mode; delete node.obfs_host } else { node.obfs_mode = outbound.obfs_mode; node.obfs_host = outbound.obfs_host; delete node.mode }
       }
-      kind = 'singbox_add_node'
+      kind = editingOutboundTag ? 'singbox_update_node' : 'singbox_add_node'
       payload = { node }
       const [outboundSourceKind, outboundSourceNodeTag] = outboundSourceTag.split(':')
       if (outboundSourceKind === 'singbox' && outboundSourceNodeTag) {
@@ -261,13 +379,16 @@ export function SingBoxActionPanel(props: {
       const source = rule.source_agent_id === agentID ? overview : sourceOverview
       const sourceOutbound = source?.nodes.find((item) => item.tag === rule.outbound)
       if (!ruleSourceSelection.startsWith('xui-node:') && !sourceOutbound) { message.error('请选择来源 Client 中已有的出站节点'); return }
-      const next: Record<string, unknown> = { outbound: rule.outbound.trim() }
+      const advanced = parseJSONDraft(rule.raw, '路由规则')
+      if (!advanced) return
+      const next: Record<string, unknown> = { ...advanced, outbound: rule.outbound.trim() }
       if (rule.domain.trim()) next.domain = splitList(rule.domain)
       if (rule.ip.trim()) next.ip_cidr = splitList(rule.ip)
       if (rule.port.trim()) next.port = rule.port.trim()
       if (rule.inbound.trim()) next.inbound = splitList(rule.inbound)
-      kind = 'singbox_add_forwarding_rule'
+      kind = editingRuleIndex >= 0 ? 'singbox_update_forwarding_rule' : 'singbox_add_forwarding_rule'
       payload = { rule: next }
+      if (editingRuleIndex >= 0) payload.index = editingRuleIndex
       if (ruleSourceSelection.startsWith('xui-node:')) {
         const separator = ruleSourceSelection.indexOf(':')
         const sourceTag = separator >= 0 ? ruleSourceSelection.slice(separator + 1) : ''
@@ -304,6 +425,9 @@ export function SingBoxActionPanel(props: {
       await fetchJSON(`/api/v1/agents/${agentID}/singbox/actions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind, payload }) })
       message.success('sing-box 操作已下发')
       setEditor(null)
+      setEditingInboundTag('')
+      setEditingOutboundTag('')
+      setEditingRuleIndex(-1)
       onRefreshActions()
       ;[1000, 3000, 8000].forEach((delay) => window.setTimeout(() => { onRefreshActions(); void load() }, delay))
     } catch (submitError) {
@@ -339,6 +463,7 @@ export function SingBoxActionPanel(props: {
     { title: '监听地址', dataIndex: 'listen', render: (value) => valueText(value) },
     { title: '监听端口', dataIndex: 'listen_port', width: 110, render: (value) => valueText(value) },
     { title: '客户端', key: 'users', width: 150, render: (_, item) => <Space wrap><Tag>{Array.isArray(item.users) ? item.users.length : 0}</Tag><Button size="small" type="link" disabled={!canManage} onClick={() => { setUser({ inbound_tag: String(item.tag || ''), name: '', userkey: '' }); setEditor('user') }}>添加客户端</Button></Space> },
+    { title: '操作', key: 'actions', width: 150, render: (_, item) => <Space><Button size="small" icon={<EditOutlined />} disabled={!canManage} onClick={() => openInboundEdit(item)}>编辑</Button><Popconfirm title="删除这个 sing-box 入站？" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => void deleteInbound(item)}><Button size="small" danger icon={<DeleteOutlined />} disabled={!canManage || saving}>删除</Button></Popconfirm></Space> },
   ]
   const outboundColumns: ColumnsType<Record<string, unknown>> = [
     { title: '标签', dataIndex: 'tag', render: (value) => valueText(value) },
@@ -346,6 +471,7 @@ export function SingBoxActionPanel(props: {
     { title: '服务器', dataIndex: 'server', render: (value) => valueText(value) },
     { title: '端口', dataIndex: 'server_port', width: 100, render: (value) => valueText(value) },
     { title: '方法', dataIndex: 'method', render: (value) => valueText(value) },
+    { title: '操作', key: 'actions', width: 150, render: (_, item) => <Space><Button size="small" icon={<EditOutlined />} disabled={!canManage} onClick={() => openOutboundEdit(item)}>编辑</Button><Popconfirm title="删除这个 sing-box 出站？" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => void deleteOutbound(item)}><Button size="small" danger icon={<DeleteOutlined />} disabled={!canManage || saving}>删除</Button></Popconfirm></Space> },
   ]
   const ruleColumns: ColumnsType<Record<string, unknown>> = [
     { title: '入站', dataIndex: 'inbound', render: (value) => valueText(value) },
@@ -353,6 +479,7 @@ export function SingBoxActionPanel(props: {
     { title: '端口', dataIndex: 'port', render: (value) => valueText(value) },
     { title: '出站', dataIndex: 'outbound', render: (value) => valueText(value) },
     { title: '动作', dataIndex: 'action', render: (value) => valueText(value) },
+    { title: '操作', key: 'actions', width: 150, render: (_, item) => <Space><Button size="small" icon={<EditOutlined />} disabled={!canManage} onClick={() => openRuleEdit(item, Number(item.__index))}>编辑</Button><Popconfirm title="删除这条 sing-box 路由规则？" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => void deleteRule(item)}><Button size="small" danger icon={<DeleteOutlined />} disabled={!canManage || saving}>删除</Button></Popconfirm></Space> },
   ]
   const userColumns: ColumnsType<Record<string, unknown>> = [
     { title: '客户端', key: 'identity', width: 190, render: (_, item) => <div><Text strong>{valueText(item.remark || item.name || item.userkey || item.username || item.email || item.uuid || item.password)}</Text><div className="muted-line">{valueText(item.userkey || item.email || item.username || item.uuid)}</div></div> },
@@ -362,7 +489,7 @@ export function SingBoxActionPanel(props: {
     { title: '到期时间', key: 'expiry', width: 150, render: (_, item) => formatExpiryTime(Number(item.expiry_time || 0)) },
     { title: '流量倍数', key: 'multiplier', width: 100, render: (_, item) => item.traffic_multiplier ? `${item.traffic_multiplier} 倍` : '-' },
     { title: '最近活跃', key: 'active', width: 140, render: (_, item) => formatRelativeTime(Number(item.last_online || item.last_active || 0)) },
-    { title: '操作', key: 'actions', width: 170, render: (_, item) => <Space><Button size="small" disabled={!canManage} onClick={() => { setMetadataUser(item); setMetadataDraft({ remark: String(item.remark || ''), totalGB: Number(item.total_bytes || 0) / 1024 ** 3, trafficMultiplier: Number(item.traffic_multiplier || 1), expiryTime: Number(item.expiry_time || 0), lastActive: Number(item.last_active || item.last_online || 0) }) }}>编辑</Button><Popconfirm title="删除这个 sing-box 客户端？" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => void removeUser(item)}><Button size="small" danger icon={<DeleteOutlined />} disabled={!canManage || saving}>删除</Button></Popconfirm></Space> },
+    { title: '操作', key: 'actions', width: 260, render: (_, item) => <Space><Button size="small" disabled={!canManage} onClick={() => { setMetadataUser(item); setMetadataDraft({ remark: String(item.remark || ''), totalGB: Number(item.total_bytes || 0) / 1024 ** 3, trafficMultiplier: Number(item.traffic_multiplier || 1), expiryTime: Number(item.expiry_time || 0), lastActive: Number(item.last_active || item.last_online || 0) }) }}>编辑</Button><Button size="small" disabled={!canManage} onClick={() => void openAssignment(item)}>分配</Button><Popconfirm title="删除这个 sing-box 客户端？" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => void removeUser(item)}><Button size="small" danger icon={<DeleteOutlined />} disabled={!canManage || saving}>删除</Button></Popconfirm></Space> },
   ]
   const actionColumns: ColumnsType<XUIAction> = [
     { title: 'ID', dataIndex: 'id', width: 70 },
@@ -371,19 +498,38 @@ export function SingBoxActionPanel(props: {
     { title: '结果', key: 'result', render: (_, item) => <Text>{item.error || shortJSON(item.result) || shortJSON(item.payload) || '-'}</Text> },
   ]
 
+  const submitMutation = async (kind: string, payload: Record<string, unknown>, success: string) => {
+    setSaving(true)
+    try {
+      await fetchJSON(`/api/v1/agents/${agentID}/singbox/actions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind, payload }) })
+      message.success(success)
+      onRefreshActions()
+      setTimeout(() => { onRefreshActions(); void load() }, 1000)
+    } catch (submitError) {
+      message.error(submitError instanceof Error ? submitError.message : 'sing-box 操作下发失败')
+    } finally { setSaving(false) }
+  }
+
+  const deleteInbound = async (item: Record<string, unknown>) => {
+    const tag = String(item.tag || '').trim()
+    if (tag) await submitMutation('singbox_delete_client', { tag }, 'sing-box 入站删除操作已下发')
+  }
+
+  const deleteOutbound = async (item: Record<string, unknown>) => {
+    const tag = String(item.tag || '').trim()
+    if (tag) await submitMutation('singbox_delete_node', { tag }, 'sing-box 出站删除操作已下发')
+  }
+
+  const deleteRule = async (item: Record<string, unknown>) => {
+    const index = Number(item.__index)
+    if (Number.isInteger(index) && index >= 0) await submitMutation('singbox_delete_forwarding_rule', { index }, 'sing-box 路由规则删除操作已下发')
+  }
+
   const removeUser = async (item: Record<string, unknown>) => {
     const inboundTag = String(item.inbound_tag || '')
     const userKey = String(item.user_key || '')
     if (!inboundTag || !userKey) return
-    setSaving(true)
-    try {
-      await fetchJSON(`/api/v1/agents/${agentID}/singbox/actions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'singbox_delete_user', payload: { inbound_tag: inboundTag, user_key: userKey } }) })
-      message.success('sing-box 客户端删除操作已下发')
-      onRefreshActions()
-      setTimeout(() => { onRefreshActions(); void load() }, 1000)
-    } catch (submitError) {
-      message.error(submitError instanceof Error ? submitError.message : 'sing-box 客户端删除失败')
-    } finally { setSaving(false) }
+    await submitMutation('singbox_delete_user', { inbound_tag: inboundTag, user_key: userKey }, 'sing-box 客户端删除操作已下发')
   }
 
   const saveMetadata = () => {
@@ -409,7 +555,7 @@ export function SingBoxActionPanel(props: {
     { key: 'inbounds', label: `入站节点 (${overview?.clients.length || 0})`, children: <Table rowKey={(item, index) => `${valueText(item.tag)}-${valueText(item.listen_port)}-${index}`} size="small" columns={inboundColumns} dataSource={overview?.clients || []} pagination={{ pageSize: 8, hideOnSinglePage: true }} scroll={{ x: 920 }} /> },
     { key: 'users', label: `客户端 (${singBoxUsers.length})`, children: <Table className="xui-client-table" rowKey={(item, index) => `${valueText(item.inbound_tag)}-${valueText(item.user_key)}-${index}`} size="small" columns={userColumns} dataSource={singBoxUsers} pagination={{ pageSize: 8, hideOnSinglePage: true }} scroll={{ x: 1050 }} /> },
     { key: 'outbounds', label: `出站节点 (${overview?.nodes.length || 0})`, children: <Table rowKey={(item, index) => `${valueText(item.tag)}-${index}`} size="small" columns={outboundColumns} dataSource={overview?.nodes || []} pagination={{ pageSize: 8, hideOnSinglePage: true }} scroll={{ x: 760 }} /> },
-    { key: 'rules', label: `路由规则 (${overview?.forwarding_rules.length || 0})`, children: <Table rowKey={(_, index) => String(index)} size="small" columns={ruleColumns} dataSource={overview?.forwarding_rules || []} pagination={{ pageSize: 8, hideOnSinglePage: true }} scroll={{ x: 900 }} /> },
+    { key: 'rules', label: `路由规则 (${overview?.forwarding_rules.length || 0})`, children: <Table rowKey={(_, index) => String(index)} size="small" columns={ruleColumns} dataSource={(overview?.forwarding_rules || []).map((item, index) => ({ ...item, __index: index }))} pagination={{ pageSize: 8, hideOnSinglePage: true }} scroll={{ x: 980 }} /> },
     { key: 'actions', label: `操作历史 (${actions.filter((item) => item.kind.startsWith('singbox_')).length})`, children: <Table rowKey="id" size="small" loading={actionsLoading} columns={actionColumns} dataSource={actions.filter((item) => item.kind.startsWith('singbox_'))} pagination={{ pageSize: 8, hideOnSinglePage: true }} scroll={{ x: 760 }} /> },
   ]
 
@@ -426,7 +572,7 @@ export function SingBoxActionPanel(props: {
             <Button type="primary" icon={<PlusOutlined />} disabled={!enabled || !canManage} onClick={openInboundEditor}>添加入站节点</Button>
             <Button disabled={!enabled || !canManage} onClick={openOutboundEditor}>添加出站节点</Button>
             <Button disabled={!enabled || !canManage || !(overview?.clients.length)} onClick={() => { setUser({ inbound_tag: String(overview?.clients[0]?.tag || ''), name: '', userkey: '' }); setEditor('user') }}>添加客户端</Button>
-            <Button disabled={!enabled || !canManage} onClick={() => { setRule({ source_agent_id: agentID, domain: '', ip: '', port: '', inbound: '', outbound: '' }); setRuleSourceSelection(''); setRuleXUIInboundKey(''); setRuleXUIClientKey(''); setEditor('rule') }}>添加转发规则</Button>
+            <Button disabled={!enabled || !canManage} onClick={() => { setRule({ source_agent_id: agentID, domain: '', ip: '', port: '', inbound: '', outbound: '', raw: '' }); setRuleSourceSelection(''); setRuleXUIInboundKey(''); setRuleXUIClientKey(''); setEditingRuleIndex(-1); setEditor('rule') }}>添加转发规则</Button>
           </Space>
         </div>
         <Text type="secondary">入站 {overview?.clients.length || 0} · 出站 {overview?.nodes.length || 0} · 路由规则 {overview?.forwarding_rules.length || 0} · 服务 {overview?.running ? '运行中' : '未运行'}</Text>
@@ -440,10 +586,10 @@ export function SingBoxActionPanel(props: {
           <div><Text type="secondary">二进制路径（可选）</Text><Input disabled={!canManage} value={singBoxConfig.binary_path || ''} placeholder="留空时从 PATH 查找 sing-box" onChange={(event) => onSingBoxChange({ binary_path: event.target.value })} /></div>
         </Space>
       </Modal>
-      <Modal title="添加入站节点" open={editor === 'inbound'} onCancel={() => setEditor(null)} onOk={() => void submit()} confirmLoading={saving} okText="下发" cancelText="取消">
+      <Modal title={editingInboundTag ? '编辑入站节点' : '添加入站节点'} open={editor === 'inbound'} onCancel={() => setEditor(null)} onOk={() => void submit()} confirmLoading={saving} okText="下发" cancelText="取消">
         <Row gutter={[12, 12]}>
           <Col xs={24} md={12}><Text type="secondary">标签</Text><Input value={inbound.tag} placeholder="例如 proxy-1080" onChange={(event) => setInbound({ ...inbound, tag: event.target.value })} /></Col>
-          <Col xs={24} md={12}><Text type="secondary">类型</Text><Select style={{ width: '100%' }} value={outbound.type.trim().toLowerCase() || 'snell'} options={[{ value: 'snell', label: 'Snell' }, ...(outbound.type.trim().toLowerCase() && outbound.type.trim().toLowerCase() !== 'snell' ? [{ value: outbound.type.trim().toLowerCase(), label: `${outbound.type}（来源配置）` }] : [])]} disabled /></Col>
+          <Col xs={24} md={12}><Text type="secondary">类型</Text><Select style={{ width: '100%' }} value={inbound.type.trim().toLowerCase() || 'snell'} options={[{ value: 'snell', label: 'Snell' }, ...(inbound.type.trim().toLowerCase() && inbound.type.trim().toLowerCase() !== 'snell' ? [{ value: inbound.type.trim().toLowerCase(), label: `${inbound.type}（现有配置）` }] : [])]} disabled /></Col>
           <Col xs={24} md={12}><Text type="secondary">监听地址</Text><Input value={inbound.listen} placeholder="默认 ::" onChange={(event) => setInbound({ ...inbound, listen: event.target.value })} /></Col>
           <Col xs={24} md={12}><Text type="secondary">监听端口</Text><InputNumber style={{ width: '100%' }} min={1} max={65535} value={inbound.listen_port} onChange={(value) => setInbound({ ...inbound, listen_port: Number(value || 0) })} /></Col>
           {inbound.type.trim().toLowerCase() === 'snell' ? <>
@@ -454,7 +600,7 @@ export function SingBoxActionPanel(props: {
           <Col xs={24}><Text type="secondary">高级 JSON（可选，用于 users、TLS、传输层等协议字段）</Text><Input.TextArea rows={6} value={inbound.raw} placeholder={'例如 {"users":[{"name":"alice","uuid":"..."}]}' } onChange={(event) => setInbound({ ...inbound, raw: event.target.value })} /></Col>
         </Row>
       </Modal>
-      <Modal title="添加出站节点" open={editor === 'outbound'} onCancel={() => setEditor(null)} onOk={() => void submit()} confirmLoading={saving} okText="下发" cancelText="取消">
+      <Modal title={editingOutboundTag ? '编辑出站节点' : '添加出站节点'} open={editor === 'outbound'} onCancel={() => setEditor(null)} onOk={() => void submit()} confirmLoading={saving} okText="下发" cancelText="取消">
         <Row gutter={[12, 12]}>
           <Col xs={24}><Text type="secondary">出站来源（可选，按 x-ui 转发规则方式复制已有出站）</Text><Select showSearch style={{ width: '100%' }} options={sourceOptions} value={outboundSourceAgentID} onChange={(value) => { setOutboundSourceAgentID(value); setOutboundSourceTag(''); setOutboundSourceXUIInboundKey(''); setOutboundSourceXUIClientKey('') }} /></Col>
           <Col xs={24}><Text type="secondary">来源出站节点</Text><Select showSearch allowClear style={{ width: '100%' }} loading={sourceLoading} options={outboundSourceOptions} value={outboundSourceTag || undefined} placeholder="选择来源 Client 中已有的出站；留空使用下方手动配置" onChange={selectOutboundSource} notFoundContent={sourceLoading ? '正在读取来源配置…' : '来源 Client 没有可用的 sing-box 出站或 x-ui 入站'} /></Col>
@@ -492,7 +638,13 @@ export function SingBoxActionPanel(props: {
           <Col xs={24}><Text type="secondary">流量和活跃时间如果 sing-box 未上报，将保留为手动记录；后续可继续编辑。</Text></Col>
         </Row>
       </Modal>
-      <Modal title="添加转发规则" open={editor === 'rule'} onCancel={() => setEditor(null)} onOk={() => void submit()} confirmLoading={saving || sourceLoading} okText="下发" cancelText="取消">
+      <Modal title={`分配 sing-box 客户端 · ${String(assignmentUser?.remark || assignmentUser?.name || assignmentUser?.user_key || '')}`} open={assignmentUser !== null} onCancel={() => setAssignmentUser(null)} onOk={() => void submitAssignment()} confirmLoading={assignmentLoading} okText="分配" cancelText="取消">
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Text type="secondary">选择客户后，该 sing-box 客户端会出现在客户门户的 sing-box JSON 订阅中。</Text>
+          <Select showSearch optionFilterProp="label" style={{ width: '100%' }} value={assignmentCustomerID || undefined} placeholder="选择客户" options={customers.map((customer) => ({ value: customer.id, label: `${customer.display_name || customer.username} · ${customer.username}` }))} onChange={setAssignmentCustomerID} />
+        </Space>
+      </Modal>
+      <Modal title={editingRuleIndex >= 0 ? '编辑转发规则' : '添加转发规则'} open={editor === 'rule'} onCancel={() => setEditor(null)} onOk={() => void submit()} confirmLoading={saving || sourceLoading} okText="下发" cancelText="取消">
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
           <div><Text type="secondary">来源 Client</Text><Select showSearch style={{ width: '100%' }} options={sourceOptions} value={rule.source_agent_id} onChange={(value) => { setRule({ ...rule, source_agent_id: value, outbound: '' }); setRuleSourceSelection(''); setRuleXUIInboundKey(''); setRuleXUIClientKey('') }} /></div>
           <div><Text type="secondary">出站节点 / 来源入站</Text><Select showSearch style={{ width: '100%' }} loading={sourceLoading} options={ruleOutboundOptions} value={ruleSourceSelection || undefined} placeholder="选择 sing-box 出站或其他 Client 的 x-ui 入站" onChange={selectRuleOutboundSource} notFoundContent={sourceLoading ? '正在读取来源配置…' : '来源 Client 没有可用的 sing-box 出站或 x-ui 入站'} /></div>
@@ -505,6 +657,7 @@ export function SingBoxActionPanel(props: {
             <Col xs={24} md={12}><Text type="secondary">IP/CIDR</Text><Input.TextArea rows={3} value={rule.ip} onChange={(event) => setRule({ ...rule, ip: event.target.value })} /></Col>
             <Col xs={24} md={12}><Text type="secondary">端口</Text><Input value={rule.port} placeholder="443, 8443" onChange={(event) => setRule({ ...rule, port: event.target.value })} /></Col>
             <Col xs={24} md={12}><Text type="secondary">入站标签</Text><Input value={rule.inbound} onChange={(event) => setRule({ ...rule, inbound: event.target.value })} /></Col>
+            <Col xs={24}><Text type="secondary">高级 JSON（可选，支持 sing-box 官方路由规则字段）</Text><Input.TextArea rows={6} value={rule.raw} placeholder={'例如 {"network":["tcp"],"action":"route"}'} onChange={(event) => setRule({ ...rule, raw: event.target.value })} /></Col>
           </Row>
           {rule.source_agent_id !== agentID ? <Text type="secondary">来源 Client 的 outbound 会随规则一起复制到当前 Client。</Text> : null}
         </Space>
@@ -515,6 +668,11 @@ export function SingBoxActionPanel(props: {
 
 function splitList(value: string): string[] {
   return value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean)
+}
+
+function listValue(value: unknown): string {
+  if (Array.isArray(value)) return value.map((item) => String(item)).join('\n')
+  return value === undefined || value === null ? '' : String(value)
 }
 
 function parseJSONDraft(value: string, label: string): Record<string, unknown> | null {
@@ -544,7 +702,7 @@ function flattenSingBoxUsers(inbounds: Record<string, unknown>[]): Record<string
       ...user,
       inbound_tag: inbound.tag,
       inbound_type: inbound.type,
-      user_key: user.name || user.username || user.email || user.uuid || user.password || '',
+      user_key: user.userkey ? `userkey:${user.userkey}` : user.name ? `name:${user.name}` : user.username ? `username:${user.username}` : user.email ? `email:${user.email}` : user.uuid ? `uuid:${user.uuid}` : user.password ? `password:${user.password}` : '',
     }))
   })
 }

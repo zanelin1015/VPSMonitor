@@ -521,7 +521,7 @@ func migrateAreaManagerAssignmentsTx(tx *sql.Tx, sourceAgentID, replacementAgent
 
 func migrateCustomerAssignmentsTx(tx *sql.Tx, sourceAgentID, replacementAgentID string) (int, error) {
 	rows, err := tx.Query(`
-		SELECT customer_id, inbound_id, inbound_tag, client_id, client_email, public_client_name, customer_remark,
+		SELECT customer_id, source_type, inbound_id, inbound_tag, client_id, client_email, singbox_inbound_tag, singbox_client_key, public_client_name, customer_remark,
 		       price_mode, revenue_amount, revenue_currency, revenue_cycle, enabled, created_at, updated_at
 		FROM customer_assignments
 		WHERE agent_id = ?
@@ -530,16 +530,16 @@ func migrateCustomerAssignmentsTx(tx *sql.Tx, sourceAgentID, replacementAgentID 
 		return 0, fmt.Errorf("list customer assignments for replacement: %w", err)
 	}
 	type assignmentRow struct {
-		customerID                                                                 int64
-		inboundID, enabled                                                         int
-		inboundTag, clientID, clientEmail, publicClientName                        string
-		customerRemark, priceMode, revenueCurrency, revenueCycle, created, updated string
-		revenueAmount                                                              *float64
+		customerID                                                                                           int64
+		inboundID, enabled                                                                                   int
+		sourceType, inboundTag, clientID, clientEmail, singBoxInboundTag, singBoxClientKey, publicClientName string
+		customerRemark, priceMode, revenueCurrency, revenueCycle, created, updated                           string
+		revenueAmount                                                                                        *float64
 	}
 	items := make([]assignmentRow, 0)
 	for rows.Next() {
 		var item assignmentRow
-		if err := rows.Scan(&item.customerID, &item.inboundID, &item.inboundTag, &item.clientID, &item.clientEmail, &item.publicClientName, &item.customerRemark, &item.priceMode, &item.revenueAmount, &item.revenueCurrency, &item.revenueCycle, &item.enabled, &item.created, &item.updated); err != nil {
+		if err := rows.Scan(&item.customerID, &item.sourceType, &item.inboundID, &item.inboundTag, &item.clientID, &item.clientEmail, &item.singBoxInboundTag, &item.singBoxClientKey, &item.publicClientName, &item.customerRemark, &item.priceMode, &item.revenueAmount, &item.revenueCurrency, &item.revenueCycle, &item.enabled, &item.created, &item.updated); err != nil {
 			_ = rows.Close()
 			return 0, fmt.Errorf("scan customer assignment for replacement: %w", err)
 		}
@@ -554,9 +554,9 @@ func migrateCustomerAssignmentsTx(tx *sql.Tx, sourceAgentID, replacementAgentID 
 	for _, item := range items {
 		if _, err := tx.Exec(`
 			INSERT INTO customer_assignments (
-				customer_id, agent_id, inbound_id, inbound_tag, client_id, client_email, public_client_name,
+				customer_id, source_type, agent_id, inbound_id, inbound_tag, client_id, client_email, singbox_inbound_tag, singbox_client_key, public_client_name,
 				customer_remark, price_mode, revenue_amount, revenue_currency, revenue_cycle, enabled, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(customer_id, agent_id, inbound_id, inbound_tag, client_email) DO UPDATE SET
 				client_id = CASE WHEN customer_assignments.client_id = '' THEN excluded.client_id ELSE customer_assignments.client_id END,
 				public_client_name = CASE
@@ -573,7 +573,7 @@ func migrateCustomerAssignmentsTx(tx *sql.Tx, sourceAgentID, replacementAgentID 
 				revenue_currency = CASE WHEN customer_assignments.price_mode = 'inherit' THEN excluded.revenue_currency ELSE customer_assignments.revenue_currency END,
 				revenue_cycle = CASE WHEN customer_assignments.price_mode = 'inherit' THEN excluded.revenue_cycle ELSE customer_assignments.revenue_cycle END,
 				updated_at = excluded.updated_at
-		`, item.customerID, replacementAgentID, item.inboundID, item.inboundTag, item.clientID, item.clientEmail, item.publicClientName, item.customerRemark, item.priceMode, item.revenueAmount, item.revenueCurrency, item.revenueCycle, item.enabled, item.created, item.updated); err != nil {
+		`, item.customerID, item.sourceType, replacementAgentID, item.inboundID, item.inboundTag, item.clientID, item.clientEmail, item.singBoxInboundTag, item.singBoxClientKey, item.publicClientName, item.customerRemark, item.priceMode, item.revenueAmount, item.revenueCurrency, item.revenueCycle, item.enabled, item.created, item.updated); err != nil {
 			return 0, fmt.Errorf("save replacement customer assignment: %w", err)
 		}
 	}

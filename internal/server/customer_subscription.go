@@ -29,7 +29,7 @@ func (a *App) handleCustomerSubscription(w http.ResponseWriter, r *http.Request,
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if len(parts) != 2 || !isMihomoSubscriptionFile(parts[1]) {
+	if len(parts) != 2 || !isCustomerSubscriptionFile(parts[1]) {
 		writeError(w, http.StatusNotFound, "subscription not found")
 		return
 	}
@@ -53,6 +53,17 @@ func (a *App) handleCustomerSubscription(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	overview.Links = filterCustomerSubscriptionLinks(overview.Links, r.URL.Query())
+	if strings.EqualFold(strings.TrimSpace(parts[1]), "sing-box.json") {
+		content, buildErr := buildSingBoxSubscription(overview.Links)
+		if buildErr != nil {
+			writeError(w, http.StatusInternalServerError, buildErr.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Content-Disposition", customerSubscriptionContentDisposition(user.Username))
+		_, _ = w.Write(content)
+		return
+	}
 	content := buildMihomoSubscription(user, overview.Links)
 	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
 	w.Header().Set("Content-Disposition", customerSubscriptionContentDisposition(user.Username))
@@ -126,6 +137,10 @@ func isMihomoSubscriptionFile(value string) bool {
 	default:
 		return false
 	}
+}
+
+func isCustomerSubscriptionFile(value string) bool {
+	return isMihomoSubscriptionFile(value) || strings.EqualFold(strings.TrimSpace(value), "sing-box.json")
 }
 
 func buildMihomoSubscription(user model.CustomerUser, links []model.CustomerLinkView) string {

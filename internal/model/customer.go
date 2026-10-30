@@ -37,31 +37,37 @@ type CustomerAccountRequest struct {
 }
 
 type CustomerAssignment struct {
-	ID               int64                `json:"id"`
-	CustomerID       int64                `json:"customer_id"`
-	AgentID          string               `json:"agent_id"`
-	InboundID        int                  `json:"inbound_id"`
-	InboundTag       string               `json:"inbound_tag,omitempty"`
-	ClientID         string               `json:"client_id,omitempty"`
-	ClientEmail      string               `json:"client_email,omitempty"`
-	PriceMode        string               `json:"price_mode,omitempty"`
-	RevenueAmount    *float64             `json:"revenue_amount,omitempty"`
-	RevenueCurrency  string               `json:"revenue_currency,omitempty"`
-	RevenueCycle     string               `json:"revenue_cycle,omitempty"`
-	PublicClientName string               `json:"public_client_name,omitempty"`
-	Remark           string               `json:"remark,omitempty"`
-	Enabled          bool                 `json:"enabled"`
-	FrontProxies     []FrontProxyNodeView `json:"front_proxies,omitempty"`
-	CreatedAt        time.Time            `json:"created_at"`
-	UpdatedAt        time.Time            `json:"updated_at"`
+	ID                int64                `json:"id"`
+	CustomerID        int64                `json:"customer_id"`
+	SourceType        string               `json:"source_type,omitempty"`
+	AgentID           string               `json:"agent_id"`
+	InboundID         int                  `json:"inbound_id"`
+	InboundTag        string               `json:"inbound_tag,omitempty"`
+	ClientID          string               `json:"client_id,omitempty"`
+	ClientEmail       string               `json:"client_email,omitempty"`
+	SingBoxInboundTag string               `json:"singbox_inbound_tag,omitempty"`
+	SingBoxClientKey  string               `json:"singbox_client_key,omitempty"`
+	PriceMode         string               `json:"price_mode,omitempty"`
+	RevenueAmount     *float64             `json:"revenue_amount,omitempty"`
+	RevenueCurrency   string               `json:"revenue_currency,omitempty"`
+	RevenueCycle      string               `json:"revenue_cycle,omitempty"`
+	PublicClientName  string               `json:"public_client_name,omitempty"`
+	Remark            string               `json:"remark,omitempty"`
+	Enabled           bool                 `json:"enabled"`
+	FrontProxies      []FrontProxyNodeView `json:"front_proxies,omitempty"`
+	CreatedAt         time.Time            `json:"created_at"`
+	UpdatedAt         time.Time            `json:"updated_at"`
 }
 
 type CustomerAssignmentRequest struct {
+	SourceType        string   `json:"source_type,omitempty"`
 	AgentID           string   `json:"agent_id"`
 	InboundID         int      `json:"inbound_id"`
 	InboundTag        string   `json:"inbound_tag,omitempty"`
 	ClientID          string   `json:"client_id,omitempty"`
 	ClientEmail       string   `json:"client_email,omitempty"`
+	SingBoxInboundTag string   `json:"singbox_inbound_tag,omitempty"`
+	SingBoxClientKey  string   `json:"singbox_client_key,omitempty"`
 	PublicClientName  string   `json:"public_client_name,omitempty"`
 	PriceMode         string   `json:"price_mode,omitempty"`
 	RevenueAmount     *float64 `json:"revenue_amount,omitempty"`
@@ -101,11 +107,13 @@ type CustomerLinkStep struct {
 
 type CustomerLinkView struct {
 	AssignmentID          int64                    `json:"assignment_id"`
+	SourceType            string                   `json:"source_type,omitempty"`
 	EntryClientName       string                   `json:"entry_client_name"`
 	InboundTag            string                   `json:"inbound_tag,omitempty"`
 	ClientEmail           string                   `json:"client_email,omitempty"`
 	ClientRemark          string                   `json:"client_remark,omitempty"`
 	ImportURL             string                   `json:"import_url,omitempty"`
+	SingBoxConfig         map[string]any           `json:"singbox_config,omitempty"`
 	ShadowrocketImportURL string                   `json:"shadowrocket_import_url,omitempty"`
 	Remark                string                   `json:"remark,omitempty"`
 	Summary               string                   `json:"summary"`
@@ -197,13 +205,14 @@ type CustomerLinkFrontProxy struct {
 }
 
 type CustomerOverviewResponse struct {
-	User                  CustomerUser           `json:"user"`
-	GeneratedAt           time.Time              `json:"generated_at"`
-	ClashSubscriptionURL  string                 `json:"clash_subscription_url,omitempty"`
-	MihomoSubscriptionURL string                 `json:"mihomo_subscription_url,omitempty"`
-	Announcements         []CustomerAnnouncement `json:"announcements,omitempty"`
-	ReadAnnouncementIDs   []string               `json:"read_announcement_ids,omitempty"`
-	Links                 []CustomerLinkView     `json:"links"`
+	User                   CustomerUser           `json:"user"`
+	GeneratedAt            time.Time              `json:"generated_at"`
+	ClashSubscriptionURL   string                 `json:"clash_subscription_url,omitempty"`
+	MihomoSubscriptionURL  string                 `json:"mihomo_subscription_url,omitempty"`
+	SingBoxSubscriptionURL string                 `json:"singbox_subscription_url,omitempty"`
+	Announcements          []CustomerAnnouncement `json:"announcements,omitempty"`
+	ReadAnnouncementIDs    []string               `json:"read_announcement_ids,omitempty"`
+	Links                  []CustomerLinkView     `json:"links"`
 }
 
 type CustomerAnnouncementReadRequest struct {
@@ -211,8 +220,9 @@ type CustomerAnnouncementReadRequest struct {
 }
 
 type CustomerSubscriptionURLResponse struct {
-	ClashSubscriptionURL  string `json:"clash_subscription_url"`
-	MihomoSubscriptionURL string `json:"mihomo_subscription_url"`
+	ClashSubscriptionURL   string `json:"clash_subscription_url"`
+	MihomoSubscriptionURL  string `json:"mihomo_subscription_url"`
+	SingBoxSubscriptionURL string `json:"singbox_subscription_url,omitempty"`
 }
 
 type CustomerBillingDiagnostic struct {

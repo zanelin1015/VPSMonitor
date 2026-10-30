@@ -71,6 +71,35 @@ func TestAddSnellClientRequiresOneUniquePort(t *testing.T) {
 	}
 }
 
+func TestSingBoxCRUDForNodesClientsAndRules(t *testing.T) {
+	cfg := map[string]any{
+		"outbounds": []any{map[string]any{"type": "direct", "tag": "direct"}},
+		"inbounds":  []any{map[string]any{"type": "snell", "tag": "in-1", "listen": "::", "listen_port": float64(20001), "psk": "secret"}},
+		"route":     map[string]any{"rules": []any{map[string]any{"outbound": "direct"}}},
+	}
+	if _, err := updateObject(cfg, "outbounds", map[string]any{"node": map[string]any{"type": "direct", "tag": "direct"}}, "node", validateNode); err != nil {
+		t.Fatalf("update outbound: %v", err)
+	}
+	if _, err := updateObject(cfg, "inbounds", map[string]any{"client": map[string]any{"type": "snell", "tag": "in-1", "listen": "::", "listen_port": float64(20002), "psk": "secret"}}, "client", validateClient); err != nil {
+		t.Fatalf("update inbound: %v", err)
+	}
+	if got := intValue(objectList(cfg["inbounds"])[0]["listen_port"]); got != 20002 {
+		t.Fatalf("expected updated inbound port, got %d", got)
+	}
+	if _, err := updateForwardingRule(cfg, map[string]any{"index": float64(0), "rule": map[string]any{"outbound": "direct", "port": "443"}}); err != nil {
+		t.Fatalf("update rule: %v", err)
+	}
+	if _, err := deleteForwardingRule(cfg, map[string]any{"index": float64(0)}); err != nil {
+		t.Fatalf("delete rule: %v", err)
+	}
+	if _, err := deleteObject(cfg, "inbounds", map[string]any{"tag": "in-1"}, "client"); err != nil {
+		t.Fatalf("delete inbound: %v", err)
+	}
+	if len(objectList(cfg["inbounds"])) != 0 || len(objectList(cfg["route"].(map[string]any)["rules"])) != 0 {
+		t.Fatalf("expected CRUD deletions to apply, got %#v", cfg)
+	}
+}
+
 func TestAddGenericSingBoxUser(t *testing.T) {
 	cfg := map[string]any{"inbounds": []any{map[string]any{"type": "vless", "tag": "vless-in", "listen_port": float64(443)}}}
 	if _, err := addUser(cfg, map[string]any{

@@ -160,7 +160,7 @@ func (a *App) executePendingXUIActions(ctx context.Context, effectiveConfig mode
 func (a *App) executeXUIAction(ctx context.Context, effectiveConfig model.ManagedAgentConfig, xuiClient *panels.XUIClient, xuiErr error, action model.XUIAction) model.XUIActionResultRequest {
 	result := model.XUIActionResultRequest{Status: model.XUIActionStatusSucceeded}
 	switch action.Kind {
-	case model.SingBoxActionAddNode, model.SingBoxActionAddClient, model.SingBoxActionAddUser, model.SingBoxActionDeleteUser, model.SingBoxActionAddForwardingRule, model.SingBoxActionReload:
+	case model.SingBoxActionAddNode, model.SingBoxActionUpdateNode, model.SingBoxActionDeleteNode, model.SingBoxActionAddClient, model.SingBoxActionUpdateClient, model.SingBoxActionDeleteClient, model.SingBoxActionAddUser, model.SingBoxActionDeleteUser, model.SingBoxActionAddForwardingRule, model.SingBoxActionUpdateForwardingRule, model.SingBoxActionDeleteForwardingRule, model.SingBoxActionReload:
 		if !effectiveConfig.SingBox.Enabled {
 			result.Status = model.XUIActionStatusFailed
 			result.Error = "sing-box config is disabled"
@@ -253,10 +253,16 @@ func (a *App) xuiActionTimeout(kind string) time.Duration {
 		model.XUIActionSetClientEnabled,
 		model.XUIActionDeleteClient,
 		model.SingBoxActionAddNode,
+		model.SingBoxActionUpdateNode,
+		model.SingBoxActionDeleteNode,
 		model.SingBoxActionAddClient,
+		model.SingBoxActionUpdateClient,
+		model.SingBoxActionDeleteClient,
 		model.SingBoxActionAddUser,
 		model.SingBoxActionDeleteUser,
 		model.SingBoxActionAddForwardingRule,
+		model.SingBoxActionUpdateForwardingRule,
+		model.SingBoxActionDeleteForwardingRule,
 		model.SingBoxActionReload:
 		if timeout < 90*time.Second {
 			timeout = 90 * time.Second

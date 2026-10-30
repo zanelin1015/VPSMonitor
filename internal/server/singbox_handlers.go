@@ -65,7 +65,7 @@ func redactSingBoxOverview(overview *model.SingBoxOverview) {
 
 func isSingBoxActionKind(kind string) bool {
 	switch kind {
-	case model.SingBoxActionAddNode, model.SingBoxActionAddClient, model.SingBoxActionAddUser, model.SingBoxActionDeleteUser, model.SingBoxActionAddForwardingRule, model.SingBoxActionReload:
+	case model.SingBoxActionAddNode, model.SingBoxActionUpdateNode, model.SingBoxActionDeleteNode, model.SingBoxActionAddClient, model.SingBoxActionUpdateClient, model.SingBoxActionDeleteClient, model.SingBoxActionAddUser, model.SingBoxActionDeleteUser, model.SingBoxActionAddForwardingRule, model.SingBoxActionUpdateForwardingRule, model.SingBoxActionDeleteForwardingRule, model.SingBoxActionReload:
 		return true
 	default:
 		return false

@@ -108,6 +108,7 @@ func (a *App) handleCustomerOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	response.ClashSubscriptionURL = customerSubscriptionURL(r, token, "clash.yaml")
 	response.MihomoSubscriptionURL = customerSubscriptionURL(r, token, "mihomo.yaml")
+	response.SingBoxSubscriptionURL = customerSubscriptionURL(r, token, "sing-box.json")
 	redactCustomerOverviewFrontProxyShareURLs(&response)
 	writeJSON(w, http.StatusOK, response)
 }
@@ -129,7 +130,7 @@ func customerSubscriptionURL(r *http.Request, token string, filename string) str
 		return ""
 	}
 	filename = strings.Trim(strings.TrimSpace(filename), "/")
-	if !isMihomoSubscriptionFile(filename) {
+	if !isCustomerSubscriptionFile(filename) {
 		filename = "clash.yaml"
 	}
 	return requestPublicBaseURL(r) + "/api/v1/customer/subscription/" + url.PathEscape(token) + "/" + filename
@@ -234,6 +235,9 @@ func (a *App) customerOverview(user model.CustomerUser) (model.CustomerOverviewR
 	}
 	for _, assignment := range assignments {
 		link := buildCustomerLinkView(assignment, chainMap, clientMap, agentMap)
+		if strings.EqualFold(assignment.SourceType, "singbox") {
+			link = buildSingBoxCustomerLink(assignment, snapshots, agents)
+		}
 		link.FrontProxies = customerLinkFrontProxies(frontProxyByAssignment[assignment.ID])
 		links = append(links, link)
 	}
