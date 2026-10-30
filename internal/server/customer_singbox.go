@@ -45,16 +45,25 @@ func buildSingBoxCustomerLink(assignment model.CustomerAssignment, snapshots []m
 		return link
 	}
 	host := ""
+	var entry model.AgentEntryConfig
 	for _, agent := range agents {
 		if agent.AgentID != assignment.AgentID {
 			continue
 		}
 		host = firstNonEmptyString(agent.PublicIPv4, agent.PublicIPv6, agent.Summary.PublicIPv4, agent.Summary.PublicIPv6, agent.Hostname)
+		entry = agent.Config.Entry
 		break
 	}
 	if host == "" {
 		host = firstNonEmptyString(snapshot.Summary.PublicIPv4, snapshot.Summary.PublicIPv6, snapshot.Summary.ObservedIP, snapshot.Summary.Hostname)
 	}
+	endpoint := model.ResolveEntryEndpoint(entry, model.EntryTarget{Type: "singbox", ID: assignment.SingBoxInboundTag, Port: intValueAny(inbound["listen_port"]), Transport: "tcp"}, host)
+	if endpoint.Error != "" {
+		link.UnresolvedReason = endpoint.Error
+		link.Summary = link.EntryClientName + " 入口映射未完成"
+		return link
+	}
+	host = endpoint.Address
 	if host == "" {
 		link.UnresolvedReason = "sing-box 入站没有可用的公网地址"
 		link.Summary = link.EntryClientName + " 缺少公网地址"
@@ -62,7 +71,7 @@ func buildSingBoxCustomerLink(assignment model.CustomerAssignment, snapshots []m
 	}
 	outbound := cloneSingBoxObject(inbound)
 	outbound["server"] = host
-	outbound["server_port"] = intValueAny(inbound["listen_port"])
+	outbound["server_port"] = endpoint.Port
 	delete(outbound, "listen")
 	delete(outbound, "listen_port")
 	delete(outbound, "users")
