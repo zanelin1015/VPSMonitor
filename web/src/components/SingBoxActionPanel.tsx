@@ -593,19 +593,28 @@ function normalizeSingBoxType(protocol?: string): string {
 
 function buildSingBoxOutboundFromImport(imported: Partial<XUIOutboundActionForm>, tag: string): Record<string, unknown> {
   const type = String(imported.protocol || 'vless').trim().toLowerCase()
-  const node: Record<string, unknown> = {
-    type,
-    tag: tag.trim(),
-    server: imported.address || '',
-    server_port: Number(imported.port || 0),
+  const node: Record<string, unknown> = { type, tag: tag.trim() }
+  const hasServer = !['direct', 'block', 'dns', 'selector', 'urltest'].includes(type)
+  if (hasServer) {
+    node.server = imported.address || ''
+    node.server_port = Number(imported.port || 0)
   }
-  if (imported.uuid) node.uuid = imported.uuid
-  if (imported.password) node.password = imported.password
+  if (type === 'vless' || type === 'vmess') {
+    if (imported.uuid) node.uuid = imported.uuid
+  } else if (type === 'trojan') {
+    if (imported.password) node.password = imported.password
+  } else if (type === 'shadowsocks') {
+    if (imported.method) node.method = imported.method
+    if (imported.password) node.password = imported.password
+  } else if (type === 'socks' || type === 'http') {
+    if (imported.uuid) node.username = imported.uuid
+    if (imported.password) node.password = imported.password
+  }
   if (type === 'vmess' && imported.method) node.security = imported.method
-  else if (imported.method) node.method = imported.method
-  if (imported.flow) node.flow = imported.flow
-  if (imported.network) node.network = imported.network
-  if (imported.security && imported.security !== 'none') {
+  if (type === 'vless' && imported.flow) node.flow = imported.flow
+  const transportTypes = ['vless', 'vmess', 'trojan']
+  if (transportTypes.includes(type) && imported.network) node.network = imported.network
+  if (transportTypes.includes(type) && imported.security && imported.security !== 'none') {
     node.tls = {
       enabled: true,
       server_name: imported.server_name || undefined,
@@ -613,15 +622,15 @@ function buildSingBoxOutboundFromImport(imported: Partial<XUIOutboundActionForm>
     }
   }
   const network = String(imported.network || '').trim().toLowerCase()
-  if (network === 'ws') {
+  if (transportTypes.includes(type) && network === 'ws') {
     node.transport = {
       type: 'ws',
       path: imported.ws_path || '/',
       headers: imported.ws_host ? { Host: imported.ws_host } : undefined,
     }
-  } else if (network === 'grpc') {
+  } else if (transportTypes.includes(type) && network === 'grpc') {
     node.transport = { type: 'grpc', service_name: imported.grpc_service || '' }
-  } else if (network === 'http' || network === 'h2') {
+  } else if (transportTypes.includes(type) && (network === 'http' || network === 'h2')) {
     node.transport = { type: 'http', host: imported.ws_host ? [imported.ws_host] : undefined, path: imported.ws_path || '/' }
   }
   return node
