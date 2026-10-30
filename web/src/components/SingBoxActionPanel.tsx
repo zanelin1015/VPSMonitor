@@ -499,6 +499,7 @@ export function SingBoxActionPanel(props: {
           {ruleXUIInboundKey ? <div><Text type="secondary">来源入站客户端（可选）</Text><Select showSearch allowClear style={{ width: '100%' }} options={ruleXUIClients.map((item) => ({ value: xuiClientSourceKey(item), label: `${item.email || item.comment || item.client_id || '客户端'} · ${item.protocol || ''}` }))} value={ruleXUIClientKey || undefined} placeholder="选择客户端以自动填充凭据" onChange={selectRuleXUIClientSource} /></div> : null}
           {sourceLoading ? <Text type="secondary">正在读取来源 Client 的 sing-box 出站...</Text> : null}
           {sourceError ? <Alert type="warning" showIcon message="来源 Client 读取失败" description={sourceError} /> : null}
+          {ruleSourceSelection.startsWith('xui-node:') ? <Alert type="info" showIcon message="地址自动解析" description="来源地址如果是域名，目标 Client 下发时会自动解析为 IP；无需手动填写 IP。" /> : null}
           <Row gutter={[12, 12]}>
             <Col xs={24} md={12}><Text type="secondary">域名</Text><Input.TextArea rows={3} value={rule.domain} onChange={(event) => setRule({ ...rule, domain: event.target.value })} /></Col>
             <Col xs={24} md={12}><Text type="secondary">IP/CIDR</Text><Input.TextArea rows={3} value={rule.ip} onChange={(event) => setRule({ ...rule, ip: event.target.value })} /></Col>

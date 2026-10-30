@@ -322,6 +322,13 @@ func addImportedOutbound(cfg map[string]any, raw map[string]any) error {
 		}
 		delete(outbound, "remark")
 	}
+	if server := strings.TrimSpace(stringValue(outbound["server"])); server != "" && net.ParseIP(strings.Trim(server, "[]")) == nil {
+		resolved, err := resolveImportedOutboundServer(server)
+		if err != nil {
+			return fmt.Errorf("imported outbound: resolve server %q: %w", server, err)
+		}
+		outbound["server"] = resolved
+	}
 	if err := validateNode(outbound); err != nil {
 		return fmt.Errorf("imported outbound: %w", err)
 	}
@@ -341,6 +348,36 @@ func addImportedOutbound(cfg map[string]any, raw map[string]any) error {
 	}
 	cfg["outbounds"] = append(items, outbound)
 	return nil
+}
+
+// resolveImportedOutboundServer keeps the manual outbound form IP-only while
+// allowing x-ui/sing-box imports to carry a hostname. The target Client is the
+// right place to resolve it because it uses the same DNS view as sing-box.
+func resolveImportedOutboundServer(server string) (string, error) {
+	host := strings.TrimSuffix(strings.TrimSpace(strings.Trim(server, "[]")), ".")
+	if host == "" {
+		return "", errors.New("server is empty")
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil || len(ips) == 0 {
+		if err == nil {
+			err = errors.New("no IP address returned")
+		}
+		return "", err
+	}
+	var firstIPv6 net.IP
+	for _, ip := range ips {
+		if ipv4 := ip.To4(); ipv4 != nil {
+			return ipv4.String(), nil
+		}
+		if firstIPv6 == nil && ip.To16() != nil {
+			firstIPv6 = ip.To16()
+		}
+	}
+	if firstIPv6 != nil {
+		return firstIPv6.String(), nil
+	}
+	return "", errors.New("DNS result is not an IP address")
 }
 
 func validateNode(node map[string]any) error {

@@ -3,6 +3,7 @@ package singbox
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -165,5 +166,26 @@ func TestForwardingRuleImportsOutboundFromSourceClient(t *testing.T) {
 	}
 	if got := objectList(cfg["route"].(map[string]any)["rules"])[0]["outbound"]; got != "normalized-tag" {
 		t.Fatalf("expected route to use imported tag, got %#v", got)
+	}
+}
+
+func TestImportedOutboundResolvesHostnameToIP(t *testing.T) {
+	cfg := map[string]any{"outbounds": []any{}, "route": map[string]any{"rules": []any{}}}
+	if _, err := addForwardingRule(cfg, map[string]any{
+		"outbound": map[string]any{
+			"type":        "shadowsocks",
+			"tag":         "resolved-ss",
+			"server":      "localhost",
+			"server_port": float64(20002),
+			"method":      "aes-128-gcm",
+			"password":    "secret",
+		},
+		"rule": map[string]any{"outbound": "resolved-ss"},
+	}); err != nil {
+		t.Fatalf("expected imported hostname to resolve: %v", err)
+	}
+	server := stringValue(objectList(cfg["outbounds"])[0]["server"])
+	if net.ParseIP(server) == nil {
+		t.Fatalf("expected resolved server IP, got %q", server)
 	}
 }

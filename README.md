@@ -34,7 +34,7 @@ VPSMonitor 可以把 sing-box 作为 Client 上的独立托管服务。管理员
 
 对应 API 为 `GET /api/v1/agents/{agent_id}/singbox/overview`、`GET/POST /api/v1/agents/{agent_id}/singbox/actions`。操作使用现有的持久化任务队列和 WebSocket/轮询执行机制；旧版 Client 会把未知的 sing-box 任务标记为失败，需要升级到包含 sing-box 支持的 Client。
 
-转发规则可以选择其它 Client 的 sing-box 出站，也可以选择其它 Client 的 x-ui 入站作为 sing-box 出站来源；来源配置会随规则一起复制到目标 Client。Server 会从来源 Client 的已采集配置中重新取出完整凭据，页面概览中的脱敏密码不会被直接写入目标配置。
+转发规则可以选择其它 Client 的 sing-box 出站，也可以选择其它 Client 的 x-ui 入站作为 sing-box 出站来源；来源配置会随规则一起复制到目标 Client。Server 会从来源 Client 的已采集配置中重新取出完整凭据，页面概览中的脱敏密码不会被直接写入目标配置。来源地址如果是域名，目标 Client 会在写入导入出站时自动解析为 IP；手动新增出站仍只接受 IP。
 
 ## 架构与注册流程
 
