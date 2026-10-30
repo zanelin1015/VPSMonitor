@@ -140,7 +140,7 @@ export function SingBoxActionPanel(props: {
   const openAssignment = async (item: Record<string, unknown>) => {
     const inboundTag = String(item.inbound_tag || '').trim()
     const clientKey = String(item.user_key || '').trim()
-    if (!inboundTag || !clientKey) return
+    if (!inboundTag || (!clientKey && item.singbox_node_scope !== true)) return
     setAssignmentUser(item)
     setAssignmentCustomerID(null)
     try {
@@ -472,7 +472,7 @@ export function SingBoxActionPanel(props: {
     ? (sourceXUIOverview?.clients || []).filter((item) => `${item.inbound_id}::${item.inbound_tag || ''}` === ruleXUIInboundKey)
     : []
   const singBoxUsers = flattenSingBoxUsers(overview?.clients || []).map((item) => {
-    const metadata = (singBoxConfig.clients || []).find((client) => client.inbound_tag === String(item.inbound_tag || '') && client.client_key === String(item.user_key || ''))
+    const metadata = (singBoxConfig.clients || []).find((client) => client.inbound_tag === String(item.inbound_tag || '') && client.client_key === singBoxMetadataKey(item))
     return metadata ? { ...item, ...metadata, total: metadata.total_bytes || item.total, traffic_multiplier: metadata.traffic_multiplier || item.traffic_multiplier, expiry_time: metadata.expiry_time || item.expiry_time, last_active: metadata.last_active || item.last_active } : item
   })
   const inboundColumns: ColumnsType<Record<string, unknown>> = [
@@ -480,7 +480,7 @@ export function SingBoxActionPanel(props: {
     { title: '类型', dataIndex: 'type', width: 120, render: (value) => valueText(value) },
     { title: '监听地址', dataIndex: 'listen', render: (value) => valueText(value) },
     { title: '监听端口', dataIndex: 'listen_port', width: 110, render: (value) => valueText(value) },
-    { title: '客户端', key: 'users', width: 150, render: (_, item) => <Space wrap><Tag>{Array.isArray(item.users) ? item.users.length : 0}</Tag><Button size="small" type="link" disabled={!canManage} onClick={() => { setUser({ inbound_tag: String(item.tag || ''), name: '', userkey: '' }); setEditor('user') }}>添加客户端</Button></Space> },
+    { title: '客户端', key: 'users', width: 180, render: (_, item) => { const users = Array.isArray(item.users) ? item.users : []; const snellNode = String(item.type || '').toLowerCase() === 'snell' && users.length === 0; return <Space wrap><Tag>{snellNode ? '节点级 PSK' : users.length}</Tag>{!snellNode ? <Button size="small" type="link" disabled={!canManage} onClick={() => { setUser({ inbound_tag: String(item.tag || ''), name: '', userkey: '' }); setEditor('user') }}>添加客户端</Button> : null}</Space> } },
     { title: '操作', key: 'actions', width: 150, render: (_, item) => <Space><Button size="small" icon={<EditOutlined />} disabled={!canManage} onClick={() => openInboundEdit(item)}>编辑</Button><Popconfirm title="删除这个 sing-box 入站？" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => void deleteInbound(item)}><Button size="small" danger icon={<DeleteOutlined />} disabled={!canManage || saving}>删除</Button></Popconfirm></Space> },
   ]
   const outboundColumns: ColumnsType<Record<string, unknown>> = [
@@ -500,14 +500,14 @@ export function SingBoxActionPanel(props: {
     { title: '操作', key: 'actions', width: 150, render: (_, item) => <Space><Button size="small" icon={<EditOutlined />} disabled={!canManage} onClick={() => openRuleEdit(item, Number(item.__index))}>编辑</Button><Popconfirm title="删除这条 sing-box 路由规则？" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => void deleteRule(item)}><Button size="small" danger icon={<DeleteOutlined />} disabled={!canManage || saving}>删除</Button></Popconfirm></Space> },
   ]
   const userColumns: ColumnsType<Record<string, unknown>> = [
-    { title: '客户端', key: 'identity', width: 190, render: (_, item) => <div><Text strong>{valueText(item.remark || item.name || item.userkey || item.username || item.email || item.uuid || item.password)}</Text><div className="muted-line">{valueText(item.userkey || item.email || item.username || item.uuid)}</div></div> },
+    { title: '客户端', key: 'identity', width: 190, render: (_, item) => <div><Text strong>{valueText(item.remark || item.name || item.userkey || item.username || item.email || item.uuid || item.password)}</Text><div className="muted-line">{valueText(item.user_key || (item.singbox_node_scope ? '节点级 PSK' : item.email || item.username || item.uuid))}</div></div> },
     { title: '所在节点', dataIndex: 'inbound_tag', width: 150, render: (value) => valueText(value) },
     { title: '状态', key: 'status', width: 100, render: (_, item) => <Tag color={item.enabled === false ? 'default' : 'processing'}>{item.enabled === false ? '停用' : '启用'}</Tag> },
     { title: '流量', key: 'traffic', width: 190, render: (_, item) => <div><Text>已用 {formatBytes(Number(item.total || item.all_time || item.traffic_total || 0))}</Text><div className="muted-line">↑ {formatBytes(Number(item.up || 0))} · ↓ {formatBytes(Number(item.down || 0))}</div></div> },
     { title: '到期时间', key: 'expiry', width: 150, render: (_, item) => formatExpiryTime(Number(item.expiry_time || 0)) },
     { title: '流量倍数', key: 'multiplier', width: 100, render: (_, item) => item.traffic_multiplier ? `${item.traffic_multiplier} 倍` : '-' },
     { title: '最近活跃', key: 'active', width: 140, render: (_, item) => formatRelativeTime(Number(item.last_online || item.last_active || 0)) },
-    { title: '操作', key: 'actions', width: 260, render: (_, item) => <Space><Button size="small" disabled={!canManage} onClick={() => { setMetadataUser(item); setMetadataDraft({ remark: String(item.remark || ''), totalGB: Number(item.total_bytes || 0) / 1024 ** 3, trafficMultiplier: Number(item.traffic_multiplier || 1), expiryTime: Number(item.expiry_time || 0), lastActive: Number(item.last_active || item.last_online || 0) }) }}>编辑</Button><Button size="small" disabled={!canManage} onClick={() => void openAssignment(item)}>分配</Button><Popconfirm title="删除这个 sing-box 客户端？" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => void removeUser(item)}><Button size="small" danger icon={<DeleteOutlined />} disabled={!canManage || saving}>删除</Button></Popconfirm></Space> },
+    { title: '操作', key: 'actions', width: 260, render: (_, item) => <Space><Button size="small" disabled={!canManage} onClick={() => { setMetadataUser(item); setMetadataDraft({ remark: String(item.remark || ''), totalGB: Number(item.total_bytes || 0) / 1024 ** 3, trafficMultiplier: Number(item.traffic_multiplier || 1), expiryTime: Number(item.expiry_time || 0), lastActive: Number(item.last_active || item.last_online || 0) }) }}>编辑</Button><Button size="small" disabled={!canManage} onClick={() => void openAssignment(item)}>分配</Button>{item.singbox_node_scope === true ? null : <Popconfirm title="删除这个 sing-box 客户端？" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => void removeUser(item)}><Button size="small" danger icon={<DeleteOutlined />} disabled={!canManage || saving}>删除</Button></Popconfirm>}</Space> },
   ]
   const actionColumns: ColumnsType<XUIAction> = [
     { title: 'ID', dataIndex: 'id', width: 70 },
@@ -554,10 +554,11 @@ export function SingBoxActionPanel(props: {
     if (!metadataUser) return
     const inboundTag = String(metadataUser.inbound_tag || '')
     const clientKey = String(metadataUser.user_key || '')
-    if (!inboundTag || !clientKey) return
-    const next: SingBoxClientMetadata[] = [...(singBoxConfig.clients || []).filter((client) => !(client.inbound_tag === inboundTag && client.client_key === clientKey)), {
+    if (!inboundTag || (!clientKey && metadataUser.singbox_node_scope !== true)) return
+    const metadataKey = singBoxMetadataKey(metadataUser)
+    const next: SingBoxClientMetadata[] = [...(singBoxConfig.clients || []).filter((client) => !(client.inbound_tag === inboundTag && client.client_key === metadataKey)), {
       inbound_tag: inboundTag,
-      client_key: clientKey,
+      client_key: metadataKey,
       remark: metadataDraft.remark.trim(),
       total_bytes: Math.max(0, metadataDraft.totalGB) * 1024 ** 3,
       traffic_multiplier: Math.max(0.1, metadataDraft.trafficMultiplier),
@@ -658,7 +659,7 @@ export function SingBoxActionPanel(props: {
       </Modal>
       <Modal title={`分配 sing-box 客户端 · ${String(assignmentUser?.remark || assignmentUser?.name || assignmentUser?.user_key || '')}`} open={assignmentUser !== null} onCancel={() => setAssignmentUser(null)} onOk={() => void submitAssignment()} confirmLoading={assignmentLoading} okText="分配" cancelText="取消">
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <Text type="secondary">选择客户后，该 sing-box 客户端会出现在客户门户的 sing-box JSON 订阅中。</Text>
+          <Text type="secondary">选择客户后，该 sing-box 客户端会出现在客户门户的 sing-box JSON 订阅中。Snell 没有 user 时按节点级 PSK 分配。</Text>
           <Select showSearch optionFilterProp="label" style={{ width: '100%' }} value={assignmentCustomerID || undefined} placeholder="选择客户" options={customers.map((customer) => ({ value: customer.id, label: `${customer.display_name || customer.username} · ${customer.username}` }))} onChange={setAssignmentCustomerID} />
         </Space>
       </Modal>
@@ -727,13 +728,29 @@ function randomPSK(): string {
 function flattenSingBoxUsers(inbounds: Record<string, unknown>[]): Record<string, unknown>[] {
   return inbounds.flatMap((inbound) => {
     const users = Array.isArray(inbound.users) ? inbound.users : []
-    return users.filter((user): user is Record<string, unknown> => Boolean(user && typeof user === 'object' && !Array.isArray(user))).map((user) => ({
+    const rows: Record<string, unknown>[] = users.filter((user): user is Record<string, unknown> => Boolean(user && typeof user === 'object' && !Array.isArray(user))).map((user) => ({
       ...user,
       inbound_tag: inbound.tag,
       inbound_type: inbound.type,
       user_key: user.userkey ? `userkey:${user.userkey}` : user.name ? `name:${user.name}` : user.username ? `username:${user.username}` : user.email ? `email:${user.email}` : user.uuid ? `uuid:${user.uuid}` : user.password ? `password:${user.password}` : '',
     }))
+    if (rows.length === 0 && String(inbound.type || '').toLowerCase() === 'snell') {
+      rows.push({
+        inbound_tag: inbound.tag,
+        inbound_type: inbound.type,
+        name: '节点级 PSK',
+        singbox_node_scope: true,
+        user_key: '',
+      })
+    }
+    return rows
   })
+}
+
+function singBoxMetadataKey(item: Record<string, unknown>): string {
+  const key = String(item.user_key || '').trim()
+  if (key) return key
+  return `inbound:${String(item.inbound_tag || '').trim()}`
 }
 
 function metadataDateInput(value?: number): string {

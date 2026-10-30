@@ -374,6 +374,33 @@ func TestCustomerAssignmentStoresStableClientBindingAndPriceOverride(t *testing.
 	}
 }
 
+func TestCustomerAssignmentAllowsNodeLevelSingBoxPSK(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	if _, err := store.RegisterAgent(model.AgentRegisterRequest{AgentID: "snell-01", AgentName: "Snell 01"}); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	customer, err := store.CreateCustomer(model.CustomerAccountRequest{Username: "snell-customer", Password: "password123"})
+	if err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
+	assignment, err := store.CreateCustomerAssignment(customer.ID, model.CustomerAssignmentRequest{
+		SourceType:        "singbox",
+		AgentID:           "snell-01",
+		SingBoxInboundTag: "snell-single",
+		PublicClientName:  "Clash Snell",
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomerAssignment node-level Snell: %v", err)
+	}
+	if assignment.SingBoxInboundTag != "snell-single" || assignment.SingBoxClientKey != "" || assignment.ClientEmail != "" {
+		t.Fatalf("unexpected node-level Snell assignment: %#v", assignment)
+	}
+}
+
 func TestSQLiteStoreAreaManagerOutboundGrantsAndCreatePermission(t *testing.T) {
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
 	if err != nil {

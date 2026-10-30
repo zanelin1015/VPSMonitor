@@ -922,12 +922,14 @@ func (s *SQLiteStore) normalizeCustomerAssignmentRequest(req model.CustomerAssig
 		if req.SingBoxInboundTag == "" {
 			return req, fmt.Errorf("singbox_inbound_tag is required")
 		}
-		if req.SingBoxClientKey == "" {
-			return req, fmt.Errorf("singbox_client_key is required")
-		}
 		req.InboundID = 0
 		req.InboundTag = req.SingBoxInboundTag
-		req.ClientEmail = req.SingBoxClientKey
+		// A Snell inbound can be a single-user node authenticated only by its
+		// PSK. In that mode there is no sing-box user key to store.
+		req.ClientEmail = ""
+		if req.SingBoxClientKey != "" {
+			req.ClientEmail = req.SingBoxClientKey
+		}
 	} else if req.InboundID <= 0 {
 		return req, fmt.Errorf("inbound_id is required")
 	}

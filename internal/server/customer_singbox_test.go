@@ -42,3 +42,36 @@ func TestBuildSingBoxCustomerLinkAndSubscription(t *testing.T) {
 		t.Fatalf("unexpected exported outbound: %#v", outbound)
 	}
 }
+
+func TestBuildSingBoxCustomerLinkForNodeLevelSnell(t *testing.T) {
+	snapshots := []model.AgentSnapshot{{
+		AgentID: "edge-1",
+		Summary: model.VPSSummary{PublicIPv4: "198.51.100.10"},
+		SingBox: &model.SingBoxSnapshot{Clients: []map[string]any{{
+			"type":        "snell",
+			"tag":         "snell-single",
+			"listen":      "::",
+			"listen_port": float64(27411),
+			"version":     float64(5),
+			"psk":         "single-user-psk",
+			"obfs_mode":   "none",
+		}}},
+	}}
+	link := buildSingBoxCustomerLink(model.CustomerAssignment{
+		ID:                8,
+		AgentID:           "edge-1",
+		SourceType:        "singbox",
+		SingBoxInboundTag: "snell-single",
+		PublicClientName:  "Clash Snell",
+	}, snapshots, []model.AgentRecord{{AgentID: "edge-1", PublicIPv4: "198.51.100.10"}})
+	if !link.Resolved || link.SingBoxConfig == nil {
+		t.Fatalf("expected node-level Snell link to resolve, got %#v", link)
+	}
+	outbound := link.SingBoxConfig["outbounds"].([]any)[0].(map[string]any)
+	if outbound["psk"] != "single-user-psk" || outbound["server"] != "198.51.100.10" {
+		t.Fatalf("unexpected node-level Snell outbound: %#v", outbound)
+	}
+	if _, exists := outbound["userkey"]; exists {
+		t.Fatalf("node-level Snell outbound must not require userkey: %#v", outbound)
+	}
+}
