@@ -30,11 +30,13 @@ VPSMonitor 是一套围绕 `x-ui / 3x-ui` 的 VPS 集中管理系统。它不替
 
 VPSMonitor 可以把 sing-box 作为 Client 上的独立托管服务。管理员在 Client 详情的“sing-box”页面顶部启用采集，填写配置文件路径（默认 `/etc/sing-box/config.json`）和服务名（默认 `sing-box`），保存后 Client 会读取并上报 sing-box 的 `outbounds`、`inbounds` 和 `route.rules`，页面会分别展示当前入站节点、出站节点和转发规则。
 
-启用后，详情页的“sing-box”页可以下发添加入站节点、出站节点、入站客户端和转发规则。入站/出站协议使用通用类型和高级 JSON 字段，支持 Snell 之外的 sing-box 协议；出站节点的 `server` 仍只接受 IPv4/IPv6，不接受域名，备注会作为 sing-box 的 `tag` 保存。客户端管理页会按入站展示名称、状态、流量、到期时间、流量倍数和最近活跃时间；sing-box 未上报的计费字段可由 VPSMonitor 手动记录。Client 写入配置前会保留其它 JSON 字段，并在保存后执行 `sing-box check -c <config>`（如果本机有 sing-box 二进制）和服务重载。
+启用后，详情页的“sing-box”页按 x-ui 的管理方式提供入站节点、客户端、出站节点、路由规则和操作历史标签页；入站、出站和路由规则支持新增、修改、删除，客户端支持新增、删除、分配给客户，以及名称、状态、流量、到期时间、流量倍数和最近活跃时间记录。入站/出站协议使用通用类型和高级 JSON 字段，支持 Snell 之外的 sing-box 协议；出站节点的 `server` 仍只接受 IPv4/IPv6，不接受域名，备注会作为 sing-box 的 `tag` 保存。Client 写入配置前会保留其它 JSON 字段，并在保存后执行 `sing-box check -c <config>`（如果本机有 sing-box 二进制）和服务重载。
 
 对应 API 为 `GET /api/v1/agents/{agent_id}/singbox/overview`、`GET/POST /api/v1/agents/{agent_id}/singbox/actions`。操作使用现有的持久化任务队列和 WebSocket/轮询执行机制；旧版 Client 会把未知的 sing-box 任务标记为失败，需要升级到包含 sing-box 支持的 Client。
 
 转发规则可以选择其它 Client 的 sing-box 出站，也可以选择其它 Client 的 x-ui 入站作为 sing-box 出站来源；来源配置会随规则一起复制到目标 Client。Server 会从来源 Client 的已采集配置中重新取出完整凭据，页面概览中的脱敏密码不会被直接写入目标配置。来源地址如果是域名，目标 Client 会在写入导入出站时自动解析为 IP；手动新增出站仍只接受 IP。
+
+sing-box 客户端可以从管理页直接分配给普通客户。客户门户会生成 `sing-box.json` 订阅，订阅内容由已采集的入站配置、客户密钥和 Client 公网地址生成，客户可以直接导入 sing-box 图形客户端。
 
 ## 架构与注册流程
 
