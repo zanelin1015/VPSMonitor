@@ -392,7 +392,11 @@ export function SingBoxActionPanel(props: {
       if (!ruleSourceSelection.startsWith('xui-node:') && !sourceOutbound) { message.error('请选择来源 Client 中已有的出站节点'); return }
       const advanced = parseJSONDraft(rule.raw, '路由规则')
       if (!advanced) return
-      const next: Record<string, unknown> = { ...advanced, outbound: rule.outbound.trim() }
+      // sing-box requires an explicit `route` action whenever a rule selects
+      // an outbound. Keep an explicitly supplied action from advanced JSON,
+      // while defaulting imported x-ui style rules to route.
+      const configuredAction = typeof advanced.action === 'string' && advanced.action.trim() ? advanced.action.trim() : 'route'
+      const next: Record<string, unknown> = { ...advanced, action: configuredAction, outbound: rule.outbound.trim() }
       if (rule.domain.trim()) next.domain = splitList(rule.domain)
       if (rule.ip.trim()) next.ip_cidr = splitList(rule.ip)
       if (rule.port.trim()) next.port = rule.port.trim()

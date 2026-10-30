@@ -645,6 +645,12 @@ func validateForwardingRule(rule map[string]any, cfg map[string]any) error {
 	if outbound == "" && action == "" {
 		return errors.New("forwarding rule requires outbound or action")
 	}
+	// sing-box route rules that select an outbound must explicitly declare the
+	// route action. Older x-ui style payloads only carried `outbound`, so
+	// normalize those payloads here before they are written to config.json.
+	if outbound != "" && action == "" {
+		rule["action"] = "route"
+	}
 	if outbound != "" {
 		found := false
 		for _, item := range objectList(cfg["outbounds"]) {

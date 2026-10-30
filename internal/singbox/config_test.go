@@ -41,6 +41,9 @@ func TestAddSnellNodeAndForwardingRule(t *testing.T) {
 	if _, err := addForwardingRule(cfg, map[string]any{"rule": map[string]any{"domain": []any{"example.com"}, "outbound": "dedicated"}}); err != nil {
 		t.Fatalf("add rule: %v", err)
 	}
+	if action := objectList(cfg["route"].(map[string]any)["rules"])[0]["action"]; action != "route" {
+		t.Fatalf("expected outbound rule action route, got %#v", action)
+	}
 	if _, err := addForwardingRule(cfg, map[string]any{"rule": map[string]any{"outbound": "missing"}}); err == nil {
 		t.Fatal("expected unknown outbound to be rejected")
 	}
