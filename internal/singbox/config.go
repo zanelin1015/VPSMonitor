@@ -97,6 +97,10 @@ func (m *Manager) ExecuteAction(ctx context.Context, action model.XUIAction) (ma
 		changed, err = addObject(cfg, "outbounds", action.Payload, "node", validateNode)
 	case model.SingBoxActionAddClient:
 		changed, err = addObject(cfg, "inbounds", action.Payload, "client", validateClient)
+	case model.SingBoxActionAddUser:
+		changed, err = addUser(cfg, action.Payload)
+	case model.SingBoxActionDeleteUser:
+		changed, err = deleteUser(cfg, action.Payload)
 	case model.SingBoxActionAddForwardingRule:
 		changed, err = addForwardingRule(cfg, action.Payload)
 	case model.SingBoxActionReload:
@@ -193,6 +197,17 @@ func addForwardingRule(cfg map[string]any, payload map[string]any) (string, erro
 		return "", errors.New("rule must be an object")
 	}
 	rule := cloneObject(value)
+	if imported, ok := payload["outbound"].(map[string]any); ok && imported != nil {
+		if err := addImportedOutbound(cfg, imported); err != nil {
+			return "", err
+		}
+		// Keep the route and copied outbound in sync even when the caller used
+		// a stale/generated tag before the import was normalized.
+		importedTag := strings.TrimSpace(stringValue(imported["tag"]))
+		if importedTag != "" && !outboundTagExists(cfg, strings.TrimSpace(stringValue(rule["outbound"]))) {
+			rule["outbound"] = importedTag
+		}
+	}
 	if err := validateForwardingRule(rule, cfg); err != nil {
 		return "", err
 	}
@@ -216,13 +231,125 @@ func addForwardingRule(cfg map[string]any, payload map[string]any) (string, erro
 	return fingerprint, nil
 }
 
+func outboundTagExists(cfg map[string]any, tag string) bool {
+	if tag == "" {
+		return false
+	}
+	for _, outbound := range objectList(cfg["outbounds"]) {
+		if strings.TrimSpace(stringValue(outbound["tag"])) == tag {
+			return true
+		}
+	}
+	return false
+}
+
+func addUser(cfg map[string]any, payload map[string]any) (string, error) {
+	inboundTag := strings.TrimSpace(stringValue(payload["inbound_tag"]))
+	user, ok := payload["user"].(map[string]any)
+	if inboundTag == "" || !ok || user == nil {
+		return "", errors.New("sing-box user requires inbound_tag and user object")
+	}
+	if len(user) == 0 {
+		return "", errors.New("sing-box user cannot be empty")
+	}
+	inbounds := objectList(cfg["inbounds"])
+	for _, inbound := range inbounds {
+		if strings.TrimSpace(stringValue(inbound["tag"])) != inboundTag {
+			continue
+		}
+		users := objectList(inbound["users"])
+		if strings.EqualFold(strings.TrimSpace(stringValue(inbound["type"])), "snell") && strings.TrimSpace(stringValue(user["userkey"])) == "" {
+			return "", errors.New("snell user requires userkey")
+		}
+		key := userIdentity(user)
+		if key == "" {
+			return "", errors.New("sing-box user requires name, username, email, uuid or password")
+		}
+		for _, existing := range users {
+			if userIdentity(existing) == key {
+				return "", fmt.Errorf("sing-box user already exists in inbound: %s", key)
+			}
+		}
+		inbound["users"] = append(users, cloneObject(user))
+		return key, nil
+	}
+	return "", fmt.Errorf("sing-box inbound not found: %s", inboundTag)
+}
+
+func userIdentity(user map[string]any) string {
+	for _, key := range []string{"name", "userkey", "username", "email", "uuid", "password"} {
+		if value := strings.TrimSpace(stringValue(user[key])); value != "" {
+			return key + ":" + value
+		}
+	}
+	return ""
+}
+
+func deleteUser(cfg map[string]any, payload map[string]any) (string, error) {
+	inboundTag := strings.TrimSpace(stringValue(payload["inbound_tag"]))
+	userKey := strings.TrimSpace(stringValue(payload["user_key"]))
+	if inboundTag == "" || userKey == "" {
+		return "", errors.New("sing-box delete user requires inbound_tag and user_key")
+	}
+	for _, inbound := range objectList(cfg["inbounds"]) {
+		if strings.TrimSpace(stringValue(inbound["tag"])) != inboundTag {
+			continue
+		}
+		users := objectList(inbound["users"])
+		filtered := make([]map[string]any, 0, len(users))
+		removed := false
+		for _, user := range users {
+			if userIdentity(user) == userKey {
+				removed = true
+				continue
+			}
+			filtered = append(filtered, user)
+		}
+		if !removed {
+			return "", fmt.Errorf("sing-box user not found: %s", userKey)
+		}
+		inbound["users"] = filtered
+		return userKey, nil
+	}
+	return "", fmt.Errorf("sing-box inbound not found: %s", inboundTag)
+}
+
+func addImportedOutbound(cfg map[string]any, raw map[string]any) error {
+	outbound := cloneObject(raw)
+	if remark := strings.TrimSpace(stringValue(outbound["remark"])); remark != "" {
+		if strings.TrimSpace(stringValue(outbound["tag"])) == "" {
+			outbound["tag"] = remark
+		}
+		delete(outbound, "remark")
+	}
+	if err := validateNode(outbound); err != nil {
+		return fmt.Errorf("imported outbound: %w", err)
+	}
+	tag := strings.TrimSpace(stringValue(outbound["tag"]))
+	if value := cfg["outbounds"]; value != nil && !isObjectList(value) {
+		return errors.New("sing-box outbounds must be an array")
+	}
+	items := objectList(cfg["outbounds"])
+	for _, existing := range items {
+		if strings.TrimSpace(stringValue(existing["tag"])) != tag {
+			continue
+		}
+		if objectFingerprint(existing) != objectFingerprint(outbound) {
+			return fmt.Errorf("outbound tag already exists with different settings: %s", tag)
+		}
+		return nil
+	}
+	cfg["outbounds"] = append(items, outbound)
+	return nil
+}
+
 func validateNode(node map[string]any) error {
 	tag := strings.TrimSpace(stringValue(node["tag"]))
 	typ := strings.ToLower(strings.TrimSpace(stringValue(node["type"])))
 	if tag == "" || typ == "" {
 		return errors.New("node requires non-empty tag and type")
 	}
-	if typ == "direct" || typ == "block" || typ == "dns" {
+	if typ == "direct" || typ == "block" || typ == "dns" || typ == "selector" || typ == "urltest" {
 		return nil
 	}
 	server := strings.TrimSpace(stringValue(node["server"]))
@@ -238,12 +365,51 @@ func validateNode(node map[string]any) error {
 		if strings.TrimSpace(stringValue(node["psk"])) == "" {
 			return errors.New("snell outbound requires psk")
 		}
-		if version := intValue(node["version"]); version == 0 {
-			node["version"] = 4
-		} else if version < 1 || version > 5 {
-			return errors.New("snell outbound version must be between 1 and 5")
+		version := intValue(node["version"])
+		if version == 0 {
+			version = 4
+		}
+		if version != 4 && version != 6 {
+			return errors.New("snell outbound version must be 4 or 6")
+		}
+		node["version"] = version
+		if version == 6 && (len([]byte(strings.TrimSpace(stringValue(node["psk"])))) < 12 || len([]byte(strings.TrimSpace(stringValue(node["psk"])))) > 255) {
+			return errors.New("snell version 6 outbound psk must be between 12 and 255 bytes")
+		}
+		if network := strings.ToLower(strings.TrimSpace(stringValue(node["network"]))); network != "" && network != "tcp" && network != "udp" {
+			return errors.New("snell outbound network must be tcp or udp")
+		} else if network != "" {
+			node["network"] = network
+		}
+		if reuse, ok := node["reuse"]; ok {
+			if _, valid := reuse.(bool); !valid {
+				return errors.New("snell outbound reuse must be boolean")
+			}
+		}
+		if version == 4 {
+			obfsMode := strings.ToLower(strings.TrimSpace(stringValue(node["obfs_mode"])))
+			if obfsMode == "" {
+				node["obfs_mode"] = "none"
+			} else if obfsMode != "none" && obfsMode != "http" {
+				return errors.New("snell outbound obfs_mode must be none or http")
+			} else {
+				node["obfs_mode"] = obfsMode
+			}
+			if obfsMode == "http" && strings.TrimSpace(stringValue(node["obfs_host"])) == "" {
+				node["obfs_host"] = "bing.com"
+			}
+			delete(node, "mode")
 		} else {
-			node["version"] = version
+			mode := strings.ToLower(strings.TrimSpace(stringValue(node["mode"])))
+			if mode == "" {
+				node["mode"] = "default"
+			} else if mode != "default" && mode != "unshaped" && mode != "unsafe-raw" {
+				return errors.New("snell outbound mode must be default, unshaped or unsafe-raw")
+			} else {
+				node["mode"] = mode
+			}
+			delete(node, "obfs_mode")
+			delete(node, "obfs_host")
 		}
 	}
 	return nil
@@ -253,8 +419,9 @@ func validateClient(client map[string]any) error {
 	if strings.TrimSpace(stringValue(client["tag"])) == "" {
 		return errors.New("client requires a non-empty remark/tag")
 	}
-	if strings.ToLower(strings.TrimSpace(stringValue(client["type"]))) != "snell" {
-		return errors.New("sing-box clients must use type snell")
+	typ := strings.ToLower(strings.TrimSpace(stringValue(client["type"])))
+	if typ == "" {
+		return errors.New("client requires a type")
 	}
 	if strings.TrimSpace(stringValue(client["listen"])) == "" {
 		client["listen"] = "::"
@@ -264,23 +431,52 @@ func validateClient(client map[string]any) error {
 		return errors.New("client requires exactly one listen_port between 1 and 65535")
 	}
 	client["listen_port"] = port
-	if strings.TrimSpace(stringValue(client["psk"])) == "" {
-		return errors.New("snell client requires psk")
-	}
-	if version := intValue(client["version"]); version == 0 {
-		client["version"] = 5
-	} else if version < 1 || version > 5 {
-		return errors.New("snell client version must be between 1 and 5")
-	} else {
+	if typ == "snell" {
+		if strings.TrimSpace(stringValue(client["psk"])) == "" {
+			return errors.New("snell client requires psk")
+		}
+		version := intValue(client["version"])
+		if version == 0 {
+			version = 5
+		}
+		if version != 5 && version != 6 {
+			return errors.New("snell client version must be 5 or 6")
+		}
 		client["version"] = version
-	}
-	obfsMode := strings.ToLower(strings.TrimSpace(stringValue(client["obfs_mode"])))
-	if obfsMode == "" {
-		client["obfs_mode"] = "none"
-	} else if obfsMode != "none" && obfsMode != "http" {
-		return errors.New("snell client obfs_mode must be none or http")
-	} else {
-		client["obfs_mode"] = obfsMode
+		if version == 6 && (len([]byte(strings.TrimSpace(stringValue(client["psk"])))) < 12 || len([]byte(strings.TrimSpace(stringValue(client["psk"])))) > 255) {
+			return errors.New("snell version 6 client psk must be between 12 and 255 bytes")
+		}
+		if usersValue, exists := client["users"]; exists {
+			if usersValue != nil && !isObjectList(usersValue) {
+				return errors.New("snell client users must be an array")
+			}
+			for _, user := range objectList(usersValue) {
+				if strings.TrimSpace(stringValue(user["userkey"])) == "" {
+					return errors.New("snell client user requires userkey")
+				}
+			}
+		}
+		if version == 5 {
+			obfsMode := strings.ToLower(strings.TrimSpace(stringValue(client["obfs_mode"])))
+			if obfsMode == "" {
+				client["obfs_mode"] = "none"
+			} else if obfsMode != "none" && obfsMode != "http" {
+				return errors.New("snell client obfs_mode must be none or http")
+			} else {
+				client["obfs_mode"] = obfsMode
+			}
+			delete(client, "mode")
+		} else {
+			mode := strings.ToLower(strings.TrimSpace(stringValue(client["mode"])))
+			if mode == "" {
+				client["mode"] = "default"
+			} else if mode != "default" && mode != "unshaped" && mode != "unsafe-raw" {
+				return errors.New("snell client mode must be default, unshaped or unsafe-raw")
+			} else {
+				client["mode"] = mode
+			}
+			delete(client, "obfs_mode")
+		}
 	}
 	return nil
 }

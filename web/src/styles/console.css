@@ -82,7 +82,7 @@
   background: var(--card);
   box-shadow: var(--console-popover-shadow);
 }
-:root:where([data-console-theme='soft']) .ant-modal-header { padding-bottom: 12px; margin-bottom: 18px; border-bottom: 1px solid var(--border); background: transparent; }
+:root:where([data-console-theme='soft']) .ant-modal-header { padding-bottom: 0; margin-bottom: 18px; border-bottom: 0; background: transparent; }
 :root:where([data-console-theme='soft']) .ant-modal-title { font-weight: 650; letter-spacing: -.3px; }
 :root:where([data-console-theme='soft']) .ant-modal-footer { margin-top: 22px; }
 :root:where([data-console-theme='soft']) .ant-modal-mask { background: rgba(25, 25, 31, .3); backdrop-filter: blur(5px); }

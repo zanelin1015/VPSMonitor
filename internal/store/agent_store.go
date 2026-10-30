@@ -326,6 +326,7 @@ func (s *SQLiteStore) updateAgentConfig(agentID string, cfg model.ManagedAgentCo
 		AgentID:             agentID,
 		AgentName:           record.AgentName,
 		CustomerDisplayName: record.CustomerDisplayName,
+		CountryCodeOverride: strings.ToUpper(strings.TrimSpace(cfg.CountryCodeOverride)),
 		SortOrder:           record.SortOrder,
 		Tags:                normalizeTags(cfg.Tags),
 		Features:            cfg.Features,

@@ -28,6 +28,7 @@ func TestBuildGlobalDashboardWithOptionsUsesCachedGeoWithoutNetwork(t *testing.T
 	view := BuildGlobalDashboardWithOptions([]model.AgentRecord{{
 		AgentID:      "agent-a",
 		AgentName:    "Agent A",
+		Config:       model.ManagedAgentConfig{CountryCodeOverride: "US"},
 		RegisteredAt: now,
 		UpdatedAt:    now,
 		Summary: model.VPSSummary{
@@ -44,7 +45,7 @@ func TestBuildGlobalDashboardWithOptionsUsesCachedGeoWithoutNetwork(t *testing.T
 		},
 	})
 
-	if len(view.Agents) != 1 || view.Agents[0].Geo == nil || view.Agents[0].Geo.CountryCode != "US" {
+	if len(view.Agents) != 1 || view.Agents[0].Geo == nil || view.Agents[0].Geo.CountryCode != "US" || view.Agents[0].CountryCodeOverride != "US" {
 		t.Fatalf("expected cached geo to be used, got %#v", view.Agents)
 	}
 	if view.Totals.LinkCount != 0 || view.Totals.ChainCount != 0 || len(view.Links) != 0 || len(view.ClientChains) != 0 {

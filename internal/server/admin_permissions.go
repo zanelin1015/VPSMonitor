@@ -628,6 +628,9 @@ func isCNLineEntryDashboardAgent(agent model.DashboardAgentView) bool {
 }
 
 func dashboardAgentCountryCode(agent model.DashboardAgentView) string {
+	if code := explicitDashboardCountryCode(agent.CountryCodeOverride); code != "" {
+		return code
+	}
 	candidates := append([]string{agent.AgentName}, agent.Tags...)
 	candidates = append(candidates, agent.Summary.Hostname, agent.AgentID)
 	for _, candidate := range candidates {

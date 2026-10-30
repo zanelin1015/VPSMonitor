@@ -70,6 +70,7 @@ export interface AgentDetailPanelProps {
   onJumpRule: (index?: number) => void
   onManagedConfigAgentNameChange: (value: string) => void
   onManagedConfigCustomerDisplayNameChange: (value: string) => void
+  onManagedConfigCountryCodeOverrideChange: (value: string) => void
   onManagedConfigSortOrderChange: (value: number) => void
   onNewTagNameChange: (value: string) => void
   onOpenImportURL: (client: XUIClientView) => void

@@ -29,6 +29,8 @@ const (
 	// unambiguous for old Clients.
 	SingBoxActionAddNode           = "singbox_add_node"
 	SingBoxActionAddClient         = "singbox_add_client"
+	SingBoxActionAddUser           = "singbox_add_user"
+	SingBoxActionDeleteUser        = "singbox_delete_user"
 	SingBoxActionAddForwardingRule = "singbox_add_forwarding_rule"
 	SingBoxActionReload            = "singbox_reload"
 	// Compatibility aliases for callers that group actions by XUI.

@@ -2,6 +2,7 @@ import type { AgentListItem, ClientChainView, GlobalDashboardView, IPGeoView, To
 import type { AgentViewMode } from './appHelperTypes'
 
 const AGENT_VIEW_MODE_STORAGE_PREFIX = 'bridge-core.agent-view-mode.'
+export const SUPPORTED_COUNTRY_CODES = ['TH', 'MY', 'VN', 'IN', 'SG', 'HK', 'MO', 'TW', 'JP', 'KR', 'CA', 'US', 'CN', 'PH', 'DE', 'FR', 'GB', 'AU'] as const
 
 export function hasSelectedTag(tags: string[] | undefined, selectedTag: string): boolean {
   if (!selectedTag) {
@@ -91,6 +92,10 @@ export function agentDisplayStatus(agent: AgentListItem): { label: string; level
 }
 
 export function agentCountryCode(agent: AgentListItem): string {
+  const manualCode = normalizeCountryCode(agent.country_code_override)
+  if (manualCode) {
+    return manualCode
+  }
   const explicitCode = explicitAgentCountryCode(agent)
   if (explicitCode) {
     return explicitCode
@@ -125,7 +130,7 @@ export function explicitCountryCodeFromText(value?: string): string {
 
 export function normalizeCountryCode(value?: string): string {
   const code = (value || '').trim().toUpperCase()
-  if (['TH', 'MY', 'VN', 'IN', 'SG', 'HK', 'MO', 'TW', 'JP', 'KR', 'CA', 'US', 'CN', 'PH', 'DE', 'FR', 'GB', 'AU'].includes(code)) {
+  if ((SUPPORTED_COUNTRY_CODES as readonly string[]).includes(code)) {
     return code
   }
   return ''

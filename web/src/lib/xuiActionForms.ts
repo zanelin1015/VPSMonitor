@@ -571,7 +571,11 @@ export function actionKindLabel(kind: string): string {
     case 'singbox_add_node':
       return 'sing-box 添加出站节点'
     case 'singbox_add_client':
-      return 'sing-box 添加 Snell 客户端'
+      return 'sing-box 添加入站节点'
+    case 'singbox_add_user':
+      return 'sing-box 添加客户端'
+    case 'singbox_delete_user':
+      return 'sing-box 删除客户端'
     case 'singbox_add_forwarding_rule':
       return 'sing-box 添加转发规则'
     case 'singbox_reload':

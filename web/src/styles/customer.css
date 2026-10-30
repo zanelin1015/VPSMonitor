@@ -881,12 +881,38 @@ html[data-theme='dark'] .customer-hero {
 .ant-modal.customer-account-modal .ant-modal-header {
   min-height: 44px;
   margin-bottom: 18px;
-  padding: 0 44px 12px 0;
+  padding: 0 44px 0 0;
   border: 0;
-  border-bottom: 1px solid var(--border);
   border-radius: 0;
   background: transparent !important;
   box-shadow: none;
+}
+
+.area-manager-table .ant-table-cell {
+  vertical-align: top;
+}
+
+.area-manager-table .area-assignment-hierarchy,
+.area-manager-table .area-assignment-node-list,
+.area-manager-table .area-assignment-client-tags {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.area-manager-table .area-assignment-node {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.area-manager-table .area-assignment-node-label,
+.area-manager-table .area-assignment-client-tags .ant-tag,
+.area-manager-table > .ant-tag {
+  max-width: 100%;
+  margin-inline-end: 0;
+  white-space: nowrap;
 }
 
 .ant-modal.customer-assignment-modal .ant-modal-title,

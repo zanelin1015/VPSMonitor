@@ -11,6 +11,7 @@ type ManagedAgentConfig struct {
 	AgentID             string               `json:"agent_id,omitempty"`
 	AgentName           string               `json:"agent_name,omitempty"`
 	CustomerDisplayName string               `json:"customer_display_name,omitempty"`
+	CountryCodeOverride string               `json:"country_code_override,omitempty"`
 	SortOrder           int                  `json:"sort_order,omitempty"`
 	Tags                []string             `json:"tags,omitempty"`
 	Features            AgentFeatureConfig   `json:"features,omitempty"`

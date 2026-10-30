@@ -26,6 +26,7 @@ type DashboardAgentView struct {
 	AgentID             string                 `json:"agent_id"`
 	AgentName           string                 `json:"agent_name,omitempty"`
 	CustomerDisplayName string                 `json:"customer_display_name,omitempty"`
+	CountryCodeOverride string                 `json:"country_code_override,omitempty"`
 	ClientVersion       string                 `json:"client_version,omitempty"`
 	ClientOS            string                 `json:"client_os,omitempty"`
 	ClientArch          string                 `json:"client_arch,omitempty"`

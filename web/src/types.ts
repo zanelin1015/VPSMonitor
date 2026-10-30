@@ -28,6 +28,7 @@ export interface AgentListItem {
   agent_id: string
   agent_name?: string
   customer_display_name?: string
+  country_code_override?: string
   client_version?: string
   client_os?: string
   client_arch?: string
@@ -150,6 +151,18 @@ export interface SingBoxConfig {
   config_path?: string
   binary_path?: string
   service_name?: string
+  clients?: SingBoxClientMetadata[]
+}
+
+export interface SingBoxClientMetadata {
+  inbound_tag: string
+  client_key: string
+  remark?: string
+  enabled?: boolean
+  total_bytes?: number
+  traffic_multiplier?: number
+  expiry_time?: number
+  last_active?: number
 }
 
 export interface AccessLogEntry {
@@ -186,6 +199,7 @@ export interface ManagedAgentConfig {
   agent_id?: string
   agent_name?: string
   customer_display_name?: string
+  country_code_override?: string
   sort_order?: number
   tags?: string[]
   features?: AgentFeatureConfig

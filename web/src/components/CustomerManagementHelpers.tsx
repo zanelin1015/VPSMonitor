@@ -615,15 +615,15 @@ export function renderAssignmentHierarchy(
     })
   }
   return (
-    <Space direction="vertical" size={4} style={{ width: '100%' }}>
+    <Space className="area-assignment-hierarchy" direction="vertical" size={4} style={{ width: '100%' }}>
       {Array.from(grouped.entries()).map(([agentID, nodeMap]) => (
         <div key={agentID}>
           <Text strong>{agentName(agentID, agents)}</Text>
-          <Space direction="vertical" size={3} style={{ width: '100%', marginTop: 4, paddingLeft: 10 }}>
+          <Space className="area-assignment-node-list" direction="vertical" size={3} style={{ width: '100%', marginTop: 4, paddingLeft: 10 }}>
             {Array.from(nodeMap.entries()).map(([nodeKeyText, clients]) => (
-              <div key={nodeKeyText}>
-                <Tag color="blue">{clients[0]?.nodeLabel || '-'}</Tag>
-                <Space size={[4, 4]} wrap>
+              <div className="area-assignment-node" key={nodeKeyText}>
+                <Tag className="area-assignment-node-label" color="blue">{clients[0]?.nodeLabel || '-'}</Tag>
+                <Space className="area-assignment-client-tags" size={[4, 4]} wrap>
                   {clients.map((client) => (
                     <Tag
                       key={client.key}

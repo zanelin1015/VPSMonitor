@@ -562,6 +562,7 @@ func TestSQLiteStoreRegisterAndUpdateConfig(t *testing.T) {
 		AgentID:             "jp-01",
 		AgentName:           "Japan Relay 01",
 		CustomerDisplayName: "Customer JP Entry",
+		CountryCodeOverride: "US",
 		Tags:                []string{"relay", "asia", "relay"},
 		XUI: config.XUIConfig{
 			Enabled:       true,
@@ -569,6 +570,10 @@ func TestSQLiteStoreRegisterAndUpdateConfig(t *testing.T) {
 			Username:      "new-admin",
 			Password:      "new-pass",
 			SkipTLSVerify: true,
+		},
+		SingBox: config.SingBoxConfig{
+			Enabled: true,
+			Clients: []config.SingBoxClientMetadata{{InboundTag: "vless-in", ClientKey: "name:alice", TrafficMultiplier: 1.5}},
 		},
 	})
 	if err != nil {
@@ -593,6 +598,12 @@ func TestSQLiteStoreRegisterAndUpdateConfig(t *testing.T) {
 	}
 	if reloadedCfg.CustomerDisplayName != "Customer JP Entry" {
 		t.Fatalf("expected reloaded customer display name, got %q", reloadedCfg.CustomerDisplayName)
+	}
+	if len(reloadedCfg.SingBox.Clients) != 1 || reloadedCfg.SingBox.Clients[0].TrafficMultiplier != 1.5 {
+		t.Fatalf("expected reloaded sing-box client metadata, got %#v", reloadedCfg.SingBox.Clients)
+	}
+	if reloadedCfg.CountryCodeOverride != "US" {
+		t.Fatalf("expected reloaded country code override, got %q", reloadedCfg.CountryCodeOverride)
 	}
 	if got := len(reloadedCfg.Tags); got != 2 {
 		t.Fatalf("expected normalized tags length 2, got %#v", reloadedCfg.Tags)

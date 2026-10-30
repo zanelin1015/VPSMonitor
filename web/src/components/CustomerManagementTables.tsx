@@ -229,7 +229,7 @@ export function buildCustomerManagementTables({
         const assignmentCount = ownedCustomers.reduce((sum, customer) => sum + (customer.assignments?.length || 0), 0)
         const directCount = normalizeAreaManagerAssignmentDrafts(record.assignments || [], agents).length
         return (
-          <Space size={6}>
+          <Space size={6} wrap>
             <Tag color="geekblue">{ownedCustomers.length} 用户</Tag>
             <Tag color={assignmentCount ? 'cyan' : 'default'}>{assignmentCount} 链路</Tag>
             <Tag color={directCount ? 'blue' : 'default'}>{directCount} 授权</Tag>
@@ -239,6 +239,7 @@ export function buildCustomerManagementTables({
     },
     {
       title: '可管理节点',
+      width: 380,
       render: (_, record) => {
         const assignments = normalizeAreaManagerAssignmentDrafts(record.assignments || [], agents)
         if (assignments.length) {
@@ -246,7 +247,7 @@ export function buildCustomerManagementTables({
         }
         const agentIDs = record.agent_ids || []
         return agentIDs.length ? (
-          <Space size={[4, 4]} wrap>
+          <Space className="area-assignment-client-tags" size={[4, 4]} wrap>
             {agentIDs.map((agentID) => <Tag key={agentID}>{agentName(agentID, agents)}</Tag>)}
           </Space>
         ) : <Tag>未细化授权</Tag>

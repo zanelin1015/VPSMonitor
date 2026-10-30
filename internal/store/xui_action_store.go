@@ -416,7 +416,7 @@ func (s *SQLiteStore) CompleteXUIAction(agentID string, id int64, req model.XUIA
 		status = model.XUIActionStatusFailed
 		req.Error = "路由修改未完成保存、回读核验或 Xray 重载，不能标记为成功"
 	}
-	if (action.Kind == model.SingBoxActionAddNode || action.Kind == model.SingBoxActionAddClient || action.Kind == model.SingBoxActionAddForwardingRule || action.Kind == model.SingBoxActionReload) && status == model.XUIActionStatusSucceeded && (req.Result["saved"] != true || req.Result["verified"] != true || req.Result["restarted"] != true) {
+	if (action.Kind == model.SingBoxActionAddNode || action.Kind == model.SingBoxActionAddClient || action.Kind == model.SingBoxActionAddUser || action.Kind == model.SingBoxActionDeleteUser || action.Kind == model.SingBoxActionAddForwardingRule || action.Kind == model.SingBoxActionReload) && status == model.XUIActionStatusSucceeded && (req.Result["saved"] != true || req.Result["verified"] != true || req.Result["restarted"] != true) {
 		status = model.XUIActionStatusFailed
 		req.Error = "sing-box 配置未完成保存、校验或服务重载，不能标记为成功"
 	}

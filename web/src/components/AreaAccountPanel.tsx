@@ -188,11 +188,12 @@ export function AreaAccountPanel({
         </Row>
       </Modal>
       <Table
+        className="area-manager-table"
         style={{ marginTop: 14 }}
         rowKey={(record) => record.id}
         columns={areaManagerColumns}
         dataSource={areaManagers}
-        scroll={{ x: 1200, y: '100%' }}
+        scroll={{ x: 1500, y: '100%' }}
         pagination={{ pageSize: 5, hideOnSinglePage: true }}
         expandable={{
           expandedRowRender: renderAreaManagerCustomers,

@@ -118,15 +118,17 @@ func (s *SQLiteStore) parseManagedConfig(agentID, agentName, customerDisplayName
 		cfg.Tags = normalizeTags(cfg.Tags)
 		if strings.HasPrefix(strings.TrimSpace(tagsJSON), "{") {
 			var tagPayload struct {
-				Tags             []string                 `json:"tags"`
-				Features         model.AgentFeatureConfig `json:"features"`
-				ExplicitFeatures []string                 `json:"explicit_features"`
-				SingBox          config.SingBoxConfig     `json:"singbox"`
+				Tags                []string                 `json:"tags"`
+				Features            model.AgentFeatureConfig `json:"features"`
+				ExplicitFeatures    []string                 `json:"explicit_features"`
+				SingBox             config.SingBoxConfig     `json:"singbox"`
+				CountryCodeOverride string                   `json:"country_code_override"`
 			}
 			if err := json.Unmarshal([]byte(tagsJSON), &tagPayload); err == nil {
 				cfg.Tags = normalizeTags(tagPayload.Tags)
 				cfg.Features = tagPayload.Features
 				cfg.SingBox = normalizeSingBoxConfig(tagPayload.SingBox)
+				cfg.CountryCodeOverride = strings.ToUpper(strings.TrimSpace(tagPayload.CountryCodeOverride))
 				cfg.Features.RealmExplicitlyConfigured = containsStringFold(tagPayload.ExplicitFeatures, "realm")
 				cfg.Features.HAProxyExplicitlyConfigured = containsStringFold(tagPayload.ExplicitFeatures, "haproxy")
 			}
@@ -168,17 +170,19 @@ func mustJSON(v any) string {
 }
 
 func managedTagsJSON(cfg model.ManagedAgentConfig) string {
-	if cfg.Features.Configured || hasAgentFeatures(cfg.Features) || cfg.Features.RealmExplicitlyConfigured || cfg.Features.HAProxyExplicitlyConfigured || hasSingBoxConfig(cfg.SingBox) {
+	if cfg.Features.Configured || hasAgentFeatures(cfg.Features) || cfg.Features.RealmExplicitlyConfigured || cfg.Features.HAProxyExplicitlyConfigured || hasSingBoxConfig(cfg.SingBox) || strings.TrimSpace(cfg.CountryCodeOverride) != "" {
 		return mustJSON(struct {
-			Tags             []string                 `json:"tags"`
-			Features         model.AgentFeatureConfig `json:"features"`
-			ExplicitFeatures []string                 `json:"explicit_features,omitempty"`
-			SingBox          config.SingBoxConfig     `json:"singbox,omitempty"`
+			Tags                []string                 `json:"tags"`
+			Features            model.AgentFeatureConfig `json:"features"`
+			ExplicitFeatures    []string                 `json:"explicit_features,omitempty"`
+			SingBox             config.SingBoxConfig     `json:"singbox,omitempty"`
+			CountryCodeOverride string                   `json:"country_code_override,omitempty"`
 		}{
-			Tags:             cfg.Tags,
-			Features:         cfg.Features,
-			ExplicitFeatures: explicitAgentFeatures(cfg.Features),
-			SingBox:          normalizeSingBoxConfig(cfg.SingBox),
+			Tags:                cfg.Tags,
+			Features:            cfg.Features,
+			ExplicitFeatures:    explicitAgentFeatures(cfg.Features),
+			SingBox:             normalizeSingBoxConfig(cfg.SingBox),
+			CountryCodeOverride: strings.ToUpper(strings.TrimSpace(cfg.CountryCodeOverride)),
 		})
 	}
 	return mustJSON(cfg.Tags)
@@ -613,6 +617,29 @@ func normalizeSingBoxConfig(cfg config.SingBoxConfig) config.SingBoxConfig {
 	cfg.ConfigPath = strings.TrimSpace(cfg.ConfigPath)
 	cfg.BinaryPath = strings.TrimSpace(cfg.BinaryPath)
 	cfg.ServiceName = strings.TrimSpace(cfg.ServiceName)
+	clients := make([]config.SingBoxClientMetadata, 0, len(cfg.Clients))
+	for _, client := range cfg.Clients {
+		client.InboundTag = strings.TrimSpace(client.InboundTag)
+		client.ClientKey = strings.TrimSpace(client.ClientKey)
+		client.Remark = strings.TrimSpace(client.Remark)
+		if client.InboundTag == "" || client.ClientKey == "" {
+			continue
+		}
+		if client.TotalBytes < 0 {
+			client.TotalBytes = 0
+		}
+		if client.TrafficMultiplier < 0 {
+			client.TrafficMultiplier = 0
+		}
+		if client.ExpiryTime < 0 {
+			client.ExpiryTime = 0
+		}
+		if client.LastActive < 0 {
+			client.LastActive = 0
+		}
+		clients = append(clients, client)
+	}
+	cfg.Clients = clients
 	return cfg
 }
 
@@ -939,7 +966,7 @@ func hasXUIConfig(cfg config.XUIConfig) bool {
 
 func isValidXUIActionKind(kind string) bool {
 	switch kind {
-	case model.XUIActionManualResetClientTraffic, model.XUIActionAddOutbound, model.XUIActionAddClient, model.XUIActionAddRoutingRule, model.XUIActionUpsertRoutingRule, model.XUIActionUpdateRoutingRule, model.XUIActionDeleteRoutingRules, model.XUIActionDeleteOutbounds, model.XUIActionUpdateClientExpiry, model.XUIActionUpdateClientTraffic, model.XUIActionUpdateClientTrafficReset, model.XUIActionUpdateClientConfig, model.XUIActionSetClientEnabled, model.XUIActionDeleteClient, model.XUIActionUpdateClient, model.XUIActionRestartXUI, model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI, model.SingBoxActionAddNode, model.SingBoxActionAddClient, model.SingBoxActionAddForwardingRule, model.SingBoxActionReload:
+	case model.XUIActionManualResetClientTraffic, model.XUIActionAddOutbound, model.XUIActionAddClient, model.XUIActionAddRoutingRule, model.XUIActionUpsertRoutingRule, model.XUIActionUpdateRoutingRule, model.XUIActionDeleteRoutingRules, model.XUIActionDeleteOutbounds, model.XUIActionUpdateClientExpiry, model.XUIActionUpdateClientTraffic, model.XUIActionUpdateClientTrafficReset, model.XUIActionUpdateClientConfig, model.XUIActionSetClientEnabled, model.XUIActionDeleteClient, model.XUIActionUpdateClient, model.XUIActionRestartXUI, model.XUIActionExecuteCommand, model.XUIActionUpdate3XUI, model.SingBoxActionAddNode, model.SingBoxActionAddClient, model.SingBoxActionAddUser, model.SingBoxActionDeleteUser, model.SingBoxActionAddForwardingRule, model.SingBoxActionReload:
 		return true
 	default:
 		return false

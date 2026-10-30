@@ -19,20 +19,22 @@ VPSMonitor 是一套围绕 `x-ui / 3x-ui` 的 VPS 集中管理系统。它不替
 - 从一台 Client 导入另一台 Client 的节点客户端，配置 Realm 中转或 HAProxy 主备转发。
 - 拓扑图和 Client 链路追踪；工作台和 Client 页面会对同一条转发链路去重，避免网速与流量重复累加。
 - Client 收费周期、流量上限、收入、成本和利润统计。
-- sing-box 专线配置管理：支持 Snell 节点、客户端和转发规则。
+- sing-box 专线配置管理：支持多协议入站、出站、客户端和转发规则。
 - 客户账号、节点授权、Clash/Mihomo 订阅、前置代理组和在线客服。
 - 客户公告历史、按账号的已读状态和访问日志排查。
 - Server 和 Client 的 GitHub Release 检查、校验和升级。Client 可以在管理台中逐台选择升级。
 
 节点和入站仍在对应的 x-ui 面板中维护。VPSMonitor 通过 x-ui API 读取和编排数据；需要新增入站时，从 Client 详情页打开对应的 x-ui 面板即可。
 
-## sing-box / Snell 专线
+## sing-box 专线
 
-VPSMonitor 可以把 sing-box 作为 Client 上的独立托管服务。管理员在 Client 详情的“基础信息 → sing-box 配置”中启用采集，填写配置文件路径（默认 `/etc/sing-box/config.json`）和服务名（默认 `sing-box`），保存后 Client 会读取并上报 sing-box 的 `outbounds`、`inbounds` 和 `route.rules`。
+VPSMonitor 可以把 sing-box 作为 Client 上的独立托管服务。管理员在 Client 详情的“sing-box”页面顶部启用采集，填写配置文件路径（默认 `/etc/sing-box/config.json`）和服务名（默认 `sing-box`），保存后 Client 会读取并上报 sing-box 的 `outbounds`、`inbounds` 和 `route.rules`，页面会分别展示当前入站节点、出站节点和转发规则。
 
-启用后，详情页的“sing-box / Snell”页可以下发添加出站节点、添加 Snell 客户端和添加转发规则三类操作。出站节点的 `server` 只接受 IPv4/IPv6，不接受域名；备注会作为 sing-box 的 `tag` 保存。Snell 客户端写入 `inbounds`，每个客户端必须且只能绑定一个 `listen_port`，重复端口会被拒绝。转发规则会校验目标 outbound 已存在。Client 写入配置前会保留其它 JSON 字段，并在保存后执行 `sing-box check -c <config>`（如果本机有 sing-box 二进制）和服务重载。
+启用后，详情页的“sing-box”页可以下发添加入站节点、出站节点、入站客户端和转发规则。入站/出站协议使用通用类型和高级 JSON 字段，支持 Snell 之外的 sing-box 协议；出站节点的 `server` 仍只接受 IPv4/IPv6，不接受域名，备注会作为 sing-box 的 `tag` 保存。客户端管理页会按入站展示名称、状态、流量、到期时间、流量倍数和最近活跃时间；sing-box 未上报的计费字段可由 VPSMonitor 手动记录。Client 写入配置前会保留其它 JSON 字段，并在保存后执行 `sing-box check -c <config>`（如果本机有 sing-box 二进制）和服务重载。
 
 对应 API 为 `GET /api/v1/agents/{agent_id}/singbox/overview`、`GET/POST /api/v1/agents/{agent_id}/singbox/actions`。操作使用现有的持久化任务队列和 WebSocket/轮询执行机制；旧版 Client 会把未知的 sing-box 任务标记为失败，需要升级到包含 sing-box 支持的 Client。
+
+转发规则可以选择其它 Client 的 sing-box 出站，也可以选择其它 Client 的 x-ui 入站作为 sing-box 出站来源；来源配置会随规则一起复制到目标 Client。Server 会从来源 Client 的已采集配置中重新取出完整凭据，页面概览中的脱敏密码不会被直接写入目标配置。
 
 ## 架构与注册流程
 
@@ -174,11 +176,13 @@ Customer 登录使用两个独立的 HttpOnly Cookie：登录凭证有效期 2 �
 }
 ```
 
-Client 的 x-ui 访问参数由 Server 集中管理。管理员在 Client 详情页的“X-ui 配置”中维护 Base URL 和 API Token；Token 模式无需填写面板用户名、密码或二步验证码，这些登录字段已从表单移除。Token 被拒绝时不会改用旧账号登录；未配置 Token 的已有旧式配置继续兼容。Client 会在下一次轮询时拉取配置。
+Client 的 x-ui 访问参数由 Server 集中管理。管理员在 Client 详情页的 x-ui 大页中点击“配置”，在弹窗里维护 Base URL 和 API Token；Token 模式无需填写面板用户名、密码或二步验证码，这些登录字段已从表单移除。Token 被拒绝时不会改用旧账号登录；未配置 Token 的已有旧式配置继续兼容。Client 会在下一次轮询时拉取配置。
 
 本地 x-ui 数据库路径位于“高级设置”，用于 API 不可用时的本地兜底读取。常规安装留空即可自动探测；Docker 或非标准安装可填写 Client 本机可读取的数据库路径。
 
 X-ui 配置中的开关紧邻说明，窄屏自动换行。“日志保留天数”和“Xray access.log 路径”仅在开启“采集访问日志”后显示；关闭时保留已填写的值，再次开启后恢复显示。
+
+Client 信息中的“标识图标”默认按名称、标签和 IP GeoIP 自动识别；广播 IP 或 GeoIP 定位不准确时，可手动选择国家/地区图标并保存，列表和拓扑会优先使用手动选择。
 
 ## 手动运行与本地开发
 
@@ -225,7 +229,7 @@ go run ./cmd/bridge-devseed \
 go run ./cmd/bridge-devpanels -listen 127.0.0.1:19090
 ```
 
-然后在管理台的 Client“托管配置”中填写：
+然后在管理台的 Client 详情页进入 x-ui 大页，点击“配置”并填写：
 
 ```json
 {
@@ -252,7 +256,7 @@ VPSMONITOR_HAPROXY_AUTO_INSTALL=false
 
 Realm 和 HAProxy 的规则由 Server 下发，Client 负责加载并上报运行状态。OpenWrt 不会自动修改 firewall4、SQM、Cake 或 qosify 规则。
 
-访问日志需要在对应 Client 的“托管配置”中启用 x-ui access log，并填写 Client 实际可读的日志路径；例如：
+访问日志需要在对应 Client 详情页的 x-ui 大页“配置”弹窗中启用 x-ui access log，并填写 Client 实际可读的日志路径；例如：
 
 ```json
 {
@@ -292,9 +296,9 @@ Realm 和 HAProxy 的规则由 Server 下发，Client 负责加载并上报运�
 
 ## NAT / Docker 连接与端口
 
-在「Client 详情 → 连接与端口」设置 x-ui 的部署方式（直接安装 / Docker）、Docker 网络（Host 端口直通 / Bridge 端口映射）及公网接入方式（直接访问 / NAT）。公网入口填写供应商提供的域名或 IP，不含 URL 协议、路径或端口；NAT 的出口 IP 不一定是可连接的入口地址。
+在「Client 详情 → 连接与端口」设置 x-ui 的部署方式（直接安装 / Docker）、Docker 网络（Host 端口直通 / Bridge 端口映射）及公网接入方式（直接访问 / NAT）。选择 NAT 后填写供应商提供的公网入口域名或 IP，不含 URL 协议、路径或端口；直接公网访问沿用 Client 上报的现有地址，NAT 的出口 IP 不一定是可连接的入口地址。
 
-端口映射绑定实际 x-ui 入站、Realm 或 HAProxy 规则，同一入站的所有客户端共用。Docker Bridge 的「服务器端口」对应容器映射到宿主机的端口，NAT 的「公网端口」对应最外层可访问端口。例如公网 `333 → 服务器 30001 → 容器 20001`，节点导出使用 `333`；Docker Host 直接访问时沿用监听端口。TCP / UDP 需与实际映射一致，同一节点有多个入口时选择一个默认导出入口。
+直接安装 + 直接公网访问时，节点直接使用监听端口，不需要填写节点端口映射。选择 Docker 或 NAT 后，连接与端口页面才显示节点映射区；端口映射绑定实际 x-ui 入站、Realm 或 HAProxy 规则，同一入站的所有客户端共用。Docker Bridge 的「服务器端口」对应容器映射到宿主机的端口，NAT 的「公网端口」对应最外层可访问端口。例如公网 `333 → 服务器 30001 → 容器 20001`，节点导出使用 `333`；Docker Host 直接访问时沿用监听端口。TCP / UDP 需与实际映射一致，同一节点有多个入口时选择一个默认导出入口。
 
 保存后，节点链接、二维码、客户订阅、新建出站及转发链路使用解析后的公网入口，内部监听端口及 UUID、TLS SNI、REALITY 参数保留原值。映射缺失、绑定过期、协议不匹配或默认入口不明确时显示原因并阻止导出，避免生成不可用的内部端口。旧拓扑映射保留原用途，只有选择「用于节点导出」并绑定节点后才参与导出。
 

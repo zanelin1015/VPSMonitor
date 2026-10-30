@@ -1596,7 +1596,6 @@
 }
 
 .ant-modal .ant-modal-content,
-.ant-modal .ant-modal-header,
 .ant-select-dropdown,
 .ant-dropdown-menu,
 .ant-popover .ant-popover-inner,
@@ -1604,6 +1603,14 @@
   border: 1px solid var(--border);
   background: var(--surface-strong) !important;
   box-shadow: var(--shadow);
+}
+
+/* Keep the title row visually separate from the modal surface.  Applying the
+ * surface border to .ant-modal-header creates a second box around titles. */
+.ant-modal .ant-modal-header {
+  border: 0;
+  background: transparent !important;
+  box-shadow: none;
 }
 
 .ant-modal .ant-modal-body,

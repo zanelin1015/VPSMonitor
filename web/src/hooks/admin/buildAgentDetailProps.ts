@@ -319,6 +319,8 @@ export function buildAgentDetailProps({
     onManagedConfigAgentNameChange: (value) => updateManagedConfig((current) => ({ ...current, agent_name: value })),
     onManagedConfigCustomerDisplayNameChange: (value) =>
       updateManagedConfig((current) => ({ ...current, customer_display_name: value })),
+    onManagedConfigCountryCodeOverrideChange: (value) =>
+      updateManagedConfig((current) => ({ ...current, country_code_override: value })),
     onManagedConfigSortOrderChange: (value) => updateManagedConfig((current) => ({ ...current, sort_order: value })),
     onNewTagNameChange: setNewTagName,
     onOpenImportURL: setImportURLClient,

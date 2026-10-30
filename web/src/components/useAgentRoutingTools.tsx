@@ -249,7 +249,7 @@ export function useAgentRoutingTools(props: RoutingProps) {
   const routingTabs: NonNullable<TabsProps['items']> = [
     {
       key: 'outbounds',
-      label: `出站 (${overview?.outbounds.length || 0})`,
+      label: `出站节点 (${overview?.outbounds.length || 0})`,
       children: overview ? (
         <>
           <div className="xui-collection-toolbar">
