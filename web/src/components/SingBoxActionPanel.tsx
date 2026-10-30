@@ -255,7 +255,10 @@ export function SingBoxActionPanel(props: {
       setOutbound((current) => ({
         ...current,
         type: imported.protocol || normalizeSingBoxType(client.protocol || outbound.type),
-        tag: imported.tag || current.tag,
+        // `tag` is the single user-facing label/remark for the target
+        // outbound. Keep a label the user already entered; only replace the
+        // source-inbound default with the generated import label.
+        tag: current.tag.trim() && current.tag.trim() !== String(node.tag || '').trim() ? current.tag : (imported.tag || current.tag),
         server: address || current.server,
         server_port: imported.port || current.server_port,
         raw: JSON.stringify(credentials, null, 2),
