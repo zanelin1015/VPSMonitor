@@ -255,10 +255,10 @@ export function SingBoxActionPanel(props: {
       setOutbound((current) => ({
         ...current,
         type: imported.protocol || normalizeSingBoxType(client.protocol || outbound.type),
-        // `tag` is the single user-facing label/remark for the target
-        // outbound. Keep a label the user already entered; only replace the
-        // source-inbound default with the generated import label.
-        tag: current.tag.trim() && current.tag.trim() !== String(node.tag || '').trim() ? current.tag : (imported.tag || current.tag),
+        // sing-box only has one identity field: `tag`. Keep the value from
+        // the target form (the 标签/备注 input) and use the generated import
+        // label only when the form is still empty.
+        tag: current.tag.trim() || imported.tag || current.tag,
         server: address || current.server,
         server_port: imported.port || current.server_port,
         raw: JSON.stringify(credentials, null, 2),
