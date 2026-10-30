@@ -225,7 +225,7 @@ export function SingBoxActionPanel(props: {
     }
   }
 
-  const selectXUIClientSource = (value?: string) => {
+  const selectXUIClientSource = async (value?: string) => {
     const selected = value || ''
     setOutboundSourceXUIClientKey(selected)
     const source = sourceXUIOverview
@@ -237,15 +237,26 @@ export function SingBoxActionPanel(props: {
     try {
       const imported = buildOutboundImportPatch(source!, node, client, defaultOutboundActionForm())
       const credentials: Record<string, unknown> = {}
-      if (imported.uuid) credentials.uuid = imported.uuid
-      if (imported.password) credentials.password = imported.password
-      if (imported.method) credentials.method = imported.method
-      if (imported.flow) credentials.flow = imported.flow
+      const importedType = String(imported.protocol || client.protocol || '').trim().toLowerCase()
+      if (importedType === 'vless' || importedType === 'vmess') {
+        if (imported.uuid) credentials.uuid = imported.uuid
+        if (importedType === 'vmess' && imported.method) credentials.security = imported.method
+        if (importedType === 'vless' && imported.flow) credentials.flow = imported.flow
+      } else if (importedType === 'trojan') {
+        if (imported.password) credentials.password = imported.password
+      } else if (importedType === 'shadowsocks') {
+        if (imported.method) credentials.method = imported.method
+        if (imported.password) credentials.password = imported.password
+      } else if (importedType === 'socks' || importedType === 'http') {
+        if (imported.uuid) credentials.username = imported.uuid
+        if (imported.password) credentials.password = imported.password
+      }
+      const address = await resolveSingBoxHost(outboundSourceAgentID, imported.address || '')
       setOutbound((current) => ({
         ...current,
         type: imported.protocol || normalizeSingBoxType(client.protocol || outbound.type),
         tag: imported.tag || current.tag,
-        server: imported.address || current.server,
+        server: address || current.server,
         server_port: imported.port || current.server_port,
         raw: JSON.stringify(credentials, null, 2),
       }))
@@ -608,7 +619,7 @@ export function SingBoxActionPanel(props: {
           {sourceError && outboundSourceAgentID !== agentID ? <Col xs={24}><Alert type="warning" showIcon message="来源 Client 读取失败" description={sourceError} /></Col> : null}
           {outboundSourceTag ? <Col xs={24}><Alert type="info" showIcon message="下发时会复制来源 Client 的完整出站配置" description="目标标签仍使用下方的“标签 / 备注”；来源配置中的密码、PSK、TLS 和协议字段会由 Server 一并复制。" /></Col> : null}
           <Col xs={24} md={12}><Text type="secondary">标签 / 备注</Text><Input value={outbound.tag} placeholder="例如 HK-SS-TEST" onChange={(event) => setOutbound({ ...outbound, tag: event.target.value })} /></Col>
-          <Col xs={24} md={12}><Text type="secondary">类型</Text><Select style={{ width: '100%' }} value="snell" options={[{ value: 'snell', label: 'Snell' }]} disabled /></Col>
+          <Col xs={24} md={12}><Text type="secondary">类型</Text><Select style={{ width: '100%' }} value={outbound.type.trim().toLowerCase() || 'snell'} options={[{ value: 'snell', label: 'Snell' }, ...(outbound.type.trim().toLowerCase() && outbound.type.trim().toLowerCase() !== 'snell' ? [{ value: outbound.type.trim().toLowerCase(), label: `${outbound.type}（来源配置）` }] : [])]} disabled /></Col>
           <Col xs={24} md={12}><Text type="secondary">服务器 IP</Text><Input value={outbound.server} placeholder="仅允许 IPv4 / IPv6" onChange={(event) => setOutbound({ ...outbound, server: event.target.value })} /></Col>
           <Col xs={24} md={12}><Text type="secondary">服务器端口</Text><InputNumber style={{ width: '100%' }} min={1} max={65535} value={outbound.server_port} onChange={(value) => setOutbound({ ...outbound, server_port: Number(value || 0) })} /></Col>
           {outbound.type.trim().toLowerCase() === 'snell' ? <>
@@ -664,6 +675,17 @@ export function SingBoxActionPanel(props: {
       </Modal>
     </Space>
   )
+}
+
+async function resolveSingBoxHost(agentID: string, value: string): Promise<string> {
+  const host = value.trim()
+  if (!host || /^\[?[0-9a-f:.]+\]?$/i.test(host)) return host.replace(/^\[|\]$/g, '')
+  try {
+    const result = await fetchJSON<{ address?: string }>(`/api/v1/agents/${agentID}/singbox/resolve?host=${encodeURIComponent(host)}`)
+    return String(result.address || host)
+  } catch {
+    return host
+  }
 }
 
 function splitList(value: string): string[] {

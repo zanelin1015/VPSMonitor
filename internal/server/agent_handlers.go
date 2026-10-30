@@ -238,6 +238,10 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, overview)
 	case "singbox", "sing-box":
+		if len(parts) >= 3 && parts[2] == "resolve" {
+			a.handleSingBoxResolve(w, r, agentID)
+			return
+		}
 		if len(parts) >= 3 && parts[2] == "actions" {
 			a.handleSingBoxActions(w, r, agentID, parts[3:])
 			return

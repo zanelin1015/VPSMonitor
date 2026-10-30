@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"sort"
 	"strings"
 
 	"bridge-core/internal/dashboard"
@@ -36,6 +38,32 @@ func (a *App) handleSingBoxOverview(w http.ResponseWriter, r *http.Request, agen
 		overview.RawConfig = nil
 	}
 	writeJSON(w, http.StatusOK, overview)
+}
+
+func (a *App) handleSingBoxResolve(w http.ResponseWriter, r *http.Request, agentID string) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if _, _, ok := a.requireAgentAdmin(w, r, agentID); !ok {
+		return
+	}
+	host := strings.TrimSpace(r.URL.Query().Get("host"))
+	if host == "" {
+		writeError(w, http.StatusBadRequest, "host is required")
+		return
+	}
+	if ip := net.ParseIP(strings.Trim(host, "[]")); ip != nil {
+		writeJSON(w, http.StatusOK, map[string]string{"address": ip.String()})
+		return
+	}
+	ips, err := net.LookupIP(strings.TrimSuffix(host, "."))
+	if err != nil || len(ips) == 0 {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("resolve host %q failed", host))
+		return
+	}
+	sort.SliceStable(ips, func(i, j int) bool { return ips[i].To4() != nil && ips[j].To4() == nil })
+	writeJSON(w, http.StatusOK, map[string]string{"address": ips[0].String()})
 }
 
 func redactSingBoxOverview(overview *model.SingBoxOverview) {
