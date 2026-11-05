@@ -1,14 +1,58 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
 	"bridge-core/internal/model"
 )
+
+func TestCustomerLinkCarriesSnellForSubscriptionWithoutExposingPSK(t *testing.T) {
+	link := buildCustomerLinkView(
+		model.CustomerAssignment{ID: 7, AgentID: "snell-agent", InboundID: 1},
+		nil,
+		nil,
+		map[string]model.DashboardAgentView{
+			"snell-agent": {AgentID: "snell-agent", Snell: model.SnellConfig{Enabled: true, Name: "HK Snell", Server: "snell.example.com", Port: 443, PSK: "secret-psk", Version: 5}},
+		},
+	)
+	if link.Snell == nil || link.Snell.Server != "snell.example.com" {
+		t.Fatalf("expected server-side Snell metadata, got %#v", link.Snell)
+	}
+	body, err := json.Marshal(link)
+	if err != nil {
+		t.Fatalf("marshal customer link: %v", err)
+	}
+	if strings.Contains(string(body), "secret-psk") {
+		t.Fatalf("customer link JSON leaked Snell PSK: %s", body)
+	}
+}
+
+func TestCustomerLinkAppliesSnellForwardToTargetXUIClient(t *testing.T) {
+	assignment := model.CustomerAssignment{ID: 8, AgentID: "target", InboundID: 7, InboundTag: "hk-in", ClientID: "client-7", ClientEmail: "alice@example.com"}
+	key := customerAssignmentKey(assignment.AgentID, assignment.InboundID, assignment.ClientEmail)
+	clientKey := customerAssignmentClientKey(assignment.AgentID, assignment.InboundID, assignment.ClientID)
+	link := buildCustomerLinkView(
+		assignment,
+		map[string]model.ClientChainView{key: {Key: key, RootAgentID: "target", RootInboundID: 7, RootInboundTag: "hk-in", RootClientEmail: assignment.ClientEmail, Steps: []model.ClientChainStep{{StepType: "client", AgentID: "target"}}}},
+		map[string]customerClientRef{clientKey: {Client: model.XUIClientView{InboundID: 7, InboundTag: "hk-in", ClientID: "client-7", Email: assignment.ClientEmail, ImportURL: "vless://11111111-1111-1111-1111-111111111111@hk.example.com:443?encryption=none#HK"}}},
+		map[string]model.DashboardAgentView{
+			"source": {AgentID: "source", Snell: model.SnellConfig{Enabled: true, Name: "Snell Entry", Server: "snell.example.com", Port: 443, PSK: "secret-psk", Version: 5, ForwardRules: []model.SnellForwardRule{{ID: "forward-1", Enabled: true, TargetAgentID: "target", TargetInboundID: 7, TargetInboundTag: "hk-in", TargetClientID: "client-7", TargetClientEmail: assignment.ClientEmail}}}},
+			"target": {AgentID: "target"},
+		},
+	)
+	if !link.Resolved || !link.SubscriptionOnly || link.ImportURL != "" || link.SnellChain == nil || link.SnellChain.Name != "Snell Entry" {
+		t.Fatalf("expected subscription-only Snell chain, got %#v", link)
+	}
+	if len(link.Steps) == 0 || link.Steps[0].Role != "snell" {
+		t.Fatalf("expected Snell as first chain step, got %#v", link.Steps)
+	}
+}
 
 func TestCustomerCustomStyleRouteRemoved(t *testing.T) {
 	for _, method := range []string{http.MethodGet, http.MethodPut} {

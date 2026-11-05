@@ -115,6 +115,41 @@ func TestBuildMihomoSubscriptionConvertsCustomerLinks(t *testing.T) {
 	}
 }
 
+func TestBuildMihomoSubscriptionIncludesManualSnellConfig(t *testing.T) {
+	content := buildMihomoSubscription(model.CustomerUser{}, []model.CustomerLinkView{{
+		AssignmentID:    42,
+		EntryClientName: "unused-xui-link",
+		Resolved:        false,
+		Snell:           &model.SnellConfig{Enabled: true, Name: "HK Snell", Server: "snell.example.com", Port: 443, PSK: "secret-psk", Version: 5, ObfsMode: "http", ObfsHost: "www.example.com", ObfsPath: "/connect"},
+	}})
+	assertContains(t, content, `name: "HK Snell"`)
+	assertContains(t, content, `type: "snell"`)
+	assertContains(t, content, `server: "snell.example.com"`)
+	assertContains(t, content, `port: 443`)
+	assertContains(t, content, `psk: "secret-psk"`)
+	assertContains(t, content, `version: 5`)
+	assertContains(t, content, `obfs-opts:`)
+	assertContains(t, content, `host: "www.example.com"`)
+	assertContains(t, content, `path: "/connect"`)
+}
+
+func TestBuildMihomoSubscriptionBuildsSnellForwardChain(t *testing.T) {
+	content := buildMihomoSubscription(model.CustomerUser{}, []model.CustomerLinkView{{
+		AssignmentID:          43,
+		EntryClientName:       "HK XUI",
+		Resolved:              true,
+		SubscriptionOnly:      true,
+		SubscriptionImportURL: "vless://11111111-1111-1111-1111-111111111111@hk.example.com:443?encryption=none#HK",
+		SnellChain:            &model.SnellConfig{Enabled: true, Name: "Snell Entry", Server: "snell.example.com", Port: 443, PSK: "secret-psk", Version: 5},
+	}})
+	assertContains(t, content, `name: "Snell Entry"`)
+	assertContains(t, content, `name: "HK XUI"`)
+	assertContains(t, content, `dialer-proxy: "Snell Entry"`)
+	if strings.Contains(content, `server: "snell.example.com"\n    port: 443\n    psk: "secret-psk"\n    version: 5\n    udp: true\n    dialer-proxy`) {
+		t.Fatal("Snell front proxy must not be emitted as a selectable target")
+	}
+}
+
 func TestBuildMihomoSubscriptionUsesAssignmentFrontProxyGroup(t *testing.T) {
 	user := model.CustomerUser{Username: "alice"}
 	links := []model.CustomerLinkView{

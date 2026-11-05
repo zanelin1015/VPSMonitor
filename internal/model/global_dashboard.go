@@ -26,7 +26,6 @@ type DashboardAgentView struct {
 	AgentID             string                 `json:"agent_id"`
 	AgentName           string                 `json:"agent_name,omitempty"`
 	CustomerDisplayName string                 `json:"customer_display_name,omitempty"`
-	CountryCodeOverride string                 `json:"country_code_override,omitempty"`
 	ClientVersion       string                 `json:"client_version,omitempty"`
 	ClientOS            string                 `json:"client_os,omitempty"`
 	ClientArch          string                 `json:"client_arch,omitempty"`
@@ -35,6 +34,7 @@ type DashboardAgentView struct {
 	Tags                []string               `json:"tags,omitempty"`
 	Renewal             VPSRenewalConfig       `json:"renewal,omitempty"`
 	Entry               AgentEntryConfig       `json:"entry,omitempty"`
+	Snell               SnellConfig            `json:"-"`
 	ReportedAt          *time.Time             `json:"reported_at,omitempty"`
 	RealtimeAt          *time.Time             `json:"realtime_at,omitempty"`
 	RegisteredAt        *time.Time             `json:"registered_at,omitempty"`

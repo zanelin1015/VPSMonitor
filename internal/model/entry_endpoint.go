@@ -57,7 +57,7 @@ func ValidEntryHost(value string) bool {
 }
 
 func EntryUsesDockerMapping(entry AgentEntryConfig, targetType string) bool {
-	return (targetType == "xui" || targetType == "singbox") && entry.Connection.Deployment == "docker" && entry.Connection.DockerNetwork == "bridge"
+	return targetType == "xui" && entry.Connection.Deployment == "docker" && entry.Connection.DockerNetwork == "bridge"
 }
 
 func ValidateEntryConnection(entry AgentEntryConfig) error {
@@ -84,7 +84,7 @@ func ValidateEntryConnection(entry AgentEntryConfig) error {
 			continue
 		} // Legacy topology mappings are opt-in.
 		prefix := fmt.Sprintf("第 %d 条连接映射：", i+1)
-		if m.TargetType != "xui" && m.TargetType != "singbox" && m.TargetType != "realm" && m.TargetType != "haproxy" {
+		if m.TargetType != "xui" && m.TargetType != "realm" && m.TargetType != "haproxy" {
 			return fmt.Errorf("%s请选择节点类型", prefix)
 		}
 		if strings.TrimSpace(m.TargetID) == "" {

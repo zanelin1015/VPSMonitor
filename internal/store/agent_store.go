@@ -116,12 +116,9 @@ func (s *SQLiteStore) RegisterAgentWithTokenOrLegacyBootstrap(req model.AgentReg
 				Renewal:             normalizeRenewalConfig(req.SeedConfig.Renewal),
 				Entry:               normalizeEntryConfig(req.SeedConfig.Entry),
 				XUI:                 req.SeedConfig.XUI,
-				SingBox:             req.SeedConfig.SingBox,
+				Snell:               model.NormalizeSnellConfig(req.SeedConfig.Snell),
 			},
 			HasConfig: hasManagedConfig(req.SeedConfig),
-		}
-		if record.Config.SingBox.Enabled {
-			record.Config.Features.SingBox = true
 		}
 		record.CustomerDisplayName = record.Config.CustomerDisplayName
 		record.Config.XUI = normalizeRegisteredXUIConfigForOS(record.Config.XUI, req.OS)
@@ -175,12 +172,6 @@ func (s *SQLiteStore) RegisterAgentWithTokenOrLegacyBootstrap(req model.AgentReg
 		if !hasXUIConfig(record.Config.XUI) && hasXUIConfig(req.SeedConfig.XUI) {
 			record.Config.XUI = req.SeedConfig.XUI
 		}
-		if !hasSingBoxConfig(record.Config.SingBox) && hasSingBoxConfig(req.SeedConfig.SingBox) {
-			record.Config.SingBox = req.SeedConfig.SingBox
-		}
-		if record.Config.SingBox.Enabled {
-			record.Config.Features.SingBox = true
-		}
 		record.Config.XUI = normalizeRegisteredXUIConfigForOS(record.Config.XUI, req.OS)
 		if len(record.Config.Tags) == 0 && len(req.SeedConfig.Tags) > 0 {
 			record.Config.Tags = normalizeTags(req.SeedConfig.Tags)
@@ -195,6 +186,9 @@ func (s *SQLiteStore) RegisterAgentWithTokenOrLegacyBootstrap(req model.AgentReg
 		}
 		if !hasEntryConfig(record.Config.Entry) && hasEntryConfig(req.SeedConfig.Entry) {
 			record.Config.Entry = normalizeEntryConfig(req.SeedConfig.Entry)
+		}
+		if !model.HasSnellConfig(record.Config.Snell) && model.HasSnellConfig(req.SeedConfig.Snell) {
+			record.Config.Snell = model.NormalizeSnellConfig(req.SeedConfig.Snell)
 		}
 		record.Config.AgentID = req.AgentID
 		record.Config.AgentName = record.AgentName
@@ -263,7 +257,7 @@ func (s *SQLiteStore) RegisterAgentWithTokenOrLegacyBootstrap(req model.AgentReg
 			Renewal:             record.Config.Renewal,
 			Entry:               record.Config.Entry,
 			XUI:                 record.Config.XUI,
-			SingBox:             record.Config.SingBox,
+			Snell:               record.Config.Snell,
 		},
 	}, nil
 }
@@ -303,6 +297,9 @@ func (s *SQLiteStore) updateAgentConfig(agentID string, cfg model.ManagedAgentCo
 	if err := model.ValidateEntryConnection(cfg.Entry); err != nil {
 		return model.AgentRecord{}, err
 	}
+	if err := model.ValidateSnellConfig(cfg.Snell); err != nil {
+		return model.AgentRecord{}, err
+	}
 	record, found, err := s.GetAgent(agentID)
 	if err != nil {
 		return model.AgentRecord{}, err
@@ -326,17 +323,13 @@ func (s *SQLiteStore) updateAgentConfig(agentID string, cfg model.ManagedAgentCo
 		AgentID:             agentID,
 		AgentName:           record.AgentName,
 		CustomerDisplayName: record.CustomerDisplayName,
-		CountryCodeOverride: strings.ToUpper(strings.TrimSpace(cfg.CountryCodeOverride)),
 		SortOrder:           record.SortOrder,
 		Tags:                normalizeTags(cfg.Tags),
 		Features:            cfg.Features,
 		Renewal:             normalizeRenewalConfig(cfg.Renewal),
 		Entry:               normalizeEntryConfig(cfg.Entry),
 		XUI:                 cfg.XUI,
-		SingBox:             normalizeSingBoxConfig(cfg.SingBox),
-	}
-	if record.Config.SingBox.Enabled {
-		record.Config.Features.SingBox = true
+		Snell:               model.NormalizeSnellConfig(cfg.Snell),
 	}
 	record.Tags = cloneStrings(record.Config.Tags)
 	record.UpdatedAt = time.Now().UTC()

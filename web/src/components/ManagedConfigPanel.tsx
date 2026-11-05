@@ -1,27 +1,19 @@
 import { buildCertificateDomainOptions, normalizeNetworkPolicyRules, defaultNetworkPolicyRuleName, shouldUsePortAsNetworkPolicyName, formatRealmEndpoint, bestAgentAddress } from '../lib/managedConfigHelpers'
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { Alert, Button, Card, Col, Collapse, Empty, Input, InputNumber, List, Row, Select, Space, Spin, Switch, Typography } from 'antd'
 import { DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 
-import type { AgentEntryConfig, AgentListItem, ConfigAuditLog, ManagedAgentConfig, NetworkPortPolicyRule, RealmForwardRule, VPSRenewalConfig, XUIConfig, XUILocalCertificate, XUINodeView } from '../types'
+import type { AgentEntryConfig, AgentListItem, ConfigAuditLog, ManagedAgentConfig, NetworkPortPolicyRule, RealmForwardRule, SnellConfig, VPSRenewalConfig, XUIConfig, XUILocalCertificate, XUINodeView, XUIOverview } from '../types'
 import { DEFAULT_COST_CURRENCY, type CurrencyCode } from '../lib/currency'
 import { bytesToGB, gbToBytes } from '../lib/traffic'
 import type { ConfigSectionKey } from '../lib/appHelpers'
 import { AdminHelpHint } from './AdminHelpHint'
 import { formatDateTime, formatRenewalHint, summarizeConfigAudit } from '../lib/appHelpers'
+import { fetchJSON } from '../lib/api'
 import { EntryConnectionSection } from './EntryConnectionSection'
 import { HAProxyConfigSection } from './HAProxyConfigSection'
-import { CountryFlag } from './CountryFlag'
-import { countryName, SUPPORTED_COUNTRY_CODES } from '../lib/appHelpersAgent'
 
 const { Text, Title } = Typography
-const countryIconOptions = [
-  { value: '', label: '自动识别' },
-  ...SUPPORTED_COUNTRY_CODES.map((code) => ({
-    value: code,
-    label: <Space size={8}><CountryFlag code={code} /><span>{code} · {countryName(code)}</span></Space>,
-  })),
-]
 
 export type ConfigPanelSection = 'all' | 'basic' | 'xui' | 'nat' | 'network' | 'realm' | 'haproxy' | 'audit'
 
@@ -37,7 +29,6 @@ export interface ConfigPanelProps {
   onSave: (section: ConfigSectionKey, draftOverride?: ManagedAgentConfig) => void
   onAgentNameChange: (value: string) => void
   onCustomerDisplayNameChange: (value: string) => void
-  onCountryCodeOverrideChange: (value: string) => void
   onSortOrderChange: (value: number) => void
   tagOptions: string[]
   newTagName: string
@@ -50,6 +41,7 @@ export interface ConfigPanelProps {
   onEntryAddressesTextChange: (value: string) => void
   onEntryChange: (patch: Partial<AgentEntryConfig>) => void
   onXUIChange: (patch: Partial<XUIConfig>) => void
+  onSnellChange: (patch: Partial<SnellConfig>) => void
   onCopyRealmConfig?: (targetAgentID: string) => void
   realmCopyLoading?: boolean
   configAudits: ConfigAuditLog[]
@@ -71,7 +63,6 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
     onSave,
     onAgentNameChange,
     onCustomerDisplayNameChange,
-    onCountryCodeOverrideChange,
     onSortOrderChange,
     tagOptions,
     newTagName,
@@ -84,6 +75,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
     onEntryAddressesTextChange,
     onEntryChange,
     onXUIChange,
+    onSnellChange,
     onCopyRealmConfig,
     realmCopyLoading = false,
     configAudits,
@@ -93,7 +85,27 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
   } = props
   const [realmCopyTargetAgentID, setRealmCopyTargetAgentID] = useState('')
   const [networkPolicyEditedAgentID, setNetworkPolicyEditedAgentID] = useState('')
+  const [snellTargetAgentID, setSnellTargetAgentID] = useState('')
+  const [snellTargetClientKey, setSnellTargetClientKey] = useState('')
+  const [snellTargetOverview, setSnellTargetOverview] = useState<XUIOverview | null>(null)
+  const [snellTargetLoading, setSnellTargetLoading] = useState(false)
   const xuiFieldID = useId()
+  const snellFieldID = useId()
+
+  useEffect(() => {
+    let cancelled = false
+    setSnellTargetOverview(null)
+    setSnellTargetClientKey('')
+    if (!snellTargetAgentID) {
+      return () => { cancelled = true }
+    }
+    setSnellTargetLoading(true)
+    void fetchJSON<XUIOverview>(`/api/v1/agents/${encodeURIComponent(snellTargetAgentID)}/xui/overview`)
+      .then((overview) => { if (!cancelled) setSnellTargetOverview(overview) })
+      .catch(() => { if (!cancelled) setSnellTargetOverview(null) })
+      .finally(() => { if (!cancelled) setSnellTargetLoading(false) })
+    return () => { cancelled = true }
+  }, [snellTargetAgentID])
 
   if (!selectedAgent) {
     return <Empty description="先选择一个 client" />
@@ -112,7 +124,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
   }
 
   const entryConfig: AgentEntryConfig = {
-    connection: managedConfig.entry?.connection,
+    connection: managedConfig.entry?.connection || selectedAgent.entry?.connection || {},
     addresses: managedConfig.entry?.addresses || [],
     import_domain: managedConfig.entry?.import_domain || '',
     mappings: managedConfig.entry?.mappings || [],
@@ -120,6 +132,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
     port_forwarding: managedConfig.entry?.port_forwarding || selectedAgent.entry?.port_forwarding || { enabled: false, backend: 'realm', binary_path: '', config_path: '', service_name: '', log_level: 'info', rules: [] },
     haproxy: managedConfig.entry?.haproxy || selectedAgent.entry?.haproxy || { enabled: false, binary_path: '', config_path: '', service_name: '', rules: [] },
   }
+  const entryConnection = entryConfig.connection || {}
   const observedNetworkPolicy = selectedAgent.network_policy
   const observedNetworkRules = observedNetworkPolicy?.rules || []
   const observedHasWhitelist = observedNetworkRules.some((rule) => (rule.whitelist_ips || []).length > 0)
@@ -243,6 +256,44 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
       {label}
     </Button>
   )
+  const snellForwardRules = managedConfig.snell?.forward_rules || []
+  const snellTargetClients = (snellTargetOverview?.clients || []).filter((client) => client.enabled !== false)
+  const snellTargetClientValue = (client: XUIOverview['clients'][number]) => `${client.inbound_id}::${client.client_id || client.email || ''}`
+  const snellTargetClient = snellTargetClients.find((client) => snellTargetClientValue(client) === snellTargetClientKey)
+  const addSnellForwardRule = () => {
+    if (!managedConfig.features?.snell || !managedConfig.snell?.enabled || !snellTargetAgentID || !snellTargetClient) {
+      return
+    }
+    const targetClientID = (snellTargetClient.client_id || '').trim()
+    const targetClientEmail = (snellTargetClient.email || '').trim()
+    const duplicate = snellForwardRules.some((rule) => {
+      if (rule.target_agent_id !== snellTargetAgentID || Number(rule.target_inbound_id || 0) !== Number(snellTargetClient.inbound_id || 0)) return false
+      return targetClientID ? (rule.target_client_id || '') === targetClientID : (rule.target_client_email || '').toLowerCase() === targetClientEmail.toLowerCase()
+    })
+    if (duplicate) {
+      return
+    }
+    const targetAgent = agents.find((agent) => agent.agent_id === snellTargetAgentID)
+    const targetLabel = snellTargetClient.comment || snellTargetClient.email || snellTargetClient.inbound_tag || `Inbound #${snellTargetClient.inbound_id}`
+    onSnellChange({
+      forward_rules: [
+        ...snellForwardRules,
+        {
+          id: `snell-forward-${Date.now()}`,
+          name: `${managedConfig.snell?.name || 'Snell'} → ${targetAgent?.agent_name || snellTargetAgentID} / ${targetLabel}`,
+          enabled: true,
+          target_agent_id: snellTargetAgentID,
+          target_inbound_id: snellTargetClient.inbound_id,
+          target_inbound_tag: snellTargetClient.inbound_tag || '',
+          target_client_id: targetClientID,
+          target_client_email: targetClientEmail,
+        },
+      ],
+    })
+    setSnellTargetClientKey('')
+  }
+  const removeSnellForwardRule = (index: number) => onSnellChange({ forward_rules: snellForwardRules.filter((_, currentIndex) => currentIndex !== index) })
+  const toggleSnellForwardRule = (index: number, enabled: boolean) => onSnellChange({ forward_rules: snellForwardRules.map((rule, currentIndex) => currentIndex === index ? { ...rule, enabled } : rule) })
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, width: '100%' }}>
@@ -260,7 +311,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
         type="info"
         showIcon
         message="统一配置说明"
-        description="client 注册后，server 会保存并下发 x-ui 托管参数。后台修改后，不需要再改 client 本地文件，下一次轮询会自动使用新配置。"
+        description="client 注册后，server 会保存并下发托管参数。x-ui 配置由 client 使用；Snell 配置用于生成授权用户的 Clash/Mihomo 订阅。"
         className="compact-alert"
         style={hiddenSectionStyle('basic')}
       />
@@ -297,18 +348,6 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
               onChange={(value) => onSortOrderChange(Number(value || selectedAgent.sort_order || 1))}
             />
           </Col>
-          <Col xs={24} md={6}>
-            <Text type="secondary">标识图标</Text>
-            <Select
-              allowClear
-              style={{ width: '100%' }}
-              value={managedConfig.country_code_override || undefined}
-              placeholder="自动识别"
-              options={countryIconOptions}
-              onChange={(value) => onCountryCodeOverrideChange(value || '')}
-            />
-            <AdminHelpHint title="广播 IP 或 GeoIP 定位不准确时，可手动指定 Client 列表显示的国家/地区图标。" />
-          </Col>
           <Col xs={24}>
             <Text type="secondary">标签</Text>
             <Select
@@ -333,6 +372,115 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
           </Col>
         </Row>
       </Card>
+
+      {managedConfig.features?.snell ? <Card className="config-section-card" bordered={false} style={hiddenSectionStyle('basic')}>
+        <div className="section-title-row">
+          <div>
+            <Title level={4}>Snell 配置</Title>
+            <Text type="secondary">手动登记一个 Snell 节点；启用后，授权到此 Client 的用户会在 Clash/Mihomo 订阅中收到该节点。</Text>
+          </div>
+          {sectionSaveButton('client', '保存 Snell 配置')}
+        </div>
+        <Row gutter={[16, 16]}>
+          <Col xs={24}>
+            <div className="xui-config-options">
+              <label className="xui-config-option" htmlFor={`${snellFieldID}-enabled`}>
+                <span>启用 Snell</span>
+                <Switch
+                  id={`${snellFieldID}-enabled`}
+                  aria-label="启用 Snell"
+                  checked={Boolean(managedConfig.snell?.enabled)}
+                  onChange={(checked) => onSnellChange({ enabled: checked })}
+                />
+              </label>
+            </div>
+          </Col>
+          <Col xs={24} md={8}>
+            <Text type="secondary">节点名称</Text>
+            <Input value={managedConfig.snell?.name || ''} placeholder="例如 HK-Snell" onChange={(event) => onSnellChange({ name: event.target.value })} />
+          </Col>
+          <Col xs={24} md={6}>
+            <Text type="secondary">服务器地址</Text>
+            <Input value={managedConfig.snell?.server || ''} placeholder="域名或 IP" onChange={(event) => onSnellChange({ server: event.target.value })} />
+          </Col>
+          <Col xs={24} md={6}>
+            <Text type="secondary">服务器端口</Text>
+            <InputNumber style={{ width: '100%' }} min={1} max={65535} precision={0} value={managedConfig.snell?.port || undefined} onChange={(value) => onSnellChange({ port: Number(value || 0) })} />
+          </Col>
+          <Col xs={24} md={8}>
+            <Text type="secondary">PSK</Text>
+            <Input.Password value={managedConfig.snell?.psk || ''} placeholder="Snell 共享密钥" onChange={(event) => onSnellChange({ psk: event.target.value })} />
+          </Col>
+          <Col xs={24} md={4}>
+            <Text type="secondary">Snell 版本</Text>
+            <InputNumber style={{ width: '100%' }} min={1} max={5} precision={0} value={managedConfig.snell?.version || 5} onChange={(value) => onSnellChange({ version: Number(value || 5) })} />
+          </Col>
+          <Col xs={24} md={4}>
+            <Text type="secondary">混淆模式</Text>
+            <Select style={{ width: '100%' }} value={managedConfig.snell?.obfs_mode || 'none'} options={[{ value: 'none', label: 'none' }, { value: 'http', label: 'http' }]} onChange={(value) => onSnellChange({ obfs_mode: value })} />
+          </Col>
+          <Col xs={24} md={4}>
+            <Text type="secondary">混淆 Host</Text>
+            <Input value={managedConfig.snell?.obfs_host || ''} disabled={managedConfig.snell?.obfs_mode !== 'http'} onChange={(event) => onSnellChange({ obfs_host: event.target.value })} />
+          </Col>
+          <Col xs={24} md={4}>
+            <Text type="secondary">混淆 Path</Text>
+            <Input value={managedConfig.snell?.obfs_path || ''} disabled={managedConfig.snell?.obfs_mode !== 'http'} placeholder="可选" onChange={(event) => onSnellChange({ obfs_path: event.target.value })} />
+          </Col>
+        </Row>
+        <div style={{ marginTop: 20 }}>
+          <Title level={5}>Snell 转发链路</Title>
+          <Text type="secondary">选择后端 X-UI 客户端后，授权该客户端的用户会收到“Snell → X-UI”订阅链路；流量、到期和倍率继承后端客户端。</Text>
+          <Row gutter={[12, 12]} style={{ marginTop: 12 }}>
+            <Col xs={24} md={8}>
+              <Text type="secondary">目标 Client</Text>
+              <Select
+                style={{ width: '100%' }}
+                showSearch
+                optionFilterProp="label"
+                value={snellTargetAgentID || undefined}
+                placeholder="选择目标 Client"
+                options={agents.filter((agent) => agent.agent_id !== selectedAgent.agent_id).map((agent) => ({ value: agent.agent_id, label: agent.agent_name || agent.agent_id }))}
+                onChange={setSnellTargetAgentID}
+              />
+            </Col>
+            <Col xs={24} md={12}>
+              <Text type="secondary">目标 X-UI 客户端</Text>
+              <Select
+                style={{ width: '100%' }}
+                showSearch
+                optionFilterProp="label"
+                loading={snellTargetLoading}
+                disabled={!snellTargetAgentID}
+                value={snellTargetClientKey || undefined}
+                placeholder={snellTargetAgentID ? '选择目标客户端' : '先选择目标 Client'}
+                options={snellTargetClients.map((client) => ({ value: snellTargetClientValue(client), label: `${client.comment || client.email || client.inbound_tag || `Inbound #${client.inbound_id}`} · ${client.inbound_tag || '-'}` }))}
+                onChange={setSnellTargetClientKey}
+              />
+            </Col>
+            <Col xs={24} md={4} style={{ display: 'flex', alignItems: 'end' }}>
+              <Button type="primary" block disabled={!managedConfig.features?.snell || !managedConfig.snell?.enabled || !snellTargetClient} onClick={addSnellForwardRule}>添加转发</Button>
+            </Col>
+          </Row>
+          {snellForwardRules.length ? (
+            <List
+              size="small"
+              bordered
+              style={{ marginTop: 12 }}
+              dataSource={snellForwardRules}
+              renderItem={(rule, index) => {
+                const targetAgent = agents.find((agent) => agent.agent_id === rule.target_agent_id)
+                return <List.Item actions={[
+                  <Switch key="enabled" size="small" checked={rule.enabled !== false} onChange={(checked) => toggleSnellForwardRule(index, checked)} />,
+                  <Button key="remove" type="link" danger size="small" onClick={() => removeSnellForwardRule(index)}>删除</Button>,
+                ]}>
+                  <List.Item.Meta title={rule.name || `${managedConfig.snell?.name || 'Snell'} → ${targetAgent?.agent_name || rule.target_agent_id}`} description={`${targetAgent?.agent_name || rule.target_agent_id} / ${rule.target_inbound_tag || `Inbound #${rule.target_inbound_id}`} / ${rule.target_client_email || rule.target_client_id || '客户端'}`} />
+                </List.Item>
+              }}
+            />
+          ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚未配置 Snell 转发链路" />}
+        </div>
+      </Card> : null}
 
       <Card className="config-section-card" bordered={false} style={hiddenSectionStyle('basic')}>
         <div className="section-title-row">
@@ -491,6 +639,36 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
                 </div>
               )}
             </div>
+          </Col>
+          <Col xs={24} md={8}>
+            <div className="xui-config-field">
+              <label htmlFor={`${xuiFieldID}-deployment`}><Text type="secondary">安装方式</Text></label>
+              <Select
+                id={`${xuiFieldID}-deployment`}
+                style={{ width: '100%' }}
+                value={entryConnection.deployment || 'native'}
+                options={[{ value: 'native', label: '直接安装' }, { value: 'docker', label: 'Docker' }]}
+                onChange={(value) => onEntryChange({ connection: { ...entryConnection, deployment: value, docker_network: value === 'docker' ? (entryConnection.docker_network || 'host') : undefined } })}
+              />
+            </div>
+          </Col>
+          {entryConnection.deployment === 'docker' ? (
+            <Col xs={24} md={8}>
+              <div className="xui-config-field">
+                <label htmlFor={`${xuiFieldID}-docker-network`}><Text type="secondary">Docker 网络</Text></label>
+                <Select
+                  id={`${xuiFieldID}-docker-network`}
+                  style={{ width: '100%' }}
+                  value={entryConnection.docker_network || 'host'}
+                  options={[{ value: 'host', label: 'Host · 端口直通' }, { value: 'bridge', label: 'Bridge · 端口映射' }]}
+                  onChange={(value) => onEntryChange({ connection: { ...entryConnection, deployment: 'docker', docker_network: value } })}
+                />
+              </div>
+            </Col>
+          ) : null}
+          <Col xs={24} md={8}>
+            <Text type="secondary">Docker 配置说明</Text>
+            <div className="muted-line">Bridge 网络需要在 X-UI 页的“端口映射”中登记服务器端口；Host 网络无需额外映射。</div>
           </Col>
           <Col xs={24} md={12}>
             <div className="xui-config-field">

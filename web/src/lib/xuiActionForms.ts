@@ -568,30 +568,6 @@ export function actionKindLabel(kind: string): string {
       return '修改 Client 自动流量重置'
     case 'update_client_config':
       return '统一修改客户端配置'
-    case 'singbox_add_node':
-      return 'sing-box 添加出站节点'
-    case 'singbox_update_node':
-      return 'sing-box 修改出站节点'
-    case 'singbox_delete_node':
-      return 'sing-box 删除出站节点'
-    case 'singbox_add_client':
-      return 'sing-box 添加入站节点'
-    case 'singbox_update_client':
-      return 'sing-box 修改入站节点'
-    case 'singbox_delete_client':
-      return 'sing-box 删除入站节点'
-    case 'singbox_add_user':
-      return 'sing-box 添加客户端'
-    case 'singbox_delete_user':
-      return 'sing-box 删除客户端'
-    case 'singbox_add_forwarding_rule':
-      return 'sing-box 添加转发规则'
-    case 'singbox_update_forwarding_rule':
-      return 'sing-box 修改转发规则'
-    case 'singbox_delete_forwarding_rule':
-      return 'sing-box 删除转发规则'
-    case 'singbox_reload':
-      return '重载 sing-box'
     default:
       return kind
   }

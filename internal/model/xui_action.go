@@ -24,28 +24,6 @@ const (
 	XUIActionExecuteCommand           = "execute_command"
 	XUIActionUpdate3XUI               = "update_3xui"
 
-	// Sing-box actions share the durable action queue and realtime transport
-	// with the historical x-ui actions.  The prefix keeps the two executors
-	// unambiguous for old Clients.
-	SingBoxActionAddNode              = "singbox_add_node"
-	SingBoxActionUpdateNode           = "singbox_update_node"
-	SingBoxActionDeleteNode           = "singbox_delete_node"
-	SingBoxActionAddClient            = "singbox_add_client"
-	SingBoxActionUpdateClient         = "singbox_update_client"
-	SingBoxActionDeleteClient         = "singbox_delete_client"
-	SingBoxActionAddUser              = "singbox_add_user"
-	SingBoxActionDeleteUser           = "singbox_delete_user"
-	SingBoxActionAddForwardingRule    = "singbox_add_forwarding_rule"
-	SingBoxActionUpdateForwardingRule = "singbox_update_forwarding_rule"
-	SingBoxActionDeleteForwardingRule = "singbox_delete_forwarding_rule"
-	SingBoxActionReload               = "singbox_reload"
-	// Compatibility aliases for callers that group actions by XUI.
-	XUIActionSingBoxAddNode           = SingBoxActionAddNode
-	XUIActionSingBoxAddClient         = SingBoxActionAddClient
-	XUIActionSingBoxAddForwardingRule = SingBoxActionAddForwardingRule
-	SingBoxActionAddRule              = SingBoxActionAddForwardingRule
-	SingBoxActionAddForwardRule       = SingBoxActionAddForwardingRule
-
 	XUIActionStatusPending   = "pending"
 	XUIActionStatusRunning   = "running"
 	XUIActionStatusSucceeded = "succeeded"

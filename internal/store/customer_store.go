@@ -161,7 +161,7 @@ func (s *SQLiteStore) listCustomerAssignmentsForCustomers(customerIDs []int64) (
 		args = append(args, id)
 	}
 	rows, err := s.db.Query(fmt.Sprintf(`
-		SELECT id, customer_id, source_type, agent_id, inbound_id, inbound_tag, client_id, client_email, singbox_inbound_tag, singbox_client_key, public_client_name,
+		SELECT id, customer_id, agent_id, inbound_id, inbound_tag, client_id, client_email, public_client_name,
 		       customer_remark, price_mode, revenue_amount, revenue_currency, revenue_cycle, enabled, created_at, updated_at
 		FROM customer_assignments
 		WHERE customer_id IN (%s)
@@ -673,7 +673,7 @@ func (s *SQLiteStore) listCustomerAssignments(customerID int64, enabledOnly bool
 		return nil, nil
 	}
 	query := `
-		SELECT id, customer_id, source_type, agent_id, inbound_id, inbound_tag, client_id, client_email, singbox_inbound_tag, singbox_client_key, public_client_name,
+		SELECT id, customer_id, agent_id, inbound_id, inbound_tag, client_id, client_email, public_client_name,
 		       customer_remark, price_mode, revenue_amount, revenue_currency, revenue_cycle, enabled, created_at, updated_at
 		FROM customer_assignments
 		WHERE customer_id = ?`
@@ -715,10 +715,10 @@ func (s *SQLiteStore) CreateCustomerAssignment(customerID int64, req model.Custo
 	now := time.Now().UTC()
 	result, err := s.db.Exec(`
 		INSERT INTO customer_assignments (
-			customer_id, source_type, agent_id, inbound_id, inbound_tag, client_id, client_email, singbox_inbound_tag, singbox_client_key, public_client_name,
+			customer_id, agent_id, inbound_id, inbound_tag, client_id, client_email, public_client_name,
 			customer_remark, price_mode, revenue_amount, revenue_currency, revenue_cycle, enabled, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?)
-	`, customerID, normalized.SourceType, normalized.AgentID, normalized.InboundID, normalized.InboundTag, normalized.ClientID, normalized.ClientEmail, normalized.SingBoxInboundTag, normalized.SingBoxClientKey, normalized.PublicClientName, normalized.PriceMode, normalized.RevenueAmount, normalized.RevenueCurrency, normalized.RevenueCycle, boolInt(*normalized.Enabled), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
+		) VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?)
+	`, customerID, normalized.AgentID, normalized.InboundID, normalized.InboundTag, normalized.ClientID, normalized.ClientEmail, normalized.PublicClientName, normalized.PriceMode, normalized.RevenueAmount, normalized.RevenueCurrency, normalized.RevenueCycle, boolInt(*normalized.Enabled), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
 	if err != nil {
 		return model.CustomerAssignment{}, fmt.Errorf("create customer assignment: %w", err)
 	}
@@ -769,10 +769,10 @@ func (s *SQLiteStore) UpdateCustomerAssignment(customerID, assignmentID int64, r
 	now := time.Now().UTC()
 	_, err = s.db.Exec(`
 		UPDATE customer_assignments
-		SET source_type = ?, agent_id = ?, inbound_id = ?, inbound_tag = ?, client_id = ?, client_email = ?, singbox_inbound_tag = ?, singbox_client_key = ?, public_client_name = ?,
+		SET agent_id = ?, inbound_id = ?, inbound_tag = ?, client_id = ?, client_email = ?, public_client_name = ?,
 		    price_mode = ?, revenue_amount = ?, revenue_currency = ?, revenue_cycle = ?, enabled = ?, updated_at = ?
 		WHERE id = ? AND customer_id = ?
-	`, normalized.SourceType, normalized.AgentID, normalized.InboundID, normalized.InboundTag, normalized.ClientID, normalized.ClientEmail, normalized.SingBoxInboundTag, normalized.SingBoxClientKey, normalized.PublicClientName,
+	`, normalized.AgentID, normalized.InboundID, normalized.InboundTag, normalized.ClientID, normalized.ClientEmail, normalized.PublicClientName,
 		normalized.PriceMode, normalized.RevenueAmount, normalized.RevenueCurrency, normalized.RevenueCycle, boolInt(*normalized.Enabled), now.Format(time.RFC3339Nano), assignmentID, customerID)
 	if err != nil {
 		return model.CustomerAssignment{}, fmt.Errorf("update customer assignment: %w", err)
@@ -805,7 +805,7 @@ func (s *SQLiteStore) DeleteCustomerAssignment(customerID, assignmentID int64) e
 
 func (s *SQLiteStore) GetCustomerAssignment(customerID, assignmentID int64) (model.CustomerAssignment, bool, error) {
 	row := s.db.QueryRow(`
-		SELECT id, customer_id, source_type, agent_id, inbound_id, inbound_tag, client_id, client_email, singbox_inbound_tag, singbox_client_key, public_client_name,
+		SELECT id, customer_id, agent_id, inbound_id, inbound_tag, client_id, client_email, public_client_name,
 		       customer_remark, price_mode, revenue_amount, revenue_currency, revenue_cycle, enabled, created_at, updated_at
 		FROM customer_assignments
 		WHERE id = ? AND customer_id = ?
@@ -877,16 +877,10 @@ func normalizeCustomerAccountRequest(req model.CustomerAccountRequest, creating 
 }
 
 func (s *SQLiteStore) normalizeCustomerAssignmentRequest(req model.CustomerAssignmentRequest, creating bool) (model.CustomerAssignmentRequest, error) {
-	req.SourceType = strings.ToLower(strings.TrimSpace(req.SourceType))
-	if req.SourceType != "singbox" {
-		req.SourceType = "xui"
-	}
 	req.AgentID = strings.TrimSpace(req.AgentID)
 	req.InboundTag = strings.TrimSpace(req.InboundTag)
 	req.ClientID = strings.TrimSpace(req.ClientID)
 	req.ClientEmail = strings.TrimSpace(req.ClientEmail)
-	req.SingBoxInboundTag = strings.TrimSpace(req.SingBoxInboundTag)
-	req.SingBoxClientKey = strings.TrimSpace(req.SingBoxClientKey)
 	req.PublicClientName = strings.TrimSpace(req.PublicClientName)
 	req.PriceMode = strings.ToLower(strings.TrimSpace(req.PriceMode))
 	if req.PriceMode != "override" {
@@ -918,19 +912,7 @@ func (s *SQLiteStore) normalizeCustomerAssignmentRequest(req model.CustomerAssig
 	if req.AgentID == "" {
 		return req, fmt.Errorf("agent_id is required")
 	}
-	if req.SourceType == "singbox" {
-		if req.SingBoxInboundTag == "" {
-			return req, fmt.Errorf("singbox_inbound_tag is required")
-		}
-		req.InboundID = 0
-		req.InboundTag = req.SingBoxInboundTag
-		// A Snell inbound can be a single-user node authenticated only by its
-		// PSK. In that mode there is no sing-box user key to store.
-		req.ClientEmail = ""
-		if req.SingBoxClientKey != "" {
-			req.ClientEmail = req.SingBoxClientKey
-		}
-	} else if req.InboundID <= 0 {
+	if req.InboundID <= 0 {
 		return req, fmt.Errorf("inbound_id is required")
 	}
 	if _, found, err := s.GetAgent(req.AgentID); err != nil {
@@ -939,7 +921,7 @@ func (s *SQLiteStore) normalizeCustomerAssignmentRequest(req model.CustomerAssig
 		return req, fmt.Errorf("agent not found")
 	}
 	if req.PublicClientName == "" {
-		req.PublicClientName = firstNonEmpty(req.ClientEmail, req.SingBoxClientKey, req.InboundTag, req.AgentID)
+		req.PublicClientName = firstNonEmpty(req.ClientEmail, req.InboundTag, req.AgentID)
 	}
 	if len(req.PublicClientName) > 160 {
 		return req, fmt.Errorf("public client name is too long")
@@ -990,14 +972,11 @@ func scanCustomerAssignment(scanner rowScanner) (model.CustomerAssignment, error
 	if err := scanner.Scan(
 		&item.ID,
 		&item.CustomerID,
-		&item.SourceType,
 		&item.AgentID,
 		&item.InboundID,
 		&item.InboundTag,
 		&item.ClientID,
 		&item.ClientEmail,
-		&item.SingBoxInboundTag,
-		&item.SingBoxClientKey,
 		&item.PublicClientName,
 		&item.Remark,
 		&item.PriceMode,
@@ -1011,9 +990,6 @@ func scanCustomerAssignment(scanner rowScanner) (model.CustomerAssignment, error
 		return model.CustomerAssignment{}, err
 	}
 	item.Enabled = enabled != 0
-	if strings.TrimSpace(item.SourceType) == "" {
-		item.SourceType = "xui"
-	}
 	if strings.TrimSpace(item.PriceMode) != "override" {
 		item.PriceMode = "inherit"
 	} else {

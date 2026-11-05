@@ -319,8 +319,6 @@ export function buildAgentDetailProps({
     onManagedConfigAgentNameChange: (value) => updateManagedConfig((current) => ({ ...current, agent_name: value })),
     onManagedConfigCustomerDisplayNameChange: (value) =>
       updateManagedConfig((current) => ({ ...current, customer_display_name: value })),
-    onManagedConfigCountryCodeOverrideChange: (value) =>
-      updateManagedConfig((current) => ({ ...current, country_code_override: value })),
     onManagedConfigSortOrderChange: (value) => updateManagedConfig((current) => ({ ...current, sort_order: value })),
     onNewTagNameChange: setNewTagName,
     onOpenImportURL: setImportURLClient,
@@ -384,15 +382,15 @@ export function buildAgentDetailProps({
     },
     onSaveAreaTags: (values) => void saveAreaAgentTags(values),
     onXUIChange: (patch) => updateManagedConfig((current) => ({ ...current, xui: { ...current.xui, ...patch } })),
-    onSingBoxChange: (patch) => updateManagedConfig((current) => ({
+    onSnellChange: (patch) => updateManagedConfig((current) => ({
       ...current,
-      singbox: { ...(current.singbox || { enabled: false }), ...patch, enabled: patch.enabled ?? Boolean(current.singbox?.enabled) },
-      features: patch.enabled === undefined ? current.features : { ...current.features, singbox: patch.enabled },
+      snell: { ...current.snell, ...patch, enabled: patch.enabled ?? Boolean(current.snell?.enabled) },
     })),
     onFeatureChange: (feature, enabled) =>
       updateManagedConfig((current) => {
         const features = { ...current.features, [feature]: enabled }
         const entry = { ...current.entry }
+        const snell = feature === 'snell' ? { ...current.snell, enabled } : current.snell
         if (enabled && feature === 'realm') {
           features.haproxy = false
           entry.haproxy = { ...entry.haproxy, enabled: false }
@@ -401,12 +399,7 @@ export function buildAgentDetailProps({
           features.realm = false
           entry.port_forwarding = { ...entry.port_forwarding, enabled: false, backend: 'none' }
         }
-        return {
-          ...current,
-          features,
-          entry,
-          ...(feature === 'singbox' ? { singbox: { ...(current.singbox || { enabled: false }), enabled } } : {}),
-        }
+        return { ...current, features, entry, snell }
       }),
   }
 }

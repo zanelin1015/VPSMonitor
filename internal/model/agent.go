@@ -8,22 +8,21 @@ import (
 )
 
 type ManagedAgentConfig struct {
-	AgentID             string               `json:"agent_id,omitempty"`
-	AgentName           string               `json:"agent_name,omitempty"`
-	CustomerDisplayName string               `json:"customer_display_name,omitempty"`
-	CountryCodeOverride string               `json:"country_code_override,omitempty"`
-	SortOrder           int                  `json:"sort_order,omitempty"`
-	Tags                []string             `json:"tags,omitempty"`
-	Features            AgentFeatureConfig   `json:"features,omitempty"`
-	Renewal             VPSRenewalConfig     `json:"renewal,omitempty"`
-	Entry               AgentEntryConfig     `json:"entry,omitempty"`
-	XUI                 config.XUIConfig     `json:"xui"`
-	SingBox             config.SingBoxConfig `json:"singbox,omitempty"`
+	AgentID             string             `json:"agent_id,omitempty"`
+	AgentName           string             `json:"agent_name,omitempty"`
+	CustomerDisplayName string             `json:"customer_display_name,omitempty"`
+	SortOrder           int                `json:"sort_order,omitempty"`
+	Tags                []string           `json:"tags,omitempty"`
+	Features            AgentFeatureConfig `json:"features,omitempty"`
+	Renewal             VPSRenewalConfig   `json:"renewal,omitempty"`
+	Entry               AgentEntryConfig   `json:"entry,omitempty"`
+	XUI                 config.XUIConfig   `json:"xui"`
+	Snell               SnellConfig        `json:"snell,omitempty"`
 }
 
 type AgentFeatureConfig struct {
 	XUI                         bool `json:"xui"`
-	SingBox                     bool `json:"singbox"`
+	Snell                       bool `json:"snell"`
 	Realm                       bool `json:"realm"`
 	HAProxy                     bool `json:"haproxy"`
 	NAT                         bool `json:"nat"`
@@ -36,7 +35,7 @@ type AgentFeatureConfig struct {
 func (c *AgentFeatureConfig) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		XUI        bool `json:"xui"`
-		SingBox    bool `json:"singbox"`
+		Snell      bool `json:"snell"`
 		Realm      bool `json:"realm"`
 		HAProxy    bool `json:"haproxy"`
 		NAT        bool `json:"nat"`
@@ -46,7 +45,7 @@ func (c *AgentFeatureConfig) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	c.XUI = raw.XUI
-	c.SingBox = raw.SingBox
+	c.Snell = raw.Snell
 	c.Realm = raw.Realm
 	c.HAProxy = raw.HAProxy
 	c.NAT = raw.NAT
@@ -200,7 +199,6 @@ type AgentRegisterRequest struct {
 type AgentCapabilities struct {
 	Realm   bool `json:"realm,omitempty"`
 	HAProxy bool `json:"haproxy,omitempty"`
-	SingBox bool `json:"singbox,omitempty"`
 }
 
 type AgentRegisterResponse struct {

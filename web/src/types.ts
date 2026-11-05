@@ -18,9 +18,6 @@ export interface VPSSummary {
   inbound_count?: number
   outbound_count?: number
   routing_rule_count?: number
-  singbox_node_count?: number
-  singbox_client_count?: number
-  singbox_rule_count?: number
   last_collection_err?: string
 }
 
@@ -28,7 +25,6 @@ export interface AgentListItem {
   agent_id: string
   agent_name?: string
   customer_display_name?: string
-  country_code_override?: string
   client_version?: string
   client_os?: string
   client_arch?: string
@@ -146,25 +142,6 @@ export interface XUIConfig {
   access_log_retention_days?: number
 }
 
-export interface SingBoxConfig {
-  enabled: boolean
-  config_path?: string
-  binary_path?: string
-  service_name?: string
-  clients?: SingBoxClientMetadata[]
-}
-
-export interface SingBoxClientMetadata {
-  inbound_tag: string
-  client_key: string
-  remark?: string
-  enabled?: boolean
-  total_bytes?: number
-  traffic_multiplier?: number
-  expiry_time?: number
-  last_active?: number
-}
-
 export interface AccessLogEntry {
   id?: number
   agent_id: string
@@ -199,39 +176,46 @@ export interface ManagedAgentConfig {
   agent_id?: string
   agent_name?: string
   customer_display_name?: string
-  country_code_override?: string
   sort_order?: number
   tags?: string[]
   features?: AgentFeatureConfig
   renewal?: VPSRenewalConfig
   entry?: AgentEntryConfig
   xui: XUIConfig
-  singbox: SingBoxConfig
+  snell?: SnellConfig
+}
+
+export interface SnellConfig {
+  enabled?: boolean
+  name?: string
+  server?: string
+  port?: number
+  psk?: string
+  version?: number
+  obfs_mode?: 'none' | 'http' | string
+  obfs_host?: string
+  obfs_path?: string
+  forward_rules?: SnellForwardRule[]
+}
+
+export interface SnellForwardRule {
+  id?: string
+  name?: string
+  enabled?: boolean
+  target_agent_id?: string
+  target_inbound_id?: number
+  target_inbound_tag?: string
+  target_client_id?: string
+  target_client_email?: string
 }
 
 export interface AgentFeatureConfig {
   xui?: boolean
-  singbox?: boolean
+  snell?: boolean
   realm?: boolean
   haproxy?: boolean
   nat?: boolean
   port_policy?: boolean
-}
-
-export interface SingBoxOverview {
-  agent_id: string
-  agent_name?: string
-  config_path?: string
-  service_name?: string
-  binary_path?: string
-  running: boolean
-  reported_at: string
-  collected_at: string
-  nodes: Record<string, unknown>[]
-  clients: Record<string, unknown>[]
-  forwarding_rules: Record<string, unknown>[]
-  raw_config?: Record<string, unknown>
-  error?: string
 }
 
 export interface AgentEntryConfig {
@@ -446,14 +430,11 @@ export interface CustomerAuthResponse {
 export interface CustomerAssignment {
   id: number
   customer_id: number
-  source_type?: 'xui' | 'singbox' | string
   agent_id: string
   inbound_id: number
   inbound_tag?: string
   client_id?: string
   client_email?: string
-  singbox_inbound_tag?: string
-  singbox_client_key?: string
   price_mode?: 'inherit' | 'override' | string
   revenue_amount?: number
   revenue_currency?: 'CNY' | 'USDT' | string
@@ -511,7 +492,6 @@ export interface FrontProxyNodeView {
 }
 
 export interface CustomerAssignmentDraft {
-  source_type?: 'xui' | 'singbox' | string
   agent_id: string
   inbound_id: number
   inbound_tag?: string
@@ -523,8 +503,6 @@ export interface CustomerAssignmentDraft {
   revenue_currency?: 'CNY' | 'USDT'
   revenue_cycle?: 'month' | 'quarter' | 'semiannual' | 'year'
   front_proxy_node_ids?: number[]
-  singbox_inbound_tag?: string
-  singbox_client_key?: string
 }
 
 export interface CustomerAdminView extends CustomerUser {
@@ -535,7 +513,6 @@ export interface CustomerAdminView extends CustomerUser {
 export interface CustomerSubscriptionURLResponse {
   clash_subscription_url: string
   mihomo_subscription_url: string
-  singbox_subscription_url?: string
 }
 
 export interface CustomerBillingDiagnostic {
@@ -603,13 +580,12 @@ export interface CustomerLinkStep {
 
 export interface CustomerLinkView {
   assignment_id: number
-  source_type?: 'xui' | 'singbox' | string
   entry_client_name: string
   inbound_tag?: string
   client_email?: string
   client_remark?: string
   import_url?: string
-  singbox_config?: Record<string, unknown>
+  subscription_only?: boolean
   shadowrocket_import_url?: string
   remark?: string
   summary: string
@@ -644,7 +620,6 @@ export interface CustomerOverviewResponse {
   generated_at: string
   clash_subscription_url?: string
   mihomo_subscription_url?: string
-  singbox_subscription_url?: string
   announcements?: CustomerAnnouncement[]
   read_announcement_ids?: string[]
   links: CustomerLinkView[]

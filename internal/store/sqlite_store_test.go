@@ -374,33 +374,6 @@ func TestCustomerAssignmentStoresStableClientBindingAndPriceOverride(t *testing.
 	}
 }
 
-func TestCustomerAssignmentAllowsNodeLevelSingBoxPSK(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
-	if err != nil {
-		t.Fatalf("NewSQLiteStore: %v", err)
-	}
-	defer store.Close()
-	if _, err := store.RegisterAgent(model.AgentRegisterRequest{AgentID: "snell-01", AgentName: "Snell 01"}); err != nil {
-		t.Fatalf("RegisterAgent: %v", err)
-	}
-	customer, err := store.CreateCustomer(model.CustomerAccountRequest{Username: "snell-customer", Password: "password123"})
-	if err != nil {
-		t.Fatalf("CreateCustomer: %v", err)
-	}
-	assignment, err := store.CreateCustomerAssignment(customer.ID, model.CustomerAssignmentRequest{
-		SourceType:        "singbox",
-		AgentID:           "snell-01",
-		SingBoxInboundTag: "snell-single",
-		PublicClientName:  "Clash Snell",
-	})
-	if err != nil {
-		t.Fatalf("CreateCustomerAssignment node-level Snell: %v", err)
-	}
-	if assignment.SingBoxInboundTag != "snell-single" || assignment.SingBoxClientKey != "" || assignment.ClientEmail != "" {
-		t.Fatalf("unexpected node-level Snell assignment: %#v", assignment)
-	}
-}
-
 func TestSQLiteStoreAreaManagerOutboundGrantsAndCreatePermission(t *testing.T) {
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
 	if err != nil {
@@ -589,7 +562,6 @@ func TestSQLiteStoreRegisterAndUpdateConfig(t *testing.T) {
 		AgentID:             "jp-01",
 		AgentName:           "Japan Relay 01",
 		CustomerDisplayName: "Customer JP Entry",
-		CountryCodeOverride: "US",
 		Tags:                []string{"relay", "asia", "relay"},
 		XUI: config.XUIConfig{
 			Enabled:       true,
@@ -597,10 +569,6 @@ func TestSQLiteStoreRegisterAndUpdateConfig(t *testing.T) {
 			Username:      "new-admin",
 			Password:      "new-pass",
 			SkipTLSVerify: true,
-		},
-		SingBox: config.SingBoxConfig{
-			Enabled: true,
-			Clients: []config.SingBoxClientMetadata{{InboundTag: "vless-in", ClientKey: "name:alice", TrafficMultiplier: 1.5}},
 		},
 	})
 	if err != nil {
@@ -625,12 +593,6 @@ func TestSQLiteStoreRegisterAndUpdateConfig(t *testing.T) {
 	}
 	if reloadedCfg.CustomerDisplayName != "Customer JP Entry" {
 		t.Fatalf("expected reloaded customer display name, got %q", reloadedCfg.CustomerDisplayName)
-	}
-	if len(reloadedCfg.SingBox.Clients) != 1 || reloadedCfg.SingBox.Clients[0].TrafficMultiplier != 1.5 {
-		t.Fatalf("expected reloaded sing-box client metadata, got %#v", reloadedCfg.SingBox.Clients)
-	}
-	if reloadedCfg.CountryCodeOverride != "US" {
-		t.Fatalf("expected reloaded country code override, got %q", reloadedCfg.CountryCodeOverride)
 	}
 	if got := len(reloadedCfg.Tags); got != 2 {
 		t.Fatalf("expected normalized tags length 2, got %#v", reloadedCfg.Tags)

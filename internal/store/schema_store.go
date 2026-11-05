@@ -242,14 +242,11 @@ func (s *SQLiteStore) init() error {
 		CREATE TABLE IF NOT EXISTS customer_assignments (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			customer_id INTEGER NOT NULL,
-			source_type TEXT NOT NULL DEFAULT 'xui',
 			agent_id TEXT NOT NULL,
 			inbound_id INTEGER NOT NULL DEFAULT 0,
 			inbound_tag TEXT NOT NULL DEFAULT '',
 			client_id TEXT NOT NULL DEFAULT '',
 			client_email TEXT NOT NULL DEFAULT '',
-			singbox_inbound_tag TEXT NOT NULL DEFAULT '',
-			singbox_client_key TEXT NOT NULL DEFAULT '',
 			public_client_name TEXT NOT NULL DEFAULT '',
 			customer_remark TEXT NOT NULL DEFAULT '',
 			price_mode TEXT NOT NULL DEFAULT 'inherit',
@@ -548,9 +545,6 @@ func (s *SQLiteStore) init() error {
 		{name: "revenue_amount", definition: "REAL"},
 		{name: "revenue_currency", definition: "TEXT NOT NULL DEFAULT 'CNY'"},
 		{name: "revenue_cycle", definition: "TEXT NOT NULL DEFAULT 'month'"},
-		{name: "source_type", definition: "TEXT NOT NULL DEFAULT 'xui'"},
-		{name: "singbox_inbound_tag", definition: "TEXT NOT NULL DEFAULT ''"},
-		{name: "singbox_client_key", definition: "TEXT NOT NULL DEFAULT ''"},
 	} {
 		if err := s.ensureColumn("customer_assignments", column.name, column.definition); err != nil {
 			return err

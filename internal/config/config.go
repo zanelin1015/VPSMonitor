@@ -85,30 +85,6 @@ type XUIConfig struct {
 	AccessLogRetentionDays int    `json:"access_log_retention_days,omitempty"`
 }
 
-// SingBoxConfig describes the locally managed sing-box service.  The Client
-// reads and writes the JSON file directly so the Server never needs access to
-// the VPS filesystem.
-type SingBoxConfig struct {
-	Enabled     bool                    `json:"enabled"`
-	ConfigPath  string                  `json:"config_path,omitempty"`
-	BinaryPath  string                  `json:"binary_path,omitempty"`
-	ServiceName string                  `json:"service_name,omitempty"`
-	Clients     []SingBoxClientMetadata `json:"clients,omitempty"`
-}
-
-// SingBoxClientMetadata is stored by VPSMonitor for the client-management
-// view. It is not written into sing-box users; the bridge client ignores it.
-type SingBoxClientMetadata struct {
-	InboundTag        string  `json:"inbound_tag"`
-	ClientKey         string  `json:"client_key"`
-	Remark            string  `json:"remark,omitempty"`
-	Enabled           bool    `json:"enabled,omitempty"`
-	TotalBytes        int64   `json:"total_bytes,omitempty"`
-	TrafficMultiplier float64 `json:"traffic_multiplier,omitempty"`
-	ExpiryTime        int64   `json:"expiry_time,omitempty"`
-	LastActive        int64   `json:"last_active,omitempty"`
-}
-
 func LoadServerConfig(path string) (ServerConfig, error) {
 	var cfg ServerConfig
 	if err := loadJSON(path, &cfg); err != nil {

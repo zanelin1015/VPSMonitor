@@ -1,4 +1,4 @@
-import type { AgentEntryConfig, AgentLogsResponse, ConfigAuditLog, CustomerAssignmentDraft, DashboardAgentView, GlobalDashboardView, ManagedAgentConfig, TopologyLinkView, VPSRenewalConfig, XUIAction, XUIClientBillingConfig, XUIClientConfigSave, XUIClientView, XUIConfig, SingBoxConfig, XUINodeView, XUIOverview } from '../types'
+import type { AgentEntryConfig, AgentLogsResponse, ConfigAuditLog, CustomerAssignmentDraft, DashboardAgentView, GlobalDashboardView, ManagedAgentConfig, SnellConfig, TopologyLinkView, VPSRenewalConfig, XUIAction, XUIClientBillingConfig, XUIClientConfigSave, XUIClientView, XUIConfig, XUINodeView, XUIOverview } from '../types'
 import type { RoutingRulesDeletePayload } from '../lib/routingRules'
 import type { RoutingRuleUpdatePayload } from '../lib/routingRuleEditor'
 import type { OutboundsDeletePayload } from '../lib/outbounds'
@@ -70,7 +70,6 @@ export interface AgentDetailPanelProps {
   onJumpRule: (index?: number) => void
   onManagedConfigAgentNameChange: (value: string) => void
   onManagedConfigCustomerDisplayNameChange: (value: string) => void
-  onManagedConfigCountryCodeOverrideChange: (value: string) => void
   onManagedConfigSortOrderChange: (value: number) => void
   onNewTagNameChange: (value: string) => void
   onOpenImportURL: (client: XUIClientView) => void
@@ -98,6 +97,6 @@ export interface AgentDetailPanelProps {
   onTagsChange: (values: string[]) => void
   onSaveAreaTags?: (values: string[]) => void
   onXUIChange: (patch: Partial<XUIConfig>) => void
-  onSingBoxChange: (patch: Partial<SingBoxConfig>) => void
+  onSnellChange: (patch: Partial<SnellConfig>) => void
   onFeatureChange: (feature: AgentFeatureKey, enabled: boolean) => void
 }

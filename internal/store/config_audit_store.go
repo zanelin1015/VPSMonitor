@@ -94,6 +94,9 @@ func redactManagedAgentConfig(cfg model.ManagedAgentConfig) model.ManagedAgentCo
 	if cfg.XUI.TwoFactorCode != "" {
 		cfg.XUI.TwoFactorCode = "******"
 	}
+	if cfg.Snell.PSK != "" {
+		cfg.Snell.PSK = "******"
+	}
 	return cfg
 }
 

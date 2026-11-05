@@ -364,20 +364,6 @@ export function CustomerPortal() {
     }
   }
 
-  async function copySingBoxSubscriptionURL() {
-    const subscriptionURL = overview?.singbox_subscription_url || ''
-    if (!subscriptionURL) {
-      message.warning('当前没有可用的 sing-box 订阅，请先给客户分配 sing-box 客户端')
-      return
-    }
-    try {
-      await navigator.clipboard.writeText(new URL(subscriptionURL, window.location.origin).toString())
-      message.success('sing-box 订阅已复制')
-    } catch {
-      message.error('复制失败，请手动复制')
-    }
-  }
-
   if (sessionLoading) {
     return (
       <div className="login-shell">
@@ -413,7 +399,6 @@ export function CustomerPortal() {
           <div className="customer-mobile-actions">
             <CustomerThemeButton />
             <Button shape="circle" aria-label="复制 Clash/Mihomo 订阅" icon={<CopyOutlined />} title="复制 Clash/Mihomo 订阅" onClick={openClashSubscriptionModal} />
-            <Button shape="circle" aria-label="复制 sing-box 订阅" icon={<CopyOutlined />} title="复制 sing-box 订阅" onClick={() => void copySingBoxSubscriptionURL()} />
             <Button shape="circle" aria-label="修改密码" title="修改密码" icon={<LockOutlined />} onClick={openPasswordModal} />
             <Button shape="circle" aria-label="刷新" title="刷新" icon={<ReloadOutlined />} loading={overviewLoading || usageLoading} onClick={() => void refreshCustomerData()} />
             <Button shape="circle" aria-label="退出" title="退出" icon={<LogoutOutlined />} onClick={() => void logout()} />
@@ -441,7 +426,6 @@ export function CustomerPortal() {
           <Space wrap className="customer-header-actions">
             <CustomerThemeButton />
             <Button icon={<CopyOutlined />} onClick={openClashSubscriptionModal}>复制 Clash/Mihomo 订阅</Button>
-            <Button icon={<CopyOutlined />} onClick={() => void copySingBoxSubscriptionURL()}>复制 sing-box 订阅</Button>
             <Button icon={<LockOutlined />} onClick={openPasswordModal}>修改密码</Button>
             <Button icon={<ReloadOutlined />} loading={overviewLoading || usageLoading} onClick={() => void refreshCustomerData()}>刷新</Button>
             <Button icon={<LogoutOutlined />} onClick={() => void logout()}>退出</Button>
@@ -627,6 +611,7 @@ export function CustomerPortal() {
                               {link.exit_country_code || link.exit_country_name ? <Tag color="blue">出口 <CountryFlag code={link.exit_country_code} label={link.exit_country_name} /> {link.exit_country_code || link.exit_country_name}</Tag> : null}
                               {link.exit_ip ? <Tag color="geekblue">{link.exit_ip}</Tag> : null}
                               {!link.resolved ? <Tag color="orange">待解析</Tag> : null}
+                              {link.resolved && link.subscription_only ? <Tag color="purple">订阅链路</Tag> : null}
                               <Button
                                 type="primary"
                                 size="small"
@@ -727,18 +712,18 @@ export function CustomerPortal() {
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
           <div>
             <Text strong>选择导出的节点</Text>
-            <div className="muted-line">默认全部不选；只会导出下方勾选且已解析的授权链路。</div>
+            <div className="muted-line">默认全部不选；只会导出下方勾选且已解析的授权链路。标记为“订阅链路”的节点需要通过 Clash/Mihomo 订阅使用。</div>
           </div>
           <Space wrap>
             <Button
               size="small"
-              disabled={!(overview?.links || []).some((link) => link.resolved && link.import_url)}
-              onClick={() => setSelectedSubscriptionAssignmentIDs((overview?.links || []).filter((link) => link.resolved && link.import_url).map((link) => link.assignment_id))}
+              disabled={!(overview?.links || []).some((link) => link.resolved && (link.import_url || link.subscription_only))}
+              onClick={() => setSelectedSubscriptionAssignmentIDs((overview?.links || []).filter((link) => link.resolved && (link.import_url || link.subscription_only)).map((link) => link.assignment_id))}
             >
               全选
             </Button>
             <Button size="small" onClick={() => setSelectedSubscriptionAssignmentIDs([])}>清空</Button>
-            <Text type="secondary">已选择 {selectedSubscriptionAssignmentIDs.length} / {(overview?.links || []).filter((link) => link.resolved && link.import_url).length} 条</Text>
+            <Text type="secondary">已选择 {selectedSubscriptionAssignmentIDs.length} / {(overview?.links || []).filter((link) => link.resolved && (link.import_url || link.subscription_only)).length} 条</Text>
           </Space>
           <Checkbox.Group
             style={{ width: '100%' }}
@@ -747,10 +732,10 @@ export function CustomerPortal() {
           >
             <Space direction="vertical" size={10} style={{ width: '100%' }}>
               {(overview?.links || []).map((link) => (
-                <Checkbox key={link.assignment_id} value={link.assignment_id} disabled={!link.resolved || !link.import_url}>
+                <Checkbox key={link.assignment_id} value={link.assignment_id} disabled={!link.resolved || (!link.import_url && !link.subscription_only)}>
                   <div>
                     <Text strong>{customerLinkDisplayName(link, remarkDrafts[link.assignment_id])}</Text>
-                    <div className="muted-line">{customerLinkSummaryText(link)}{link.resolved && link.import_url ? '' : '（暂不可导出）'}</div>
+                    <div className="muted-line">{customerLinkSummaryText(link)}{link.resolved && (link.import_url || link.subscription_only) ? '' : '（暂不可导出）'}</div>
                   </div>
                 </Checkbox>
               ))}
@@ -1148,6 +1133,8 @@ function topologyNodeIcon(role: string) {
   switch (role) {
     case 'entry':
       return '入口'
+    case 'snell':
+      return 'Snell'
     case 'relay':
       return '转发'
     case 'exit':

@@ -1,9 +1,8 @@
-import type { AgentEntryConfig, AgentEntryMapping, HAProxyConfig, ManagedAgentConfig, RealmForwardConfig, XUIOverview } from '../types'
+import type { AgentEntryConfig, AgentEntryMapping, HAProxyConfig, ManagedAgentConfig, RealmForwardConfig, SnellConfig, XUIOverview } from '../types'
 import type { ConfigSectionKey } from './appHelperTypes'
 import { DEFAULT_COST_CURRENCY } from './currency'
 import { normalizeRenewalConfig } from './appHelpersBilling'
 import { parseAddressInput, parseTagInput } from './appHelpersTags'
-import { normalizeCountryCode } from './appHelpersAgent'
 
 export function normalizeEntryConfig(config?: AgentEntryConfig): AgentEntryConfig {
   return {
@@ -21,6 +20,32 @@ export function normalizeEntryConfig(config?: AgentEntryConfig): AgentEntryConfi
     network_policy: normalizeNetworkPolicyConfig(config?.network_policy),
     port_forwarding: normalizeRealmForwardConfig(config?.port_forwarding),
     haproxy: normalizeHAProxyConfig(config?.haproxy),
+  }
+}
+
+export function normalizeSnellConfig(config?: SnellConfig): SnellConfig {
+  const version = Number(config?.version || 5)
+  const port = Number(config?.port || 0)
+  return {
+    enabled: Boolean(config?.enabled),
+    name: (config?.name || 'Snell').trim() || 'Snell',
+    server: (config?.server || '').trim(),
+    port: port >= 0 && port <= 65535 ? Math.trunc(port) : 0,
+    psk: (config?.psk || '').trim(),
+    version: version >= 1 && version <= 5 ? Math.trunc(version) : 5,
+    obfs_mode: config?.obfs_mode === 'http' ? 'http' : 'none',
+    obfs_host: (config?.obfs_host || '').trim(),
+    obfs_path: (config?.obfs_path || '').trim(),
+    forward_rules: (config?.forward_rules || []).map((rule, index) => ({
+      id: (rule.id || `snell-forward-${index + 1}`).trim(),
+      name: (rule.name || '').trim(),
+      enabled: Boolean(rule.enabled),
+      target_agent_id: (rule.target_agent_id || '').trim(),
+      target_inbound_id: Math.max(0, Number(rule.target_inbound_id || 0)),
+      target_inbound_tag: (rule.target_inbound_tag || '').trim(),
+      target_client_id: (rule.target_client_id || '').trim(),
+      target_client_email: (rule.target_client_email || '').trim(),
+    })),
   }
 }
 
@@ -59,7 +84,6 @@ export function buildSectionSavePayload(base: ManagedAgentConfig, draft: Managed
     agent_id: agentID,
     agent_name: base.agent_name || draft.agent_name || agentID,
     customer_display_name: base.customer_display_name || '',
-    country_code_override: base.country_code_override || '',
     sort_order: base.sort_order || draft.sort_order || 0,
     tags: [...(base.tags || [])],
     features: { ...(base.features || {}) },
@@ -74,17 +98,16 @@ export function buildSectionSavePayload(base: ManagedAgentConfig, draft: Managed
       haproxy: normalizeHAProxyConfig(base.entry?.haproxy),
     },
     xui: { ...base.xui },
-    singbox: { ...(base.singbox || { enabled: false }), enabled: Boolean(base.singbox?.enabled) },
+    snell: normalizeSnellConfig(base.snell),
   }
   switch (section) {
     case 'client':
       payload.agent_name = draft.agent_name || agentID
       payload.customer_display_name = draft.customer_display_name || ''
-      payload.country_code_override = normalizeCountryCode(draft.country_code_override)
       payload.sort_order = Number(draft.sort_order || base.sort_order || 0)
       payload.tags = [...(draft.tags || [])]
       payload.features = { ...(draft.features || {}) }
-      payload.singbox = { ...(base.singbox || { enabled: false }), ...(draft.singbox || {}), enabled: Boolean(draft.singbox?.enabled) }
+      payload.snell = normalizeSnellConfig(draft.snell)
       const entry = payload.entry!
       if (payload.features.realm) {
         entry.haproxy = { ...entry.haproxy, enabled: false }
@@ -98,10 +121,10 @@ export function buildSectionSavePayload(base: ManagedAgentConfig, draft: Managed
       break
     case 'xui':
       payload.xui = { ...draft.xui }
-      break
-    case 'singbox':
-      payload.singbox = { ...(base.singbox || { enabled: false }), ...(draft.singbox || {}), enabled: Boolean(draft.singbox?.enabled) }
-      payload.features = { ...(draft.features || base.features || {}) }
+      payload.entry = {
+        ...payload.entry,
+        connection: { ...(draft.entry?.connection || {}) },
+      }
       break
     case 'entry':
       payload.entry = {
@@ -127,19 +150,22 @@ export function mergeSavedSectionIntoDraft(draft: ManagedAgentConfig, saved: Man
     case 'client':
       next.agent_name = saved.agent_name
       next.customer_display_name = saved.customer_display_name || ''
-      next.country_code_override = normalizeCountryCode(saved.country_code_override)
       next.sort_order = saved.sort_order
       next.tags = [...(saved.tags || [])]
       next.features = { ...(saved.features || {}) }
+      next.snell = normalizeSnellConfig(saved.snell)
       break
     case 'renewal':
       next.renewal = { ...(saved.renewal || {}) }
       break
     case 'xui':
       next.xui = { ...saved.xui }
-      break
-    case 'singbox':
-      next.singbox = { ...(saved.singbox || { enabled: false }), enabled: Boolean(saved.singbox?.enabled) }
+      if (saved.entry) {
+        next.entry = {
+          ...next.entry,
+          connection: { ...(saved.entry.connection || {}) },
+        }
+      }
       break
     case 'entry':
       next.entry = {
@@ -164,8 +190,6 @@ export function configSectionLabel(section: ConfigSectionKey): string {
       return 'VPS 信息'
     case 'xui':
       return 'X-UI 配置'
-    case 'singbox':
-      return 'sing-box 配置'
     case 'entry':
       return '连接与端口'
   }
@@ -180,16 +204,15 @@ export function createEmptyManagedConfig(agentID: string, agentName?: string): M
     agent_id: agentID,
     agent_name: agentName || agentID,
     customer_display_name: '',
-    country_code_override: '',
     sort_order: 0,
     tags: [],
     features: {
       xui: false,
+      snell: false,
       realm: false,
       haproxy: false,
       nat: false,
       port_policy: false,
-      singbox: false,
     },
     renewal: {
       enabled: false,
@@ -250,12 +273,7 @@ export function createEmptyManagedConfig(agentID: string, agentName?: string): M
       access_log_path: '',
       access_log_retention_days: 7,
     },
-    singbox: {
-      enabled: false,
-      config_path: '',
-      binary_path: '',
-      service_name: '',
-    },
+    snell: normalizeSnellConfig(),
   }
 }
 
@@ -265,7 +283,6 @@ export function normalizeManagedConfig(config: ManagedAgentConfig, agentID: stri
     agent_id: config.agent_id || base.agent_id,
     agent_name: config.agent_name || agentName || base.agent_name,
     customer_display_name: config.customer_display_name || '',
-    country_code_override: normalizeCountryCode(config.country_code_override),
     sort_order: Number(config.sort_order || base.sort_order || 0),
     tags: parseTagInput((config.tags || []).join(',')),
     features: normalizeAgentFeatures(config.features, config),
@@ -279,24 +296,7 @@ export function normalizeManagedConfig(config: ManagedAgentConfig, agentID: stri
       access_log_enabled: Boolean(config.xui?.access_log_enabled),
       access_log_retention_days: Math.min(30, Math.max(1, Number(config.xui?.access_log_retention_days || 7))),
     },
-    singbox: {
-      ...base.singbox,
-      ...config.singbox,
-      enabled: Boolean(config.singbox?.enabled),
-      config_path: String(config.singbox?.config_path || '').trim(),
-      binary_path: String(config.singbox?.binary_path || '').trim(),
-      service_name: String(config.singbox?.service_name || '').trim(),
-      clients: (config.singbox?.clients || []).map((client) => ({
-        ...client,
-        inbound_tag: String(client.inbound_tag || '').trim(),
-        client_key: String(client.client_key || '').trim(),
-        remark: String(client.remark || '').trim(),
-        total_bytes: Math.max(0, Number(client.total_bytes || 0)),
-        traffic_multiplier: Math.max(0, Number(client.traffic_multiplier || 0)),
-        expiry_time: Math.max(0, Number(client.expiry_time || 0)),
-        last_active: Math.max(0, Number(client.last_active || 0)),
-      })).filter((client) => client.inbound_tag && client.client_key),
-    },
+    snell: normalizeSnellConfig(config.snell),
   }
 }
 
@@ -386,10 +386,9 @@ function normalizeNetworkPolicyConfig(config?: AgentEntryConfig['network_policy'
 function normalizeAgentFeatures(features: ManagedAgentConfig['features'], config?: ManagedAgentConfig): NonNullable<ManagedAgentConfig['features']> {
   const entry = config?.entry
   const xui = config?.xui
-  const singbox = config?.singbox
   return {
     xui: features?.xui ?? Boolean(xui?.enabled || xui?.base_url || xui?.db_path || xui?.api_token),
-    singbox: features?.singbox ?? Boolean(singbox?.enabled || singbox?.config_path || singbox?.binary_path || singbox?.service_name),
+    snell: features?.snell ?? Boolean(config?.snell?.enabled || (config?.snell?.forward_rules || []).length),
     realm: features?.realm ?? Boolean(entry?.port_forwarding?.enabled || (entry?.port_forwarding?.rules || []).length),
     haproxy: features?.haproxy ?? Boolean(entry?.haproxy?.enabled || (entry?.haproxy?.rules || []).length),
     nat: features?.nat ?? Boolean((entry?.mappings || []).length || (entry?.addresses || []).length || entry?.import_domain || Object.keys(entry?.connection || {}).length),

@@ -69,6 +69,7 @@ export function customerLinkSummaryText(link: CustomerLinkView): string {
 
 function customerLinkRouteName(link: CustomerLinkView): string {
   const parts = [
+    ...(link.steps || []).filter((step) => step.role === 'snell').map((step) => step.label),
     link.entry_client_name,
     ...(link.steps || []).filter((step) => step.role === 'relay').map((step) => step.label),
   ]

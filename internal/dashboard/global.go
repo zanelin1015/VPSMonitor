@@ -72,7 +72,6 @@ func BuildGlobalDashboardWithOptions(agents []model.AgentRecord, snapshots []mod
 			AgentID:             agent.AgentID,
 			AgentName:           agent.AgentName,
 			CustomerDisplayName: agent.CustomerDisplayName,
-			CountryCodeOverride: agent.Config.CountryCodeOverride,
 			ClientVersion:       agent.Version,
 			ClientOS:            agent.OS,
 			ClientArch:          agent.Arch,

@@ -29,7 +29,7 @@ func (a *App) handleCustomerSubscription(w http.ResponseWriter, r *http.Request,
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if len(parts) != 2 || !isCustomerSubscriptionFile(parts[1]) {
+	if len(parts) != 2 || !isMihomoSubscriptionFile(parts[1]) {
 		writeError(w, http.StatusNotFound, "subscription not found")
 		return
 	}
@@ -53,17 +53,6 @@ func (a *App) handleCustomerSubscription(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	overview.Links = filterCustomerSubscriptionLinks(overview.Links, r.URL.Query())
-	if strings.EqualFold(strings.TrimSpace(parts[1]), "sing-box.json") {
-		content, buildErr := buildSingBoxSubscription(overview.Links)
-		if buildErr != nil {
-			writeError(w, http.StatusInternalServerError, buildErr.Error())
-			return
-		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.Header().Set("Content-Disposition", customerSubscriptionContentDisposition(user.Username))
-		_, _ = w.Write(content)
-		return
-	}
 	content := buildMihomoSubscription(user, overview.Links)
 	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
 	w.Header().Set("Content-Disposition", customerSubscriptionContentDisposition(user.Username))
@@ -139,22 +128,58 @@ func isMihomoSubscriptionFile(value string) bool {
 	}
 }
 
-func isCustomerSubscriptionFile(value string) bool {
-	return isMihomoSubscriptionFile(value) || strings.EqualFold(strings.TrimSpace(value), "sing-box.json")
-}
-
 func buildMihomoSubscription(user model.CustomerUser, links []model.CustomerLinkView) string {
 	names := make(map[string]int, len(links))
 	frontProxyNames := make(map[int64]string)
+	snellKeys := make(map[string]struct{})
+	snellNames := make(map[string]string)
 	proxies := make([]mihomoProxy, 0, len(links))
 	exitProxies := make([]mihomoProxy, 0, len(links))
 	frontGroups := make([]mihomoProxyGroup, 0)
 	for _, link := range links {
-		if !link.Resolved || strings.TrimSpace(link.ImportURL) == "" {
+		if link.SnellChain != nil && link.Resolved {
+			cfg := model.NormalizeSnellConfig(*link.SnellChain)
+			key := snellConfigKey(cfg)
+			frontName := snellNames[key]
+			if frontName == "" {
+				frontName = uniqueSubscriptionName(firstNonEmptyString(cfg.Name, "Snell"), names)
+				if proxy, ok := buildSnellMihomoProxy(cfg, frontName); ok {
+					proxies = append(proxies, proxy)
+					snellKeys[key] = struct{}{}
+					snellNames[key] = frontName
+				}
+			}
+			rawImportURL := firstNonEmptyString(link.SubscriptionImportURL, link.ImportURL)
+			if frontName != "" && strings.TrimSpace(rawImportURL) != "" {
+				name := uniqueSubscriptionName(customerSubscriptionNodeName(link), names)
+				proxy, ok := parseMihomoProxy(rawImportURL, name)
+				if ok {
+					configureMihomoRealityHandshake(&proxy, link.XrayVersion)
+					proxy.DialerProxy = frontName
+					proxies = append(proxies, proxy)
+					exitProxies = append(exitProxies, proxy)
+				}
+			}
+			continue
+		}
+		if link.Snell != nil && link.Snell.Enabled && model.ValidateSnellConfig(*link.Snell) == nil {
+			cfg := model.NormalizeSnellConfig(*link.Snell)
+			key := snellConfigKey(cfg)
+			if _, exists := snellKeys[key]; !exists {
+				name := uniqueSubscriptionName(firstNonEmptyString(cfg.Name, "Snell"), names)
+				if proxy, ok := buildSnellMihomoProxy(cfg, name); ok {
+					proxies = append(proxies, proxy)
+					exitProxies = append(exitProxies, proxy)
+					snellKeys[key] = struct{}{}
+				}
+			}
+		}
+		rawImportURL := firstNonEmptyString(link.SubscriptionImportURL, link.ImportURL)
+		if !link.Resolved || strings.TrimSpace(rawImportURL) == "" {
 			continue
 		}
 		name := uniqueSubscriptionName(customerSubscriptionNodeName(link), names)
-		proxy, ok := parseMihomoProxy(link.ImportURL, name)
+		proxy, ok := parseMihomoProxy(rawImportURL, name)
 		if !ok {
 			continue
 		}
@@ -194,6 +219,40 @@ func buildMihomoSubscription(user model.CustomerUser, links []model.CustomerLink
 	})
 
 	return renderMihomoSubscription(proxies, exitProxies, frontGroups)
+}
+
+func snellConfigKey(cfg model.SnellConfig) string {
+	return fmt.Sprintf("%s|%d|%s|%d|%s|%s|%s", cfg.Server, cfg.Port, cfg.PSK, cfg.Version, cfg.ObfsMode, cfg.ObfsHost, cfg.ObfsPath)
+}
+
+func buildSnellMihomoProxy(cfg model.SnellConfig, name string) (mihomoProxy, bool) {
+	cfg = model.NormalizeSnellConfig(cfg)
+	if !cfg.Enabled || model.ValidateSnellConfig(cfg) != nil {
+		return mihomoProxy{}, false
+	}
+	fields := []mihomoField{
+		{"type", "snell"},
+		{"server", cfg.Server},
+		{"port", cfg.Port},
+		{"psk", cfg.PSK},
+		{"version", cfg.Version},
+		{"udp", true},
+	}
+	obfsFields := make([]mihomoField, 0, 3)
+	if cfg.ObfsMode != "none" {
+		obfsFields = append(obfsFields, mihomoField{"mode", cfg.ObfsMode})
+		if cfg.ObfsHost != "" {
+			obfsFields = append(obfsFields, mihomoField{"host", cfg.ObfsHost})
+		}
+		if cfg.ObfsPath != "" {
+			obfsFields = append(obfsFields, mihomoField{"path", cfg.ObfsPath})
+		}
+	}
+	objects := []mihomoObject{}
+	if len(obfsFields) > 0 {
+		objects = append(objects, mihomoObject{Key: "obfs-opts", Fields: obfsFields})
+	}
+	return mihomoProxy{Name: name, Fields: fields, Objects: objects}, true
 }
 
 func renderMihomoSubscription(proxies []mihomoProxy, selectableProxies []mihomoProxy, frontGroups []mihomoProxyGroup) string {

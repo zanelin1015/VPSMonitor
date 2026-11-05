@@ -12,13 +12,14 @@ import { AgentCertificatesPanel } from './AgentCertificatesPanel';
 import { AdminHelpHint } from './AdminHelpHint';
 import { formatBytes, formatSpeed } from '../lib/traffic';
 import { actionKindLabel, actionStatusColor, actionStatusLabel, billingKeyForClient, findClientBilling, formatDateTime, mergeTagOptions, shortJSON } from '../lib/appHelpers';
+import { buildCertificateDomainOptions } from '../lib/managedConfigHelpers';
 import { renderGlobalOverviewPanel } from './DashboardTopologyPanels';
 import { FeatureSwitch } from './AgentDetailTerminal';
 import { ManagedConfigPanel } from './ManagedConfigPanel';
 
 import { XUINodeList } from './XUINodeList';
 import { XUIClientConfigModal } from './XUIClientConfigModal';
-import { SingBoxActionPanel } from './SingBoxActionPanel'
+import { EntryConnectionSection } from './EntryConnectionSection';
 
 import { buildHAProxyForwardClients, buildHAProxyForwardNodes, buildRealmForwardClients, buildRealmForwardNodes, filterRealmForwardClients, renderNodeClientHierarchySections } from './AgentDetailHelpers';
 import type { AgentDetailPanelProps } from './AgentDetailPanel.types';
@@ -86,7 +87,6 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onJumpRule,
     onManagedConfigAgentNameChange,
     onManagedConfigCustomerDisplayNameChange,
-    onManagedConfigCountryCodeOverrideChange,
     onManagedConfigSortOrderChange,
     onNewTagNameChange,
     onOpenImportURL,
@@ -110,13 +110,12 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onTagsChange,
     onSaveAreaTags,
     onXUIChange,
-    onSingBoxChange,
+    onSnellChange,
     onFeatureChange,
   } = props
   const canManageClients = canManageConfig || restrictedView
   const [clientConfigEditor, setClientConfigEditor] = useState<XUIClientView | null>(null)
   const [commandOutputAction, setCommandOutputAction] = useState<XUIAction | null>(null)
-  const [xuiConfigOpen, setXuiConfigOpen] = useState(false)
   const { openRealtimeTerminal, openRemoteCommand, terminalModals } = useAgentTerminalTools({ selectedAgent, selectedAgentId, remoteCommandLoading, onExecuteRemoteCommand, commandOutputAction, setCommandOutputAction })
   const [replacementModalOpen, setReplacementModalOpen] = useState(false)
   const [replacementAgentID, setReplacementAgentID] = useState('')
@@ -150,17 +149,19 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     : null
 
   const currentPrimaryDomain = managedConfig?.entry?.import_domain || selectedAgent.entry?.import_domain || ''
+  const entryConfig = managedConfig?.entry || selectedAgent.entry || {}
   const featureEnabled = {
     xui: Boolean(managedConfig?.features?.xui),
-    singbox: Boolean(managedConfig?.features?.singbox),
+    snell: Boolean(managedConfig?.features?.snell),
     realm: Boolean(managedConfig?.features?.realm),
     haproxy: Boolean(managedConfig?.features?.haproxy),
     nat: Boolean(managedConfig?.features?.nat),
     port_policy: Boolean(managedConfig?.features?.port_policy || selectedAgent.network_policy?.rules?.length),
   }
-  const canShowXUIControls = !restrictedView && featureEnabled.xui
   const realmRuleCount = managedConfig?.entry?.port_forwarding?.rules?.length || selectedAgent.entry?.port_forwarding?.rules?.length || 0
-  const natMappingCount = managedConfig?.entry?.mappings?.length || selectedAgent.entry?.mappings?.length || 0
+  const natMappingCount = entryConfig.mappings?.filter((mapping) => mapping.use_for_export).length || 0
+  const dockerEnabled = entryConfig.connection?.deployment === 'docker'
+  const natEnabled = entryConfig.connection?.public_access === 'nat'
   const portPolicyCount = managedConfig?.entry?.network_policy?.rules?.length || selectedAgent.entry?.network_policy?.rules?.length || selectedAgent.network_policy?.rules?.length || 0
   const internalNodeCount = overview?.nodes.length ?? selectedAgent.node_count ?? 0
   const internalClientCount = overview?.clients.length ?? selectedAgent.client_count ?? 0
@@ -187,13 +188,6 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
             <span className="network-down">↓ {formatSpeed(Number(internalSummary.net_io_down || 0))}</span>
           </div>
           <div className="overview-stat-foot">总速 {formatSpeed(Number(internalSummary.net_io_up || 0) + Number(internalSummary.net_io_down || 0))}</div>
-        </section>
-      ) : null}
-      {featureEnabled.singbox ? (
-        <section className="overview-stat-card overview-stat-blue">
-          <div className="overview-stat-title">sing-box 专线</div>
-          <div className="overview-stat-value"><span className="overview-stat-dot" /><strong>{selectedAgent.summary.singbox_node_count || 0}</strong></div>
-          <div className="overview-stat-foot">客户端 {selectedAgent.summary.singbox_client_count || 0} · 规则 {selectedAgent.summary.singbox_rule_count || 0}</div>
         </section>
       ) : null}
       {featureEnabled.realm && realmRuleCount > 0 ? (
@@ -317,7 +311,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     },
   ]
 
-  function renderManagedConfigSection(section: 'basic' | 'xui' | 'nat' | 'network' | 'realm' | 'haproxy' | 'audit', saveOverride?: typeof onSaveManagedConfigSection) {
+  function renderManagedConfigSection(section: 'basic' | 'xui' | 'nat' | 'network' | 'realm' | 'haproxy' | 'audit') {
     return (
       <ManagedConfigPanel
         selectedAgent={selectedAgent}
@@ -328,10 +322,9 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         configLoading={configLoading}
         configSavingSection={configSavingSection}
         configError={configError}
-        onSave={saveOverride || onSaveManagedConfigSection}
+        onSave={onSaveManagedConfigSection}
         onAgentNameChange={onManagedConfigAgentNameChange}
         onCustomerDisplayNameChange={onManagedConfigCustomerDisplayNameChange}
-        onCountryCodeOverrideChange={onManagedConfigCountryCodeOverrideChange}
         onSortOrderChange={onManagedConfigSortOrderChange}
         tagOptions={tagOptions}
         newTagName={newTagName}
@@ -347,6 +340,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         onEntryAddressesTextChange={onEntryAddressesTextChange}
         onEntryChange={onEntryChange}
         onXUIChange={onXUIChange}
+        onSnellChange={onSnellChange}
         onCopyRealmConfig={onCopyRealmConfig}
         realmCopyLoading={realmCopyLoading}
         configAudits={configAudits}
@@ -365,7 +359,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       </div>
       <Space wrap>
         <FeatureSwitch label="x-ui" checked={featureEnabled.xui} onChange={(checked) => onFeatureChange('xui', checked)} />
-        <FeatureSwitch label="sing-box" checked={featureEnabled.singbox} onChange={(checked) => onFeatureChange('singbox', checked)} />
+        <FeatureSwitch label="Snell" checked={featureEnabled.snell} onChange={(checked) => onFeatureChange('snell', checked)} />
         <FeatureSwitch label="Realm" checked={featureEnabled.realm} onChange={(checked) => onFeatureChange('realm', checked)} />
         <FeatureSwitch label="HAProxy" checked={featureEnabled.haproxy} onChange={(checked) => onFeatureChange('haproxy', checked)} />
         <FeatureSwitch label="NAT" checked={featureEnabled.nat} onChange={(checked) => onFeatureChange('nat', checked)} />
@@ -396,10 +390,53 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     ),
   }
 
+  const entryFallbackHost = entryConfig.import_domain || selectedAgent.summary.observed_ip || selectedAgent.summary.public_ipv4 || selectedAgent.summary.public_ipv6 || selectedAgent.summary.hostname || ''
+  const renderEntrySection = (mode: 'connection' | 'mappings') => (
+    <EntryConnectionSection
+      mode={mode}
+      entry={entryConfig}
+      nodes={overview?.nodes || []}
+      fallbackHost={entryFallbackHost}
+      domainOptions={buildCertificateDomainOptions(overview?.certificates || [])}
+      addressText={entryConfig.addresses?.join('\n') || ''}
+      saving={configSavingSection === 'entry'}
+      onChange={onEntryChange}
+      onAddressTextChange={onEntryAddressesTextChange}
+      onSave={() => onSaveManagedConfigSection('entry')}
+    />
+  )
+
   const xuiInnerTabs: TabsProps['items'] = featureEnabled.xui ? [
     {
+      key: 'actions',
+      label: `x-ui 操作 (${xuiActions.length})`,
+      children: (
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Alert
+            type="warning"
+            showIcon
+            message="这里现在通过 WS 实时下发 x-ui 指令"
+            description="入站节点请直接通过 x-ui 面板手动新增；中心会把其它 client 的节点导入为当前 client 的出站，并通过在线 Client 实时执行和回传结果。Client 不在线时会保留任务等待轮询。"
+          />
+          <Space wrap>
+            <Button type="primary" disabled={!selectedAgentId} onClick={onCreateRoutingAction}>新增操作</Button>
+            {!restrictedView ? <Button danger onClick={openRealtimeTerminal}>实时 TTY</Button> : null}
+            {!restrictedView ? <Button loading={remoteCommandLoading} onClick={openRemoteCommand}>单次命令</Button> : null}
+
+            <Button icon={<ReloadOutlined />} disabled={!selectedAgentId} loading={xuiActionsLoading} onClick={onRefreshXUIActions}>刷新操作记录</Button>
+          </Space>
+          <Table rowKey={(record) => record.id} columns={xuiActionColumns} dataSource={xuiActions} loading={xuiActionsLoading} pagination={{ pageSize: 8, hideOnSinglePage: true }} scroll={{ x: 820 }} />
+        </Space>
+      ),
+    },
+    ...(canManageConfig ? [{
+      key: 'xui-config',
+      label: '配置',
+      children: renderManagedConfigSection('xui'),
+    }] : []),
+    {
       key: 'nodes',
-      label: `入站节点 (${overview?.nodes.length || 0})`,
+      label: `节点 (${overview?.nodes.length || 0})`,
       children: overview ? (
         <XUINodeList
           key={selectedAgentId}
@@ -449,79 +486,27 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       ),
     },
     ...routingTabs,
-    {
-      key: 'actions',
-      label: `操作历史 (${xuiActions.length})`,
-      children: (
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <Alert
-            type="warning"
-            showIcon
-            message="这里现在通过 WS 实时下发 x-ui 指令"
-            description="入站节点请直接通过 x-ui 面板手动新增；中心会把其它 client 的节点导入为当前 client 的出站，并通过在线 Client 实时执行和回传结果。Client 不在线时会保留任务等待轮询。"
-          />
-          <Space wrap>
-            <Button type="primary" disabled={!selectedAgentId} onClick={onCreateRoutingAction}>新增操作</Button>
-            {!restrictedView ? <Button danger onClick={openRealtimeTerminal}>实时 TTY</Button> : null}
-            {!restrictedView ? <Button loading={remoteCommandLoading} onClick={openRemoteCommand}>单次命令</Button> : null}
-
-            <Button icon={<ReloadOutlined />} disabled={!selectedAgentId} loading={xuiActionsLoading} onClick={onRefreshXUIActions}>刷新操作记录</Button>
-          </Space>
-          <Table rowKey={(record) => record.id} columns={xuiActionColumns} dataSource={xuiActions} loading={xuiActionsLoading} pagination={{ pageSize: 8, hideOnSinglePage: true }} scroll={{ x: 820 }} />
-        </Space>
-      ),
-    },
+    ...(canManageConfig && dockerEnabled ? [{
+      key: 'xui-port-mapping',
+      label: `端口映射 (${natMappingCount})`,
+      children: renderEntrySection('mappings'),
+    }] : []),
   ] : []
 
   const xuiInnerTabKeys = new Set((xuiInnerTabs || []).map((item) => String(item?.key || '')))
-  const xuiInnerActiveKey = xuiInnerTabKeys.has(activeTabKey) ? activeTabKey : 'nodes'
-  const isXUIInnerRoute = xuiInnerTabKeys.has(activeTabKey) || activeTabKey === 'xui-config'
+  const xuiInnerActiveKey = xuiInnerTabKeys.has(activeTabKey) ? activeTabKey : 'actions'
   const xuiTabs: TabsProps['items'] = featureEnabled.xui ? [{
     key: 'xui',
-    label: 'x-ui',
+    label: 'X-UI',
     children: (
-      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-        <Card bordered={false} className="config-section-card">
-          <div className="section-title-row">
-            <div>
-              <Title level={4}>x-ui</Title>
-              <Text type="secondary">节点 {overview?.nodes.length || 0} · 客户端 {overview?.clients.length || 0} · 出站 {overview?.outbounds.length || 0} · 路由规则 {overview?.routing_rules.length || 0}</Text>
-            </div>
-            <Space wrap>
-              <Button icon={<ReloadOutlined />} disabled={!selectedAgentId} loading={currentAgentLoading} onClick={onRefreshCurrentAgent}>刷新</Button>
-              {canManageConfig ? <Button icon={<SettingOutlined />} onClick={() => setXuiConfigOpen(true)}>配置</Button> : null}
-              {canShowXUIControls ? <Button disabled={!canOpenXUI} onClick={onOpenXUI}>打开 x-ui 面板</Button> : null}
-            </Space>
-          </div>
-          <Text type="secondary">服务 {managedConfig?.xui?.enabled ? '已启用' : '未启用'} · {selectedAgent.summary.last_collection_err ? '最近采集异常' : '状态正常'}</Text>
-        </Card>
-        <Card bordered={false} className="config-section-card">
-          <Tabs
-            activeKey={xuiInnerActiveKey}
-            onChange={(key) => onActiveTabChange(key)}
-            items={xuiInnerTabs}
-          />
-        </Card>
-      </Space>
+      <Card bordered={false} className="config-section-card">
+        <Tabs
+          activeKey={xuiInnerActiveKey}
+          onChange={onActiveTabChange}
+          items={xuiInnerTabs}
+        />
+      </Card>
     ),
-  }] : []
-
-  const singBoxTabs: TabsProps['items'] = featureEnabled.singbox ? [{
-    key: 'singbox',
-    label: 'sing-box',
-    children: <SingBoxActionPanel
-      agentID={selectedAgentId}
-      agents={dashboardView?.agents || filteredAgents}
-      enabled={Boolean(managedConfig?.singbox?.enabled)}
-      canManage={canManageConfig && !restrictedView}
-      managedConfig={managedConfig}
-      configSaving={configSavingSection === 'singbox'}
-      onSingBoxChange={onSingBoxChange}
-      onSaveConfig={() => onSaveManagedConfigSection('singbox')}
-      actions={xuiActions}
-      actionsLoading={xuiActionsLoading}
-      onRefreshActions={onRefreshXUIActions}
-    />,
   }] : []
 
   const realmTabs: TabsProps['items'] = featureEnabled.realm ? [
@@ -570,11 +555,39 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     },
   ] : []
 
-  const natTabs: TabsProps['items'] = (featureEnabled.nat || featureEnabled.xui || featureEnabled.realm || featureEnabled.haproxy) && canManageConfig ? [{
-    key: 'entry-nat',
-    label: `连接与端口 (${natMappingCount})`,
-    children: renderManagedConfigSection('nat'),
-  }] : []
+  // Connection metadata is only needed when an extra network boundary exists:
+  // Docker or an external NAT. A native, directly reachable node can use its
+  // reported public address and should not get a standalone connection tab.
+  const connectionContextEnabled = dockerEnabled || natEnabled
+  const natInnerTabs: TabsProps['items'] = [
+    {
+      key: 'nat-connection',
+      label: '连接',
+      children: renderEntrySection('connection'),
+    },
+    {
+      key: 'nat-port-mapping',
+      label: `端口映射 (${natMappingCount})`,
+      children: renderEntrySection('mappings'),
+    },
+  ]
+  const natInnerTabKeys = new Set(natInnerTabs.map((item) => String(item?.key || '')))
+  const natInnerActiveKey = natInnerTabKeys.has(activeTabKey) ? activeTabKey : 'nat-connection'
+  const natTabs: TabsProps['items'] = connectionContextEnabled && canManageConfig ? (
+    natEnabled ? [{
+      key: 'nat',
+      label: 'NAT',
+      children: (
+        <Card bordered={false} className="config-section-card">
+          <Tabs activeKey={natInnerActiveKey} onChange={onActiveTabChange} items={natInnerTabs} />
+        </Card>
+      ),
+    }] : [{
+      key: 'entry-connection',
+      label: '连接',
+      children: renderEntrySection('connection'),
+    }]
+  ) : []
 
   const haProxyTabs: TabsProps['items'] = featureEnabled.haproxy ? [
     ...(canManageConfig ? [{
@@ -686,18 +699,18 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const detailTabs: TabsProps['items'] = [
     overviewTab,
     ...xuiTabs,
-    ...singBoxTabs,
     ...realmTabs,
     ...haProxyTabs,
     ...natTabs,
     ...portPolicyTabs,
     ...supportTabs,
   ]
-  const effectiveActiveTabKey = detailTabs.some((item) => item?.key === activeTabKey)
-    ? activeTabKey
-    : isXUIInnerRoute
-      ? 'xui'
-      : 'overview'
+  const effectiveActiveTabKey = featureEnabled.xui && (activeTabKey === 'xui' || xuiInnerTabKeys.has(activeTabKey))
+    ? 'xui'
+    : natEnabled && (activeTabKey === 'nat' || natInnerTabKeys.has(activeTabKey) || activeTabKey === 'entry-connection')
+      ? 'nat'
+    : detailTabs.some((item) => item?.key === activeTabKey) ? activeTabKey : 'overview'
+  const canShowXUIControls = !restrictedView && featureEnabled.xui
 
   return (
     <>
@@ -780,23 +793,10 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         ) : null}
         <Tabs
           activeKey={effectiveActiveTabKey}
-          onChange={(key) => onActiveTabChange(key === 'xui' ? 'nodes' : key)}
+          onChange={(key) => onActiveTabChange(key === 'xui' ? xuiInnerActiveKey : key === 'nat' ? natInnerActiveKey : key)}
           items={detailTabs}
         />
       </Card>
-      <Modal
-        title="x-ui 托管配置"
-        open={xuiConfigOpen}
-        width={960}
-        footer={null}
-        destroyOnClose
-        onCancel={() => setXuiConfigOpen(false)}
-      >
-        {renderManagedConfigSection('xui', (section, draftOverride) => {
-          onSaveManagedConfigSection(section, draftOverride)
-          setXuiConfigOpen(false)
-        })}
-      </Modal>
       {clientConfigEditor ? <XUIClientConfigModal key={`${selectedAgentId}:${billingKeyForClient(clientConfigEditor)}`} agentID={selectedAgentId} record={overview?.clients.find(item => item.inbound_id === clientConfigEditor.inbound_id && item.inbound_tag === clientConfigEditor.inbound_tag && item.email === clientConfigEditor.email && item.realm_target_agent_id === clientConfigEditor.realm_target_agent_id) || clientConfigEditor}
         billing={findClientBilling(savedClientBillings || managedConfig?.renewal?.client_billings, clientConfigEditor)}
         initialSave={overview?.client_config_saves?.find(item => item.client_id ? item.client_id === clientConfigEditor.client_id : item.inbound_id === clientConfigEditor.inbound_id && item.inbound_tag === clientConfigEditor.inbound_tag && item.email === clientConfigEditor.email)}

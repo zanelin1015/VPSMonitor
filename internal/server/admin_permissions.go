@@ -111,9 +111,6 @@ func (a *App) sanitizeManagedConfigForAdmin(user model.AdminUser, cfg model.Mana
 	cfg.XUI = config.XUIConfig{
 		Enabled: cfg.XUI.Enabled,
 	}
-	cfg.SingBox = config.SingBoxConfig{
-		Enabled: cfg.SingBox.Enabled,
-	}
 	return cfg
 }
 
@@ -628,9 +625,6 @@ func isCNLineEntryDashboardAgent(agent model.DashboardAgentView) bool {
 }
 
 func dashboardAgentCountryCode(agent model.DashboardAgentView) string {
-	if code := explicitDashboardCountryCode(agent.CountryCodeOverride); code != "" {
-		return code
-	}
 	candidates := append([]string{agent.AgentName}, agent.Tags...)
 	candidates = append(candidates, agent.Summary.Hostname, agent.AgentID)
 	for _, candidate := range candidates {
