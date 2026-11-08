@@ -162,8 +162,15 @@ func buildMihomoSubscription(user model.CustomerUser, links []model.CustomerLink
 			}
 			continue
 		}
-		if link.Snell != nil && link.Snell.Enabled && model.ValidateSnellConfig(*link.Snell) == nil {
-			cfg := model.NormalizeSnellConfig(*link.Snell)
+		regularSnells := link.Snells
+		if len(regularSnells) == 0 && link.Snell != nil {
+			regularSnells = []*model.SnellConfig{link.Snell}
+		}
+		for _, snell := range regularSnells {
+			if snell == nil || !snell.Enabled || model.ValidateSnellConfig(*snell) != nil {
+				continue
+			}
+			cfg := model.NormalizeSnellConfig(*snell)
 			key := snellConfigKey(cfg)
 			if _, exists := snellKeys[key]; !exists {
 				name := uniqueSubscriptionName(firstNonEmptyString(cfg.Name, "Snell"), names)
@@ -222,7 +229,7 @@ func buildMihomoSubscription(user model.CustomerUser, links []model.CustomerLink
 }
 
 func snellConfigKey(cfg model.SnellConfig) string {
-	return fmt.Sprintf("%s|%d|%s|%d|%s|%s|%s", cfg.Server, cfg.Port, cfg.PSK, cfg.Version, cfg.ObfsMode, cfg.ObfsHost, cfg.ObfsPath)
+	return fmt.Sprintf("%s|%d|%s|%d|%t|%s|%s|%s", cfg.Server, cfg.Port, cfg.PSK, cfg.Version, cfg.UDP, cfg.ObfsMode, cfg.ObfsHost, cfg.ObfsPath)
 }
 
 func buildSnellMihomoProxy(cfg model.SnellConfig, name string) (mihomoProxy, bool) {
@@ -236,7 +243,7 @@ func buildSnellMihomoProxy(cfg model.SnellConfig, name string) (mihomoProxy, boo
 		{"port", cfg.Port},
 		{"psk", cfg.PSK},
 		{"version", cfg.Version},
-		{"udp", true},
+		{"udp", cfg.UDP},
 	}
 	obfsFields := make([]mihomoField, 0, 3)
 	if cfg.ObfsMode != "none" {

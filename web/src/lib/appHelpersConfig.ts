@@ -29,10 +29,12 @@ export function normalizeSnellConfig(config?: SnellConfig): SnellConfig {
   return {
     enabled: Boolean(config?.enabled),
     name: (config?.name || 'Snell').trim() || 'Snell',
+    remark: (config?.remark || '').trim(),
     server: (config?.server || '').trim(),
     port: port >= 0 && port <= 65535 ? Math.trunc(port) : 0,
     psk: (config?.psk || '').trim(),
     version: version >= 1 && version <= 5 ? Math.trunc(version) : 5,
+    udp: config?.udp !== false,
     obfs_mode: config?.obfs_mode === 'http' ? 'http' : 'none',
     obfs_host: (config?.obfs_host || '').trim(),
     obfs_path: (config?.obfs_path || '').trim(),
@@ -47,6 +49,11 @@ export function normalizeSnellConfig(config?: SnellConfig): SnellConfig {
       target_client_email: (rule.target_client_email || '').trim(),
     })),
   }
+}
+
+export function normalizeSnellConfigs(configs?: SnellConfig[], legacy?: SnellConfig): SnellConfig[] {
+  const source = configs && configs.length > 0 ? configs : (legacy && (legacy.enabled || legacy.server || legacy.port || legacy.psk || legacy.forward_rules?.length) ? [legacy] : [])
+  return source.map((config) => normalizeSnellConfig(config))
 }
 
 export function normalizeImportDomain(value?: string): string {
@@ -99,6 +106,7 @@ export function buildSectionSavePayload(base: ManagedAgentConfig, draft: Managed
     },
     xui: { ...base.xui },
     snell: normalizeSnellConfig(base.snell),
+    snells: normalizeSnellConfigs(base.snells, base.snell),
   }
   switch (section) {
     case 'client':
@@ -107,7 +115,8 @@ export function buildSectionSavePayload(base: ManagedAgentConfig, draft: Managed
       payload.sort_order = Number(draft.sort_order || base.sort_order || 0)
       payload.tags = [...(draft.tags || [])]
       payload.features = { ...(draft.features || {}) }
-      payload.snell = normalizeSnellConfig(draft.snell)
+      payload.snells = normalizeSnellConfigs(draft.snells, draft.snell)
+      payload.snell = payload.snells[0] || normalizeSnellConfig(draft.snell)
       const entry = payload.entry!
       if (payload.features.realm) {
         entry.haproxy = { ...entry.haproxy, enabled: false }
@@ -153,7 +162,8 @@ export function mergeSavedSectionIntoDraft(draft: ManagedAgentConfig, saved: Man
       next.sort_order = saved.sort_order
       next.tags = [...(saved.tags || [])]
       next.features = { ...(saved.features || {}) }
-      next.snell = normalizeSnellConfig(saved.snell)
+      next.snells = normalizeSnellConfigs(saved.snells, saved.snell)
+      next.snell = next.snells[0] || normalizeSnellConfig(saved.snell)
       break
     case 'renewal':
       next.renewal = { ...(saved.renewal || {}) }
@@ -274,6 +284,7 @@ export function createEmptyManagedConfig(agentID: string, agentName?: string): M
       access_log_retention_days: 7,
     },
     snell: normalizeSnellConfig(),
+    snells: [],
   }
 }
 
@@ -296,7 +307,8 @@ export function normalizeManagedConfig(config: ManagedAgentConfig, agentID: stri
       access_log_enabled: Boolean(config.xui?.access_log_enabled),
       access_log_retention_days: Math.min(30, Math.max(1, Number(config.xui?.access_log_retention_days || 7))),
     },
-    snell: normalizeSnellConfig(config.snell),
+    snell: normalizeSnellConfigs(config.snells, config.snell)[0] || normalizeSnellConfig(config.snell),
+    snells: normalizeSnellConfigs(config.snells, config.snell),
   }
 }
 
@@ -388,7 +400,7 @@ function normalizeAgentFeatures(features: ManagedAgentConfig['features'], config
   const xui = config?.xui
   return {
     xui: features?.xui ?? Boolean(xui?.enabled || xui?.base_url || xui?.db_path || xui?.api_token),
-    snell: features?.snell ?? Boolean(config?.snell?.enabled || (config?.snell?.forward_rules || []).length),
+    snell: features?.snell ?? Boolean((config?.snells || []).some((item) => item.enabled) || config?.snell?.enabled || (config?.snell?.forward_rules || []).length),
     realm: features?.realm ?? Boolean(entry?.port_forwarding?.enabled || (entry?.port_forwarding?.rules || []).length),
     haproxy: features?.haproxy ?? Boolean(entry?.haproxy?.enabled || (entry?.haproxy?.rules || []).length),
     nat: features?.nat ?? Boolean((entry?.mappings || []).length || (entry?.addresses || []).length || entry?.import_domain || Object.keys(entry?.connection || {}).length),

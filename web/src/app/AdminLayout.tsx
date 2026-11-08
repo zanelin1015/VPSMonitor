@@ -60,6 +60,15 @@ export function AdminLayout({
             </svg>
           </span>
         }
+        headerTitleRender={(logo, title) => (
+          <div className="admin-pro-brand" aria-label={`ZaneLin，当前版本 ${navigation.serverVersionLabel}`}>
+            {logo}
+            <div className="admin-pro-brand-copy">
+              {title}
+              <span className="admin-pro-brand-version">{navigation.serverVersionLabel}</span>
+            </div>
+          </div>
+        )}
         layout="mix"
         siderWidth={216}
         collapsed={collapsed}

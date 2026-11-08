@@ -12,10 +12,12 @@ import (
 type SnellConfig struct {
 	Enabled      bool               `json:"enabled,omitempty"`
 	Name         string             `json:"name,omitempty"`
+	Remark       string             `json:"remark,omitempty"`
 	Server       string             `json:"server,omitempty"`
 	Port         int                `json:"port,omitempty"`
 	PSK          string             `json:"psk,omitempty"`
 	Version      int                `json:"version,omitempty"`
+	UDP          bool               `json:"udp,omitempty"`
 	ObfsMode     string             `json:"obfs_mode,omitempty"`
 	ObfsHost     string             `json:"obfs_host,omitempty"`
 	ObfsPath     string             `json:"obfs_path,omitempty"`
@@ -35,6 +37,7 @@ type SnellForwardRule struct {
 
 func NormalizeSnellConfig(cfg SnellConfig) SnellConfig {
 	cfg.Name = strings.TrimSpace(cfg.Name)
+	cfg.Remark = strings.TrimSpace(cfg.Remark)
 	cfg.Server = strings.TrimSpace(cfg.Server)
 	cfg.PSK = strings.TrimSpace(cfg.PSK)
 	cfg.ObfsMode = strings.ToLower(strings.TrimSpace(cfg.ObfsMode))
@@ -64,7 +67,36 @@ func NormalizeSnellConfig(cfg SnellConfig) SnellConfig {
 	if cfg.Port < 0 || cfg.Port > 65535 {
 		cfg.Port = 0
 	}
+	// Snell subscriptions have always enabled UDP in this application. Keep
+	// older configs compatible while exposing the value in the node list.
+	cfg.UDP = true
 	return cfg
+}
+
+// NormalizeSnellConfigs returns the configured node list and migrates the
+// legacy singular snell field when a list has not been saved yet.
+func NormalizeSnellConfigs(configs []SnellConfig, legacy SnellConfig) []SnellConfig {
+	if len(configs) == 0 && HasSnellConfig(legacy) {
+		configs = []SnellConfig{legacy}
+	}
+	result := make([]SnellConfig, 0, len(configs))
+	for _, cfg := range configs {
+		result = append(result, NormalizeSnellConfig(cfg))
+	}
+	return result
+}
+
+func ValidateSnellConfigs(configs []SnellConfig, legacy SnellConfig) error {
+	for _, cfg := range NormalizeSnellConfigs(configs, legacy) {
+		if err := ValidateSnellConfig(cfg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func HasSnellConfigs(configs []SnellConfig, legacy SnellConfig) bool {
+	return len(NormalizeSnellConfigs(configs, legacy)) > 0
 }
 
 func ValidateSnellConfig(cfg SnellConfig) error {

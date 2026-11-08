@@ -227,9 +227,13 @@ func (a *App) customerOverview(user model.CustomerUser) (model.CustomerOverviewR
 	for _, agent := range agents {
 		if viewAgent, ok := agentMap[agent.AgentID]; ok {
 			if agent.Config.Features.Snell {
-				viewAgent.Snell = agent.Config.Snell
+				viewAgent.Snells = model.NormalizeSnellConfigs(agent.Config.Snells, agent.Config.Snell)
+				if len(viewAgent.Snells) > 0 {
+					viewAgent.Snell = viewAgent.Snells[0]
+				}
 			} else {
 				viewAgent.Snell = model.SnellConfig{}
+				viewAgent.Snells = nil
 			}
 			agentMap[agent.AgentID] = viewAgent
 		}

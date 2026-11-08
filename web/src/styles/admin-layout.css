@@ -39,6 +39,33 @@
   stroke-linecap: square;
   stroke-linejoin: miter;
 }
+.admin-pro-brand {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 10px;
+}
+.admin-pro-brand-copy {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+}
+.admin-pro-brand-copy h1 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.admin-pro-brand-version {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .02em;
+  line-height: 1;
+  white-space: nowrap;
+}
 .admin-pro-footer {
   display: grid;
   gap: 8px;

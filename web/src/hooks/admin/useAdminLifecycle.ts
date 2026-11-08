@@ -58,6 +58,8 @@ type Options = Pick<ReturnType<typeof useAdminSession>, 'loadSession' | 'adminUs
   > & { canManageSystem: boolean }
 
 /** Session bootstrapping, screen-specific loads and polling cleanup. */
+const SUPPORT_UNREAD_POLL_MS = 15_000
+
 export function useAdminLifecycle(options: Options) {
   const {
     dashboardLoaded,
@@ -136,7 +138,7 @@ export function useAdminLifecycle(options: Options) {
     let timer: number | undefined
     const poll = async () => {
       await loadUnread()
-      if (!cancelled) timer = window.setTimeout(() => void poll(), 3000)
+      if (!cancelled) timer = window.setTimeout(() => void poll(), SUPPORT_UNREAD_POLL_MS)
     }
     void poll()
     return () => {
@@ -228,7 +230,7 @@ export function useAdminLifecycle(options: Options) {
   }
 
   useEffect(() => {
-    if (!adminUser) {
+    if (!adminUser || activeAdminPage === 'customers') {
       return
     }
     const timer = window.setInterval(() => {
@@ -246,6 +248,6 @@ export function useAdminLifecycle(options: Options) {
     return () => {
       window.clearInterval(timer)
     }
-  }, [activeTabKey, adminUser, selectedAgentId])
+  }, [activeAdminPage, activeTabKey, adminUser, selectedAgentId])
   return { supportUnreadCount, setSupportUnreadCount, logout }
 }

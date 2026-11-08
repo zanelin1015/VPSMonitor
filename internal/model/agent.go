@@ -18,6 +18,7 @@ type ManagedAgentConfig struct {
 	Entry               AgentEntryConfig   `json:"entry,omitempty"`
 	XUI                 config.XUIConfig   `json:"xui"`
 	Snell               SnellConfig        `json:"snell,omitempty"`
+	Snells              []SnellConfig      `json:"snells,omitempty"`
 }
 
 type AgentFeatureConfig struct {

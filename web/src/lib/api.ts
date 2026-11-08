@@ -6,6 +6,8 @@ export const CUSTOMER_SESSION_EXPIRED_EVENT = 'customer-session-expired'
 let customerRefreshPromise: Promise<void> | null = null
 let customerAuthGeneration = 0
 
+export const API_REQUEST_TIMEOUT_MS = 15_000
+
 export class APIError extends Error {
   status: number
 
@@ -29,7 +31,39 @@ export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> 
     await customerRefreshPromise.catch(() => {})
   }
   const generation = customerAuthGeneration
-  const request = () => fetch(requestURL, { ...init, credentials: 'same-origin' })
+  // Keep caller cancellation working while preventing network failures from
+  // leaving page loading states pending indefinitely.
+  const request = () => {
+    const sourceSignal = init?.signal
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    // Preserve a caller-provided signal exactly. Some callers use its identity
+    // to coordinate retries and cancellation; the timeout still rejects the
+    // request promise if the underlying fetch does not finish in time.
+    if (sourceSignal) {
+      const timeout = new Promise<Response>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`请求超时（${API_REQUEST_TIMEOUT_MS / 1000} 秒）`))
+        }, API_REQUEST_TIMEOUT_MS)
+      })
+      return Promise.race([
+        fetch(requestURL, { ...init, credentials: 'same-origin' }),
+        timeout,
+      ]).finally(() => {
+        if (timer !== undefined) clearTimeout(timer)
+      })
+    }
+
+    const controller = new AbortController()
+
+    timer = setTimeout(() => {
+      controller.abort(new Error(`请求超时（${API_REQUEST_TIMEOUT_MS / 1000} 秒）`))
+    }, API_REQUEST_TIMEOUT_MS)
+
+    return fetch(requestURL, { ...init, credentials: 'same-origin', signal: controller.signal }).finally(() => {
+      if (timer !== undefined) clearTimeout(timer)
+    })
+  }
   let response = await request()
   if (response.status === 401 && canRefresh && !init?.signal?.aborted) {
     try {

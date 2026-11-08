@@ -122,11 +122,15 @@ func (s *SQLiteStore) parseManagedConfig(agentID, agentName, customerDisplayName
 				Features         model.AgentFeatureConfig `json:"features"`
 				ExplicitFeatures []string                 `json:"explicit_features"`
 				Snell            model.SnellConfig        `json:"snell"`
+				Snells           []model.SnellConfig      `json:"snells"`
 			}
 			if err := json.Unmarshal([]byte(tagsJSON), &tagPayload); err == nil {
 				cfg.Tags = normalizeTags(tagPayload.Tags)
 				cfg.Features = tagPayload.Features
-				cfg.Snell = model.NormalizeSnellConfig(tagPayload.Snell)
+				cfg.Snells = model.NormalizeSnellConfigs(tagPayload.Snells, tagPayload.Snell)
+				if len(cfg.Snells) > 0 {
+					cfg.Snell = cfg.Snells[0]
+				}
 				cfg.Features.RealmExplicitlyConfigured = containsStringFold(tagPayload.ExplicitFeatures, "realm")
 				cfg.Features.HAProxyExplicitlyConfigured = containsStringFold(tagPayload.ExplicitFeatures, "haproxy")
 			}
@@ -148,7 +152,12 @@ func (s *SQLiteStore) parseManagedConfig(agentID, agentName, customerDisplayName
 		_ = json.Unmarshal([]byte(entryJSON), &cfg.Entry)
 		cfg.Entry = normalizeEntryConfig(cfg.Entry)
 	}
-	cfg.Snell = model.NormalizeSnellConfig(cfg.Snell)
+	cfg.Snells = model.NormalizeSnellConfigs(cfg.Snells, cfg.Snell)
+	if len(cfg.Snells) > 0 {
+		cfg.Snell = cfg.Snells[0]
+	} else {
+		cfg.Snell = model.NormalizeSnellConfig(cfg.Snell)
+	}
 	return cfg, nil
 }
 
@@ -169,20 +178,30 @@ func mustJSON(v any) string {
 }
 
 func managedTagsJSON(cfg model.ManagedAgentConfig) string {
-	if cfg.Features.Configured || hasAgentFeatures(cfg.Features) || cfg.Features.RealmExplicitlyConfigured || cfg.Features.HAProxyExplicitlyConfigured || model.HasSnellConfig(cfg.Snell) {
+	if cfg.Features.Configured || hasAgentFeatures(cfg.Features) || cfg.Features.RealmExplicitlyConfigured || cfg.Features.HAProxyExplicitlyConfigured || model.HasSnellConfigs(cfg.Snells, cfg.Snell) {
 		return mustJSON(struct {
 			Tags             []string                 `json:"tags"`
 			Features         model.AgentFeatureConfig `json:"features"`
 			ExplicitFeatures []string                 `json:"explicit_features,omitempty"`
 			Snell            model.SnellConfig        `json:"snell,omitempty"`
+			Snells           []model.SnellConfig      `json:"snells,omitempty"`
 		}{
 			Tags:             cfg.Tags,
 			Features:         cfg.Features,
 			ExplicitFeatures: explicitAgentFeatures(cfg.Features),
-			Snell:            model.NormalizeSnellConfig(cfg.Snell),
+			Snell:            firstSnellConfig(cfg.Snells, cfg.Snell),
+			Snells:           model.NormalizeSnellConfigs(cfg.Snells, cfg.Snell),
 		})
 	}
 	return mustJSON(cfg.Tags)
+}
+
+func firstSnellConfig(configs []model.SnellConfig, legacy model.SnellConfig) model.SnellConfig {
+	normalized := model.NormalizeSnellConfigs(configs, legacy)
+	if len(normalized) == 0 {
+		return model.NormalizeSnellConfig(legacy)
+	}
+	return normalized[0]
 }
 
 func explicitAgentFeatures(features model.AgentFeatureConfig) []string {
@@ -310,7 +329,7 @@ func normalizeTags(tags []string) []string {
 }
 
 func hasManagedConfig(cfg model.ManagedAgentConfig) bool {
-	return hasXUIConfig(cfg.XUI) || hasRenewalConfig(cfg.Renewal) || hasEntryConfig(cfg.Entry) || hasAgentFeatures(cfg.Features) || model.HasSnellConfig(cfg.Snell)
+	return hasXUIConfig(cfg.XUI) || hasRenewalConfig(cfg.Renewal) || hasEntryConfig(cfg.Entry) || hasAgentFeatures(cfg.Features) || model.HasSnellConfigs(cfg.Snells, cfg.Snell)
 }
 
 func hasAgentFeatures(features model.AgentFeatureConfig) bool {

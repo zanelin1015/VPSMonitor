@@ -141,9 +141,10 @@ type CustomerLinkView struct {
 	XrayVersion string `json:"-"`
 	// Snell is server-only metadata used when rendering the customer
 	// subscription. It must never be returned in the customer overview JSON.
-	Snell                 *SnellConfig `json:"-"`
-	SnellChain            *SnellConfig `json:"-"`
-	SubscriptionImportURL string       `json:"-"`
+	Snell                 *SnellConfig   `json:"-"`
+	Snells                []*SnellConfig `json:"-"`
+	SnellChain            *SnellConfig   `json:"-"`
+	SubscriptionImportURL string         `json:"-"`
 }
 
 // CustomerTrafficDailyUsage is the raw per-assignment delta collected from

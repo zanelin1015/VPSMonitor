@@ -134,11 +134,13 @@ export function bestAgentAddress(agent?: AgentListItem) {
     return ''
   }
   return (
+    agent.entry?.connection?.public_address ||
     agent.entry?.import_domain ||
     agent.entry?.addresses?.find(Boolean) ||
     agent.summary?.observed_ip ||
     agent.summary?.public_ipv4 ||
     agent.summary?.public_ipv6 ||
+    agent.summary?.hostname ||
     ''
   )
 }

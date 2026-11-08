@@ -4,7 +4,7 @@ import { CopyOutlined, DeleteOutlined, EditOutlined, ExportOutlined, LinkOutline
 
 import type { AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerBillingDiagnostic, DashboardAgentView } from '../types'
 import { formatDateTime } from '../lib/appHelpers'
-import { DEFAULT_ACCOUNT_PASSWORD, agentName, assignmentBindingDiagnostic, effectiveAssignmentBilling, normalizeAreaManagerAssignmentDrafts, renderAssignmentHierarchy, revenueCycleLabel } from './CustomerManagementHelpers'
+import { DEFAULT_ACCOUNT_PASSWORD, agentName, assignmentBindingDiagnostic, effectiveAssignmentBilling, normalizeAreaManagerAssignmentDrafts, renderAssignmentHierarchy, renderAssignmentLines, revenueCycleLabel } from './CustomerManagementHelpers'
 
 const { Text } = Typography
 
@@ -242,7 +242,7 @@ export function buildCustomerManagementTables({
       render: (_, record) => {
         const assignments = normalizeAreaManagerAssignmentDrafts(record.assignments || [], agents)
         if (assignments.length) {
-          return renderAssignmentHierarchy(assignments, agents)
+          return renderAssignmentLines(assignments, agents)
         }
         const agentIDs = record.agent_ids || []
         return agentIDs.length ? (

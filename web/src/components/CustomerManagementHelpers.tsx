@@ -646,6 +646,30 @@ export function renderAssignmentHierarchy(
   )
 }
 
+export function renderAssignmentLines(
+  items: Array<{ agent_id: string; inbound_id: number; inbound_tag?: string; client_email?: string; node_only?: boolean; public_client_name?: string }>,
+  agents: DashboardAgentView[],
+) {
+  if (!items.length) {
+    return <Tag>未分配</Tag>
+  }
+  return (
+    <Space direction="vertical" size={4} style={{ width: '100%' }}>
+      {items.map((item) => {
+        const realm = isRealmAssignmentDraft(item, agents)
+        const scope = realm ? '端口授权' : item.client_email || (item.node_only ? '仅节点（可新增客户端）' : '整个节点')
+        return (
+          <Space key={areaAssignmentKey(item)} size={[4, 4]} wrap style={{ width: '100%' }}>
+            <Text strong>{realm ? realmAssignmentDisplayName(item, agents) : agentName(item.agent_id, agents)}</Text>
+            {!realm ? <Tag color="blue">{item.inbound_tag || `Inbound #${item.inbound_id}`}</Tag> : null}
+            <Tag>{scope}</Tag>
+          </Space>
+        )
+      })}
+    </Space>
+  )
+}
+
 export function isRealmAssignmentTagValue(value: string): boolean {
   const normalized = value.trim().toLowerCase()
   return normalized.startsWith('realm:') || normalized.startsWith('haproxy:')

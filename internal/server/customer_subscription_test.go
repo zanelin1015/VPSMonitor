@@ -133,6 +133,20 @@ func TestBuildMihomoSubscriptionIncludesManualSnellConfig(t *testing.T) {
 	assertContains(t, content, `path: "/connect"`)
 }
 
+func TestBuildMihomoSubscriptionIncludesMultipleSnellConfigs(t *testing.T) {
+	content := buildMihomoSubscription(model.CustomerUser{}, []model.CustomerLinkView{{
+		AssignmentID: 44,
+		Snells: []*model.SnellConfig{
+			{Enabled: true, Name: "CM-HK-COX", Server: "hk.example.com", Port: 27412, PSK: "secret-1", Version: 5},
+			{Enabled: true, Name: "CM-US-COX", Server: "us.example.com", Port: 27413, PSK: "secret-2", Version: 5},
+		},
+	}})
+	assertContains(t, content, `name: "CM-HK-COX"`)
+	assertContains(t, content, `name: "CM-US-COX"`)
+	assertContains(t, content, `server: "hk.example.com"`)
+	assertContains(t, content, `server: "us.example.com"`)
+}
+
 func TestBuildMihomoSubscriptionBuildsSnellForwardChain(t *testing.T) {
 	content := buildMihomoSubscription(model.CustomerUser{}, []model.CustomerLinkView{{
 		AssignmentID:          43,

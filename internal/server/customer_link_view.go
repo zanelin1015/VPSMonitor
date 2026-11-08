@@ -125,10 +125,16 @@ func buildCustomerLinkView(
 			{Role: "entry", Label: entryName},
 		},
 	}
-	if agent, ok := agentMap[assignment.AgentID]; ok && agent.Snell.Enabled {
-		snell := model.NormalizeSnellConfig(agent.Snell)
-		if model.ValidateSnellConfig(snell) == nil {
-			link.Snell = &snell
+	if agent, ok := agentMap[assignment.AgentID]; ok {
+		for _, rawSnell := range model.NormalizeSnellConfigs(agent.Snells, agent.Snell) {
+			snell := model.NormalizeSnellConfig(rawSnell)
+			if !snell.Enabled || model.ValidateSnellConfig(snell) != nil {
+				continue
+			}
+			link.Snells = append(link.Snells, &snell)
+			if link.Snell == nil {
+				link.Snell = &snell
+			}
 		}
 	}
 	link.NodeExpireTime = customerNodeExpireTime(assignment.AgentID, agentMap)
@@ -250,23 +256,26 @@ func applySnellForwardToCustomerLink(link *model.CustomerLinkView, assignment mo
 		if sourceAgentID == assignment.AgentID {
 			continue
 		}
-		cfg := model.NormalizeSnellConfig(agentMap[sourceAgentID].Snell)
-		if !cfg.Enabled || model.ValidateSnellConfig(cfg) != nil {
-			continue
-		}
-		for _, rule := range cfg.ForwardRules {
-			if !rule.Enabled || !snellForwardMatchesAssignment(rule, assignment) {
+		for _, rawSnell := range model.NormalizeSnellConfigs(agentMap[sourceAgentID].Snells, agentMap[sourceAgentID].Snell) {
+			cfg := model.NormalizeSnellConfig(rawSnell)
+			if !cfg.Enabled || model.ValidateSnellConfig(cfg) != nil {
 				continue
 			}
-			link.Snell = nil
-			link.SnellChain = &cfg
-			link.SubscriptionImportURL = link.ImportURL
-			link.ImportURL = ""
-			link.ShadowrocketImportURL = ""
-			link.SubscriptionOnly = true
-			link.Steps = append([]model.CustomerLinkStep{{Role: "snell", Label: cfg.Name}}, link.Steps...)
-			link.Summary = cfg.Name + " → " + link.Summary
-			return
+			for _, rule := range cfg.ForwardRules {
+				if !rule.Enabled || !snellForwardMatchesAssignment(rule, assignment) {
+					continue
+				}
+				link.Snell = nil
+				link.Snells = nil
+				link.SnellChain = &cfg
+				link.SubscriptionImportURL = link.ImportURL
+				link.ImportURL = ""
+				link.ShadowrocketImportURL = ""
+				link.SubscriptionOnly = true
+				link.Steps = append([]model.CustomerLinkStep{{Role: "snell", Label: cfg.Name}}, link.Steps...)
+				link.Summary = cfg.Name + " → " + link.Summary
+				return
+			}
 		}
 	}
 }

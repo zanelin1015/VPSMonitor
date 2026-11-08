@@ -9,6 +9,12 @@ const apiOrigin = new URL(apiTarget).origin
 export default defineConfig({
   base: './',
   plugins: [react()],
+  // Dependency chunks are cached under node_modules/.vite. Rebuild them on
+  // every dev-server start so branch switches and dependency updates cannot
+  // leave the browser pointing at a deleted chunk hash.
+  optimizeDeps: {
+    force: true,
+  },
   server: {
     host: '0.0.0.0',
     port: 5173,

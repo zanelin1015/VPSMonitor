@@ -311,7 +311,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     },
   ]
 
-  function renderManagedConfigSection(section: 'basic' | 'xui' | 'nat' | 'network' | 'realm' | 'haproxy' | 'audit') {
+  function renderManagedConfigSection(section: 'basic' | 'snell' | 'xui' | 'nat' | 'network' | 'realm' | 'haproxy' | 'audit') {
     return (
       <ManagedConfigPanel
         selectedAgent={selectedAgent}
@@ -509,6 +509,12 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     ),
   }] : []
 
+  const snellTabs: TabsProps['items'] = featureEnabled.snell && canManageConfig ? [{
+    key: 'snell',
+    label: 'Snell',
+    children: renderManagedConfigSection('snell'),
+  }] : []
+
   const realmTabs: TabsProps['items'] = featureEnabled.realm ? [
     ...(canManageConfig ? [{
       key: 'realm-forwarding',
@@ -699,6 +705,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const detailTabs: TabsProps['items'] = [
     overviewTab,
     ...xuiTabs,
+    ...snellTabs,
     ...realmTabs,
     ...haProxyTabs,
     ...natTabs,

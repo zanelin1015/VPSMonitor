@@ -183,15 +183,18 @@ export interface ManagedAgentConfig {
   entry?: AgentEntryConfig
   xui: XUIConfig
   snell?: SnellConfig
+  snells?: SnellConfig[]
 }
 
 export interface SnellConfig {
   enabled?: boolean
   name?: string
+  remark?: string
   server?: string
   port?: number
   psk?: string
   version?: number
+  udp?: boolean
   obfs_mode?: 'none' | 'http' | string
   obfs_host?: string
   obfs_path?: string

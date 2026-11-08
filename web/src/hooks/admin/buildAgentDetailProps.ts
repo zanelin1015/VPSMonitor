@@ -373,7 +373,7 @@ export function buildAgentDetailProps({
         window.setTimeout(() => void loadOverview(selectedAgentId, { silent: true }), delay),
       )
     },
-    onSaveManagedConfigSection: (section) => void saveManagedConfigSection(section),
+    onSaveManagedConfigSection: (section, draftOverride) => void saveManagedConfigSection(section, draftOverride),
     onSavePrimaryDomain: savePrimaryDomain,
     onSelectTag: selectDashboardTag,
     onTagsChange: (values) => {
@@ -382,15 +382,19 @@ export function buildAgentDetailProps({
     },
     onSaveAreaTags: (values) => void saveAreaAgentTags(values),
     onXUIChange: (patch) => updateManagedConfig((current) => ({ ...current, xui: { ...current.xui, ...patch } })),
-    onSnellChange: (patch) => updateManagedConfig((current) => ({
-      ...current,
-      snell: { ...current.snell, ...patch, enabled: patch.enabled ?? Boolean(current.snell?.enabled) },
-    })),
+    onSnellChange: (patch) => updateManagedConfig((current) => {
+      const currentSnells = current.snells && current.snells.length > 0 ? current.snells : [current.snell || {}]
+      const nextSnell = { ...currentSnells[0], ...patch, enabled: patch.enabled ?? Boolean(currentSnells[0]?.enabled) }
+      return {
+        ...current,
+        snell: nextSnell,
+        snells: currentSnells.map((snell, index) => index === 0 ? nextSnell : snell),
+      }
+    }),
     onFeatureChange: (feature, enabled) =>
       updateManagedConfig((current) => {
         const features = { ...current.features, [feature]: enabled }
         const entry = { ...current.entry }
-        const snell = feature === 'snell' ? { ...current.snell, enabled } : current.snell
         if (enabled && feature === 'realm') {
           features.haproxy = false
           entry.haproxy = { ...entry.haproxy, enabled: false }
@@ -399,7 +403,7 @@ export function buildAgentDetailProps({
           features.realm = false
           entry.port_forwarding = { ...entry.port_forwarding, enabled: false, backend: 'none' }
         }
-        return { ...current, features, entry, snell }
+        return { ...current, features, entry }
       }),
   }
 }

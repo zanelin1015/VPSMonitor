@@ -1,12 +1,13 @@
 import { buildCertificateDomainOptions, normalizeNetworkPolicyRules, defaultNetworkPolicyRuleName, shouldUsePortAsNetworkPolicyName, formatRealmEndpoint, bestAgentAddress } from '../lib/managedConfigHelpers'
 import { useEffect, useId, useState } from 'react'
-import { Alert, Button, Card, Col, Collapse, Empty, Input, InputNumber, List, Row, Select, Space, Spin, Switch, Typography } from 'antd'
+import { Alert, Button, Card, Col, Collapse, Empty, Input, InputNumber, List, Modal, Row, Select, Space, Spin, Switch, Table, Typography } from 'antd'
 import { DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 
 import type { AgentEntryConfig, AgentListItem, ConfigAuditLog, ManagedAgentConfig, NetworkPortPolicyRule, RealmForwardRule, SnellConfig, VPSRenewalConfig, XUIConfig, XUILocalCertificate, XUINodeView, XUIOverview } from '../types'
 import { DEFAULT_COST_CURRENCY, type CurrencyCode } from '../lib/currency'
 import { bytesToGB, gbToBytes } from '../lib/traffic'
 import type { ConfigSectionKey } from '../lib/appHelpers'
+import { normalizeSnellConfig, normalizeSnellConfigs } from '../lib/appHelpersConfig'
 import { AdminHelpHint } from './AdminHelpHint'
 import { formatDateTime, formatRenewalHint, summarizeConfigAudit } from '../lib/appHelpers'
 import { fetchJSON } from '../lib/api'
@@ -15,7 +16,7 @@ import { HAProxyConfigSection } from './HAProxyConfigSection'
 
 const { Text, Title } = Typography
 
-export type ConfigPanelSection = 'all' | 'basic' | 'xui' | 'nat' | 'network' | 'realm' | 'haproxy' | 'audit'
+export type ConfigPanelSection = 'all' | 'basic' | 'snell' | 'xui' | 'nat' | 'network' | 'realm' | 'haproxy' | 'audit'
 
 export interface ConfigPanelProps {
   selectedAgent?: AgentListItem
@@ -75,7 +76,6 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
     onEntryAddressesTextChange,
     onEntryChange,
     onXUIChange,
-    onSnellChange,
     onCopyRealmConfig,
     realmCopyLoading = false,
     configAudits,
@@ -89,13 +89,17 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
   const [snellTargetClientKey, setSnellTargetClientKey] = useState('')
   const [snellTargetOverview, setSnellTargetOverview] = useState<XUIOverview | null>(null)
   const [snellTargetLoading, setSnellTargetLoading] = useState(false)
+  const [snellForwardModalOpen, setSnellForwardModalOpen] = useState(false)
+  const [snellForwardEditingIndex, setSnellForwardEditingIndex] = useState<number | null>(null)
+  const [snellNodeModalOpen, setSnellNodeModalOpen] = useState(false)
+  const [snellNodeEditingIndex, setSnellNodeEditingIndex] = useState<number | null>(null)
+  const [snellNodeDraft, setSnellNodeDraft] = useState<SnellConfig>(() => normalizeSnellConfig())
+  const [snellRows, setSnellRows] = useState<SnellConfig[]>([])
   const xuiFieldID = useId()
-  const snellFieldID = useId()
 
   useEffect(() => {
     let cancelled = false
     setSnellTargetOverview(null)
-    setSnellTargetClientKey('')
     if (!snellTargetAgentID) {
       return () => { cancelled = true }
     }
@@ -106,6 +110,11 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
       .finally(() => { if (!cancelled) setSnellTargetLoading(false) })
     return () => { cancelled = true }
   }, [snellTargetAgentID])
+
+  useEffect(() => {
+    if (!managedConfig) return
+    setSnellRows(normalizeSnellConfigs(managedConfig.snells, managedConfig.snell))
+  }, [managedConfig?.agent_id, managedConfig?.snells, managedConfig?.snell])
 
   if (!selectedAgent) {
     return <Empty description="先选择一个 client" />
@@ -244,6 +253,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
   const sectionSaving = Boolean(configSavingSection)
   const showSection = (target: ConfigPanelSection) => section === 'all' || section === target
   const hiddenSectionStyle = (target: ConfigPanelSection) => showSection(target) ? undefined : { display: 'none' }
+  const snellServerAddress = bestAgentAddress(selectedAgent) || snellRows[0]?.server || managedConfig.snell?.server || ''
   const sectionSaveButton = (section: ConfigSectionKey, label: string) => (
     <Button
       type="primary"
@@ -256,44 +266,105 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
       {label}
     </Button>
   )
-  const snellForwardRules = managedConfig.snell?.forward_rules || []
+  const primarySnell = snellRows[0] || normalizeSnellConfig(managedConfig.snell)
+  const snellForwardRules = primarySnell.forward_rules || []
   const snellTargetClients = (snellTargetOverview?.clients || []).filter((client) => client.enabled !== false)
   const snellTargetClientValue = (client: XUIOverview['clients'][number]) => `${client.inbound_id}::${client.client_id || client.email || ''}`
   const snellTargetClient = snellTargetClients.find((client) => snellTargetClientValue(client) === snellTargetClientKey)
-  const addSnellForwardRule = () => {
-    if (!managedConfig.features?.snell || !managedConfig.snell?.enabled || !snellTargetAgentID || !snellTargetClient) {
-      return
-    }
+  const snellForwardModalDuplicate = snellForwardRules.some((rule, index) => {
+    if (index === snellForwardEditingIndex || rule.target_agent_id !== snellTargetAgentID || !snellTargetClient) return false
     const targetClientID = (snellTargetClient.client_id || '').trim()
     const targetClientEmail = (snellTargetClient.email || '').trim()
-    const duplicate = snellForwardRules.some((rule) => {
-      if (rule.target_agent_id !== snellTargetAgentID || Number(rule.target_inbound_id || 0) !== Number(snellTargetClient.inbound_id || 0)) return false
-      return targetClientID ? (rule.target_client_id || '') === targetClientID : (rule.target_client_email || '').toLowerCase() === targetClientEmail.toLowerCase()
-    })
-    if (duplicate) {
-      return
-    }
-    const targetAgent = agents.find((agent) => agent.agent_id === snellTargetAgentID)
-    const targetLabel = snellTargetClient.comment || snellTargetClient.email || snellTargetClient.inbound_tag || `Inbound #${snellTargetClient.inbound_id}`
-    onSnellChange({
-      forward_rules: [
-        ...snellForwardRules,
-        {
-          id: `snell-forward-${Date.now()}`,
-          name: `${managedConfig.snell?.name || 'Snell'} → ${targetAgent?.agent_name || snellTargetAgentID} / ${targetLabel}`,
-          enabled: true,
-          target_agent_id: snellTargetAgentID,
-          target_inbound_id: snellTargetClient.inbound_id,
-          target_inbound_tag: snellTargetClient.inbound_tag || '',
-          target_client_id: targetClientID,
-          target_client_email: targetClientEmail,
-        },
-      ],
-    })
+    if (Number(rule.target_inbound_id || 0) !== Number(snellTargetClient.inbound_id || 0)) return false
+    return targetClientID ? (rule.target_client_id || '') === targetClientID : (rule.target_client_email || '').toLowerCase() === targetClientEmail.toLowerCase()
+  })
+  const openAddSnellForwardModal = () => {
+    setSnellForwardEditingIndex(null)
+    setSnellTargetAgentID('')
+    setSnellTargetClientKey('')
+    setSnellForwardModalOpen(true)
+  }
+  const openEditSnellForwardModal = (index: number) => {
+    const rule = snellForwardRules[index]
+    if (!rule) return
+    setSnellForwardEditingIndex(index)
+    setSnellTargetAgentID(rule.target_agent_id || '')
+    setSnellTargetClientKey(`${rule.target_inbound_id || 0}::${rule.target_client_id || rule.target_client_email || ''}`)
+    setSnellForwardModalOpen(true)
+  }
+  const closeSnellForwardModal = () => {
+    if (snellTargetLoading) return
+    setSnellForwardModalOpen(false)
+    setSnellForwardEditingIndex(null)
+    setSnellTargetAgentID('')
     setSnellTargetClientKey('')
   }
-  const removeSnellForwardRule = (index: number) => onSnellChange({ forward_rules: snellForwardRules.filter((_, currentIndex) => currentIndex !== index) })
-  const toggleSnellForwardRule = (index: number, enabled: boolean) => onSnellChange({ forward_rules: snellForwardRules.map((rule, currentIndex) => currentIndex === index ? { ...rule, enabled } : rule) })
+  const saveSnellForwardRule = () => {
+    if (!managedConfig.features?.snell || !primarySnell.enabled || !snellTargetAgentID || !snellTargetClient) {
+      return
+    }
+    if (snellForwardModalDuplicate) return
+    const targetClientID = (snellTargetClient.client_id || '').trim()
+    const targetClientEmail = (snellTargetClient.email || '').trim()
+    const targetAgent = agents.find((agent) => agent.agent_id === snellTargetAgentID)
+    const targetLabel = snellTargetClient.comment || snellTargetClient.email || snellTargetClient.inbound_tag || `Inbound #${snellTargetClient.inbound_id}`
+    const existing = snellForwardEditingIndex === null ? undefined : snellForwardRules[snellForwardEditingIndex]
+    const nextRule = {
+      id: existing?.id || `snell-forward-${Date.now()}`,
+      name: `${primarySnell.name || 'Snell'} → ${targetAgent?.agent_name || snellTargetAgentID} / ${targetLabel}`,
+      enabled: existing?.enabled !== false,
+      target_agent_id: snellTargetAgentID,
+      target_inbound_id: snellTargetClient.inbound_id,
+      target_inbound_tag: snellTargetClient.inbound_tag || '',
+      target_client_id: targetClientID,
+      target_client_email: targetClientEmail,
+    }
+    const nextRules = snellForwardEditingIndex === null
+      ? [...snellForwardRules, nextRule]
+      : snellForwardRules.map((rule, index) => index === snellForwardEditingIndex ? nextRule : rule)
+    setSnellRows((current) => {
+      const rows = current.length > 0 ? [...current] : [primarySnell]
+      rows[0] = { ...rows[0], forward_rules: nextRules }
+      return rows
+    })
+    closeSnellForwardModal()
+  }
+  const updatePrimarySnell = (patch: Partial<SnellConfig>) => setSnellRows((current) => {
+    const rows = current.length > 0 ? [...current] : [primarySnell]
+    rows[0] = normalizeSnellConfig({ ...rows[0], ...patch })
+    return rows
+  })
+  const removeSnellForwardRule = (index: number) => updatePrimarySnell({ forward_rules: snellForwardRules.filter((_, currentIndex) => currentIndex !== index) })
+  const toggleSnellForwardRule = (index: number, enabled: boolean) => updatePrimarySnell({ forward_rules: snellForwardRules.map((rule, currentIndex) => currentIndex === index ? { ...rule, enabled } : rule) })
+  const openAddSnellNodeModal = () => {
+    setSnellNodeEditingIndex(null)
+    setSnellNodeDraft(normalizeSnellConfig({ enabled: true, server: snellServerAddress, udp: true }))
+    setSnellNodeModalOpen(true)
+  }
+  const openEditSnellNodeModal = (index: number) => {
+    const row = snellRows[index]
+    if (!row) return
+    setSnellNodeEditingIndex(index)
+    setSnellNodeDraft(normalizeSnellConfig(row))
+    setSnellNodeModalOpen(true)
+  }
+  const closeSnellNodeModal = () => {
+    setSnellNodeModalOpen(false)
+    setSnellNodeEditingIndex(null)
+  }
+  const saveSnellNode = () => {
+    const nextNode = normalizeSnellConfig({ ...snellNodeDraft, server: snellServerAddress || snellNodeDraft.server, udp: true })
+    setSnellRows((current) => snellNodeEditingIndex === null
+      ? [...current, nextNode]
+      : current.map((row, index) => index === snellNodeEditingIndex ? nextNode : row))
+    closeSnellNodeModal()
+  }
+  const removeSnellNode = (index: number) => setSnellRows((current) => current.filter((_, currentIndex) => currentIndex !== index))
+  const toggleSnellNode = (index: number, enabled: boolean) => setSnellRows((current) => current.map((row, currentIndex) => currentIndex === index ? { ...row, enabled } : row))
+  const saveSnellConfig = () => {
+    const rows = snellRows.map((row) => normalizeSnellConfig({ ...row, server: snellServerAddress || row.server, udp: true }))
+    onSave('client', { ...managedConfig, snell: rows[0] || normalizeSnellConfig(), snells: rows })
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, width: '100%' }}>
@@ -373,112 +444,147 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
         </Row>
       </Card>
 
-      {managedConfig.features?.snell ? <Card className="config-section-card" bordered={false} style={hiddenSectionStyle('basic')}>
+      {managedConfig.features?.snell ? <Card className="config-section-card" bordered={false} style={hiddenSectionStyle('snell')}>
         <div className="section-title-row">
           <div>
             <Title level={4}>Snell 配置</Title>
-            <Text type="secondary">手动登记一个 Snell 节点；启用后，授权到此 Client 的用户会在 Clash/Mihomo 订阅中收到该节点。</Text>
+            <Text type="secondary">按节点列表管理 Snell；启用后，授权到此 Client 的用户会在 Clash/Mihomo 订阅中收到已启用节点。</Text>
           </div>
-          {sectionSaveButton('client', '保存 Snell 配置')}
+          <Button
+            type="primary"
+            size="small"
+            icon={<SaveOutlined />}
+            onClick={saveSnellConfig}
+            loading={configSavingSection === 'client'}
+            disabled={sectionSaving && configSavingSection !== 'client'}
+          >
+            保存 Snell 配置
+          </Button>
         </div>
-        <Row gutter={[16, 16]}>
-          <Col xs={24}>
-            <div className="xui-config-options">
-              <label className="xui-config-option" htmlFor={`${snellFieldID}-enabled`}>
-                <span>启用 Snell</span>
-                <Switch
-                  id={`${snellFieldID}-enabled`}
-                  aria-label="启用 Snell"
-                  checked={Boolean(managedConfig.snell?.enabled)}
-                  onChange={(checked) => onSnellChange({ enabled: checked })}
-                />
-              </label>
-            </div>
-          </Col>
-          <Col xs={24} md={8}>
-            <Text type="secondary">节点名称</Text>
-            <Input value={managedConfig.snell?.name || ''} placeholder="例如 HK-Snell" onChange={(event) => onSnellChange({ name: event.target.value })} />
-          </Col>
-          <Col xs={24} md={6}>
-            <Text type="secondary">服务器地址</Text>
-            <Input value={managedConfig.snell?.server || ''} placeholder="域名或 IP" onChange={(event) => onSnellChange({ server: event.target.value })} />
-          </Col>
-          <Col xs={24} md={6}>
-            <Text type="secondary">服务器端口</Text>
-            <InputNumber style={{ width: '100%' }} min={1} max={65535} precision={0} value={managedConfig.snell?.port || undefined} onChange={(value) => onSnellChange({ port: Number(value || 0) })} />
-          </Col>
-          <Col xs={24} md={8}>
-            <Text type="secondary">PSK</Text>
-            <Input.Password value={managedConfig.snell?.psk || ''} placeholder="Snell 共享密钥" onChange={(event) => onSnellChange({ psk: event.target.value })} />
-          </Col>
-          <Col xs={24} md={4}>
-            <Text type="secondary">Snell 版本</Text>
-            <InputNumber style={{ width: '100%' }} min={1} max={5} precision={0} value={managedConfig.snell?.version || 5} onChange={(value) => onSnellChange({ version: Number(value || 5) })} />
-          </Col>
-          <Col xs={24} md={4}>
-            <Text type="secondary">混淆模式</Text>
-            <Select style={{ width: '100%' }} value={managedConfig.snell?.obfs_mode || 'none'} options={[{ value: 'none', label: 'none' }, { value: 'http', label: 'http' }]} onChange={(value) => onSnellChange({ obfs_mode: value })} />
-          </Col>
-          <Col xs={24} md={4}>
-            <Text type="secondary">混淆 Host</Text>
-            <Input value={managedConfig.snell?.obfs_host || ''} disabled={managedConfig.snell?.obfs_mode !== 'http'} onChange={(event) => onSnellChange({ obfs_host: event.target.value })} />
-          </Col>
-          <Col xs={24} md={4}>
-            <Text type="secondary">混淆 Path</Text>
-            <Input value={managedConfig.snell?.obfs_path || ''} disabled={managedConfig.snell?.obfs_mode !== 'http'} placeholder="可选" onChange={(event) => onSnellChange({ obfs_path: event.target.value })} />
-          </Col>
-        </Row>
-        <div style={{ marginTop: 20 }}>
-          <Title level={5}>Snell 转发链路</Title>
-          <Text type="secondary">选择后端 X-UI 客户端后，授权该客户端的用户会收到“Snell → X-UI”订阅链路；流量、到期和倍率继承后端客户端。</Text>
-          <Row gutter={[12, 12]} style={{ marginTop: 12 }}>
-            <Col xs={24} md={8}>
-              <Text type="secondary">目标 Client</Text>
-              <Select
-                style={{ width: '100%' }}
-                showSearch
-                optionFilterProp="label"
-                value={snellTargetAgentID || undefined}
-                placeholder="选择目标 Client"
-                options={agents.filter((agent) => agent.agent_id !== selectedAgent.agent_id).map((agent) => ({ value: agent.agent_id, label: agent.agent_name || agent.agent_id }))}
-                onChange={setSnellTargetAgentID}
-              />
-            </Col>
-            <Col xs={24} md={12}>
-              <Text type="secondary">目标 X-UI 客户端</Text>
-              <Select
-                style={{ width: '100%' }}
-                showSearch
-                optionFilterProp="label"
-                loading={snellTargetLoading}
-                disabled={!snellTargetAgentID}
-                value={snellTargetClientKey || undefined}
-                placeholder={snellTargetAgentID ? '选择目标客户端' : '先选择目标 Client'}
-                options={snellTargetClients.map((client) => ({ value: snellTargetClientValue(client), label: `${client.comment || client.email || client.inbound_tag || `Inbound #${client.inbound_id}`} · ${client.inbound_tag || '-'}` }))}
-                onChange={setSnellTargetClientKey}
-              />
-            </Col>
-            <Col xs={24} md={4} style={{ display: 'flex', alignItems: 'end' }}>
-              <Button type="primary" block disabled={!managedConfig.features?.snell || !managedConfig.snell?.enabled || !snellTargetClient} onClick={addSnellForwardRule}>添加转发</Button>
-            </Col>
+        <div className="section-title-row" style={{ marginTop: 12 }}>
+          <Text type="secondary">服务器地址自动取 Client 上报的域名或 IP，列表支持分页。</Text>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openAddSnellNodeModal}>新增 Snell</Button>
+        </div>
+        <Table<SnellConfig>
+          size="small"
+          bordered
+          rowKey={(row, index) => `${row.name || 'snell'}-${row.port || 0}-${index}`}
+          style={{ marginTop: 12 }}
+          dataSource={snellRows}
+          locale={{ emptyText: '暂无 Snell 节点，请点击新增 Snell' }}
+          pagination={{ pageSize: 10, hideOnSinglePage: false, showSizeChanger: false, showTotal: (total) => `共 ${total} 个节点` }}
+          columns={[
+            { title: '名称', dataIndex: 'name', key: 'name', render: (value: string, row) => <div><Text strong>{value || 'Snell'}</Text>{row.enabled === false ? <Text type="secondary">（已停用）</Text> : null}</div> },
+            { title: '端口', dataIndex: 'port', key: 'port', width: 100, render: (value: number) => value || '-' },
+            { title: 'UDP', dataIndex: 'udp', key: 'udp', width: 90, render: (value: boolean) => value !== false ? 'true' : 'false' },
+            { title: '版本', dataIndex: 'version', key: 'version', width: 90, render: (value: number) => value || 5 },
+            { title: '备注', dataIndex: 'remark', key: 'remark', render: (value: string) => value || '-' },
+            { title: '操作', key: 'actions', width: 220, render: (_value, row) => {
+              const rowIndex = snellRows.indexOf(row)
+              return <Space size="small">
+                <Switch size="small" checked={row.enabled !== false} onChange={(checked) => toggleSnellNode(rowIndex, checked)} />
+                <Button type="link" size="small" onClick={() => openEditSnellNodeModal(rowIndex)}>修改</Button>
+                <Button type="link" size="small" danger onClick={() => removeSnellNode(rowIndex)}>删除</Button>
+              </Space>
+            } },
+          ]}
+        />
+        <Modal
+          title={snellNodeEditingIndex === null ? '新增 Snell 节点' : '修改 Snell 节点'}
+          open={snellNodeModalOpen}
+          onCancel={closeSnellNodeModal}
+          destroyOnClose
+          okText="保存"
+          cancelText="取消"
+          onOk={saveSnellNode}
+        >
+          <Row gutter={[16, 16]}>
+            <Col xs={24} md={12}><Text type="secondary">节点名称</Text><Input value={snellNodeDraft.name || ''} placeholder="例如 CM-HK-COX" onChange={(event) => setSnellNodeDraft((current) => ({ ...current, name: event.target.value }))} /></Col>
+            <Col xs={24} md={12}><Text type="secondary">备注</Text><Input value={snellNodeDraft.remark || ''} placeholder="可选" onChange={(event) => setSnellNodeDraft((current) => ({ ...current, remark: event.target.value }))} /></Col>
+            <Col xs={24} md={12}><Text type="secondary">服务器地址（自动）</Text><Input value={snellServerAddress || snellNodeDraft.server || ''} placeholder="等待 Client 上报域名或 IP" disabled /></Col>
+            <Col xs={24} md={12}><Text type="secondary">服务器端口</Text><InputNumber style={{ width: '100%' }} min={1} max={65535} precision={0} value={snellNodeDraft.port || undefined} onChange={(value) => setSnellNodeDraft((current) => ({ ...current, port: Number(value || 0) }))} /></Col>
+            <Col xs={24} md={12}><Text type="secondary">PSK</Text><Input.Password value={snellNodeDraft.psk || ''} placeholder="Snell 共享密钥" onChange={(event) => setSnellNodeDraft((current) => ({ ...current, psk: event.target.value }))} /></Col>
+            <Col xs={24} md={12}><Text type="secondary">Snell 版本</Text><InputNumber style={{ width: '100%' }} min={1} max={5} precision={0} value={snellNodeDraft.version || 5} onChange={(value) => setSnellNodeDraft((current) => ({ ...current, version: Number(value || 5) }))} /></Col>
+            <Col xs={24} md={8}><Text type="secondary">UDP</Text><div><Switch checked={snellNodeDraft.udp !== false} disabled /></div></Col>
+            <Col xs={24} md={8}><Text type="secondary">启用</Text><div><Switch checked={snellNodeDraft.enabled !== false} onChange={(checked) => setSnellNodeDraft((current) => ({ ...current, enabled: checked }))} /></div></Col>
+            <Col xs={24} md={8}><Text type="secondary">混淆模式</Text><Select style={{ width: '100%' }} value={snellNodeDraft.obfs_mode || 'none'} options={[{ value: 'none', label: 'none' }, { value: 'http', label: 'http' }]} onChange={(value) => setSnellNodeDraft((current) => ({ ...current, obfs_mode: value }))} /></Col>
+            <Col xs={24} md={12}><Text type="secondary">混淆 Host</Text><Input value={snellNodeDraft.obfs_host || ''} disabled={snellNodeDraft.obfs_mode !== 'http'} onChange={(event) => setSnellNodeDraft((current) => ({ ...current, obfs_host: event.target.value }))} /></Col>
+            <Col xs={24} md={12}><Text type="secondary">混淆 Path</Text><Input value={snellNodeDraft.obfs_path || ''} disabled={snellNodeDraft.obfs_mode !== 'http'} placeholder="可选" onChange={(event) => setSnellNodeDraft((current) => ({ ...current, obfs_path: event.target.value }))} /></Col>
           </Row>
+        </Modal>
+        <div style={{ marginTop: 20 }}>
+          <div className="section-title-row">
+            <Title level={5}>Snell 转发链路</Title>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              disabled={!managedConfig.features?.snell || !primarySnell.enabled}
+              onClick={openAddSnellForwardModal}
+            >
+              新增转发
+            </Button>
+          </div>
+          <Text type="secondary">选择后端 X-UI 客户端后，授权该客户端的用户会收到“Snell → X-UI”订阅链路；流量、到期和倍率继承后端客户端。</Text>
           {snellForwardRules.length ? (
             <List
               size="small"
               bordered
               style={{ marginTop: 12 }}
               dataSource={snellForwardRules}
-              renderItem={(rule, index) => {
+              pagination={{ pageSize: 5, hideOnSinglePage: true, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
+              renderItem={(rule) => {
                 const targetAgent = agents.find((agent) => agent.agent_id === rule.target_agent_id)
+                const ruleIndex = snellForwardRules.indexOf(rule)
                 return <List.Item actions={[
-                  <Switch key="enabled" size="small" checked={rule.enabled !== false} onChange={(checked) => toggleSnellForwardRule(index, checked)} />,
-                  <Button key="remove" type="link" danger size="small" onClick={() => removeSnellForwardRule(index)}>删除</Button>,
+                  <Switch key="enabled" size="small" checked={rule.enabled !== false} onChange={(checked) => toggleSnellForwardRule(ruleIndex, checked)} />,
+                  <Button key="edit" type="link" size="small" onClick={() => openEditSnellForwardModal(ruleIndex)}>修改</Button>,
+                  <Button key="remove" type="link" danger size="small" onClick={() => removeSnellForwardRule(ruleIndex)}>删除</Button>,
                 ]}>
-                  <List.Item.Meta title={rule.name || `${managedConfig.snell?.name || 'Snell'} → ${targetAgent?.agent_name || rule.target_agent_id}`} description={`${targetAgent?.agent_name || rule.target_agent_id} / ${rule.target_inbound_tag || `Inbound #${rule.target_inbound_id}`} / ${rule.target_client_email || rule.target_client_id || '客户端'}`} />
+                  <List.Item.Meta title={rule.name || `${primarySnell.name || 'Snell'} → ${targetAgent?.agent_name || rule.target_agent_id}`} description={`${targetAgent?.agent_name || rule.target_agent_id} / ${rule.target_inbound_tag || `Inbound #${rule.target_inbound_id}`} / ${rule.target_client_email || rule.target_client_id || '客户端'}`} />
                 </List.Item>
               }}
             />
           ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚未配置 Snell 转发链路" />}
+          <Modal
+            title={snellForwardEditingIndex === null ? '新增 Snell 转发' : '修改 Snell 转发'}
+            open={snellForwardModalOpen}
+            onCancel={closeSnellForwardModal}
+            destroyOnClose
+            okText="保存"
+            cancelText="取消"
+            okButtonProps={{ disabled: !snellTargetClient || snellForwardModalDuplicate, loading: snellTargetLoading }}
+            onOk={saveSnellForwardRule}
+          >
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              <div>
+                <Text type="secondary">目标 Client</Text>
+                <Select
+                  style={{ width: '100%', marginTop: 6 }}
+                  showSearch
+                  optionFilterProp="label"
+                  value={snellTargetAgentID || undefined}
+                  placeholder="选择目标 Client"
+                  options={agents.filter((agent) => agent.agent_id !== selectedAgent.agent_id).map((agent) => ({ value: agent.agent_id, label: agent.agent_name || agent.agent_id }))}
+                  onChange={(value) => { setSnellTargetAgentID(value); setSnellTargetClientKey('') }}
+                />
+              </div>
+              <div>
+                <Text type="secondary">目标 X-UI 客户端</Text>
+                <Select
+                  style={{ width: '100%', marginTop: 6 }}
+                  showSearch
+                  optionFilterProp="label"
+                  loading={snellTargetLoading}
+                  disabled={!snellTargetAgentID}
+                  value={snellTargetClientKey || undefined}
+                  placeholder={snellTargetAgentID ? '选择目标客户端' : '先选择目标 Client'}
+                  options={snellTargetClients.map((client) => ({ value: snellTargetClientValue(client), label: `${client.comment || client.email || client.inbound_tag || `Inbound #${client.inbound_id}`} · ${client.inbound_tag || '-'}` }))}
+                  onChange={setSnellTargetClientKey}
+                />
+              </div>
+              {snellForwardModalDuplicate ? <Alert type="warning" showIcon message="该目标客户端已存在转发链路" /> : null}
+            </Space>
+          </Modal>
         </div>
       </Card> : null}
 
