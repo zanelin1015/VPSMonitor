@@ -44,6 +44,8 @@ func (s *SQLiteStore) init() error {
 			 UNIQUE(agent_id, inbound_id, client_id, client_email, reported_at)
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_traffic_samples_lookup ON customer_traffic_samples(agent_id, inbound_id, client_email, reported_at);`,
+		`CREATE INDEX IF NOT EXISTS idx_customer_traffic_samples_email_nocase ON customer_traffic_samples(agent_id, inbound_id, client_email COLLATE NOCASE, reported_at, id);`,
+		`CREATE INDEX IF NOT EXISTS idx_customer_traffic_samples_client_id ON customer_traffic_samples(agent_id, inbound_id, client_id, reported_at, id);`,
 		`
 		CREATE TABLE IF NOT EXISTS admin_accounts (
 			id INTEGER PRIMARY KEY CHECK (id = 1),

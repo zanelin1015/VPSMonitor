@@ -17,28 +17,29 @@ import (
 )
 
 type App struct {
-	config             config.ServerConfig
-	store              *store.SQLiteStore
-	realtime           *realtimeHub
-	supportPresence    *supportPresenceHub
-	alerts             *alertService
-	demoDataSource     http.Handler
-	exchangeRatesMu    sync.Mutex
-	exchangeRatesCache model.ExchangeRatesResponse
-	dashboardCacheMu   sync.Mutex
-	dashboardCache     map[string]dashboardCacheEntry
-	topologyCache      map[string]dashboardCacheEntry
-	customerViewCache  map[string]customerOverviewCacheEntry
-	topologyBuilds     map[string]chan struct{}
-	areaTrafficMu      sync.Mutex
-	areaTrafficSamples map[string]areaManagerTrafficSample
-	areaRealtimeMu     sync.Mutex
-	areaRealtimeCache  areaManagerRealtimeContextCache
-	lookupCacheMu      sync.Mutex
-	updateLatestMu     sync.Mutex
-	updateLatestCache  map[string]updateLatestCacheEntry
-	trustedProxies     []netip.Prefix
-	loginLimiter       *loginRateLimiter
+	config              config.ServerConfig
+	store               *store.SQLiteStore
+	realtime            *realtimeHub
+	supportPresence     *supportPresenceHub
+	alerts              *alertService
+	demoDataSource      http.Handler
+	exchangeRatesMu     sync.Mutex
+	exchangeRatesCache  model.ExchangeRatesResponse
+	dashboardCacheMu    sync.Mutex
+	customerViewBuildMu sync.Mutex
+	dashboardCache      map[string]dashboardCacheEntry
+	topologyCache       map[string]dashboardCacheEntry
+	customerViewCache   map[string]customerOverviewCacheEntry
+	topologyBuilds      map[string]chan struct{}
+	areaTrafficMu       sync.Mutex
+	areaTrafficSamples  map[string]areaManagerTrafficSample
+	areaRealtimeMu      sync.Mutex
+	areaRealtimeCache   areaManagerRealtimeContextCache
+	lookupCacheMu       sync.Mutex
+	updateLatestMu      sync.Mutex
+	updateLatestCache   map[string]updateLatestCacheEntry
+	trustedProxies      []netip.Prefix
+	loginLimiter        *loginRateLimiter
 }
 
 const (

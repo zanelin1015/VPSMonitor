@@ -324,6 +324,13 @@ func activeCustomerAnnouncements(items []model.CustomerAnnouncement, now time.Ti
 }
 
 func (a *App) customerOverviewContext() (model.GlobalDashboardView, []model.AgentRecord, []model.AgentSnapshot, error) {
+	// Only one request should rebuild the global topology at a time. Customer
+	// overview and usage used to miss the cache together and each parse every
+	// agent's snapshot, which made concurrent portal requests contend for the
+	// single SQLite connection and both appear to hang.
+	a.customerViewBuildMu.Lock()
+	defer a.customerViewBuildMu.Unlock()
+
 	now := time.Now()
 	a.dashboardCacheMu.Lock()
 	if a.customerViewCache == nil {

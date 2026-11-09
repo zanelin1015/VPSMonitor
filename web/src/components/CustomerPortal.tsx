@@ -112,6 +112,13 @@ export function CustomerPortal() {
     void loadSession()
   }, [])
 
+  function openCustomerSection(next: 'overview' | 'usage' | 'links') {
+    setActiveMenu(next)
+    if (next === 'usage' && !usage && !usageLoading) {
+      void loadUsage('30d')
+    }
+  }
+
   useEffect(() => {
     const announcements = overview?.announcements || []
     const setKey = JSON.stringify(announcements.map((item) => [item.id, item.level, item.title, item.content, item.link_label, item.link_url]))
@@ -147,8 +154,10 @@ export function CustomerPortal() {
     try {
       const data = await fetchJSON<CustomerAuthResponse>('/api/v1/customer/session')
       setUser(data.user)
-      await loadOverview()
-      await loadUsage('30d')
+      // The overview is the first screen customers need. Loading usage here
+      // kept the entire portal behind a spinner while a potentially large
+      // traffic query was running; usage is loaded when its section is opened.
+      void loadOverview()
     } catch {
       setUser(null)
       setOverview(null)
@@ -167,8 +176,7 @@ export function CustomerPortal() {
       })
       setUser(data.user)
       setLoginForm({ username: data.user.username, password: '' })
-      await loadOverview()
-      await loadUsage('30d')
+      void loadOverview()
       message.success('登录成功')
     } catch (error) {
       message.error(error instanceof Error ? error.message : '登录失败')
@@ -247,7 +255,11 @@ export function CustomerPortal() {
   }
 
   async function refreshCustomerData() {
-    await Promise.all([loadOverview(), loadUsage(usageRange)])
+    const tasks = [loadOverview()]
+    if (usage || activeMenu === 'usage') {
+      tasks.push(loadUsage(usageRange))
+    }
+    await Promise.all(tasks)
   }
 
   async function saveRemark(link: CustomerLinkView) {
@@ -444,7 +456,7 @@ export function CustomerPortal() {
                   type="button"
                   className={`customer-section-nav-item${activeMenu === item.key ? ' active' : ''}`}
                   aria-current={activeMenu === item.key ? 'page' : undefined}
-                  onClick={() => setActiveMenu(item.key)}
+                  onClick={() => openCustomerSection(item.key)}
                 >
                   <span className="customer-section-nav-icon" aria-hidden="true">{item.icon}</span>
                   <span>{item.label}</span>
@@ -472,7 +484,7 @@ export function CustomerPortal() {
                     <Title level={2}>概览</Title>
                     <Text type="secondary">快速查看账号状态、授权规模和最近链路</Text>
                   </div>
-                  <Button type="link" onClick={() => setActiveMenu('links')}>查看全部链路</Button>
+                  <Button type="link" onClick={() => openCustomerSection('links')}>查看全部链路</Button>
                 </div>
                 <Alert
                   className="customer-policy-alert"
@@ -499,7 +511,7 @@ export function CustomerPortal() {
                 <Card bordered={false} className="surface-card customer-recent-links-card" title="最近授权链路">
                   <Space direction="vertical" size={10} style={{ width: '100%' }}>
                     {(overview?.links || []).slice(0, 3).map((link) => (
-                      <button key={link.assignment_id} type="button" className="customer-recent-link-row" onClick={() => setActiveMenu('links')}>
+                      <button key={link.assignment_id} type="button" className="customer-recent-link-row" onClick={() => openCustomerSection('links')}>
                         <span>
                           <strong>{customerLinkDisplayName(link, remarkDrafts[link.assignment_id])}</strong>
                           <small>{customerLinkSummaryText(link)}</small>
