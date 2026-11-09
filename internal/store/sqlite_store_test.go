@@ -11,6 +11,18 @@ import (
 	"bridge-core/internal/model"
 )
 
+func TestSQLiteStoreConfiguresConcurrentReadPool(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"), WithMaxOpenConns(7))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+
+	if got := store.db.Stats().MaxOpenConnections; got != 7 {
+		t.Fatalf("MaxOpenConnections = %d, want 7", got)
+	}
+}
+
 func TestSQLiteStoreSaveAndReload(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "bridge.db")
 	store, err := NewSQLiteStore(dbPath)

@@ -25,9 +25,10 @@ import (
 )
 
 type SQLiteStore struct {
-	db        *sql.DB
-	secrets   *CredentialCipher
-	retention SnapshotRetentionPolicy
+	db           *sql.DB
+	secrets      *CredentialCipher
+	retention    SnapshotRetentionPolicy
+	maxOpenConns int
 }
 
 type Option func(*SQLiteStore)
@@ -49,6 +50,19 @@ func WithSnapshotRetention(policy SnapshotRetentionPolicy) Option {
 	}
 }
 
+// WithMaxOpenConns controls the SQLite connection pool. SQLite still permits
+// only one writer, but WAL mode allows concurrent readers; keeping a small
+// pool prevents a slow report query from queueing unrelated HTTP requests.
+func WithMaxOpenConns(value int) Option {
+	return func(s *SQLiteStore) {
+		if value > 0 {
+			s.maxOpenConns = value
+		}
+	}
+}
+
+const defaultSQLiteMaxOpenConns = 4
+
 const (
 	adminAccountID         = 1
 	adminSessionTokenBytes = 32
@@ -63,16 +77,17 @@ func NewSQLiteStore(databasePath string, opts ...Option) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("create database dir: %w", err)
 	}
 
-	db, err := sql.Open("sqlite", databasePath)
+	db, err := sql.Open("sqlite", sqliteDatabaseDSN(databasePath))
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite database: %w", err)
 	}
-	db.SetMaxOpenConns(1)
 
-	store := &SQLiteStore{db: db}
+	store := &SQLiteStore{db: db, maxOpenConns: defaultSQLiteMaxOpenConns}
 	for _, opt := range opts {
 		opt(store)
 	}
+	db.SetMaxOpenConns(store.maxOpenConns)
+	db.SetMaxIdleConns(store.maxOpenConns)
 	if err := store.init(); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -82,6 +97,14 @@ func NewSQLiteStore(databasePath string, opts ...Option) (*SQLiteStore, error) {
 		return nil, err
 	}
 	return store, nil
+}
+
+func sqliteDatabaseDSN(databasePath string) string {
+	separator := "?"
+	if strings.Contains(databasePath, "?") {
+		separator = "&"
+	}
+	return databasePath + separator + "_pragma=foreign_keys%281%29&_pragma=busy_timeout%285000%29"
 }
 
 func (s *SQLiteStore) Close() error {

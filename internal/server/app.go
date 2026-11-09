@@ -161,6 +161,7 @@ func New(cfg config.ServerConfig) (*App, error) {
 	fs, err := store.NewSQLiteStore(
 		cfg.DatabasePath,
 		store.WithCredentialCipher(cipher),
+		store.WithMaxOpenConns(cfg.DatabaseMaxOpenConns),
 		store.WithSnapshotRetention(store.SnapshotRetentionPolicy{
 			MaxAge:      time.Duration(cfg.SnapshotRetentionDays) * 24 * time.Hour,
 			MaxPerAgent: cfg.SnapshotRetentionCount,

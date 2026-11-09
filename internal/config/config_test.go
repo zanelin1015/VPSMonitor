@@ -126,6 +126,38 @@ func TestLoadServerConfigRequiresExplicitSecureTransportChoice(t *testing.T) {
 	}
 }
 
+func TestLoadServerConfigDatabaseMaxOpenConns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "server.json")
+	if err := os.WriteFile(path, []byte(`{"allow_insecure_http":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadServerConfig(path)
+	if err != nil {
+		t.Fatalf("LoadServerConfig() error = %v", err)
+	}
+	if cfg.DatabaseMaxOpenConns != 4 {
+		t.Fatalf("default DatabaseMaxOpenConns = %d, want 4", cfg.DatabaseMaxOpenConns)
+	}
+
+	if err := os.WriteFile(path, []byte(`{"allow_insecure_http":true,"database_max_open_conns":8}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = LoadServerConfig(path)
+	if err != nil {
+		t.Fatalf("custom DatabaseMaxOpenConns rejected: %v", err)
+	}
+	if cfg.DatabaseMaxOpenConns != 8 {
+		t.Fatalf("custom DatabaseMaxOpenConns = %d, want 8", cfg.DatabaseMaxOpenConns)
+	}
+
+	if err := os.WriteFile(path, []byte(`{"allow_insecure_http":true,"database_max_open_conns":17}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadServerConfig(path); err == nil || !strings.Contains(err.Error(), "database_max_open_conns") {
+		t.Fatalf("expected database_max_open_conns validation error, got %v", err)
+	}
+}
+
 func TestDefaultXUIDBPathForOS(t *testing.T) {
 	if got := DefaultXUIDBPathForOS("linux"); got != DefaultXUIDBPath {
 		t.Fatalf("DefaultXUIDBPathForOS(linux) = %q, want %q", got, DefaultXUIDBPath)

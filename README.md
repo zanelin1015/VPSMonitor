@@ -140,6 +140,7 @@ Windows 服务默认名为 `VPSMonitorClient`。安装器会保留已有 `client
 | `allow_insecure_http` | 仅本地开发时允许 HTTP；生产环境保持 `false`。 |
 | `data_dir` | 运行数据目录，默认 `./data`。 |
 | `database_path` | SQLite 路径，默认 `$data_dir/bridge.db`。 |
+| `database_max_open_conns` | SQLite 最大连接数，默认 `4`；WAL 模式下允许并发读，仍只有一个写入者，范围 `1–16`。 |
 | `credential_key_path` | x-ui 密码加密密钥，默认 `$data_dir/credential.key`。 |
 | `registration_token` | Client 首次注册使用的共享 Token。 |
 | `admin_username` / `admin_password` | 仅首次初始化管理员时使用，之后以数据库中的账号为准。 |

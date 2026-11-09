@@ -23,6 +23,7 @@ type ServerConfig struct {
 	AllowInsecureHTTP      bool              `json:"allow_insecure_http"`
 	DataDir                string            `json:"data_dir"`
 	DatabasePath           string            `json:"database_path"`
+	DatabaseMaxOpenConns   int               `json:"database_max_open_conns,omitempty"`
 	CredentialKeyPath      string            `json:"credential_key_path"`
 	RegistrationToken      string            `json:"registration_token"`
 	TrustedProxyCIDRs      []string          `json:"trusted_proxy_cidrs"`
@@ -98,6 +99,12 @@ func LoadServerConfig(path string) (ServerConfig, error) {
 	}
 	if cfg.DatabasePath == "" {
 		cfg.DatabasePath = filepath.Join(cfg.DataDir, "bridge.db")
+	}
+	if cfg.DatabaseMaxOpenConns < 0 || cfg.DatabaseMaxOpenConns > 16 {
+		return cfg, fmt.Errorf("database_max_open_conns must be between 1 and 16")
+	}
+	if cfg.DatabaseMaxOpenConns == 0 {
+		cfg.DatabaseMaxOpenConns = 4
 	}
 	if cfg.CredentialKeyPath == "" {
 		cfg.CredentialKeyPath = filepath.Join(cfg.DataDir, "credential.key")

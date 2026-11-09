@@ -5,6 +5,7 @@
   "allow_insecure_http": false,
   "data_dir": "./data",
   "database_path": "./data/bridge.db",
+  "database_max_open_conns": 4,
   "credential_key_path": "./data/credential.key",
   "registration_token": "replace-with-registration-token",
   "trusted_proxy_cidrs": [],
