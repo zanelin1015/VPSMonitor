@@ -65,6 +65,17 @@ export function buildAgentClientTables({
   setClientConfigEditor,
 }: AgentClientTableOptions) {
   const xuiClientActionKey = (record: XUIClientView) => [record.inbound_id, record.inbound_tag || '', record.client_id || record.auth_uuid || record.auth_password || '', record.email || ''].join(':')
+  const realmAssignmentDraft = (record: RealmForwardClientView) => ({
+    agent_id: selectedAgentId,
+    inbound_id: Number(record.realm_listen_port || record.inbound_id || 0),
+    inbound_tag: record.realm_listen_tag || record.inbound_tag || '',
+    client_id: record.client_id || '',
+    client_email: record.email || '',
+    public_client_name: [
+      selectedAgent.customer_display_name || selectedAgent.agent_name || selectedAgent.agent_id,
+      record.email || record.comment || record.inbound_remark || record.inbound_tag || `Inbound #${record.inbound_id}`,
+    ].filter(Boolean).join(' - '),
+  })
   const nodeColumns: ColumnsType<XUINodeView> = [
     {
       title: '节点',
@@ -459,9 +470,12 @@ export function buildAgentClientTables({
     {
       title: '导出',
       key: 'import',
-      width: 150,
+      width: 250,
       render: (_, record) => (
         <Space wrap size={[6, 6]}>
+          <Button size="small" onClick={() => onAuthorizeCustomer(realmAssignmentDraft(record))}>
+            授权给用户
+          </Button>
           <Button size="small" disabled={!record.import_url} onClick={() => onCopyImportURL(record)}>
             复制
           </Button>
