@@ -46,6 +46,10 @@ func (s *SQLiteStore) init() error {
 		`CREATE INDEX IF NOT EXISTS idx_customer_traffic_samples_lookup ON customer_traffic_samples(agent_id, inbound_id, client_email, reported_at);`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_traffic_samples_email_nocase ON customer_traffic_samples(agent_id, inbound_id, client_email COLLATE NOCASE, reported_at, id);`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_traffic_samples_client_id ON customer_traffic_samples(agent_id, inbound_id, client_id, reported_at, id);`,
+		// Snapshot retention prunes by agent and reported_at on every heartbeat.
+		// Keep that maintenance query indexed so it does not scan the agent's
+		// complete traffic history while holding SQLite's write lock.
+		`CREATE INDEX IF NOT EXISTS idx_customer_traffic_samples_agent_reported_at ON customer_traffic_samples(agent_id, reported_at);`,
 		`
 		CREATE TABLE IF NOT EXISTS admin_accounts (
 			id INTEGER PRIMARY KEY CHECK (id = 1),

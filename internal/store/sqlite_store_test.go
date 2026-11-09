@@ -21,6 +21,11 @@ func TestSQLiteStoreConfiguresConcurrentReadPool(t *testing.T) {
 	if got := store.db.Stats().MaxOpenConnections; got != 7 {
 		t.Fatalf("MaxOpenConnections = %d, want 7", got)
 	}
+
+	var indexName string
+	if err := store.db.QueryRow(`SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?`, "idx_customer_traffic_samples_agent_reported_at").Scan(&indexName); err != nil {
+		t.Fatalf("expected traffic retention index: %v", err)
+	}
 }
 
 func TestSQLiteStoreSaveAndReload(t *testing.T) {
