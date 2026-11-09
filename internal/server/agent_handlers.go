@@ -367,7 +367,9 @@ func (a *App) handleHeartbeat(w http.ResponseWriter, r *http.Request, agentID st
 		return
 	}
 	a.clearCustomerOverviewCache()
-	go a.refreshTopologyLookupCacheFromSnapshot(agentID, snapshot)
+	if a.realtime != nil {
+		go a.refreshTopologyLookupCacheFromSnapshot(agentID, snapshot)
+	}
 	a.syncRealmConfigFromSnapshot(agentID, snapshot.Realm)
 	go a.alerts.EvaluateAgent(agentID)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})

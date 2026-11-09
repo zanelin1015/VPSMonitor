@@ -74,7 +74,12 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 		log.Printf("hydrate HAProxy targets for %s during registration failed: %v", req.AgentID, hydrateErr)
 	}
 	a.clearCustomerOverviewCache()
-	go a.refreshTopologyLookupCacheFromRegister(req, observedIP)
+	// The fully initialized application owns the background cache refresh. Tests
+	// and lightweight handlers may construct App with only a store; do not start
+	// a goroutine that can outlive that temporary store.
+	if a.realtime != nil {
+		go a.refreshTopologyLookupCacheFromRegister(req, observedIP)
+	}
 	writeJSON(w, http.StatusOK, result)
 }
 
