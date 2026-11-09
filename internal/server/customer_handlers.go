@@ -218,6 +218,12 @@ func (a *App) customerOverview(user model.CustomerUser) (model.CustomerOverviewR
 	a.realtime.applyToDashboard(&view)
 	clientMap := buildCustomerClientMap(snapshots, agents)
 	chainMap := buildCustomerChainMap(view.ClientChains, view.Links)
+	// A Realm rule can be perfectly usable even when the generic topology
+	// matcher cannot associate its target address with an inbound (for example,
+	// when Realm dials a private or loopback address).  Customer assignments are
+	// created against the forwarding listener, so add the same aliases from the
+	// forwarding resolver before rendering customer links.
+	appendForwardedCustomerChainAliases(chainMap, buildForwardedOverviewContext(agents, snapshots))
 	agentMap := make(map[string]model.DashboardAgentView, len(view.Agents))
 	for _, agent := range view.Agents {
 		agentMap[agent.AgentID] = agent

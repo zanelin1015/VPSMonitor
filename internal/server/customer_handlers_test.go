@@ -183,6 +183,70 @@ func TestBuildCustomerLinkViewUsesCustomerDisplayNames(t *testing.T) {
 	}
 }
 
+func TestForwardedCustomerAssignmentResolvesWithoutTopologyAddressMatch(t *testing.T) {
+	context := forwardedOverviewContext{
+		agentMap: map[string]model.DashboardAgentView{
+			"cn": {
+				AgentID:             "cn",
+				AgentName:           "CN Relay",
+				CustomerDisplayName: "中国入口",
+				Entry: model.AgentEntryConfig{
+					ImportDomain: "cn.example.com",
+					PortForwarding: model.RealmForwardConfig{
+						Enabled: true,
+						Backend: "realm",
+						Rules: []model.RealmForwardRule{{
+							ID:            "cn-20001",
+							Enabled:       true,
+							ListenPort:    20001,
+							TargetAgentID: "hk",
+							TargetAddress: "127.0.0.1",
+							TargetPort:    443,
+						}},
+					},
+				},
+			},
+			"hk": {
+				AgentID:             "hk",
+				AgentName:           "Hong Kong",
+				CustomerDisplayName: "香港节点",
+			},
+		},
+		targetOverviewByAgent: map[string]*model.XUIOverview{
+			"hk": {
+				Nodes: []model.XUINodeView{{ID: 7, Tag: "hk-vless", Remark: "HK VLESS", Protocol: "vless", Port: 443, Enabled: true}},
+				Clients: []model.XUIClientView{{
+					InboundID:     7,
+					InboundTag:    "hk-vless",
+					InboundRemark: "HK VLESS",
+					Protocol:      "vless",
+					Email:         "alice@example.com",
+					Enabled:       true,
+					ImportURL:     "vless://11111111-1111-1111-1111-111111111111@hk.example.com:443?security=tls#HK",
+				}},
+			},
+		},
+	}
+	chainMap := map[string]model.ClientChainView{}
+	appendForwardedCustomerChainAliases(chainMap, context)
+
+	assignment := model.CustomerAssignment{AgentID: "cn", InboundID: 20001, ClientEmail: "alice@example.com"}
+	key := customerAssignmentKey("hk", 7, "alice@example.com")
+	link := buildCustomerLinkView(assignment, chainMap, map[string]customerClientRef{
+		key: {Client: context.targetOverviewByAgent["hk"].Clients[0]},
+	}, context.agentMap)
+	if !link.Resolved || link.ImportURL == "" {
+		t.Fatalf("expected forwarded customer link to resolve from Realm config, got %#v", link)
+	}
+	parsed, err := url.Parse(link.ImportURL)
+	if err != nil || parsed.Host != "cn.example.com:20001" {
+		t.Fatalf("expected CN Realm entry URL, got %q (%v)", link.ImportURL, err)
+	}
+	if len(link.Steps) < 2 || link.Steps[1].Label != "香港节点 / HK VLESS" {
+		t.Fatalf("expected final X-UI node in customer topology, got %#v", link.Steps)
+	}
+}
+
 func TestBuildCustomerLinkViewShowsUnmatchedOutboundRoute(t *testing.T) {
 	assignment := model.CustomerAssignment{
 		ID:               7,

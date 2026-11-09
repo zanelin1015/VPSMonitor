@@ -33,6 +33,128 @@ func buildCustomerChainMap(chains []model.ClientChainView, links []model.Topolog
 	return result
 }
 
+// appendForwardedCustomerChainAliases makes forwarding-listener assignments
+// resolve to the final X-UI client even when the generic topology matcher did
+// not produce a link for the Realm/HAProxy target address.  The forwarding
+// resolver uses the configured target Client and target port directly, which
+// is the same information used to generate the forwarded import URL.
+func appendForwardedCustomerChainAliases(chainMap map[string]model.ClientChainView, context forwardedOverviewContext) {
+	if chainMap == nil || len(context.agentMap) == 0 {
+		return
+	}
+	agentIDs := make([]string, 0, len(context.agentMap))
+	for agentID := range context.agentMap {
+		agentIDs = append(agentIDs, agentID)
+	}
+	sort.Strings(agentIDs)
+	for _, sourceAgentID := range agentIDs {
+		sourceAgent := context.agentMap[sourceAgentID]
+		if realmForwardingActive(sourceAgent.Entry.PortForwarding) {
+			for _, rule := range sourceAgent.Entry.PortForwarding.Rules {
+				if !rule.Enabled || rule.ListenPort <= 0 || rule.TargetPort <= 0 {
+					continue
+				}
+				resolution := resolveRealmForwardTarget(sourceAgentID, rule, context.agentMap, context.targetOverviewByAgent)
+				if !resolution.Resolved {
+					continue
+				}
+				appendForwardedCustomerChainAliasesForResolution(chainMap, context, sourceAgentID, rule.ListenPort, resolution)
+			}
+		}
+		if !sourceAgent.Entry.HAProxy.Enabled {
+			continue
+		}
+		for _, rule := range sourceAgent.Entry.HAProxy.Rules {
+			if !rule.Enabled || rule.ListenPort <= 0 {
+				continue
+			}
+			paths, err := resolveHAProxyRulePaths(rule, context)
+			if err != nil || validateHAProxyResolvedPaths(rule, paths) != nil || len(paths) == 0 {
+				continue
+			}
+			appendForwardedCustomerChainAliasesForResolution(chainMap, context, sourceAgentID, rule.ListenPort, paths[0].Resolution)
+		}
+	}
+}
+
+func appendForwardedCustomerChainAliasesForResolution(
+	chainMap map[string]model.ClientChainView,
+	context forwardedOverviewContext,
+	sourceAgentID string,
+	listenPort int,
+	resolution realmForwardResolution,
+) {
+	if listenPort <= 0 || !resolution.Resolved || resolution.FinalAgentID == "" {
+		return
+	}
+	targetOverview := context.targetOverviewByAgent[resolution.FinalAgentID]
+	if targetOverview == nil {
+		return
+	}
+	for _, client := range targetOverview.Clients {
+		if !realmClientMatchesNode(client, resolution.FinalNode) {
+			continue
+		}
+		targetKey := customerAssignmentKey(resolution.FinalAgentID, client.InboundID, client.Email)
+		chain, ok := chainMap[targetKey]
+		if !ok {
+			chain = customerForwardedFallbackChain(context, resolution.FinalAgentID, resolution.FinalNode, client)
+		}
+		aliasKey := customerAssignmentKey(sourceAgentID, listenPort, client.Email)
+		if _, exists := chainMap[aliasKey]; !exists {
+			chainMap[aliasKey] = chain
+		}
+	}
+}
+
+func customerForwardedFallbackChain(context forwardedOverviewContext, targetAgentID string, node model.XUINodeView, client model.XUIClientView) model.ClientChainView {
+	agent := context.agentMap[targetAgentID]
+	inboundID := client.InboundID
+	if inboundID <= 0 {
+		inboundID = node.ID
+	}
+	inboundTag := firstNonEmptyString(client.InboundTag, node.Tag)
+	chain := model.ClientChainView{
+		Key:                customerAssignmentKey(targetAgentID, inboundID, client.Email),
+		RootAgentID:        targetAgentID,
+		RootAgentName:      agent.AgentName,
+		RootAgentTags:      append([]string(nil), agent.Tags...),
+		RootClientEmail:    client.Email,
+		RootClientRemark:   firstNonEmptyString(client.Comment, client.SubID),
+		RootClientEnabled:  client.Enabled,
+		RootInboundID:      inboundID,
+		RootInboundTag:     inboundTag,
+		RootInboundEnabled: node.Enabled,
+	}
+	clientLabel := firstNonEmptyString(client.Email, client.ClientID, client.AuthUUID, client.AuthPassword)
+	if clientLabel != "" {
+		chain.Steps = append(chain.Steps, model.ClientChainStep{
+			StepType:  "client",
+			AgentID:   targetAgentID,
+			AgentName: agent.AgentName,
+			AgentTags: append([]string(nil), agent.Tags...),
+			Label:     clientLabel,
+			Detail:    firstNonEmptyString(client.Comment, client.SubID),
+			Protocol:  client.Protocol,
+		})
+	}
+	port := node.Port
+	if port <= 0 {
+		port = client.InboundID
+	}
+	chain.Steps = append(chain.Steps, model.ClientChainStep{
+		StepType:  "inbound",
+		AgentID:   targetAgentID,
+		AgentName: agent.AgentName,
+		AgentTags: append([]string(nil), agent.Tags...),
+		Label:     firstNonEmptyString(node.Remark, node.Tag, inboundTag, fmt.Sprintf("Inbound #%d", inboundID)),
+		Detail:    firstNonEmptyString(node.Tag, inboundTag),
+		Protocol:  firstNonEmptyString(node.Protocol, client.Protocol),
+		Port:      port,
+	})
+	return chain
+}
+
 func customerChainMatchesInbound(chain model.ClientChainView, inbound model.TopologyInboundRef) bool {
 	if chain.RootAgentID == "" || !strings.EqualFold(chain.RootAgentID, inbound.AgentID) {
 		return false
@@ -150,6 +272,9 @@ func buildCustomerLinkView(
 	}
 	if !clientFound && chainFound {
 		clientRef, clientFound = clientMap[customerAssignmentKey(chain.RootAgentID, chain.RootInboundID, chain.RootClientEmail)]
+	}
+	if !clientFound && chainFound && assignment.ClientID != "" {
+		clientRef, clientFound = clientMap[customerAssignmentClientKey(chain.RootAgentID, chain.RootInboundID, assignment.ClientID)]
 	}
 	if clientFound {
 		link.ImportURL = clientRef.Client.ImportURL
@@ -425,6 +550,17 @@ func customerRelayNames(chain model.ClientChainView, rootAgentID string, agentMa
 			continue
 		}
 		label := firstNonEmptyString(customerAgentDisplayName(step.AgentID, agentMap), step.AgentName, step.Label)
+		// A forwarding assignment is rooted at the Realm/HAProxy listener,
+		// while the chain root is the final X-UI Client. Include the final
+		// inbound label so the customer can see the actual node behind the CN
+		// entry instead of only the target Client name.
+		if step.StepType == "inbound" && step.AgentID == chain.RootAgentID && chain.RootAgentID != rootAgentID {
+			nodeLabel := firstNonEmptyString(step.Label, step.Detail, chain.RootInboundTag)
+			agentLabel := firstNonEmptyString(customerAgentDisplayName(step.AgentID, agentMap), step.AgentName, step.AgentID)
+			if nodeLabel != "" && !strings.EqualFold(agentLabel, nodeLabel) {
+				label = agentLabel + " / " + nodeLabel
+			}
+		}
 		appendRelay(label)
 		pendingOutbound = ""
 	}
