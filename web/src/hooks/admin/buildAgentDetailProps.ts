@@ -403,6 +403,9 @@ export function buildAgentDetailProps({
           features.realm = false
           entry.port_forwarding = { ...entry.port_forwarding, enabled: false, backend: 'none' }
         }
+        if (feature === 'nat' && enabled && (!entry.connection?.public_access || entry.connection.public_access === 'direct')) {
+          entry.connection = { ...entry.connection, public_access: 'nat' }
+        }
         return { ...current, features, entry }
       }),
   }

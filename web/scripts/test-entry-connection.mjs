@@ -17,12 +17,14 @@ try {
   const outbound = await load('outbound', '../src/components/xuiActionFormShared.ts')
   const target = { type: 'xui', id: '7', port: 20001, transport: 'tcp' }
   const entry = { connection: { deployment: 'docker', docker_network: 'bridge', public_access: 'nat', public_address: 'nat.example.com' }, mappings: [{ use_for_export: true, target_type: 'xui', target_id: '7', internal_port: 20001, host_port: 30001, external_port: 333, transport: 'tcp', default_export: true }] }
-  for (const [deployment, docker_network, public_access, port] of [['native', '', 'direct', 20001], ['native', '', 'nat', 333], ['docker', 'host', 'direct', 20001], ['docker', 'host', 'nat', 333], ['docker', 'bridge', 'direct', 30001], ['docker', 'bridge', 'nat', 333]]) {
+  for (const [deployment, docker_network, public_access, port] of [['native', '', 'direct', 20001], ['native', '', 'nat', 333], ['native', '', 'cnix', 333], ['docker', 'host', 'direct', 20001], ['docker', 'host', 'nat', 333], ['docker', 'host', 'cnix', 333], ['docker', 'bridge', 'direct', 30001], ['docker', 'bridge', 'nat', 333], ['docker', 'bridge', 'cnix', 333]]) {
     const result = lib.resolveEntryEndpoint({ ...entry, connection: { ...entry.connection, deployment, docker_network, public_access } }, target, 'wrong.example.com')
     assert.equal(result.error, undefined)
     assert.equal(result.port, port)
     assert.equal(result.address, 'nat.example.com')
   }
+  assert.equal(lib.validateEntryConnection({ ...entry, connection: { ...entry.connection, public_access: 'cnix', ix_internal_address: '10.0.0.12' } }), '')
+  assert.match(lib.validateEntryConnection({ ...entry, connection: { ...entry.connection, public_access: 'cnix', ix_internal_address: 'https://10.0.0.12/path' } }), /IX 内网入口/)
   assert.match(lib.resolveEntryEndpoint({ ...entry, mappings: [] }, target).error, /缺少/)
   assert.match(lib.resolveEntryEndpoint(entry, { ...target, port: 20002 }).error, /已变化/)
   assert.match(lib.resolveEntryEndpoint(entry, { ...target, transport: 'udp' }).error, /未覆盖/)

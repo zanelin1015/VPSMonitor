@@ -136,6 +136,7 @@ export function bestAgentAddress(agent?: AgentListItem) {
   return (
     agent.entry?.connection?.public_address ||
     agent.entry?.import_domain ||
+    agent.entry?.connection?.ix_internal_address ||
     agent.entry?.addresses?.find(Boolean) ||
     agent.summary?.observed_ip ||
     agent.summary?.public_ipv4 ||
@@ -143,4 +144,25 @@ export function bestAgentAddress(agent?: AgentListItem) {
     agent.summary?.hostname ||
     ''
   )
+}
+
+export function realmForwardAddressOptions(agent?: AgentListItem) {
+  const options: { value: string; label: string }[] = []
+  const seen = new Set<string>()
+  const add = (value: string | undefined, label: string) => {
+    const normalized = String(value || '').trim()
+    if (!normalized || seen.has(normalized)) {
+      return
+    }
+    seen.add(normalized)
+    options.push({ value: normalized, label: `${label} · ${normalized}` })
+  }
+  add(agent?.entry?.import_domain, '域名')
+  add(agent?.entry?.connection?.public_address, '公网入口')
+  add(agent?.summary?.public_ipv4, '公网 IPv4')
+  add(agent?.summary?.public_ipv6, '公网 IPv6')
+  add(agent?.summary?.observed_ip, '上报公网 IP')
+  add(agent?.entry?.connection?.ix_internal_address, 'IX 内网入口 IP')
+  ;(agent?.entry?.addresses || []).forEach((address) => add(address, '备用入口'))
+  return options
 }

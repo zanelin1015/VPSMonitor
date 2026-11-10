@@ -1,4 +1,4 @@
-import { buildCertificateDomainOptions, normalizeNetworkPolicyRules, defaultNetworkPolicyRuleName, shouldUsePortAsNetworkPolicyName, formatRealmEndpoint, bestAgentAddress } from '../lib/managedConfigHelpers'
+import { buildCertificateDomainOptions, normalizeNetworkPolicyRules, defaultNetworkPolicyRuleName, shouldUsePortAsNetworkPolicyName, formatRealmEndpoint, bestAgentAddress, realmForwardAddressOptions } from '../lib/managedConfigHelpers'
 import { useEffect, useId, useState } from 'react'
 import { Alert, Button, Card, Col, Collapse, Empty, Input, InputNumber, List, Modal, Row, Select, Space, Spin, Switch, Table, Typography } from 'antd'
 import { DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
@@ -245,9 +245,10 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
   }
   const selectPortForwardTargetAgent = (index: number, agentID: string) => {
     const agent = agents.find((item) => item.agent_id === agentID)
+    const addressOptions = realmForwardAddressOptions(agent)
     updatePortForwardRule(index, {
       target_agent_id: agentID,
-      target_address: bestAgentAddress(agent) || '',
+      target_address: addressOptions[0]?.value || bestAgentAddress(agent) || '',
     })
   }
   const sectionSaving = Boolean(configSavingSection)
@@ -1111,8 +1112,14 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
             <List
               locale={{ emptyText: '暂无 Realm 转发；例如广州 Client 监听 443，转发到 HK Client 的 443/8443' }}
               dataSource={portForwarding.rules || []}
-              renderItem={(rule, index) => (
-                <List.Item
+              renderItem={(rule, index) => {
+                const targetAgent = agents.find((agent) => agent.agent_id === rule.target_agent_id)
+                const currentAddress = String(rule.target_address || '').trim()
+                const addressOptions = realmForwardAddressOptions(targetAgent)
+                if (currentAddress && !addressOptions.some((option) => option.value === currentAddress)) {
+                  addressOptions.unshift({ value: currentAddress, label: `当前配置 · ${currentAddress}` })
+                }
+                return <List.Item
                   actions={[
                     <Button key="delete" size="small" danger icon={<DeleteOutlined />} onClick={() => removePortForwardRule(index)}>
                       删除
@@ -1147,7 +1154,16 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
                     </Col>
                     <Col xs={24} md={8}>
                       <Text type="secondary">目标地址</Text>
-                      <Input value={rule.target_address || ''} placeholder="HK 公网 IP / 域名" onChange={(event) => updatePortForwardRule(index, { target_address: event.target.value })} />
+                      <Select
+                        showSearch
+                        allowClear
+                        style={{ width: '100%' }}
+                        value={rule.target_address || undefined}
+                        placeholder="选择域名 / 公网 IP / IX 内网 IP"
+                        options={addressOptions}
+                        optionFilterProp="label"
+                        onChange={(value) => updatePortForwardRule(index, { target_address: value || '' })}
+                      />
                     </Col>
                     <Col xs={12} md={4}>
                       <Text type="secondary">目标端口</Text>
@@ -1170,7 +1186,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
                     </Col>
                   </Row>
                 </List.Item>
-              )}
+              }}
             />
           </Col>
         </Row>

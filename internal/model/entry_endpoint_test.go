@@ -15,8 +15,11 @@ func TestEntryEndpointDeploymentMatrix(t *testing.T) {
 		port, hostPort              int
 	}{
 		{"native", "", "direct", 20001, 20001}, {"native", "", "nat", 333, 20001},
+		{"native", "", "cnix", 333, 20001},
 		{"docker", "host", "direct", 20001, 20001}, {"docker", "host", "nat", 333, 20001},
+		{"docker", "host", "cnix", 333, 20001},
 		{"docker", "bridge", "direct", 30001, 30001}, {"docker", "bridge", "nat", 333, 30001},
+		{"docker", "bridge", "cnix", 333, 30001},
 	} {
 		t.Run(tc.deployment+tc.network+tc.access, func(t *testing.T) {
 			entry := testMappedEntry()
@@ -28,6 +31,19 @@ func TestEntryEndpointDeploymentMatrix(t *testing.T) {
 				t.Fatalf("unexpected endpoint: %+v", out)
 			}
 		})
+	}
+}
+
+func TestCNIXConnectionAcceptsIXInternalAddress(t *testing.T) {
+	entry := testMappedEntry()
+	entry.Connection.PublicAccess = "cnix"
+	entry.Connection.IXInternalAddress = "10.0.0.12"
+	if err := ValidateEntryConnection(entry); err != nil {
+		t.Fatalf("valid CNIX connection rejected: %v", err)
+	}
+	entry.Connection.IXInternalAddress = "https://10.0.0.12/path"
+	if err := ValidateEntryConnection(entry); err == nil || !strings.Contains(err.Error(), "IX 内网入口") {
+		t.Fatalf("invalid IX address accepted: %v", err)
 	}
 }
 

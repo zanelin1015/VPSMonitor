@@ -248,8 +248,9 @@ export interface AgentEntryMapping {
 export interface EntryConnectionConfig {
   deployment?: 'native' | 'docker'
   docker_network?: 'host' | 'bridge'
-  public_access?: 'direct' | 'nat'
+  public_access?: 'direct' | 'nat' | 'cnix'
   public_address?: string
+  ix_internal_address?: string
 }
 
 export interface EntryEndpoint {

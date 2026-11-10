@@ -161,7 +161,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const realmRuleCount = managedConfig?.entry?.port_forwarding?.rules?.length || selectedAgent.entry?.port_forwarding?.rules?.length || 0
   const natMappingCount = entryConfig.mappings?.filter((mapping) => mapping.use_for_export).length || 0
   const dockerEnabled = entryConfig.connection?.deployment === 'docker'
-  const natEnabled = entryConfig.connection?.public_access === 'nat'
+  const natEnabled = featureEnabled.nat || entryConfig.connection?.public_access === 'nat' || entryConfig.connection?.public_access === 'cnix'
   const portPolicyCount = managedConfig?.entry?.network_policy?.rules?.length || selectedAgent.entry?.network_policy?.rules?.length || selectedAgent.network_policy?.rules?.length || 0
   const internalNodeCount = overview?.nodes.length ?? selectedAgent.node_count ?? 0
   const internalClientCount = overview?.clients.length ?? selectedAgent.client_count ?? 0

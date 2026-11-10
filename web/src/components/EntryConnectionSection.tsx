@@ -2,7 +2,7 @@ import { useId } from 'react'
 import { Alert, AutoComplete, Button, Card, Col, Collapse, Empty, Input, InputNumber, Row, Select, Space, Switch, Table, Tag, Typography } from 'antd'
 import { DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 import type { AgentEntryConfig, AgentEntryMapping, XUINodeView } from '../types'
-import { entryTargets, entryUsesDockerMapping, formatEntryEndpoint, resolveEntryEndpoint, validateEntryConnection } from '../lib/entryConnection'
+import { entryTargets, entryUsesDockerMapping, entryUsesPortMapping, formatEntryEndpoint, resolveEntryEndpoint, validateEntryConnection } from '../lib/entryConnection'
 import './EntryConnectionSection.css'
 
 const { Text, Title } = Typography
@@ -27,7 +27,8 @@ export function EntryConnectionSection({ mode = 'all', entry, nodes, fallbackHos
   const mappings = entry.mappings || []
   const targets = entryTargets(entry, nodes)
   const error = validateEntryConnection(entry)
-  const nat = connection.public_access === 'nat'
+  const nat = entryUsesPortMapping(entry)
+  const cnix = connection.public_access === 'cnix'
   const docker = connection.deployment === 'docker'
   const preview = targets.map((target) => ({ ...target, key: `${target.type}:${target.id}`, endpoint: resolveEntryEndpoint(entry, target, entry.import_domain || fallbackHost) }))
   const update = (index: number, patch: Partial<AgentEntryMapping>) => onChange({ mappings: mappings.map((m, i) => i === index ? { ...m, ...patch } : m) })
@@ -59,15 +60,20 @@ export function EntryConnectionSection({ mode = 'all', entry, nodes, fallbackHos
           </>}
           <Col xs={24} md={8}>
             <label htmlFor={`${id}-public`}>公网接入方式</label>
-            <Select id={`${id}-public`} value={connection.public_access || 'direct'} options={[{ value: 'direct', label: '直接公网访问' }, { value: 'nat', label: 'NAT · 外层端口映射' }]} onChange={(value) => onChange({ connection: { ...connection, public_access: value } })} />
+            <Select id={`${id}-public`} value={connection.public_access || 'direct'} options={[{ value: 'direct', label: '直接公网访问' }, { value: 'nat', label: 'NAT · 外层端口映射' }, { value: 'cnix', label: 'CNIX · 公网 + IX 内网入口' }]} onChange={(value) => onChange({ connection: { ...connection, public_access: value } })} />
           </Col>
-          <Col xs={24} md={16}>
+          <Col xs={24} md={cnix ? 8 : 16}>
             <label htmlFor={`${id}-host`}>公网入口域名 / IP</label>
             <AutoComplete id={`${id}-host`} allowClear value={connection.public_address || ''} options={domainOptions} placeholder={nat || (docker && connection.docker_network === 'bridge') ? '例如 nat.example.com，填写入站连接地址' : `留空沿用现有地址${fallbackHost ? `：${fallbackHost}` : ''}`} onChange={(value) => onChange({ connection: { ...connection, public_address: value } })} />
             <Text type="secondary" className="entry-connection-hint">只填写域名或 IP。NAT 的出口 IP 可能与入口不同，请使用供应商提供的入口地址。</Text>
           </Col>
+          {cnix && <Col xs={24} md={8}>
+            <label htmlFor={`${id}-ix-internal`}>IX 内网入口 IP</label>
+            <Input id={`${id}-ix-internal`} allowClear value={connection.ix_internal_address || ''} placeholder="例如 10.0.0.12" onChange={(event) => onChange({ connection: { ...connection, ix_internal_address: event.target.value } })} />
+            <Text type="secondary" className="entry-connection-hint">CNIX 管理员可填写 IX 网络内可达的入口地址，Realm 转发可直接选择。</Text>
+          </Col>}
         </Row>
-        <div className="entry-connection-note">{docker && connection.docker_network === 'bridge' ? '连接路径：公网入口 → 服务器端口 → x-ui 容器内端口。' : '连接路径：公网入口 → 节点监听端口。'} 映射在实际服务器或供应商控制台配置后，再登记到这里。</div>
+        <div className="entry-connection-note">{cnix ? '连接路径：公网或 IX 内网入口 → 端口映射 → 节点监听端口。' : docker && connection.docker_network === 'bridge' ? '连接路径：公网入口 → 服务器端口 → x-ui 容器内端口。' : '连接路径：公网入口 → 节点监听端口。'} 映射在实际服务器或供应商控制台配置后，再登记到这里。</div>
       </>}
 
       {showMappings && <>

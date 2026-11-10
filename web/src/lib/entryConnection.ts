@@ -32,6 +32,10 @@ export function entryUsesDockerMapping(entry: AgentEntryConfig, type?: string): 
   return type === 'xui' && entry.connection?.deployment === 'docker' && entry.connection?.docker_network === 'bridge'
 }
 
+export function entryUsesPortMapping(entry: AgentEntryConfig): boolean {
+  return entry.connection?.public_access === 'nat' || entry.connection?.public_access === 'cnix'
+}
+
 export function validEntryHost(host: string): boolean {
   const value = host.trim()
   if (value.includes(':')) {
@@ -43,7 +47,7 @@ export function validEntryHost(host: string): boolean {
 }
 
 export function entryMappingPort(entry: AgentEntryConfig, mapping: AgentEntryMapping): number {
-  return Number(entry.connection?.public_access === 'nat' ? mapping.external_port : entryUsesDockerMapping(entry, mapping.target_type) ? mapping.host_port : mapping.internal_port) || 0
+  return Number(entryUsesPortMapping(entry) ? mapping.external_port : entryUsesDockerMapping(entry, mapping.target_type) ? mapping.host_port : mapping.internal_port) || 0
 }
 
 const validPort = (port?: number) => Number.isInteger(port) && Number(port) > 0 && Number(port) <= 65535
@@ -51,6 +55,7 @@ const mappingHost = (entry: AgentEntryConfig, mapping: AgentEntryMapping) => (ma
 
 export function validateEntryConnection(entry: AgentEntryConfig): string {
   if (entry.connection?.public_address && !validEntryHost(entry.connection.public_address)) return '公网入口请填写有效域名或 IP，不包含端口或 URL 路径'
+  if (entry.connection?.ix_internal_address && !validEntryHost(entry.connection.ix_internal_address)) return 'IX 内网入口请填写有效域名或 IP，不包含端口或 URL 路径'
   const defaults = new Set<string>()
   const active: AgentEntryMapping[] = []
   for (const [index, mapping] of (entry.mappings || []).entries()) {
@@ -60,7 +65,7 @@ export function validateEntryConnection(entry: AgentEntryConfig): string {
     if (!validPort(mapping.internal_port)) return prefix + '内部端口必须为 1–65535'
     if (!['tcp', 'udp', 'both'].includes(mapping.transport || '')) return prefix + '请选择 TCP、UDP 或 TCP+UDP'
     if (entryUsesDockerMapping(entry, mapping.target_type) && !validPort(mapping.host_port)) return prefix + '请填写服务器端口（1–65535）'
-    if (entry.connection?.public_access === 'nat' && !validPort(mapping.external_port)) return prefix + '请填写公网端口（1–65535）'
+    if (entryUsesPortMapping(entry) && !validPort(mapping.external_port)) return prefix + '请填写公网端口（1–65535）'
     if (!validEntryHost(mappingHost(entry, mapping))) return prefix + '请填写公网入口域名或 IP'
     const key = `${mapping.target_type}:${mapping.target_id}`
     if (mapping.default_export && defaults.has(key)) return prefix + '同一节点只能有一个默认导出入口'
@@ -75,7 +80,7 @@ export function validateEntryConnection(entry: AgentEntryConfig): string {
 // Preview mirrors the server resolver; exported links always use the server result.
 export function resolveEntryEndpoint(entry: AgentEntryConfig, target: EntryTarget, fallbackHost = ''): EntryEndpoint {
   const bridge = entryUsesDockerMapping(entry, target.type)
-  const mapped = bridge || entry.connection?.public_access === 'nat'
+  const mapped = bridge || entryUsesPortMapping(entry)
   const base: EntryEndpoint = { internal_port: target.port, host_port: target.port, transport: target.transport, mapped }
   const fail = (error: string): EntryEndpoint => ({ ...base, error })
   if (!validPort(target.port)) return fail('节点监听端口无效')

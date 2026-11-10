@@ -34,6 +34,9 @@ func preferredRealmForwardTargetAddress(agent model.AgentRecord) string {
 	if strings.TrimSpace(agent.Config.Entry.ImportDomain) != "" {
 		return strings.TrimSpace(agent.Config.Entry.ImportDomain)
 	}
+	if strings.TrimSpace(agent.Config.Entry.Connection.PublicAddress) != "" {
+		return strings.TrimSpace(agent.Config.Entry.Connection.PublicAddress)
+	}
 	for _, address := range agent.Config.Entry.Addresses {
 		if strings.TrimSpace(address) != "" {
 			return strings.TrimSpace(address)
@@ -50,6 +53,9 @@ func preferredRealmForwardTargetAddress(agent model.AgentRecord) string {
 	}
 	if strings.TrimSpace(agent.PublicIPv6) != "" {
 		return strings.TrimSpace(agent.PublicIPv6)
+	}
+	if strings.TrimSpace(agent.Config.Entry.Connection.IXInternalAddress) != "" {
+		return strings.TrimSpace(agent.Config.Entry.Connection.IXInternalAddress)
 	}
 	return strings.TrimSpace(agent.Summary.PublicIPv6)
 }

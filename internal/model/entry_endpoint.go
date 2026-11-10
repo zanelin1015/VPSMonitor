@@ -9,10 +9,15 @@ import (
 
 // Connection describes the existing network. It never changes Docker or NAT.
 type EntryConnectionConfig struct {
-	Deployment    string `json:"deployment,omitempty"`     // native, docker
-	DockerNetwork string `json:"docker_network,omitempty"` // host, bridge
-	PublicAccess  string `json:"public_access,omitempty"`  // direct, nat
-	PublicAddress string `json:"public_address,omitempty"`
+	Deployment        string `json:"deployment,omitempty"`     // native, docker
+	DockerNetwork     string `json:"docker_network,omitempty"` // host, bridge
+	PublicAccess      string `json:"public_access,omitempty"`  // direct, nat, cnix
+	PublicAddress     string `json:"public_address,omitempty"`
+	IXInternalAddress string `json:"ix_internal_address,omitempty"`
+}
+
+func EntryUsesPortMapping(connection EntryConnectionConfig) bool {
+	return connection.PublicAccess == "nat" || connection.PublicAccess == "cnix"
 }
 
 type EntryTarget struct {
@@ -68,7 +73,7 @@ func ValidateEntryConnection(entry AgentEntryConfig) error {
 	if c.DockerNetwork != "" && c.DockerNetwork != "host" && c.DockerNetwork != "bridge" {
 		return fmt.Errorf("Docker 网络方式无效")
 	}
-	if c.PublicAccess != "" && c.PublicAccess != "direct" && c.PublicAccess != "nat" {
+	if c.PublicAccess != "" && c.PublicAccess != "direct" && c.PublicAccess != "nat" && c.PublicAccess != "cnix" {
 		return fmt.Errorf("公网接入方式无效")
 	}
 	if c.Deployment == "docker" && c.DockerNetwork == "" {
@@ -76,6 +81,9 @@ func ValidateEntryConnection(entry AgentEntryConfig) error {
 	}
 	if c.PublicAddress != "" && !ValidEntryHost(c.PublicAddress) {
 		return fmt.Errorf("公网入口请填写有效域名或 IP，不包含端口或 URL 路径")
+	}
+	if c.IXInternalAddress != "" && !ValidEntryHost(c.IXInternalAddress) {
+		return fmt.Errorf("IX 内网入口请填写有效域名或 IP，不包含端口或 URL 路径")
 	}
 	defaults := map[string]bool{}
 	var active []AgentEntryMapping
@@ -104,7 +112,7 @@ func ValidateEntryConnection(entry AgentEntryConfig) error {
 		if EntryUsesDockerMapping(entry, m.TargetType) && !validEntryPort(m.HostPort) {
 			return fmt.Errorf("%s请填写服务器端口（1–65535）", prefix)
 		}
-		if c.PublicAccess == "nat" && !validEntryPort(m.ExternalPort) {
+		if EntryUsesPortMapping(c) && !validEntryPort(m.ExternalPort) {
 			return fmt.Errorf("%s请填写公网端口（1–65535）", prefix)
 		}
 		host := firstEntryValue(m.Address, c.PublicAddress, entry.ImportDomain)
@@ -138,7 +146,7 @@ func ValidateEntryConnection(entry AgentEntryConfig) error {
 func ResolveEntryEndpoint(entry AgentEntryConfig, target EntryTarget, fallbackHost string) EntryEndpoint {
 	c := entry.Connection
 	bridge := EntryUsesDockerMapping(entry, target.Type)
-	mapped := bridge || c.PublicAccess == "nat"
+	mapped := bridge || EntryUsesPortMapping(c)
 	out := EntryEndpoint{InternalPort: target.Port, HostPort: target.Port, Transport: target.Transport, Mapped: mapped}
 	fail := func(reason string) EntryEndpoint { out.Error = reason; out.Address = ""; out.Port = 0; return out }
 	if !validEntryPort(target.Port) {
@@ -208,7 +216,7 @@ func XUIEntryTransport(node XUINodeView) string {
 }
 
 func entryMappingPort(entry AgentEntryConfig, m AgentEntryMapping) int {
-	if entry.Connection.PublicAccess == "nat" {
+	if EntryUsesPortMapping(entry.Connection) {
 		return m.ExternalPort
 	}
 	if EntryUsesDockerMapping(entry, m.TargetType) {
