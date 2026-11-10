@@ -57,8 +57,9 @@ export function customerTopologyStepLabel(step: CustomerLinkStep): string {
 export function customerLinkDisplayName(link: CustomerLinkView, draft?: string): string {
   const draftName = (draft || '').trim()
   const savedRemark = (link.remark || '').trim()
+  const importName = (link.import_name || '').trim()
   const routeName = customerLinkRouteName(link)
-  return draftName || savedRemark || routeName || link.client_email || '授权链路'
+  return draftName || savedRemark || importName || routeName || link.client_email || '授权链路'
 }
 
 export function customerLinkSummaryText(link: CustomerLinkView): string {

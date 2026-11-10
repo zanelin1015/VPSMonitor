@@ -209,7 +209,7 @@ func appendResolvedForwardedClients(overview *model.XUIOverview, context forward
 		if endpoint.Error == "" {
 			importName := ""
 			if strings.EqualFold(entry.ForwardType, "realm") {
-				importName = realmForwardedImportName(entry, context.agentMap)
+				importName = realmForwardedImportName(entry, client, context.agentMap)
 			}
 			sourceClient.ImportURL = rewriteCustomerImportURLWithName(sourceURL, endpoint.Address, endpoint.Port, importName)
 			shadowURL := firstNonEmptyString(client.ShadowrocketImportURL, model.ShadowrocketImportURL(sourceURL, context.xrayVersions[targetAgentID]))
@@ -325,11 +325,11 @@ func realmForwardedInboundTag(rule model.RealmForwardRule, client model.XUIClien
 	return fmt.Sprintf("Realm %d -> %s", rule.ListenPort, target)
 }
 
-func realmForwardedImportName(entry forwardedXUIEntry, agentMap map[string]model.DashboardAgentView) string {
-	parts := make([]string, 0, len(entry.Resolution.Hops)+2)
+func realmForwardedImportName(entry forwardedXUIEntry, client model.XUIClientView, agentMap map[string]model.DashboardAgentView) string {
+	parts := make([]string, 0, len(entry.Resolution.Hops)+1)
 	appendAgentName := func(agentID string) {
 		agent := agentMap[agentID]
-		name := compactRealmClientName(firstNonEmptyString(agent.AgentName, agent.CustomerDisplayName, agentID))
+		name := normalizeRealmImportName(firstNonEmptyString(agent.CustomerDisplayName, agent.AgentName, agentID))
 		if name == "" {
 			return
 		}
@@ -344,39 +344,15 @@ func realmForwardedImportName(entry forwardedXUIEntry, agentMap map[string]model
 			appendAgentName(hop.SourceAgentID)
 		}
 	}
-	appendAgentName(entry.Resolution.FinalAgentID)
+	clientName := normalizeRealmImportName(firstNonEmptyString(client.Email, client.Comment, client.ClientID, client.InboundRemark, client.InboundTag))
+	if clientName != "" && (len(parts) == 0 || parts[len(parts)-1] != clientName) {
+		parts = append(parts, clientName)
+	}
 	return strings.Join(parts, "-")
 }
 
-func compactRealmClientName(value string) string {
-	value = stripRealmNameParentheses(value)
-	value = strings.TrimSpace(value)
-	for _, suffix := range []string{"入口", "出口", "线路", "节点", "中转", "落地"} {
-		value = strings.TrimSuffix(strings.TrimSpace(value), suffix)
-	}
-	value = strings.TrimSpace(value)
-	for _, prefix := range []string{"IPLC", "IEPL"} {
-		if len(value) <= len(prefix) || !strings.EqualFold(value[:len(prefix)], prefix) {
-			continue
-		}
-		rest := strings.TrimLeft(value[len(prefix):], " -_·")
-		if rest != "" {
-			value = rest + prefix
-		}
-		break
-	}
-	value = strings.Map(func(r rune) rune {
-		switch r {
-		case '-', '_', ':', '/', '·':
-			return -1
-		default:
-			if r == ' ' || r == '\t' || r == '\r' || r == '\n' {
-				return -1
-			}
-			return r
-		}
-	}, value)
-	return strings.TrimSpace(value)
+func normalizeRealmImportName(value string) string {
+	return strings.TrimSpace(stripRealmNameParentheses(value))
 }
 
 func stripRealmNameParentheses(value string) string {

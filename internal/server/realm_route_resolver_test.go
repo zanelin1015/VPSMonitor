@@ -29,7 +29,7 @@ func TestResolveRealmForwardTargetAcrossMultipleHops(t *testing.T) {
 	}
 }
 
-func TestRealmForwardedImportNameCompactsClientChain(t *testing.T) {
+func TestRealmForwardedImportNameUsesCustomerDisplayNamesAndXUIClient(t *testing.T) {
 	entry := forwardedXUIEntry{
 		SourceAgent: model.DashboardAgentView{AgentID: "gz"},
 		Resolution: realmForwardResolution{
@@ -38,14 +38,15 @@ func TestRealmForwardedImportNameCompactsClientChain(t *testing.T) {
 		},
 	}
 	agents := map[string]model.DashboardAgentView{
-		"gz":    {AgentID: "gz", AgentName: "CN-广州入口（realm）"},
-		"relay": {AgentID: "relay", AgentName: "IPLC深港（realm）"},
-		"hk":    {AgentID: "hk", AgentName: "HK国际线路（x-ui）"},
+		"gz":    {AgentID: "gz", AgentName: "CN广州阿里云1", CustomerDisplayName: "CN-广州入口"},
+		"relay": {AgentID: "relay", AgentName: "YTCNIX深港", CustomerDisplayName: "IPLC深港"},
+		"hk":    {AgentID: "hk", AgentName: "HKDMITTIER4Gbps"},
 	}
-	if got := realmForwardedImportName(entry, agents); got != "CN广州-深港IPLC-HK国际" {
-		t.Fatalf("unexpected compact Realm chain name: %q", got)
+	client := model.XUIClientView{Email: "HK-SS-TEST"}
+	if got := realmForwardedImportName(entry, client, agents); got != "CN-广州入口-IPLC深港-HK-SS-TEST" {
+		t.Fatalf("unexpected Realm chain name: %q", got)
 	}
-	if got := compactRealmClientName("COX（x-ui）"); got != "COX" {
+	if got := normalizeRealmImportName("COX（x-ui）"); got != "COX" {
 		t.Fatalf("expected parenthesized link type to be removed, got %q", got)
 	}
 }

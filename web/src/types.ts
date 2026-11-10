@@ -589,6 +589,7 @@ export interface CustomerLinkView {
   inbound_tag?: string
   client_email?: string
   client_remark?: string
+  import_name?: string
   import_url?: string
   subscription_only?: boolean
   shadowrocket_import_url?: string

@@ -812,6 +812,9 @@ func customerSubscriptionNodeName(link model.CustomerLinkView) string {
 	if remark := strings.TrimSpace(link.Remark); remark != "" {
 		return remark
 	}
+	if importName := strings.TrimSpace(link.ImportName); importName != "" {
+		return importName
+	}
 	parts := []string{strings.TrimSpace(link.EntryClientName)}
 	for _, step := range link.Steps {
 		if step.Role != "relay" {

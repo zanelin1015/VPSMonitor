@@ -105,6 +105,7 @@ type CustomerLinkView struct {
 	InboundTag            string                   `json:"inbound_tag,omitempty"`
 	ClientEmail           string                   `json:"client_email,omitempty"`
 	ClientRemark          string                   `json:"client_remark,omitempty"`
+	ImportName            string                   `json:"import_name,omitempty"`
 	ImportURL             string                   `json:"import_url,omitempty"`
 	SubscriptionOnly      bool                     `json:"subscription_only,omitempty"`
 	ShadowrocketImportURL string                   `json:"shadowrocket_import_url,omitempty"`

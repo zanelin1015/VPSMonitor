@@ -325,6 +325,9 @@ func buildCustomerLinkView(
 	}
 	if publicEntry, ok := customerForwardingPublicEntry(assignment, chain, agentMap); ok {
 		endpointError = publicEntry.Error
+		if customerRealmAssignment(assignment, agentMap) {
+			link.ImportName = customerRealmImportName(assignment, chain, clientRef.Client, agentMap)
+		}
 		link.ImportURL = ""
 		if endpointError == "" {
 			sourceURL := firstNonEmptyString(clientRef.Client.ImportURL, clientRef.TemplateImportURL)
@@ -366,6 +369,67 @@ func buildCustomerLinkView(
 	}
 	applySnellForwardToCustomerLink(&link, assignment, agentMap)
 	return link
+}
+
+func customerRealmAssignment(assignment model.CustomerAssignment, agentMap map[string]model.DashboardAgentView) bool {
+	agent, ok := agentMap[assignment.AgentID]
+	if !ok || !realmForwardingActive(agent.Entry.PortForwarding) {
+		return false
+	}
+	_, found := realmRuleListeningOnPort(agent.Entry.PortForwarding.Rules, assignment.InboundID)
+	return found
+}
+
+func customerRealmImportName(assignment model.CustomerAssignment, chain model.ClientChainView, client model.XUIClientView, agentMap map[string]model.DashboardAgentView) string {
+	parts := make([]string, 0, len(chain.Steps)+2)
+	appendPart := func(value string) {
+		value = normalizeRealmImportName(value)
+		if value == "" || (len(parts) > 0 && parts[len(parts)-1] == value) {
+			return
+		}
+		parts = append(parts, value)
+	}
+	appendAgent := func(agentID, fallback string) {
+		agent := agentMap[agentID]
+		appendPart(firstNonEmptyString(agent.CustomerDisplayName, fallback, agent.AgentName, agentID))
+	}
+
+	appendAgent(assignment.AgentID, "")
+	currentAgentID := assignment.AgentID
+	currentPort := assignment.InboundID
+	visited := map[string]struct{}{}
+	for len(parts) < maxRealmForwardDepth {
+		endpointKey := realmForwardEndpointKey(currentAgentID, currentPort)
+		if _, seen := visited[endpointKey]; seen {
+			break
+		}
+		visited[endpointKey] = struct{}{}
+		currentAgent, ok := agentMap[currentAgentID]
+		if !ok || !realmForwardingActive(currentAgent.Entry.PortForwarding) {
+			break
+		}
+		rule, found := realmRuleListeningOnPort(currentAgent.Entry.PortForwarding.Rules, currentPort)
+		if !found {
+			break
+		}
+		targetAgentID := findRealmTargetAgentID(rule, agentMap)
+		if targetAgentID == "" || strings.EqualFold(targetAgentID, chain.RootAgentID) {
+			break
+		}
+		targetAgent, targetExists := agentMap[targetAgentID]
+		if !targetExists || !realmForwardingActive(targetAgent.Entry.PortForwarding) {
+			break
+		}
+		nextPort := rule.TargetPort
+		if _, nextFound := realmRuleListeningOnPort(targetAgent.Entry.PortForwarding.Rules, nextPort); !nextFound {
+			break
+		}
+		appendAgent(targetAgentID, targetAgent.AgentName)
+		currentAgentID = targetAgentID
+		currentPort = nextPort
+	}
+	appendPart(firstNonEmptyString(client.Email, assignment.ClientEmail, client.Comment, client.ClientID, client.InboundRemark, client.InboundTag))
+	return strings.Join(parts, "-")
 }
 
 func applySnellForwardToCustomerLink(link *model.CustomerLinkView, assignment model.CustomerAssignment, agentMap map[string]model.DashboardAgentView) {

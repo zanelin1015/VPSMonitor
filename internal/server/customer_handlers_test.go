@@ -486,7 +486,7 @@ func TestBuildCustomerLinkViewResolvesFirstRealmHopToFinalClient(t *testing.T) {
 	agentMap := map[string]model.DashboardAgentView{
 		"gz": {
 			AgentID:             "gz",
-			CustomerDisplayName: "Guangzhou Entry",
+			CustomerDisplayName: "CN-广州入口",
 			Entry: model.AgentEntryConfig{
 				ImportDomain: "gz.example.com",
 				PortForwarding: model.RealmForwardConfig{Enabled: true, Backend: "realm", Rules: []model.RealmForwardRule{{
@@ -498,7 +498,8 @@ func TestBuildCustomerLinkViewResolvesFirstRealmHopToFinalClient(t *testing.T) {
 			},
 		},
 		"hk": {
-			AgentID: "hk",
+			AgentID:             "hk",
+			CustomerDisplayName: "IPLC深港",
 			Entry: model.AgentEntryConfig{PortForwarding: model.RealmForwardConfig{Enabled: true, Backend: "realm", Rules: []model.RealmForwardRule{{
 				Enabled:       true,
 				ListenPort:    20001,
@@ -534,6 +535,9 @@ func TestBuildCustomerLinkViewResolvesFirstRealmHopToFinalClient(t *testing.T) {
 	}
 	if link.XrayVersion != "26.10.10" {
 		t.Fatalf("Realm entry must retain the final Xray inbound's version, got %q", link.XrayVersion)
+	}
+	if link.ImportName != "CN-广州入口-IPLC深港-xq" {
+		t.Fatalf("expected Realm import name to use customer display names and x-ui client name, got %q", link.ImportName)
 	}
 	shadowrocket, err := url.Parse(link.ShadowrocketImportURL)
 	if err != nil || shadowrocket == nil || shadowrocket.Host != parsed.Host || shadowrocket.User.String() != parsed.User.String() || shadowrocket.Query().Get("fp") != "chrome140" {
