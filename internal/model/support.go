@@ -12,21 +12,24 @@ const (
 )
 
 type SupportConversation struct {
-	ID                  int64      `json:"id"`
-	CustomerID          int64      `json:"customer_id"`
-	CustomerUsername    string     `json:"customer_username"`
-	CustomerDisplayName string     `json:"customer_display_name,omitempty"`
-	OwnerType           string     `json:"owner_type"`
-	OwnerID             int64      `json:"owner_id"`
-	IsGuest             bool       `json:"is_guest,omitempty"`
-	GuestIP             string     `json:"guest_ip,omitempty"`
-	Status              string     `json:"status"`
-	LastMessagePreview  string     `json:"last_message_preview,omitempty"`
-	LastSenderRole      string     `json:"last_sender_role,omitempty"`
-	LastMessageAt       *time.Time `json:"last_message_at,omitempty"`
-	UnreadCount         int        `json:"unread_count"`
-	CreatedAt           time.Time  `json:"created_at"`
-	UpdatedAt           time.Time  `json:"updated_at"`
+	ID                             int64      `json:"id"`
+	CustomerID                     int64      `json:"customer_id"`
+	CustomerUsername               string     `json:"customer_username"`
+	CustomerDisplayName            string     `json:"customer_display_name,omitempty"`
+	OwnerType                      string     `json:"owner_type"`
+	OwnerID                        int64      `json:"owner_id"`
+	IsGuest                        bool       `json:"is_guest,omitempty"`
+	GuestIP                        string     `json:"guest_ip,omitempty"`
+	ReferralAreaManagerID          int64      `json:"referral_area_manager_id,omitempty"`
+	ReferralAreaManagerUsername    string     `json:"referral_area_manager_username,omitempty"`
+	ReferralAreaManagerDisplayName string     `json:"referral_area_manager_display_name,omitempty"`
+	Status                         string     `json:"status"`
+	LastMessagePreview             string     `json:"last_message_preview,omitempty"`
+	LastSenderRole                 string     `json:"last_sender_role,omitempty"`
+	LastMessageAt                  *time.Time `json:"last_message_at,omitempty"`
+	UnreadCount                    int        `json:"unread_count"`
+	CreatedAt                      time.Time  `json:"created_at"`
+	UpdatedAt                      time.Time  `json:"updated_at"`
 }
 
 type SupportMessage struct {

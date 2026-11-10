@@ -679,6 +679,9 @@ export interface SupportConversation {
   owner_id: number
   is_guest?: boolean
   guest_ip?: string
+  referral_area_manager_id?: number
+  referral_area_manager_username?: string
+  referral_area_manager_display_name?: string
   status: SupportConversationStatus
   last_message_preview?: string
   last_sender_role?: SupportSenderRole

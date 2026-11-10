@@ -445,6 +445,7 @@ func supportConversationSelect(audience string) string {
 			customer.owner_type,
 			customer.owner_id,
 			customer.guest_ip,
+			` + supportReferralAreaManagerSelect(audience) + `,
 			conversation.status,
 			conversation.last_message_preview,
 			conversation.last_sender_role,
@@ -454,7 +455,23 @@ func supportConversationSelect(audience string) string {
 			conversation.updated_at
 		FROM support_conversations AS conversation
 		JOIN customer_accounts AS customer ON customer.id = conversation.customer_id
+		` + supportReferralAreaManagerJoin(audience) + `
 	`
+}
+
+func supportReferralAreaManagerSelect(audience string) string {
+	if audience != model.SupportSenderAdmin {
+		return "0, '', ''"
+	}
+	return "COALESCE(area_manager.id, 0), COALESCE(area_manager.username, ''), COALESCE(area_manager.display_name, '')"
+}
+
+func supportReferralAreaManagerJoin(audience string) string {
+	if audience != model.SupportSenderAdmin {
+		return ""
+	}
+	return `LEFT JOIN area_manager_accounts AS area_manager
+		ON customer.owner_type = 'area_manager' AND area_manager.id = customer.owner_id`
 }
 
 func scanSupportConversation(scanner rowScanner) (model.SupportConversation, error) {
@@ -473,6 +490,9 @@ func scanSupportConversation(scanner rowScanner) (model.SupportConversation, err
 		&item.OwnerType,
 		&item.OwnerID,
 		&guestIP,
+		&item.ReferralAreaManagerID,
+		&item.ReferralAreaManagerUsername,
+		&item.ReferralAreaManagerDisplayName,
 		&item.Status,
 		&item.LastMessagePreview,
 		&item.LastSenderRole,

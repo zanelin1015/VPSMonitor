@@ -246,8 +246,14 @@ func TestPublicGuestSupportScopesRecommendationURLToAreaManager(t *testing.T) {
 	if len(areaOneConversations) != 1 || !areaOneConversations[0].IsGuest || areaOneConversations[0].OwnerID != areaOne.ID {
 		t.Fatalf("area one should see only its guest conversation: %#v", areaOneConversations)
 	}
+	if areaOneConversations[0].ReferralAreaManagerID != areaOne.ID || areaOneConversations[0].ReferralAreaManagerUsername != areaOne.Username {
+		t.Fatalf("area one guest should expose recommendation source: %#v", areaOneConversations[0])
+	}
 	if len(areaTwoConversations) != 1 || !areaTwoConversations[0].IsGuest || areaTwoConversations[0].OwnerID != areaTwo.ID {
 		t.Fatalf("area two should see only its guest conversation: %#v", areaTwoConversations)
+	}
+	if areaTwoConversations[0].ReferralAreaManagerID != areaTwo.ID || areaTwoConversations[0].ReferralAreaManagerUsername != areaTwo.Username {
+		t.Fatalf("area two guest should expose recommendation source: %#v", areaTwoConversations[0])
 	}
 	if areaOneConversations[0].CustomerID == areaTwoConversations[0].CustomerID {
 		t.Fatal("same IP on different recommendation URLs must use separate guest accounts")

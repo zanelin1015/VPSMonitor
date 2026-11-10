@@ -216,6 +216,7 @@ export function AdminSupportPage({ onUnreadCountChange }: AdminSupportPageProps)
                   <span className="support-conversation-preview">{conversation.last_message_preview || '尚未发送消息'}</span>
                   <span className="support-conversation-meta">
                     <small>{conversation.is_guest ? '未登录临时账号' : `@${conversation.customer_username}`}</small>
+                    {conversation.is_guest && conversation.referral_area_manager_id ? <Tag color="geekblue">推荐页：{conversation.referral_area_manager_display_name || conversation.referral_area_manager_username}</Tag> : null}
                     {conversation.is_guest ? <Tag color="gold">访客</Tag> : null}
                     {conversation.status === 'closed' ? <Tag>已结束</Tag> : null}
                     {conversation.unread_count > 0 ? <Badge count={conversation.unread_count} overflowCount={99} /> : null}
@@ -234,7 +235,10 @@ export function AdminSupportPage({ onUnreadCountChange }: AdminSupportPageProps)
               <header className="support-thread-header">
                 <div>
                   <strong>{thread.conversation.is_guest ? `访客 · ${thread.conversation.guest_ip || '未知 IP'}` : thread.conversation.customer_display_name || thread.conversation.customer_username}</strong>
-                  <small>{thread.conversation.is_guest ? '未登录临时账号' : `@${thread.conversation.customer_username}`}</small>
+                  <small>
+                    {thread.conversation.is_guest ? '未登录临时账号' : `@${thread.conversation.customer_username}`}
+                    {thread.conversation.is_guest && thread.conversation.referral_area_manager_id ? ` · 推荐页：${thread.conversation.referral_area_manager_display_name || thread.conversation.referral_area_manager_username}` : ''}
+                  </small>
                 </div>
                 {thread.conversation.status === 'open' ? (
                   <Button
