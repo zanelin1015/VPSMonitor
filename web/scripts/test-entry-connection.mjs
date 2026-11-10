@@ -14,6 +14,7 @@ try {
   }
   const lib = await load('entry', '../src/lib/entryConnection.ts')
   const config = await load('config', '../src/lib/appHelpersConfig.ts')
+  const helpers = await load('helpers', '../src/lib/managedConfigHelpers.ts')
   const outbound = await load('outbound', '../src/components/xuiActionFormShared.ts')
   const target = { type: 'xui', id: '7', port: 20001, transport: 'tcp' }
   const entry = { connection: { deployment: 'docker', docker_network: 'bridge', public_access: 'nat', public_address: 'nat.example.com' }, mappings: [{ use_for_export: true, target_type: 'xui', target_id: '7', internal_port: 20001, host_port: 30001, external_port: 333, transport: 'tcp', default_export: true }] }
@@ -25,6 +26,11 @@ try {
   }
   assert.equal(lib.validateEntryConnection({ ...entry, connection: { ...entry.connection, public_access: 'cnix', ix_internal_address: '10.0.0.12' } }), '')
   assert.match(lib.validateEntryConnection({ ...entry, connection: { ...entry.connection, public_access: 'cnix', ix_internal_address: 'https://10.0.0.12/path' } }), /IX 内网入口/)
+  const realmTarget = { agent_id: 'relay', entry: { port_forwarding: { rules: [{ enabled: true, name: 'B -> C', listen_port: 20002 }] } }, summary: {} }
+  const realmOptions = helpers.realmForwardTargetPortOptions(realmTarget, { nodes: [{ id: 7, remark: 'C 节点', port: 15601, enabled: true }], clients: [], outbounds: [], routing_rules: [], certificates: [], agent_id: 'relay', reported_at: '', collected_at: '', summary: {}, node_count: 1, client_count: 0, online_client_count: 0 })
+  assert.equal(realmOptions[0].port, 20002, 'relay target should prefer its Realm listener')
+  const nodeOptions = helpers.realmForwardTargetPortOptions({ agent_id: 'xui', entry: { port_forwarding: { rules: [] } }, summary: {} }, { nodes: [{ id: 7, remark: 'C 节点', port: 15601, enabled: true }], clients: [], outbounds: [], routing_rules: [], certificates: [], agent_id: 'xui', reported_at: '', collected_at: '', summary: {}, node_count: 1, client_count: 0, online_client_count: 0 })
+  assert.equal(nodeOptions[0].port, 15601, 'x-ui target should prefer its node port')
   assert.match(lib.resolveEntryEndpoint({ ...entry, mappings: [] }, target).error, /缺少/)
   assert.match(lib.resolveEntryEndpoint(entry, { ...target, port: 20002 }).error, /已变化/)
   assert.match(lib.resolveEntryEndpoint(entry, { ...target, transport: 'udp' }).error, /未覆盖/)

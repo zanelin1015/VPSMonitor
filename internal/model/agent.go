@@ -142,16 +142,17 @@ type RealmForwardConfig struct {
 }
 
 type RealmForwardRule struct {
-	ID            string `json:"id,omitempty"`
-	Name          string `json:"name,omitempty"`
-	Enabled       bool   `json:"enabled,omitempty"`
-	ListenAddress string `json:"listen_address,omitempty"`
-	ListenPort    int    `json:"listen_port,omitempty"`
-	TargetAgentID string `json:"target_agent_id,omitempty"`
-	TargetAddress string `json:"target_address,omitempty"`
-	TargetPort    int    `json:"target_port,omitempty"`
-	Network       string `json:"network,omitempty"`
-	Note          string `json:"note,omitempty"`
+	ID             string `json:"id,omitempty"`
+	Name           string `json:"name,omitempty"`
+	Enabled        bool   `json:"enabled,omitempty"`
+	ListenAddress  string `json:"listen_address,omitempty"`
+	ListenPort     int    `json:"listen_port,omitempty"`
+	TargetAgentID  string `json:"target_agent_id,omitempty"`
+	TargetAddress  string `json:"target_address,omitempty"`
+	TargetPort     int    `json:"target_port,omitempty"`
+	TargetPortMode string `json:"target_port_mode,omitempty"` // auto, custom
+	Network        string `json:"network,omitempty"`
+	Note           string `json:"note,omitempty"`
 }
 
 type HAProxyConfig struct {

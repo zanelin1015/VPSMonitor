@@ -340,6 +340,7 @@ function normalizeRealmForwardConfig(config?: RealmForwardConfig): RealmForwardC
       target_agent_id: rule.target_agent_id || '',
       target_address: rule.target_address || '',
       target_port: Math.max(0, Number(rule.target_port || 0)),
+      target_port_mode: rule.target_port_mode === 'custom' ? 'custom' : 'auto',
       network: 'both',
       note: rule.note || '',
     })),

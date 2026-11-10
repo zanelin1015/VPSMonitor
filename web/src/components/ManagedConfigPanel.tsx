@@ -1,4 +1,4 @@
-import { buildCertificateDomainOptions, normalizeNetworkPolicyRules, defaultNetworkPolicyRuleName, shouldUsePortAsNetworkPolicyName, formatRealmEndpoint, bestAgentAddress, realmForwardAddressOptions } from '../lib/managedConfigHelpers'
+import { buildCertificateDomainOptions, normalizeNetworkPolicyRules, defaultNetworkPolicyRuleName, shouldUsePortAsNetworkPolicyName, formatRealmEndpoint, bestAgentAddress, realmForwardAddressOptions, realmForwardTargetPortOptions } from '../lib/managedConfigHelpers'
 import { useEffect, useId, useState } from 'react'
 import { Alert, Button, Card, Col, Collapse, Empty, Input, InputNumber, List, Modal, Row, Select, Space, Spin, Switch, Table, Typography } from 'antd'
 import { DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
@@ -7,7 +7,7 @@ import type { AgentEntryConfig, AgentListItem, ConfigAuditLog, ManagedAgentConfi
 import { DEFAULT_COST_CURRENCY, type CurrencyCode } from '../lib/currency'
 import { bytesToGB, gbToBytes } from '../lib/traffic'
 import type { ConfigSectionKey } from '../lib/appHelpers'
-import { normalizeSnellConfig, normalizeSnellConfigs } from '../lib/appHelpersConfig'
+import { normalizeSnellConfig, normalizeSnellConfigs, normalizeXUIOverview } from '../lib/appHelpersConfig'
 import { AdminHelpHint } from './AdminHelpHint'
 import { formatDateTime, formatRenewalHint, summarizeConfigAudit } from '../lib/appHelpers'
 import { fetchJSON } from '../lib/api'
@@ -95,6 +95,8 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
   const [snellNodeEditingIndex, setSnellNodeEditingIndex] = useState<number | null>(null)
   const [snellNodeDraft, setSnellNodeDraft] = useState<SnellConfig>(() => normalizeSnellConfig())
   const [snellRows, setSnellRows] = useState<SnellConfig[]>([])
+  const [realmTargetOverviews, setRealmTargetOverviews] = useState<Record<string, XUIOverview>>({})
+  const [realmTargetOverviewLoading, setRealmTargetOverviewLoading] = useState<Record<string, boolean>>({})
   const xuiFieldID = useId()
 
   useEffect(() => {
@@ -115,6 +117,54 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
     if (!managedConfig) return
     setSnellRows(normalizeSnellConfigs(managedConfig.snells, managedConfig.snell))
   }, [managedConfig?.agent_id, managedConfig?.snells, managedConfig?.snell])
+
+  const realmTargetAgentIDs = Array.from(new Set((managedConfig?.entry?.port_forwarding?.rules || []).map((rule) => rule.target_agent_id || '').filter(Boolean))).sort()
+  const realmTargetAgentKey = realmTargetAgentIDs.join('|')
+  useEffect(() => {
+    let cancelled = false
+    realmTargetAgentIDs.forEach((agentID) => {
+      if (realmTargetOverviews[agentID] || realmTargetOverviewLoading[agentID]) {
+        return
+      }
+      setRealmTargetOverviewLoading((current) => ({ ...current, [agentID]: true }))
+      void fetchJSON<XUIOverview>(`/api/v1/agents/${encodeURIComponent(agentID)}/xui/overview`)
+        .then((overview) => {
+          if (!cancelled) {
+            setRealmTargetOverviews((current) => ({ ...current, [agentID]: normalizeXUIOverview(overview) }))
+          }
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (!cancelled) {
+            setRealmTargetOverviewLoading((current) => ({ ...current, [agentID]: false }))
+          }
+        })
+    })
+    return () => { cancelled = true }
+  }, [realmTargetAgentKey])
+
+  useEffect(() => {
+    const rules = managedConfig?.entry?.port_forwarding?.rules || []
+    if (!rules.length) {
+      return
+    }
+    let changed = false
+    const nextRules = rules.map((rule) => {
+      if (!rule.target_agent_id || rule.target_port_mode === 'custom' || Number(rule.target_port || 0) > 0) {
+        return rule
+      }
+      const agent = agents.find((item) => item.agent_id === rule.target_agent_id)
+      const option = realmForwardTargetPortOptions(agent, realmTargetOverviews[rule.target_agent_id])[0]
+      if (!option) {
+        return rule
+      }
+      changed = true
+      return { ...rule, target_port: option.port, target_port_mode: 'auto' as const }
+    })
+    if (changed) {
+      onEntryChange({ port_forwarding: { ...managedConfig?.entry?.port_forwarding, rules: nextRules } })
+    }
+  }, [managedConfig?.entry?.port_forwarding?.rules, realmTargetOverviews, agents, onEntryChange])
 
   if (!selectedAgent) {
     return <Empty description="先选择一个 client" />
@@ -234,6 +284,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
           target_agent_id: '',
           target_address: '',
           target_port: 443,
+          target_port_mode: 'auto',
           network: 'both',
           note: '',
         },
@@ -246,9 +297,12 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
   const selectPortForwardTargetAgent = (index: number, agentID: string) => {
     const agent = agents.find((item) => item.agent_id === agentID)
     const addressOptions = realmForwardAddressOptions(agent)
+    const portOption = realmForwardTargetPortOptions(agent, realmTargetOverviews[agentID])[0]
     updatePortForwardRule(index, {
       target_agent_id: agentID,
       target_address: addressOptions[0]?.value || bestAgentAddress(agent) || '',
+      target_port: portOption?.port || 0,
+      target_port_mode: 'auto',
     })
   }
   const sectionSaving = Boolean(configSavingSection)
@@ -1116,6 +1170,20 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
                 const targetAgent = agents.find((agent) => agent.agent_id === rule.target_agent_id)
                 const currentAddress = String(rule.target_address || '').trim()
                 const addressOptions = realmForwardAddressOptions(targetAgent)
+                const targetPortOptions = realmForwardTargetPortOptions(targetAgent, realmTargetOverviews[rule.target_agent_id || ''])
+                const targetPortLoading = Boolean(rule.target_agent_id && realmTargetOverviewLoading[rule.target_agent_id])
+                const currentPort = Number(rule.target_port || 0)
+                const knownPortOption = targetPortOptions.find((option) => option.port === currentPort)
+                const legacyPortOption = targetPortLoading && currentPort > 0 && !knownPortOption
+                  ? { value: `current:${currentPort}`, label: `当前端口 · ${currentPort}` }
+                  : undefined
+                const customPortSelected = rule.target_port_mode === 'custom' || (!targetPortLoading && currentPort > 0 && !knownPortOption)
+                const selectedPortValue = customPortSelected ? 'custom' : knownPortOption?.value || legacyPortOption?.value
+                const portOptions = [
+                  ...(legacyPortOption ? [legacyPortOption] : []),
+                  ...targetPortOptions.map((option) => ({ value: option.value, label: option.label })),
+                  { value: 'custom', label: '自定义' },
+                ]
                 if (currentAddress && !addressOptions.some((option) => option.value === currentAddress)) {
                   addressOptions.unshift({ value: currentAddress, label: `当前配置 · ${currentAddress}` })
                 }
@@ -1167,7 +1235,24 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
                     </Col>
                     <Col xs={12} md={4}>
                       <Text type="secondary">目标端口</Text>
-                      <InputNumber style={{ width: '100%' }} min={1} max={65535} precision={0} value={rule.target_port || 0} onChange={(value) => updatePortForwardRule(index, { target_port: Number(value || 0) })} />
+                      <Select
+                        showSearch
+                        style={{ width: '100%' }}
+                        loading={targetPortLoading}
+                        value={selectedPortValue}
+                        placeholder={targetPortLoading ? '正在读取目标节点端口' : '选择节点或 Realm 监听端口'}
+                        options={portOptions}
+                        optionFilterProp="label"
+                        onChange={(value) => {
+                          if (value === 'custom') {
+                            updatePortForwardRule(index, { target_port_mode: 'custom' })
+                            return
+                          }
+                          const port = Number(String(value || '').split(':').pop() || 0)
+                          updatePortForwardRule(index, { target_port_mode: 'auto', target_port: port })
+                        }}
+                      />
+                      {customPortSelected && <InputNumber style={{ width: '100%', marginTop: 8 }} min={1} max={65535} precision={0} value={rule.target_port || 0} placeholder="输入目标端口" onChange={(value) => updatePortForwardRule(index, { target_port_mode: 'custom', target_port: Number(value || 0) })} />}
                     </Col>
                     <Col xs={12} md={4}>
                       <Text type="secondary">协议</Text>

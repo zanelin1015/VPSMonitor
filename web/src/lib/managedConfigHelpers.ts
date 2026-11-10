@@ -1,4 +1,4 @@
-import type { AgentListItem, NetworkPortPolicyRule, XUILocalCertificate } from '../types'
+import type { AgentListItem, NetworkPortPolicyRule, XUILocalCertificate, XUIOverview } from '../types'
 
 export function buildCertificateDomainOptions(certificates: XUILocalCertificate[]) {
   const seen = new Set<string>()
@@ -164,5 +164,37 @@ export function realmForwardAddressOptions(agent?: AgentListItem) {
   add(agent?.summary?.observed_ip, '上报公网 IP')
   add(agent?.entry?.connection?.ix_internal_address, 'IX 内网入口 IP')
   ;(agent?.entry?.addresses || []).forEach((address) => add(address, '备用入口'))
+  return options
+}
+
+export interface RealmForwardPortOption {
+  value: string
+  port: number
+  label: string
+  source: 'realm' | 'node'
+}
+
+export function realmForwardTargetPortOptions(agent?: AgentListItem, overview?: XUIOverview) {
+  const options: RealmForwardPortOption[] = []
+  const seen = new Set<number>()
+  const add = (port: number | undefined, label: string, source: RealmForwardPortOption['source']) => {
+    const normalized = Number(port || 0)
+    if (!Number.isInteger(normalized) || normalized <= 0 || normalized > 65535 || seen.has(normalized)) {
+      return
+    }
+    seen.add(normalized)
+    options.push({ value: `${source}:${normalized}`, port: normalized, label: `${label} · ${normalized}`, source })
+  }
+  const realmRules = (agent?.entry?.port_forwarding?.rules || []).filter((rule) => rule.enabled !== false && Number(rule.listen_port || 0) > 0)
+  const nodes = (overview?.nodes || []).filter((node) => node.enabled !== false && Number(node.port || 0) > 0)
+  const addRealmRules = () => realmRules.forEach((rule) => add(rule.listen_port, `Realm 监听${rule.name ? ` · ${rule.name}` : ''}`, 'realm'))
+  const addNodes = () => nodes.forEach((node) => add(node.port, `x-ui 节点${node.remark ? ` · ${node.remark}` : node.tag ? ` · ${node.tag}` : ''}`, 'node'))
+  if (realmRules.length) {
+    addRealmRules()
+    addNodes()
+  } else {
+    addNodes()
+    addRealmRules()
+  }
   return options
 }

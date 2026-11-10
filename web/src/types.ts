@@ -319,6 +319,7 @@ export interface RealmForwardRule {
   target_agent_id?: string
   target_address?: string
   target_port?: number
+  target_port_mode?: 'auto' | 'custom'
   network?: 'tcp' | 'udp' | 'both' | string
   note?: string
 }

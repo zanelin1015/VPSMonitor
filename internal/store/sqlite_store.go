@@ -760,6 +760,9 @@ func normalizeRealmForwardConfig(cfg model.RealmForwardConfig) model.RealmForwar
 		rule.ListenAddress = strings.TrimSpace(rule.ListenAddress)
 		rule.TargetAgentID = strings.TrimSpace(rule.TargetAgentID)
 		rule.TargetAddress = strings.TrimSpace(rule.TargetAddress)
+		if rule.TargetPortMode != "custom" {
+			rule.TargetPortMode = "auto"
+		}
 		rule.Network = normalizeRealmForwardNetwork(rule.Network)
 		rule.Note = strings.TrimSpace(rule.Note)
 		if rule.ListenPort <= 0 || rule.ListenPort > 65535 || rule.TargetPort <= 0 || rule.TargetPort > 65535 {
