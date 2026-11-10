@@ -1,12 +1,46 @@
-import { Button, Empty, Popconfirm, Space, Table, Tag, Typography } from 'antd'
+import { Button, Empty, Modal, Popconfirm, Space, Table, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { CopyOutlined, DeleteOutlined, EditOutlined, ExportOutlined, LinkOutlined, SyncOutlined } from '@ant-design/icons'
+import { useState } from 'react'
 
 import type { AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerBillingDiagnostic, DashboardAgentView } from '../types'
 import { formatDateTime } from '../lib/appHelpers'
 import { DEFAULT_ACCOUNT_PASSWORD, agentName, assignmentBindingDiagnostic, effectiveAssignmentBilling, normalizeAreaManagerAssignmentDrafts, renderAssignmentHierarchy, renderAssignmentLines, revenueCycleLabel } from './CustomerManagementHelpers'
 
 const { Text } = Typography
+
+function AreaManagerNodesCell({ record, agents }: { record: AreaManagerAdminView; agents: DashboardAgentView[] }) {
+  const [open, setOpen] = useState(false)
+  const assignments = normalizeAreaManagerAssignmentDrafts(record.assignments || [], agents)
+  const agentIDs = record.agent_ids || []
+  const nodeCount = assignments.length || agentIDs.length
+  const hasDetails = assignments.length > 0 || agentIDs.length > 0
+
+  return (
+    <>
+      <Space size={6} wrap={false}>
+        <Tag color={nodeCount ? 'blue' : 'default'}>{nodeCount} 个节点</Tag>
+        <Button size="small" type="link" disabled={!hasDetails} onClick={() => setOpen(true)}>
+          查看
+        </Button>
+      </Space>
+      <Modal
+        title={`可管理节点 · ${record.display_name || record.username}`}
+        open={open}
+        onCancel={() => setOpen(false)}
+        footer={null}
+        width={760}
+        destroyOnClose
+      >
+        {assignments.length ? renderAssignmentLines(assignments, agents) : agentIDs.length ? (
+          <Space size={[6, 6]} wrap>
+            {agentIDs.map((agentID) => <Tag key={agentID} color="blue">{agentName(agentID, agents)}</Tag>)}
+          </Space>
+        ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无可管理节点" />}
+      </Modal>
+    </>
+  )
+}
 
 interface CustomerManagementTableOptions {
   agents: DashboardAgentView[]
@@ -223,7 +257,7 @@ export function buildCustomerManagementTables({
     },
     {
       title: '下属用户 / 链路',
-      width: 150,
+      width: 220,
       render: (_, record) => {
         const ownedCustomers = record.customers || []
         const assignmentCount = ownedCustomers.reduce((sum, customer) => sum + (customer.assignments?.length || 0), 0)
@@ -239,17 +273,9 @@ export function buildCustomerManagementTables({
     },
     {
       title: '可管理节点',
+      width: 150,
       render: (_, record) => {
-        const assignments = normalizeAreaManagerAssignmentDrafts(record.assignments || [], agents)
-        if (assignments.length) {
-          return renderAssignmentLines(assignments, agents)
-        }
-        const agentIDs = record.agent_ids || []
-        return agentIDs.length ? (
-          <Space size={[4, 4]} wrap>
-            {agentIDs.map((agentID) => <Tag key={agentID}>{agentName(agentID, agents)}</Tag>)}
-          </Space>
-        ) : <Tag>未细化授权</Tag>
+        return <AreaManagerNodesCell record={record} agents={agents} />
       },
     },
     {
