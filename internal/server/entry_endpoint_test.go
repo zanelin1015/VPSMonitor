@@ -36,8 +36,15 @@ func TestEntryConnectionConfigAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := &App{store: s, realtime: newRealtimeHub()}
+	initialDashboardRequest := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard", nil)
+	initialDashboardRequest.AddCookie(&http.Cookie{Name: adminSessionCookieName, Value: token})
+	initialDashboardResponse := httptest.NewRecorder()
+	app.handleDashboard(initialDashboardResponse, initialDashboardRequest)
+	if initialDashboardResponse.Code != http.StatusOK {
+		t.Fatalf("initial dashboard request failed: %d: %s", initialDashboardResponse.Code, initialDashboardResponse.Body.String())
+	}
 	cfg := registered.Config
-	cfg.Entry.Connection = model.EntryConnectionConfig{Deployment: "docker", DockerNetwork: "bridge", PublicAccess: "nat", PublicAddress: "entry.example.com"}
+	cfg.Entry.Connection = model.EntryConnectionConfig{Deployment: "docker", DockerNetwork: "bridge", PublicAccess: "cnix", PublicAddress: "entry.example.com", IXInternalAddress: "10.0.0.12"}
 	cfg.Entry.Mappings = []model.AgentEntryMapping{{UseForExport: true, TargetType: "xui", TargetID: "7", InternalPort: 20001, HostPort: 30001, ExternalPort: 333, Transport: "tcp", DefaultExport: true}}
 	for _, status := range []int{http.StatusOK, http.StatusBadRequest} {
 		if status == http.StatusBadRequest {
@@ -62,6 +69,20 @@ func TestEntryConnectionConfigAPI(t *testing.T) {
 	endpoint := model.ResolveEntryEndpoint(saved.Entry, model.EntryTarget{Type: "xui", ID: "7", Port: 20001, Transport: "tcp"}, "")
 	if endpoint.Error != "" || endpoint.Port != 333 || endpoint.HostPort != 30001 {
 		t.Fatalf("saved mapping corrupted or invalid update persisted: %+v", endpoint)
+	}
+	dashboardRequest := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard", nil)
+	dashboardRequest.AddCookie(&http.Cookie{Name: adminSessionCookieName, Value: token})
+	dashboardResponse := httptest.NewRecorder()
+	app.handleDashboard(dashboardResponse, dashboardRequest)
+	if dashboardResponse.Code != http.StatusOK {
+		t.Fatalf("dashboard request after config save failed: %d: %s", dashboardResponse.Code, dashboardResponse.Body.String())
+	}
+	var dashboard model.GlobalDashboardView
+	if err := json.NewDecoder(dashboardResponse.Body).Decode(&dashboard); err != nil {
+		t.Fatal(err)
+	}
+	if len(dashboard.Agents) != 1 || dashboard.Agents[0].Entry.Connection.IXInternalAddress != "10.0.0.12" {
+		t.Fatalf("dashboard returned stale entry connection: %+v", dashboard.Agents)
 	}
 }
 

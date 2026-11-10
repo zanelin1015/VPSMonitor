@@ -282,6 +282,13 @@ func (a *App) clearDashboardTopologyCache() {
 	a.dashboardCacheMu.Unlock()
 }
 
+func (a *App) clearDashboardCache() {
+	a.dashboardCacheMu.Lock()
+	a.dashboardCache = make(map[string]dashboardCacheEntry)
+	a.topologyCache = make(map[string]dashboardCacheEntry)
+	a.dashboardCacheMu.Unlock()
+}
+
 func (a *App) clearCustomerOverviewCache() {
 	a.dashboardCacheMu.Lock()
 	a.customerViewCache = make(map[string]customerOverviewCacheEntry)

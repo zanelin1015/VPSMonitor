@@ -171,6 +171,7 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 			return
 		}
 		a.clearCustomerOverviewCache()
+		a.clearDashboardCache()
 		a.requestAgentConfigApply(agentID, record.Config)
 		writeJSON(w, http.StatusOK, disableXUIAutoInstall(record.Config))
 	default:
