@@ -29,8 +29,10 @@ try {
   const realmTarget = { agent_id: 'relay', entry: { port_forwarding: { rules: [{ enabled: true, name: 'B -> C', listen_port: 20002 }] } }, summary: {} }
   const realmOptions = helpers.realmForwardTargetPortOptions(realmTarget, { nodes: [{ id: 7, remark: 'C 节点', port: 15601, enabled: true }], clients: [], outbounds: [], routing_rules: [], certificates: [], agent_id: 'relay', reported_at: '', collected_at: '', summary: {}, node_count: 1, client_count: 0, online_client_count: 0 })
   assert.equal(realmOptions[0].port, 20002, 'relay target should prefer its Realm listener')
+  assert.equal(realmOptions[0].label, '20002 : B -> C', 'Realm target label should use port-first format')
   const nodeOptions = helpers.realmForwardTargetPortOptions({ agent_id: 'xui', entry: { port_forwarding: { rules: [] } }, summary: {} }, { nodes: [{ id: 7, remark: 'C 节点', port: 15601, enabled: true }], clients: [], outbounds: [], routing_rules: [], certificates: [], agent_id: 'xui', reported_at: '', collected_at: '', summary: {}, node_count: 1, client_count: 0, online_client_count: 0 })
   assert.equal(nodeOptions[0].port, 15601, 'x-ui target should prefer its node port')
+  assert.equal(nodeOptions[0].label, '15601 : C 节点', 'node target label should use port-first format')
   assert.match(lib.resolveEntryEndpoint({ ...entry, mappings: [] }, target).error, /缺少/)
   assert.match(lib.resolveEntryEndpoint(entry, { ...target, port: 20002 }).error, /已变化/)
   assert.match(lib.resolveEntryEndpoint(entry, { ...target, transport: 'udp' }).error, /未覆盖/)

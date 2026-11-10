@@ -183,12 +183,12 @@ export function realmForwardTargetPortOptions(agent?: AgentListItem, overview?: 
       return
     }
     seen.add(normalized)
-    options.push({ value: `${source}:${normalized}`, port: normalized, label: `${label} · ${normalized}`, source })
+    options.push({ value: `${source}:${normalized}`, port: normalized, label: `${normalized} : ${label}`, source })
   }
   const realmRules = (agent?.entry?.port_forwarding?.rules || []).filter((rule) => rule.enabled !== false && Number(rule.listen_port || 0) > 0)
   const nodes = (overview?.nodes || []).filter((node) => node.enabled !== false && Number(node.port || 0) > 0)
-  const addRealmRules = () => realmRules.forEach((rule) => add(rule.listen_port, `Realm 监听${rule.name ? ` · ${rule.name}` : ''}`, 'realm'))
-  const addNodes = () => nodes.forEach((node) => add(node.port, `x-ui 节点${node.remark ? ` · ${node.remark}` : node.tag ? ` · ${node.tag}` : ''}`, 'node'))
+  const addRealmRules = () => realmRules.forEach((rule) => add(rule.listen_port, rule.name || 'Realm', 'realm'))
+  const addNodes = () => nodes.forEach((node) => add(node.port, node.remark || node.tag || `节点 #${node.id}`, 'node'))
   if (realmRules.length) {
     addRealmRules()
     addNodes()
