@@ -1596,7 +1596,6 @@
 }
 
 .ant-modal .ant-modal-content,
-.ant-modal .ant-modal-header,
 .ant-select-dropdown,
 .ant-dropdown-menu,
 .ant-popover .ant-popover-inner,
@@ -1604,6 +1603,12 @@
   border: 1px solid var(--border);
   background: var(--surface-strong) !important;
   box-shadow: var(--shadow);
+}
+
+.ant-modal .ant-modal-header {
+  border: 0;
+  background: transparent !important;
+  box-shadow: none;
 }
 
 .ant-modal .ant-modal-body,
