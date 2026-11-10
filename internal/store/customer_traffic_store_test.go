@@ -2,6 +2,8 @@ package store
 
 import (
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -61,3 +63,103 @@ func TestCustomerTrafficUsageDerivesDailyClientDeltas(t *testing.T) {
 }
 
 func boolPtr(value bool) *bool { return &value }
+
+func TestCustomerTrafficPointsIndexedIdentityAndBaseline(t *testing.T) {
+	s, err := NewSQLiteStore(filepath.Join(t.TempDir(), "traffic.db"), WithMaxOpenConns(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if _, err := s.RegisterAgent(model.AgentRegisterRequest{AgentID: "agent", AgentName: "Agent"}); err != nil {
+		t.Fatal(err)
+	}
+	customer, err := s.CreateCustomer(model.CustomerAccountRequest{Username: "customer", Password: "password123"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := s.CreateCustomer(model.CustomerAccountRequest{Username: "other", Password: "password123"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assignment := func(customerID int64, clientID, email string, enabled bool) int64 {
+		t.Helper()
+		a, err := s.CreateCustomerAssignment(customerID, model.CustomerAssignmentRequest{
+			AgentID: "agent", InboundID: 1, ClientID: clientID, ClientEmail: email, Enabled: boolPtr(enabled),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return a.ID
+	}
+	emailID := assignment(customer.ID, "id-a", "Alice@example.com", true)
+	clientID := assignment(customer.ID, "id-b", "", true)
+	assignment(customer.ID, "disabled", "disabled@example.com", false)
+	assignment(other.ID, "other", "other@example.com", true)
+	start := time.Date(2026, 11, 7, 0, 0, 0, 0, time.UTC)
+	for _, sample := range []struct {
+		hour   int
+		id     string
+		email  string
+		upload int
+	}{
+		{-2, "old-id", "Alice@example.com", 10},
+		{-1, "old-id", "Alice@example.com", 20},
+		{-1, "id-a", "alice@example.com", 30},  // Tie: the later sample ID wins.
+		{0, "new-id", "Alice@example.com", 35}, // Exact email survives credential rotation.
+		{1, "wrong-id", "ALICE@example.com", 999},
+		{1, "id-a", "alice@example.com", 45},
+		{2, "id-a", "Alice@example.com", 100}, // End boundary is exclusive.
+		{-1, "id-b", "old@example.com", 100},
+		{0, "id-b", "new@example.com", 150}, // ID-only assignment follows the ID.
+		{1, "id-b", "new@example.com", 5},   // Counter reset remains a valid point.
+		{0, "disabled", "disabled@example.com", 1000},
+		{0, "other", "other@example.com", 2000},
+	} {
+		_, err := s.db.Exec(`INSERT INTO customer_traffic_samples
+			(agent_id, inbound_id, client_id, client_email, upload_bytes, download_bytes, reported_at)
+			VALUES ('agent', 1, ?, ?, ?, 0, ?)`, sample.id, sample.email, sample.upload, start.Add(time.Duration(sample.hour)*time.Hour).Format(time.RFC3339Nano))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	points, err := s.listCustomerTrafficPoints(customer.ID, start, start.Add(2*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make(map[int64][]uint64)
+	for id, items := range points {
+		for _, item := range items {
+			got[id] = append(got[id], item.upload)
+		}
+	}
+	want := map[int64][]uint64{emailID: {30, 35, 45}, clientID: {100, 150, 5}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("traffic points=%v, want %v", got, want)
+	}
+
+	// Guard against the production regression: scanning all of an agent's
+	// samples instead of seeking the customer's identity and time range.
+	from, to := start.Format(time.RFC3339Nano), start.Add(2*time.Hour).Format(time.RFC3339Nano)
+	rows, err := s.db.Query("EXPLAIN QUERY PLAN "+customerTrafficPointsQuery, customer.ID, from, from, from, to, from, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var plan strings.Builder
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		plan.WriteString(detail + "\n")
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(plan.String(), "idx_customer_traffic_samples_agent_reported_at") ||
+		strings.Count(plan.String(), "COVERING INDEX idx_customer_traffic_samples_email_nocase_cover") != 2 ||
+		strings.Count(plan.String(), "COVERING INDEX idx_customer_traffic_samples_client_id_cover") != 2 {
+		t.Fatalf("traffic query lost its bounded identity lookups:\n%s", plan.String())
+	}
+}

@@ -119,61 +119,59 @@ func (s *SQLiteStore) ListCustomerTrafficRecords(customerID int64, from, to time
 	return result, nil
 }
 
-// listCustomerTrafficPoints reads only the requested range plus one baseline
-// sample per assignment. Keeping this as one set-based query avoids the
-// per-assignment round trips that previously made a customer view wait behind
-// unrelated requests on the SQLite connection.
+// Customer identity branches are separate so SQLite can seek by email or ID
+// before scanning the requested time range. Combining them with OR made the
+// planner scan an agent's entire history for every assignment. Baselines use
+// an indexed top-one lookup rather than ranking every historical sample.
+const customerTrafficPointsQuery = `
+	WITH enabled_assignments AS (
+		SELECT id AS assignment_id, agent_id, inbound_id, client_id, client_email
+		FROM customer_assignments
+		WHERE customer_id = ? AND enabled = 1
+	), baseline_ids AS (
+		SELECT a.assignment_id, (
+			SELECT t.id FROM customer_traffic_samples t
+			WHERE t.agent_id = a.agent_id AND t.inbound_id = a.inbound_id
+			  AND t.client_email COLLATE NOCASE = a.client_email
+			  AND (a.client_id = '' OR t.client_id = a.client_id OR t.client_email = a.client_email)
+			  AND t.reported_at < ?
+			ORDER BY t.reported_at DESC, t.id DESC LIMIT 1
+		) AS sample_id
+		FROM enabled_assignments a WHERE a.client_email <> ''
+		UNION ALL
+		SELECT a.assignment_id, (
+			SELECT t.id FROM customer_traffic_samples t
+			WHERE t.agent_id = a.agent_id AND t.inbound_id = a.inbound_id
+			  AND t.client_id = a.client_id AND t.reported_at < ?
+			ORDER BY t.reported_at DESC, t.id DESC LIMIT 1
+		) AS sample_id
+		FROM enabled_assignments a WHERE a.client_email = '' AND a.client_id <> ''
+	), selected_points AS (
+		SELECT b.assignment_id, t.id AS sample_id, t.reported_at, t.upload_bytes, t.download_bytes
+		FROM baseline_ids b JOIN customer_traffic_samples t ON t.id = b.sample_id
+		UNION ALL
+		SELECT a.assignment_id, t.id AS sample_id, t.reported_at, t.upload_bytes, t.download_bytes
+		FROM enabled_assignments a JOIN customer_traffic_samples t
+		  ON t.agent_id = a.agent_id AND t.inbound_id = a.inbound_id
+		 AND t.client_email COLLATE NOCASE = a.client_email
+		 AND (a.client_id = '' OR t.client_id = a.client_id OR t.client_email = a.client_email)
+		WHERE a.client_email <> '' AND t.reported_at >= ? AND t.reported_at < ?
+		UNION ALL
+		SELECT a.assignment_id, t.id AS sample_id, t.reported_at, t.upload_bytes, t.download_bytes
+		FROM enabled_assignments a JOIN customer_traffic_samples t
+		  ON t.agent_id = a.agent_id AND t.inbound_id = a.inbound_id AND t.client_id = a.client_id
+		WHERE a.client_email = '' AND a.client_id <> '' AND t.reported_at >= ? AND t.reported_at < ?
+	)
+	SELECT assignment_id, sample_id, reported_at, upload_bytes, download_bytes
+	FROM selected_points ORDER BY assignment_id, reported_at, sample_id
+`
+
+// listCustomerTrafficPoints reads the requested range and one preceding sample
+// per enabled assignment, preserving the baseline needed to calculate deltas.
 func (s *SQLiteStore) listCustomerTrafficPoints(customerID int64, from, to time.Time) (map[int64][]customerTrafficPoint, error) {
 	fromText := from.UTC().Format(time.RFC3339Nano)
 	toText := to.UTC().Format(time.RFC3339Nano)
-	// Read all enabled assignments and their traffic points in one set-based
-	// query. The previous implementation issued two queries per assignment;
-	// with many customers or a long retention window that N+1 pattern held the
-	// SQLite connection while unrelated HTTP requests waited behind it.
-	rows, err := s.db.Query(`
-		WITH enabled_assignments AS (
-			SELECT id AS assignment_id, agent_id, inbound_id, client_id, client_email
-			FROM customer_assignments
-			WHERE customer_id = ? AND enabled = 1
-		), baseline_ranked AS (
-			SELECT a.assignment_id, t.id AS sample_id, t.reported_at,
-			       t.upload_bytes, t.download_bytes,
-			       ROW_NUMBER() OVER (
-				       PARTITION BY a.assignment_id
-				       ORDER BY t.reported_at DESC, t.id DESC
-			       ) AS row_number
-			FROM enabled_assignments a
-			JOIN customer_traffic_samples t
-			  ON t.agent_id = a.agent_id AND t.inbound_id = a.inbound_id
-			 AND (
-				 (a.client_email <> ''
-				  AND t.client_email COLLATE NOCASE = a.client_email
-				  AND (a.client_id = '' OR t.client_id = a.client_id OR t.client_email = a.client_email))
-				 OR (a.client_email = '' AND a.client_id <> '' AND t.client_id = a.client_id)
-			 )
-			WHERE t.reported_at < ?
-		), selected_points AS (
-			SELECT assignment_id, sample_id, reported_at, upload_bytes, download_bytes
-			FROM baseline_ranked
-			WHERE row_number = 1
-			UNION ALL
-			SELECT a.assignment_id, t.id AS sample_id, t.reported_at,
-			       t.upload_bytes, t.download_bytes
-			FROM enabled_assignments a
-			JOIN customer_traffic_samples t
-			  ON t.agent_id = a.agent_id AND t.inbound_id = a.inbound_id
-			 AND (
-				 (a.client_email <> ''
-				  AND t.client_email COLLATE NOCASE = a.client_email
-				  AND (a.client_id = '' OR t.client_id = a.client_id OR t.client_email = a.client_email))
-				 OR (a.client_email = '' AND a.client_id <> '' AND t.client_id = a.client_id)
-			 )
-			WHERE t.reported_at >= ? AND t.reported_at < ?
-		)
-		SELECT assignment_id, sample_id, reported_at, upload_bytes, download_bytes
-		FROM selected_points
-		ORDER BY assignment_id, reported_at, sample_id
-	`, customerID, fromText, fromText, toText)
+	rows, err := s.db.Query(customerTrafficPointsQuery, customerID, fromText, fromText, fromText, toText, fromText, toText)
 	if err != nil {
 		return nil, fmt.Errorf("query customer traffic points: %w", err)
 	}

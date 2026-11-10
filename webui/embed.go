@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net/http"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -14,13 +15,19 @@ import (
 //go:embed dist/*
 var distFS embed.FS
 
+var versionedAssetPath = regexp.MustCompile(`^assets/[^/]+-[A-Za-z0-9_-]{8}\.(js|css)$`)
+
 func NewHandler(basePaths ...func(*http.Request) string) http.Handler {
 	sub, err := fs.Sub(distFS, "dist")
 	if err != nil {
 		return http.NotFoundHandler()
 	}
 
-	fileServer := http.FileServer(http.FS(sub))
+	return newHandler(sub, basePaths...)
+}
+
+func newHandler(files fs.FS, basePaths ...func(*http.Request) string) http.Handler {
+	fileServer := http.FileServer(http.FS(files))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		basePath := ""
 		if len(basePaths) > 0 && basePaths[0] != nil {
@@ -33,18 +40,30 @@ func NewHandler(basePaths ...func(*http.Request) string) http.Handler {
 
 		name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
 		if name == "." || name == "" {
-			serveIndexHTML(w, r, sub, basePath)
+			serveIndexHTML(w, r, files, basePath)
 			return
 		}
 
-		if fileExists(sub, name) {
+		if fileExists(files, name) {
+			// Vite changes these URLs when their contents change. Allow browsers
+			// and CDNs to reuse bundles instead of fetching them on every visit.
+			if versionedAssetPath.MatchString(name) {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			}
 			req := r.Clone(r.Context())
 			req.URL.Path = "/" + name
 			fileServer.ServeHTTP(w, req)
 			return
 		}
 
-		serveIndexHTML(w, r, sub, basePath)
+		// A stale bundle URL must not return the SPA HTML (or cache it as JS).
+		if name == "assets" || strings.HasPrefix(name, "assets/") {
+			w.Header().Set("Cache-Control", "no-store")
+			http.NotFound(w, r)
+			return
+		}
+
+		serveIndexHTML(w, r, files, basePath)
 	})
 }
 

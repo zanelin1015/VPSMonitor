@@ -44,8 +44,12 @@ func (s *SQLiteStore) init() error {
 			 UNIQUE(agent_id, inbound_id, client_id, client_email, reported_at)
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_customer_traffic_samples_lookup ON customer_traffic_samples(agent_id, inbound_id, client_email, reported_at);`,
-		`CREATE INDEX IF NOT EXISTS idx_customer_traffic_samples_email_nocase ON customer_traffic_samples(agent_id, inbound_id, client_email COLLATE NOCASE, reported_at, id);`,
-		`CREATE INDEX IF NOT EXISTS idx_customer_traffic_samples_client_id ON customer_traffic_samples(agent_id, inbound_id, client_id, reported_at, id);`,
+		// Usage reads many samples per identity. Cover their counters to avoid
+		// random table reads across the full history on a cold database cache.
+		`CREATE INDEX IF NOT EXISTS idx_customer_traffic_samples_email_nocase_cover ON customer_traffic_samples(agent_id, inbound_id, client_email COLLATE NOCASE, reported_at, id, client_id, upload_bytes, download_bytes);`,
+		`CREATE INDEX IF NOT EXISTS idx_customer_traffic_samples_client_id_cover ON customer_traffic_samples(agent_id, inbound_id, client_id, reported_at, id, upload_bytes, download_bytes);`,
+		`DROP INDEX IF EXISTS idx_customer_traffic_samples_email_nocase;`,
+		`DROP INDEX IF EXISTS idx_customer_traffic_samples_client_id;`,
 		// Snapshot retention prunes by agent and reported_at on every heartbeat.
 		// Keep that maintenance query indexed so it does not scan the agent's
 		// complete traffic history while holding SQLite's write lock.
