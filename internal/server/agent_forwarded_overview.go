@@ -207,9 +207,13 @@ func appendResolvedForwardedClients(overview *model.XUIOverview, context forward
 		sourceClient.ImportURL = ""
 		sourceClient.ShadowrocketImportURL = ""
 		if endpoint.Error == "" {
-			sourceClient.ImportURL = rewriteCustomerImportURL(sourceURL, endpoint.Address, endpoint.Port)
+			importName := ""
+			if strings.EqualFold(entry.ForwardType, "realm") {
+				importName = realmForwardedImportName(entry, context.agentMap)
+			}
+			sourceClient.ImportURL = rewriteCustomerImportURLWithName(sourceURL, endpoint.Address, endpoint.Port, importName)
 			shadowURL := firstNonEmptyString(client.ShadowrocketImportURL, model.ShadowrocketImportURL(sourceURL, context.xrayVersions[targetAgentID]))
-			sourceClient.ShadowrocketImportURL = rewriteCustomerImportURL(shadowURL, endpoint.Address, endpoint.Port)
+			sourceClient.ShadowrocketImportURL = rewriteCustomerImportURLWithName(shadowURL, endpoint.Address, endpoint.Port, importName)
 		}
 		sourceClient.InboundID = entry.ListenPort
 		sourceClient.InboundTag = entry.InboundTag(client)
@@ -319,6 +323,80 @@ func realmForwardedInboundTag(rule model.RealmForwardRule, client model.XUIClien
 	}
 	target := firstNonEmptyString(client.InboundRemark, client.InboundTag, fmt.Sprintf(":%d", rule.TargetPort))
 	return fmt.Sprintf("Realm %d -> %s", rule.ListenPort, target)
+}
+
+func realmForwardedImportName(entry forwardedXUIEntry, agentMap map[string]model.DashboardAgentView) string {
+	parts := make([]string, 0, len(entry.Resolution.Hops)+2)
+	appendAgentName := func(agentID string) {
+		agent := agentMap[agentID]
+		name := compactRealmClientName(firstNonEmptyString(agent.AgentName, agent.CustomerDisplayName, agentID))
+		if name == "" {
+			return
+		}
+		if len(parts) == 0 || parts[len(parts)-1] != name {
+			parts = append(parts, name)
+		}
+	}
+
+	appendAgentName(entry.SourceAgent.AgentID)
+	if len(entry.Resolution.Hops) > 1 {
+		for _, hop := range entry.Resolution.Hops[1:] {
+			appendAgentName(hop.SourceAgentID)
+		}
+	}
+	appendAgentName(entry.Resolution.FinalAgentID)
+	return strings.Join(parts, "-")
+}
+
+func compactRealmClientName(value string) string {
+	value = stripRealmNameParentheses(value)
+	value = strings.TrimSpace(value)
+	for _, suffix := range []string{"入口", "出口", "线路", "节点", "中转", "落地"} {
+		value = strings.TrimSuffix(strings.TrimSpace(value), suffix)
+	}
+	value = strings.TrimSpace(value)
+	for _, prefix := range []string{"IPLC", "IEPL"} {
+		if len(value) <= len(prefix) || !strings.EqualFold(value[:len(prefix)], prefix) {
+			continue
+		}
+		rest := strings.TrimLeft(value[len(prefix):], " -_·")
+		if rest != "" {
+			value = rest + prefix
+		}
+		break
+	}
+	value = strings.Map(func(r rune) rune {
+		switch r {
+		case '-', '_', ':', '/', '·':
+			return -1
+		default:
+			if r == ' ' || r == '\t' || r == '\r' || r == '\n' {
+				return -1
+			}
+			return r
+		}
+	}, value)
+	return strings.TrimSpace(value)
+}
+
+func stripRealmNameParentheses(value string) string {
+	var builder strings.Builder
+	depth := 0
+	for _, r := range value {
+		switch r {
+		case '(', '（':
+			depth++
+		case ')', '）':
+			if depth > 0 {
+				depth--
+			}
+		default:
+			if depth == 0 {
+				builder.WriteRune(r)
+			}
+		}
+	}
+	return builder.String()
 }
 
 func forwardedNodeView(client model.XUIClientView, entry forwardedXUIEntry) model.XUINodeView {

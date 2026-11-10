@@ -232,23 +232,34 @@ func customerForwardSourceHost(agent model.DashboardAgentView, listenAddress str
 }
 
 func rewriteCustomerImportURL(rawURL string, host string, port int) string {
+	return rewriteCustomerImportURLWithName(rawURL, host, port, "")
+}
+
+func rewriteCustomerImportURLWithName(rawURL string, host string, port int, name string) string {
 	rawURL = strings.TrimSpace(rawURL)
 	host = normalizeCustomerShareHost(host)
 	if rawURL == "" || host == "" || port <= 0 || port > 65535 {
 		return ""
 	}
 	if strings.HasPrefix(strings.ToLower(rawURL), "vmess://") {
-		return rewriteCustomerVMessImportURL(rawURL, host, port)
+		return rewriteCustomerVMessImportURLWithName(rawURL, host, port, name)
 	}
 	parsed, err := url.Parse(rawURL)
 	if err != nil || parsed.Scheme == "" {
 		return ""
 	}
 	parsed.Host = net.JoinHostPort(host, strconv.Itoa(port))
+	if strings.TrimSpace(name) != "" {
+		parsed.Fragment = strings.TrimSpace(name)
+	}
 	return parsed.String()
 }
 
 func rewriteCustomerVMessImportURL(rawURL string, host string, port int) string {
+	return rewriteCustomerVMessImportURLWithName(rawURL, host, port, "")
+}
+
+func rewriteCustomerVMessImportURLWithName(rawURL string, host string, port int, name string) string {
 	payload := strings.TrimSpace(rawURL[len("vmess://"):])
 	decoded, err := decodeCustomerVMessPayload(payload)
 	if err != nil {
@@ -260,6 +271,9 @@ func rewriteCustomerVMessImportURL(rawURL string, host string, port int) string 
 	}
 	data["add"] = host
 	data["port"] = port
+	if strings.TrimSpace(name) != "" {
+		data["ps"] = strings.TrimSpace(name)
+	}
 	next, err := json.Marshal(data)
 	if err != nil {
 		return ""

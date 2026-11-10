@@ -19,6 +19,13 @@ const (
 	mihomoProxyMarker           = "{{VPSMONITOR_PROXIES}}"
 	mihomoProxyNameMarker       = "{{VPSMONITOR_PROXY_NAMES}}"
 	mihomoFrontProxyGroupMarker = "{{VPSMONITOR_FRONT_PROXY_GROUPS}}"
+	mihomoHKProxyNameMarker     = "{{VPSMONITOR_HK_PROXY_NAMES}}"
+	mihomoJPProxyNameMarker     = "{{VPSMONITOR_JP_PROXY_NAMES}}"
+	mihomoUSProxyNameMarker     = "{{VPSMONITOR_US_PROXY_NAMES}}"
+	mihomoSGProxyNameMarker     = "{{VPSMONITOR_SG_PROXY_NAMES}}"
+	mihomoTWProxyNameMarker     = "{{VPSMONITOR_TW_PROXY_NAMES}}"
+	mihomoKRProxyNameMarker     = "{{VPSMONITOR_KR_PROXY_NAMES}}"
+	mihomoNetflixNameMarker     = "{{VPSMONITOR_NETFLIX_PROXY_NAMES}}"
 )
 
 //go:embed customer_subscription_acl4ssr.yaml.tmpl
@@ -272,17 +279,16 @@ func renderMihomoSubscription(proxies []mihomoProxy, selectableProxies []mihomoP
 		}
 	}
 
-	var proxyNames strings.Builder
-	if len(selectableProxies) == 0 {
-		proxyNames.WriteString("      - DIRECT")
-	} else {
-		for index, proxy := range selectableProxies {
-			if index > 0 {
-				proxyNames.WriteByte('\n')
-			}
-			proxyNames.WriteString("      - ")
-			proxyNames.WriteString(yamlString(proxy.Name))
-		}
+	proxyNames := renderMihomoProxyNames(selectableProxies)
+	proxyNameLists := map[string]string{
+		mihomoProxyNameMarker:   proxyNames,
+		mihomoHKProxyNameMarker: renderMihomoProxyNames(filterMihomoProxies(selectableProxies, mihomoProxyRegionHK)),
+		mihomoJPProxyNameMarker: renderMihomoProxyNames(filterMihomoProxies(selectableProxies, mihomoProxyRegionJP)),
+		mihomoUSProxyNameMarker: renderMihomoProxyNames(filterMihomoProxies(selectableProxies, mihomoProxyRegionUS)),
+		mihomoSGProxyNameMarker: renderMihomoProxyNames(filterMihomoProxies(selectableProxies, mihomoProxyRegionSG)),
+		mihomoTWProxyNameMarker: renderMihomoProxyNames(filterMihomoProxies(selectableProxies, mihomoProxyRegionTW)),
+		mihomoKRProxyNameMarker: renderMihomoProxyNames(filterMihomoProxies(selectableProxies, mihomoProxyRegionKR)),
+		mihomoNetflixNameMarker: renderMihomoProxyNames(filterMihomoProxies(selectableProxies, mihomoProxyRegionNetflix)),
 	}
 
 	var frontGroupYAML strings.Builder
@@ -291,7 +297,79 @@ func renderMihomoSubscription(proxies []mihomoProxy, selectableProxies []mihomoP
 	}
 	content := strings.Replace(mihomoSubscriptionTemplate, mihomoProxyMarker, strings.TrimSuffix(proxyYAML.String(), "\n"), 1)
 	content = strings.Replace(content, mihomoFrontProxyGroupMarker, frontGroupYAML.String(), 1)
-	return strings.ReplaceAll(content, mihomoProxyNameMarker, proxyNames.String())
+	for marker, names := range proxyNameLists {
+		content = strings.ReplaceAll(content, marker, names)
+	}
+	return content
+}
+
+type mihomoProxyRegion string
+
+const (
+	mihomoProxyRegionHK      mihomoProxyRegion = "hk"
+	mihomoProxyRegionJP      mihomoProxyRegion = "jp"
+	mihomoProxyRegionUS      mihomoProxyRegion = "us"
+	mihomoProxyRegionSG      mihomoProxyRegion = "sg"
+	mihomoProxyRegionTW      mihomoProxyRegion = "tw"
+	mihomoProxyRegionKR      mihomoProxyRegion = "kr"
+	mihomoProxyRegionNetflix mihomoProxyRegion = "netflix"
+)
+
+func renderMihomoProxyNames(proxies []mihomoProxy) string {
+	if len(proxies) == 0 {
+		return "      - DIRECT"
+	}
+	var names strings.Builder
+	for index, proxy := range proxies {
+		if index > 0 {
+			names.WriteByte('\n')
+		}
+		names.WriteString("      - ")
+		names.WriteString(yamlString(proxy.Name))
+	}
+	return names.String()
+}
+
+func filterMihomoProxies(proxies []mihomoProxy, region mihomoProxyRegion) []mihomoProxy {
+	filtered := make([]mihomoProxy, 0, len(proxies))
+	for _, proxy := range proxies {
+		if mihomoProxyMatchesRegion(proxy.Name, region) {
+			filtered = append(filtered, proxy)
+		}
+	}
+	return filtered
+}
+
+func mihomoProxyMatchesRegion(name string, region mihomoProxyRegion) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return false
+	}
+	var keywords []string
+	switch region {
+	case mihomoProxyRegionHK:
+		keywords = []string{"港", "hk", "hong kong", "hongkong"}
+	case mihomoProxyRegionJP:
+		keywords = []string{"日本", "川日", "东京", "大阪", "泉日", "埼玉", "沪日", "深日", "jp", "japan"}
+	case mihomoProxyRegionUS:
+		keywords = []string{"美", "波特兰", "达拉斯", "俄勒冈", "凤凰城", "费利蒙", "硅谷", "拉斯维加斯", "洛杉矶", "圣何塞", "圣克拉拉", "西雅图", "芝加哥", "us", "united states"}
+	case mihomoProxyRegionSG:
+		keywords = []string{"新加坡", "坡", "狮城", "sg", "singapore"}
+	case mihomoProxyRegionTW:
+		keywords = []string{"台", "新北", "彰化", "tw", "taiwan"}
+	case mihomoProxyRegionKR:
+		keywords = []string{"kr", "korea", "kor", "首尔", "韩", "韓"}
+	case mihomoProxyRegionNetflix:
+		keywords = []string{"nf", "奈飞", "解锁", "netflix", "media"}
+	default:
+		return false
+	}
+	for _, keyword := range keywords {
+		if strings.Contains(name, keyword) {
+			return true
+		}
+	}
+	return false
 }
 
 type mihomoProxy struct {

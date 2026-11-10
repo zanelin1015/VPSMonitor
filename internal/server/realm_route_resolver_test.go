@@ -29,6 +29,36 @@ func TestResolveRealmForwardTargetAcrossMultipleHops(t *testing.T) {
 	}
 }
 
+func TestRealmForwardedImportNameCompactsClientChain(t *testing.T) {
+	entry := forwardedXUIEntry{
+		SourceAgent: model.DashboardAgentView{AgentID: "gz"},
+		Resolution: realmForwardResolution{
+			Hops:         []realmForwardHop{{SourceAgentID: "gz"}, {SourceAgentID: "relay"}},
+			FinalAgentID: "hk",
+		},
+	}
+	agents := map[string]model.DashboardAgentView{
+		"gz":    {AgentID: "gz", AgentName: "CN-广州入口（realm）"},
+		"relay": {AgentID: "relay", AgentName: "IPLC深港（realm）"},
+		"hk":    {AgentID: "hk", AgentName: "HK国际线路（x-ui）"},
+	}
+	if got := realmForwardedImportName(entry, agents); got != "CN广州-深港IPLC-HK国际" {
+		t.Fatalf("unexpected compact Realm chain name: %q", got)
+	}
+	if got := compactRealmClientName("COX（x-ui）"); got != "COX" {
+		t.Fatalf("expected parenthesized link type to be removed, got %q", got)
+	}
+}
+
+func TestRewriteCustomerImportURLWithName(t *testing.T) {
+	raw := "ss://YWVzLTI1Ni1nY206cGFzcw@hk.example.com:8388#HK-SS-TEST"
+	rewritten := rewriteCustomerImportURLWithName(raw, "gz.example.com", 20001, "CN广州-深港IPLC-HK国际-COX")
+	parsed, err := url.Parse(rewritten)
+	if err != nil || parsed.Host != "gz.example.com:20001" || parsed.Fragment != "CN广州-深港IPLC-HK国际-COX" {
+		t.Fatalf("unexpected named Realm URL: %q (%v)", rewritten, err)
+	}
+}
+
 func TestResolveRealmForwardTargetDetectsLoop(t *testing.T) {
 	gzRule := model.RealmForwardRule{Enabled: true, ListenPort: 20001, TargetAgentID: "hk", TargetPort: 20001}
 	hkRule := model.RealmForwardRule{Enabled: true, ListenPort: 20001, TargetAgentID: "gz", TargetPort: 20001}

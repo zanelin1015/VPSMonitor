@@ -84,8 +84,12 @@ func TestBuildMihomoSubscriptionConvertsCustomerLinks(t *testing.T) {
 	assertContains(t, content, `geosite:geolocation-!cn:`)
 	assertContains(t, content, `fallback:`)
 	assertContains(t, content, `name: 🚀 节点选择`)
-	assertContains(t, content, `name: ♻️ 自动选择`)
+	assertContains(t, content, `name: 🚀 手动切换`)
 	assertContains(t, content, `name: 🐟 漏网之鱼`)
+	assertContains(t, content, `name: 💬 Ai平台`)
+	assertContains(t, content, `name: Ⓜ️ 微软Bing`)
+	assertContains(t, content, `name: 🛑 广告拦截`)
+	assertContains(t, content, `name: 🇭🇰 香港节点`)
 	assertContains(t, content, `name: "CN-HK-VLESS"`)
 	assertContains(t, content, `type: "vless"`)
 	assertContains(t, content, `uuid: "11111111-1111-1111-1111-111111111111"`)
@@ -102,10 +106,11 @@ func TestBuildMihomoSubscriptionConvertsCustomerLinks(t *testing.T) {
 	assertContains(t, content, `- "HK SS"`)
 	assertContains(t, content, `- "GZ HTTP"`)
 	assertContains(t, content, `- DOMAIN-SUFFIX,acl4.ssr,🎯 全球直连`)
+	assertContains(t, content, `- DOMAIN-SUFFIX,bing.com,Ⓜ️ 微软Bing`)
 	assertContains(t, content, `- GEOIP,CN,🎯 全球直连`)
 	assertContains(t, content, `- MATCH,🐟 漏网之鱼`)
-	if got := strings.Count(content, `      - "CN-HK-VLESS"`); got != 8 {
-		t.Fatalf("expected proxy in all 8 ACL4SSR groups, got %d", got)
+	if got := strings.Count(content, `      - "CN-HK-VLESS"`); got != 2 {
+		t.Fatalf("expected proxy in manual and Hong Kong groups, got %d", got)
 	}
 	if strings.Contains(content, "未解析") {
 		t.Fatalf("unresolved links should not be included:\n%s", content)
@@ -213,9 +218,34 @@ func TestBuildMihomoSubscriptionUsesAssignmentFrontProxyGroup(t *testing.T) {
 func TestBuildMihomoSubscriptionWithoutLinksRemainsUsable(t *testing.T) {
 	content := buildMihomoSubscription(model.CustomerUser{Username: "empty"}, nil)
 	assertContains(t, content, "proxies:\n  []")
-	assertContains(t, content, "name: ♻️ 自动选择\n    type: url-test")
-	if strings.Contains(content, mihomoProxyMarker) || strings.Contains(content, mihomoProxyNameMarker) {
+	assertContains(t, content, "name: 🚀 手动切换\n    type: select")
+	if strings.Contains(content, mihomoProxyMarker) || strings.Contains(content, mihomoProxyNameMarker) ||
+		strings.Contains(content, mihomoHKProxyNameMarker) || strings.Contains(content, mihomoJPProxyNameMarker) ||
+		strings.Contains(content, mihomoUSProxyNameMarker) || strings.Contains(content, mihomoSGProxyNameMarker) ||
+		strings.Contains(content, mihomoTWProxyNameMarker) || strings.Contains(content, mihomoKRProxyNameMarker) ||
+		strings.Contains(content, mihomoNetflixNameMarker) {
 		t.Fatal("subscription template markers must be fully rendered")
+	}
+}
+
+func TestMihomoProxyRegionMatching(t *testing.T) {
+	tests := []struct {
+		name   string
+		region mihomoProxyRegion
+		want   bool
+	}{
+		{name: "HK-SS", region: mihomoProxyRegionHK, want: true},
+		{name: "US-ATT", region: mihomoProxyRegionUS, want: true},
+		{name: "JP-Tokyo", region: mihomoProxyRegionJP, want: true},
+		{name: "普通节点", region: mihomoProxyRegionHK, want: false},
+		{name: "Netflix-US", region: mihomoProxyRegionNetflix, want: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := mihomoProxyMatchesRegion(test.name, test.region); got != test.want {
+				t.Fatalf("expected %v for %q in %s, got %v", test.want, test.name, test.region, got)
+			}
+		})
 	}
 }
 
