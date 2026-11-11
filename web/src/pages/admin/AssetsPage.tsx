@@ -22,6 +22,7 @@ import { CountryFlag } from '../../components/CountryFlag'
 import { useListPagination } from '../../hooks/useListPagination'
 import { agentHealthCategory, agentHealthFilterLabel } from '../../lib/agentHealth'
 import { agentCountryCode, calculateRenewalStatus, formatAgentLocation, formatLocalDate } from '../../lib/appHelpers'
+import { normalizeCurrencyCode } from '../../lib/currency'
 import {
   calculateDiskPercent,
   calculateMemoryPercent,
@@ -29,7 +30,7 @@ import {
   formatBytes,
   formatSpeed,
 } from '../../lib/traffic'
-import type { DashboardAgentView } from '../../types'
+import type { DashboardAgentView, VPSRenewalConfig } from '../../types'
 
 export type AssetsPageProps = AgentListProps & { accountKey: string; onOpenClientInstall?: () => void }
 const healthOptions = (['all', 'healthy', 'warning', 'offline'] as const).map((value) => ({
@@ -97,6 +98,57 @@ function ExpiryMetric({ agent }: { agent: DashboardAgentView }) {
       </Typography.Text>
     </div>
   )
+}
+
+function costCycleLabel(cycle?: VPSRenewalConfig['cost_cycle']) {
+  switch (cycle) {
+    case 'quarter':
+      return '季'
+    case 'semiannual':
+      return '半年'
+    case 'year':
+      return '年'
+    case 'month':
+    default:
+      return '月'
+  }
+}
+
+function costCurrencySymbol(currency: string) {
+  switch (currency) {
+    case 'CNY':
+    case 'JPY':
+      return '¥'
+    case 'USD':
+    case 'USDT':
+      return '$'
+    case 'CAD':
+      return 'CA$'
+    case 'EUR':
+      return '€'
+    case 'HKD':
+      return 'HK$'
+    case 'GBP':
+      return '£'
+    case 'AUD':
+      return 'A$'
+    case 'SGD':
+      return 'S$'
+    default:
+      return currency
+  }
+}
+
+function CostMetric({ agent }: { agent: DashboardAgentView }) {
+  const amount = Number(agent.renewal?.cost_amount)
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return <Typography.Text type="secondary">未设置</Typography.Text>
+  }
+  const currency = normalizeCurrencyCode(agent.renewal?.cost_currency)
+  const cycle = costCycleLabel(agent.renewal?.cost_cycle)
+  const amountLabel = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)
+  const costLabel = `${currency} ${costCurrencySymbol(currency)}${amountLabel}/${cycle}`
+  return <div className="admin-assets-cost" title={`费用 ${costLabel}`} aria-label={`费用 ${costLabel}`}>{costLabel}</div>
 }
 
 export function AssetsPage(props: AssetsPageProps) {
@@ -229,6 +281,12 @@ export function AssetsPage(props: AssetsPageProps) {
     },
     ...(!props.restrictedView
       ? [{
+          title: '费用',
+          key: 'cost',
+          width: 150,
+          sorter: (a: DashboardAgentView, b: DashboardAgentView) => (a.renewal?.cost_amount || 0) - (b.renewal?.cost_amount || 0),
+          render: (_: unknown, agent: DashboardAgentView) => <CostMetric agent={agent} />,
+        }, {
           title: '到期时间',
           key: 'expiry',
           width: 145,
@@ -408,10 +466,16 @@ export function AssetsPage(props: AssetsPageProps) {
                 <SpeedMetric agent={agent} />
               </div>
               {!props.restrictedView ? (
-                <div>
-                  <Typography.Text type="secondary">到期时间</Typography.Text>
-                  <ExpiryMetric agent={agent} />
-                </div>
+                <>
+                  <div>
+                    <Typography.Text type="secondary">费用</Typography.Text>
+                    <CostMetric agent={agent} />
+                  </div>
+                  <div>
+                    <Typography.Text type="secondary">到期时间</Typography.Text>
+                    <ExpiryMetric agent={agent} />
+                  </div>
+                </>
               ) : null}
             </div>
             <Space wrap>

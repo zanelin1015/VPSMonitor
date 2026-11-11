@@ -185,7 +185,8 @@
   white-space: nowrap;
 }
 .admin-assets-speed,
-.admin-assets-expiry {
+.admin-assets-expiry,
+.admin-assets-cost {
   display: grid;
   gap: 4px;
   white-space: nowrap;

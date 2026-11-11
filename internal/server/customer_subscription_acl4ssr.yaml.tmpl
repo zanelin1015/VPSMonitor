@@ -10,6 +10,9 @@ dns:
   enable: true
   ipv6: false
   listen: 0.0.0.0:53
+  respect-rules: true
+  enhanced-mode: fake-ip
+  fake-ip-filter-mode: blacklist
   fake-ip-range: 198.18.0.1/16
   use-hosts: true
   fake-ip-filter:
@@ -26,15 +29,15 @@ dns:
     - 119.29.29.29
     - 223.5.5.5
   nameserver:
-    - 119.29.29.29
-    - 223.5.5.5
+    - https://doh.pub/dns-query
+    - https://dns.alidns.com/dns-query
   nameserver-policy:
     geosite:cn:
       - 119.29.29.29
       - 223.5.5.5
     geosite:geolocation-!cn:
       - tls://1.0.0.1:853
-      - tls://dns.google:853
+      - tls://8.8.8.8:853
   proxy-server-nameserver:
     - 119.29.29.29
     - 223.5.5.5
@@ -42,12 +45,19 @@ dns:
     - 8.8.8.8
     - 1.1.1.1
     - tls://1.0.0.1:853
-    - tls://dns.google:853
+    - tls://8.8.8.8:853
   fallback-filter:
     geoip: true
     geoip-code: CN
     geosite:
       - gfw
+    domain:
+      - "+.google.com"
+      - "+.googleapis.com"
+      - "+.googleusercontent.com"
+      - "+.gstatic.com"
+      - "+.youtube.com"
+      - "+.googlevideo.com"
     ipcidr:
       - 240.0.0.0/4
 proxies:
@@ -57,13 +67,13 @@ proxy-groups:
   - name: 🚀 节点选择
     type: select
     proxies:
+      - 🚀 手动切换
       - 🇭🇰 香港节点
       - 🇨🇳 台湾节点
       - 🇸🇬 狮城节点
       - 🇯🇵 日本节点
       - 🇺🇲 美国节点
       - 🇰🇷 韩国节点
-      - 🚀 手动切换
       - DIRECT
   - name: 🚀 手动切换
     type: select

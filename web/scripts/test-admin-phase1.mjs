@@ -152,6 +152,7 @@ try {
   assert.match(full, /健康状态/)
   assert.match(full, /CPU/)
   assert.match(full, /硬盘/)
+  assert.match(full, /费用/)
   assert.match(full, /admin-only-location/)
   assert.match(full, /class="country-flag"/)
   assert.match(full, /aria-label="admin-only-location"/)
@@ -166,6 +167,17 @@ try {
   assert.match(full, /aria-label="内存 50%"/)
   assert.match(full, /aria-label="硬盘 34%"/)
   assert.match(full, /↑ 1.0 KB\/s/)
+  const fee = render(false, [{ ...agent, renewal: { cost_amount: 8.99, cost_currency: 'CNY', cost_cycle: 'quarter' } }])
+  assert.match(fee, /费用 CNY ¥8\.99\/季/)
+  for (const [renewal, pattern] of [
+    [{ cost_amount: 16.9, cost_currency: 'USD', cost_cycle: 'month' }, /USD \$16\.90\/月/],
+    [{ cost_amount: 20, cost_currency: 'USD', cost_cycle: 'quarter' }, /USD \$20\.00\/季/],
+    [{ cost_amount: 30, cost_currency: 'USDT', cost_cycle: 'semiannual' }, /USDT \$30\.00\/半年/],
+  ]) {
+    assert.match(render(false, [{ ...agent, renewal }]), pattern)
+  }
+  const restrictedFee = render(true, [{ ...agent, renewal: { cost_amount: 8.99, cost_currency: 'CNY', cost_cycle: 'quarter' } }])
+  assert.doesNotMatch(restrictedFee, /费用 CNY ¥8\.99\/季/)
   const { calculateRenewalStatus, formatLocalDate } = await vite.ssrLoadModule('/src/lib/appHelpersBilling.ts')
   const RealDate = Date
   const today = new RealDate(2026, 9, 26, 12)
@@ -195,7 +207,7 @@ try {
       assert.equal(calculateRenewalStatus(renewal), null)
       const markup = render(false, [{ ...agent, renewal }])
       assert.doesNotMatch(markup, /<time /, 'missing or invalid dates are not rendered as an expiry')
-      assert.equal(markup.split('>未设置<').length - 1, 2)
+      assert.equal(markup.split('>未设置<').length - 1, 4, 'missing fee and expiry values render in desktop and mobile')
     }
     const offlineExpiry = render(false, [{ ...agent, last_seen_at: '2020-01-01T00:00:00Z', reported_at: '2020-01-01T00:00:00Z', renewal: cases[0][0] }])
     assert.match(offlineExpiry, /2026\/10\/31/, 'offline clients retain their renewal date')

@@ -80,7 +80,12 @@ func TestBuildMihomoSubscriptionConvertsCustomerLinks(t *testing.T) {
 	assertContains(t, content, `bind-address: "*"`)
 	assertContains(t, content, `external-controller: 127.0.0.1:9090`)
 	assertContains(t, content, `listen: 0.0.0.0:53`)
+	assertContains(t, content, `respect-rules: true`)
+	assertContains(t, content, `enhanced-mode: fake-ip`)
+	assertContains(t, content, `fake-ip-filter-mode: blacklist`)
 	assertContains(t, content, `fake-ip-filter:`)
+	assertContains(t, content, `- https://doh.pub/dns-query`)
+	assertContains(t, content, `- "+.google.com"`)
 	assertContains(t, content, `geosite:geolocation-!cn:`)
 	assertContains(t, content, `fallback:`)
 	assertContains(t, content, `name: 🚀 节点选择`)
@@ -118,6 +123,18 @@ func TestBuildMihomoSubscriptionConvertsCustomerLinks(t *testing.T) {
 	if strings.Contains(content, "US-NTT2") || strings.Contains(content, "usdm10g1.zanelin.top") {
 		t.Fatal("reference subscription proxy data must not leak into generated subscriptions")
 	}
+}
+
+func TestBuildMihomoSubscriptionUsesManualProxyAsDefault(t *testing.T) {
+	content := buildMihomoSubscription(model.CustomerUser{}, []model.CustomerLinkView{{
+		AssignmentID:    99,
+		EntryClientName: "unclassified-node",
+		ImportURL:       "ss://YWVzLTI1Ni1nY206cGFzcw@example.com:8388#node",
+		Resolved:        true,
+	}})
+
+	assertContains(t, content, "name: 🚀 节点选择\n    type: select\n    proxies:\n      - 🚀 手动切换")
+	assertContains(t, content, `name: "unclassified-node"`)
 }
 
 func TestBuildMihomoSubscriptionIncludesManualSnellConfig(t *testing.T) {
@@ -264,7 +281,7 @@ func TestBuildMihomoSubscriptionUsesThirdPartyDNSHeader(t *testing.T) {
 	assertContains(t, content, "      - 119.29.29.29\n      - 223.5.5.5")
 	assertContains(t, content, "    geosite:geolocation-!cn:")
 	assertContains(t, content, "    - tls://1.0.0.1:853")
-	assertContains(t, content, "    - tls://dns.google:853")
+	assertContains(t, content, "    - tls://8.8.8.8:853")
 	assertContains(t, content, "  fallback-filter:")
 }
 
