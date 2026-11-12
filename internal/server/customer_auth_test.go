@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -115,6 +116,41 @@ func TestCustomerLoginRefreshAndLogoutHTTP(t *testing.T) {
 	// Logging out one device leaves another device's session untouched.
 	if w := customerAuthRequest(app, http.MethodPost, "/api/v1/customer/refresh", "", refresh); w.Code != http.StatusOK {
 		t.Fatalf("other device refresh status=%d", w.Code)
+	}
+}
+
+func TestCustomerSubscriptionRefreshRotatesToken(t *testing.T) {
+	app, customer := customerAuthFixture(t)
+	oldToken, err := app.store.EnsureCustomerSubscriptionToken(customer.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	login := customerAuthRequest(app, http.MethodPost, "/api/v1/customer/login", `{"username":"alice","password":"password123"}`)
+	access := authCookie(t, login, customerSessionCookieName)
+	response := customerAuthRequest(app, http.MethodPost, "/api/v1/customer/subscription/refresh", "", access)
+	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("subscription refresh status=%d body=%s", response.Code, response.Body.String())
+	}
+	var urls model.CustomerSubscriptionURLResponse
+	if err := json.NewDecoder(response.Body).Decode(&urls); err != nil {
+		t.Fatal(err)
+	}
+	if urls.ClashSubscriptionURL == "" || strings.Contains(urls.ClashSubscriptionURL, oldToken) {
+		t.Fatalf("subscription refresh returned old or empty URL: %#v", urls)
+	}
+	newToken := strings.Split(strings.Trim(urls.ClashSubscriptionURL, "/"), "/")
+	if len(newToken) < 2 {
+		t.Fatalf("unexpected subscription URL: %q", urls.ClashSubscriptionURL)
+	}
+	newToken = newToken[len(newToken)-2 : len(newToken)-1]
+	if _, found, err := app.store.GetCustomerBySubscriptionToken(oldToken); err != nil || found {
+		t.Fatalf("old subscription token should be invalidated: found=%v err=%v", found, err)
+	}
+	if _, found, err := app.store.GetCustomerBySubscriptionToken(newToken[0]); err != nil || !found {
+		t.Fatalf("new subscription token should be active: found=%v err=%v", found, err)
+	}
+	if response := customerAuthRequest(app, http.MethodPost, "/api/v1/customer/subscription/refresh", ""); response.Code != http.StatusUnauthorized {
+		t.Fatalf("subscription refresh without login status=%d", response.Code)
 	}
 }
 

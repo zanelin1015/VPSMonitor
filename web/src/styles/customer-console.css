@@ -11,7 +11,8 @@
 .customer-console-theme .customer-shell { padding-top: 0; }
 :root .customer-console-theme .customer-dashboard-header {
   align-items: center;
-  margin-top: 20px;
+  top: 0;
+  margin-top: 0;
   padding: 22px 24px;
   border-color: var(--border);
   border-radius: 20px;

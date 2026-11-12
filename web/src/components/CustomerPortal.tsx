@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, App as AntdApp, Button, Card, Checkbox, Empty, Input, Modal, Pagination, Progress, QRCode, Segmented, Space, Spin, Statistic, Tag, Typography } from 'antd'
+import { Alert, App as AntdApp, Button, Card, Empty, Input, Modal, Pagination, Progress, QRCode, Segmented, Space, Spin, Statistic, Tag, Typography } from 'antd'
 import { BarChartOutlined, CheckCircleOutlined, CheckOutlined, CloseCircleOutlined, CloseOutlined, CopyOutlined, DashboardOutlined, DownOutlined, EditOutlined, InfoCircleOutlined, LinkOutlined, LockOutlined, LogoutOutlined, ReloadOutlined, RightOutlined, UnorderedListOutlined, WarningOutlined } from '@ant-design/icons'
 
-import type { CustomerAuthResponse, CustomerDailyLinkUsage, CustomerDailyUsage, CustomerLinkStep, CustomerLinkView, CustomerOverviewResponse, CustomerTrafficRecord, CustomerUsageResponse, CustomerUser } from '../types'
+import type { CustomerAuthResponse, CustomerDailyLinkUsage, CustomerDailyUsage, CustomerLinkStep, CustomerLinkView, CustomerOverviewResponse, CustomerSubscriptionURLResponse, CustomerTrafficRecord, CustomerUsageResponse, CustomerUser } from '../types'
 import { fetchJSON, formatDateTime } from '../lib/appHelpers'
 import { CountryFlag } from './CountryFlag'
 import { CUSTOMER_SESSION_EXPIRED_EVENT } from '../lib/api'
@@ -42,7 +42,7 @@ export function CustomerPortal() {
   const [passwordModalOpen, setPasswordModalOpen] = useState(false)
   const [passwordSaving, setPasswordSaving] = useState(false)
   const [subscriptionModalOpen, setSubscriptionModalOpen] = useState(false)
-  const [selectedSubscriptionAssignmentIDs, setSelectedSubscriptionAssignmentIDs] = useState<number[]>([])
+  const [subscriptionRefreshing, setSubscriptionRefreshing] = useState(false)
   const [passwordForm, setPasswordForm] = useState({
     current_password: '',
     new_password: '',
@@ -346,33 +346,46 @@ export function CustomerPortal() {
       message.warning('当前服务端暂未返回订阅地址，请先发布新版 Server')
       return
     }
-    setSelectedSubscriptionAssignmentIDs([])
     setSubscriptionModalOpen(true)
   }
 
   function closeSubscriptionModal() {
     setSubscriptionModalOpen(false)
-    setSelectedSubscriptionAssignmentIDs([])
   }
 
-  async function copyClashSubscriptionURL(assignmentIDs: number[]) {
-    if (assignmentIDs.length === 0) {
-      message.warning('请至少选择一个导出节点')
-      return
-    }
-    const baseSubscriptionURL = overview?.clash_subscription_url || overview?.mihomo_subscription_url || ''
+  function currentSubscriptionURL() {
+    return overview?.clash_subscription_url || overview?.mihomo_subscription_url || ''
+  }
+
+  async function copyClashSubscriptionURL() {
+    const baseSubscriptionURL = currentSubscriptionURL()
     if (!baseSubscriptionURL) {
       message.warning('当前服务端暂未返回订阅地址，请先发布新版 Server')
       return
     }
     try {
-      const subscriptionURL = new URL(baseSubscriptionURL, window.location.origin)
-      subscriptionURL.searchParams.set('assignments', assignmentIDs.join(','))
-      await navigator.clipboard.writeText(subscriptionURL.toString())
+      await navigator.clipboard.writeText(new URL(baseSubscriptionURL, window.location.origin).toString())
       message.success('Clash/Mihomo 订阅已复制')
       closeSubscriptionModal()
     } catch {
       message.error('复制失败，请手动复制')
+    }
+  }
+
+  async function refreshClashSubscriptionURL() {
+    setSubscriptionRefreshing(true)
+    try {
+      const data = await fetchJSON<CustomerSubscriptionURLResponse>('/api/v1/customer/subscription/refresh', { method: 'POST' })
+      setOverview((current) => current ? {
+        ...current,
+        clash_subscription_url: data.clash_subscription_url,
+        mihomo_subscription_url: data.mihomo_subscription_url,
+      } : current)
+      message.success('订阅链接已刷新，旧链接已失效')
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '刷新订阅链接失败')
+    } finally {
+      setSubscriptionRefreshing(false)
     }
   }
 
@@ -703,7 +716,7 @@ export function CustomerPortal() {
 
       <Modal
         className="customer-subscription-modal"
-        title="选择 Clash/Mihomo 订阅节点"
+        title="Clash/Mihomo 订阅"
         open={subscriptionModalOpen}
         onCancel={closeSubscriptionModal}
         footer={(
@@ -711,8 +724,8 @@ export function CustomerPortal() {
             <Button onClick={closeSubscriptionModal}>取消</Button>
             <Button
               type="primary"
-              disabled={selectedSubscriptionAssignmentIDs.length === 0}
-              onClick={() => void copyClashSubscriptionURL(selectedSubscriptionAssignmentIDs)}
+              disabled={!currentSubscriptionURL()}
+              onClick={() => void copyClashSubscriptionURL()}
             >
               复制订阅地址
             </Button>
@@ -723,37 +736,14 @@ export function CustomerPortal() {
       >
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
           <div>
-            <Text strong>选择导出的节点</Text>
-            <div className="muted-line">默认全部不选；只会导出下方勾选且已解析的授权链路。标记为“订阅链路”的节点需要通过 Clash/Mihomo 订阅使用。</div>
+            <Text strong>固定订阅地址</Text>
+            <div className="muted-line">同一个地址会自动包含后续新增的已启用授权链路，不需要重新选择节点导出。</div>
           </div>
+          <Input value={currentSubscriptionURL()} readOnly addonAfter={<Button type="link" onClick={() => void copyClashSubscriptionURL()}>复制</Button>} />
           <Space wrap>
-            <Button
-              size="small"
-              disabled={!(overview?.links || []).some((link) => link.resolved && (link.import_url || link.subscription_only))}
-              onClick={() => setSelectedSubscriptionAssignmentIDs((overview?.links || []).filter((link) => link.resolved && (link.import_url || link.subscription_only)).map((link) => link.assignment_id))}
-            >
-              全选
-            </Button>
-            <Button size="small" onClick={() => setSelectedSubscriptionAssignmentIDs([])}>清空</Button>
-            <Text type="secondary">已选择 {selectedSubscriptionAssignmentIDs.length} / {(overview?.links || []).filter((link) => link.resolved && (link.import_url || link.subscription_only)).length} 条</Text>
+            <Button loading={subscriptionRefreshing} onClick={() => void refreshClashSubscriptionURL()}>刷新订阅链接</Button>
+            <Text type="secondary">刷新后旧链接立即失效，新链接长期有效。</Text>
           </Space>
-          <Checkbox.Group
-            style={{ width: '100%' }}
-            value={selectedSubscriptionAssignmentIDs}
-            onChange={(values) => setSelectedSubscriptionAssignmentIDs(values.map((value) => Number(value)))}
-          >
-            <Space direction="vertical" size={10} style={{ width: '100%' }}>
-              {(overview?.links || []).map((link) => (
-                <Checkbox key={link.assignment_id} value={link.assignment_id} disabled={!link.resolved || (!link.import_url && !link.subscription_only)}>
-                  <div>
-                    <Text strong>{customerLinkDisplayName(link, remarkDrafts[link.assignment_id])}</Text>
-                    <div className="muted-line">{customerLinkSummaryText(link)}{link.resolved && (link.import_url || link.subscription_only) ? '' : '（暂不可导出）'}</div>
-                  </div>
-                </Checkbox>
-              ))}
-            </Space>
-          </Checkbox.Group>
-          {!(overview?.links || []).length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无授权链路" /> : null}
         </Space>
       </Modal>
 

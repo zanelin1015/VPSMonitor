@@ -25,7 +25,12 @@ func (a *App) handleCustomer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.HasPrefix(path, "subscription/") {
-		a.handleCustomerSubscription(w, r, strings.Split(path, "/")[1:])
+		parts := strings.Split(path, "/")[1:]
+		if len(parts) == 1 && parts[0] == "refresh" {
+			a.handleCustomerSubscriptionRefresh(w, r)
+			return
+		}
+		a.handleCustomerSubscription(w, r, parts)
 		return
 	}
 	switch path {
@@ -89,6 +94,31 @@ func (a *App) handleCustomer(w http.ResponseWriter, r *http.Request) {
 		}
 		writeError(w, http.StatusNotFound, "route not found")
 	}
+}
+
+func (a *App) handleCustomerSubscriptionRefresh(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	user, _, ok := a.requireCustomer(w, r)
+	if !ok {
+		return
+	}
+	token, err := a.store.RotateCustomerSubscriptionToken(user.ID)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "not found") {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.CustomerSubscriptionURLResponse{
+		ClashSubscriptionURL:  customerSubscriptionURL(r, token, "clash.yaml"),
+		MihomoSubscriptionURL: customerSubscriptionURL(r, token, "mihomo.yaml"),
+	})
 }
 
 func (a *App) handleCustomerOverview(w http.ResponseWriter, r *http.Request) {

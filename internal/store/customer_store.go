@@ -339,6 +339,41 @@ func (s *SQLiteStore) EnsureCustomerSubscriptionToken(customerID int64) (string,
 	return "", fmt.Errorf("generate customer subscription token: exhausted retries")
 }
 
+func (s *SQLiteStore) RotateCustomerSubscriptionToken(customerID int64) (string, error) {
+	if customerID <= 0 {
+		return "", fmt.Errorf("invalid customer id")
+	}
+	var enabled int
+	if err := s.db.QueryRow(`SELECT enabled FROM customer_accounts WHERE id = ?`, customerID).Scan(&enabled); err == sql.ErrNoRows {
+		return "", fmt.Errorf("customer not found")
+	} else if err != nil {
+		return "", fmt.Errorf("load customer subscription account: %w", err)
+	} else if enabled == 0 {
+		return "", fmt.Errorf("customer not found")
+	}
+	for attempt := 0; attempt < 5; attempt++ {
+		token, err := randomTokenBytes(32)
+		if err != nil {
+			return "", err
+		}
+		result, err := s.db.Exec(`
+			UPDATE customer_accounts
+			SET subscription_token = ?, updated_at = ?
+			WHERE id = ? AND enabled = 1
+		`, token, time.Now().UTC().Format(time.RFC3339Nano), customerID)
+		if err == nil {
+			if affected, rowsErr := result.RowsAffected(); rowsErr == nil && affected == 1 {
+				return token, nil
+			}
+			return "", fmt.Errorf("customer not found")
+		}
+		if !strings.Contains(strings.ToLower(err.Error()), "unique") {
+			return "", fmt.Errorf("rotate customer subscription token: %w", err)
+		}
+	}
+	return "", fmt.Errorf("rotate customer subscription token: exhausted retries")
+}
+
 func (s *SQLiteStore) GetCustomerBySubscriptionToken(token string) (model.CustomerUser, bool, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
