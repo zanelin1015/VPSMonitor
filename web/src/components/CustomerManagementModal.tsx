@@ -7,6 +7,8 @@ import { PlusOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons';
 
 import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, CustomerAssignmentSourceView, CustomerBillingDiagnostic, CustomerBillingReconciliationResponse, DashboardAgentView, XUIClientView, XUINodeView, XUIOverview } from '../types';
 import { fetchJSON } from '../lib/appHelpers';
+import { listPagination } from '../lib/pagination';
+import { useCompactLayout } from '../hooks/useCompactLayout';
 
 import { buildCustomerManagementTables } from './CustomerManagementTables';
 import { CustomerAssignmentManagerCard } from './CustomerAssignmentManagerCard';
@@ -24,6 +26,7 @@ export function CustomerManagementModal(props: {
   onClose?: () => void
   onConfigChanged?: (agentID?: string) => void | Promise<void>
   onOpenAssignment?: (assignment: CustomerAssignment) => void
+  onOpenSupportCustomer?: (customerID: number) => void
   initialAssignment?: CustomerAssignmentDraft | null
   onInitialAssignmentApplied?: () => void
   adminUser?: AdminUser | null
@@ -35,12 +38,14 @@ export function CustomerManagementModal(props: {
     onClose = () => undefined,
     onConfigChanged,
     onOpenAssignment,
+    onOpenSupportCustomer,
     initialAssignment = null,
     onInitialAssignmentApplied,
     adminUser = null,
     embedded = false,
   } = props
   const active = embedded || open
+  const compact = useCompactLayout()
   const canManageAreaManagers = adminUser?.role === 'admin'
   const canViewFinance = canManageAreaManagers
   const { message } = AntdApp.useApp()
@@ -318,7 +323,7 @@ export function CustomerManagementModal(props: {
     }
   }, [areaBatchForm.xui_agent_id])
 
-  const { visibleAssignmentColumns, billingReconciliationColumns, areaManagerColumns, customerColumns, renderAreaManagerCustomers } = buildCustomerManagementTables({
+  const { visibleAssignmentColumns, billingReconciliationColumns, areaManagerColumns, customerColumns, compactCustomerColumns, renderAreaManagerCustomers } = buildCustomerManagementTables({
     agents,
     canViewFinance,
     onOpenAssignment,
@@ -341,6 +346,9 @@ export function CustomerManagementModal(props: {
     changingCustomerStatusIDs,
     toggleCustomerStatus,
     deleteAreaManagerAssignment,
+    onOpenSupportCustomer,
+    rebindAssignment,
+    setAssignmentEnabled,
   })
 
   async function saveAreaManager() {
@@ -648,6 +656,56 @@ export function CustomerManagementModal(props: {
     }
   }
 
+  async function rebindAssignment(record: CustomerAssignment, clientID: string) {
+    if (!clientID) return
+    setSavingAssignment(true)
+    try {
+      await fetchJSON<CustomerAssignment>(`/api/v1/admin/customers/${record.customer_id}/assignments/${record.id}/rebind`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: clientID }),
+      })
+      message.success('客户端已重新绑定')
+      await loadCustomers()
+      if (canManageAreaManagers) await loadAreaManagers()
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '重新绑定失败')
+    } finally {
+      setSavingAssignment(false)
+    }
+  }
+
+  async function setAssignmentEnabled(record: CustomerAssignment, enabled: boolean) {
+    setSavingAssignment(true)
+    try {
+      await fetchJSON<CustomerAssignment>(`/api/v1/admin/customers/${record.customer_id}/assignments/${record.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agent_id: record.agent_id,
+          inbound_id: record.inbound_id,
+          inbound_tag: record.inbound_tag,
+          client_id: record.client_id,
+          client_email: record.client_email,
+          public_client_name: record.public_client_name,
+          price_mode: record.price_mode,
+          revenue_amount: record.revenue_amount,
+          revenue_currency: record.revenue_currency,
+          revenue_cycle: record.revenue_cycle,
+          enabled,
+          front_proxy_node_ids: (record.front_proxies || []).map((item) => item.id),
+        }),
+      })
+      message.success(enabled ? '链路已启用' : '链路已停用')
+      await loadCustomers()
+      if (canManageAreaManagers) await loadAreaManagers()
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '更新链路状态失败')
+    } finally {
+      setSavingAssignment(false)
+    }
+  }
+
   async function saveAssignment(): Promise<boolean> {
     if (!selectedCustomerID) {
       message.warning('请先选择用户')
@@ -906,22 +964,24 @@ export function CustomerManagementModal(props: {
           <Title level={5}>用户列表</Title>
           <AdminHelpHint title="普通账号以列表方式管理；编辑用户、查看链路和管理链路均通过弹窗完成。" />
         </div>
-        <Space>
+        <Space wrap>
           <Button icon={<ReloadOutlined />} onClick={() => void loadCustomers()}>刷新用户</Button>
           {canViewFinance ? <Button icon={<SyncOutlined />} onClick={() => void openBillingReconciliation()}>费用对账</Button> : null}
           <Button type="primary" icon={<PlusOutlined />} onClick={openCustomerCreateModal}>新增普通账号</Button>
         </Space>
       </div>
-      <Space wrap style={{ width: '100%', marginBottom: 14 }}>
+      <div className="customer-admin-filters">
         <Input.Search
           allowClear
           value={customerSearch}
-          style={{ minWidth: 280, flex: 1 }}
+          className="customer-admin-search"
+          aria-label="搜索用户"
           placeholder="搜索用户名 / 显示名 / 链路名称 / 客户端"
           onChange={(event) => setCustomerSearch(event.target.value)}
           onSearch={setCustomerSearch}
         />
         <Select
+          aria-label="用户状态"
           value={customerStatusFilter}
           style={{ width: 120 }}
           options={[
@@ -932,13 +992,14 @@ export function CustomerManagementModal(props: {
           onChange={(value: 'all' | 'enabled' | 'disabled') => setCustomerStatusFilter(value)}
         />
         <Text type="secondary">显示 {filteredCustomers.length} / {customers.length} 个用户</Text>
-      </Space>
+      </div>
       <Table
         rowKey={(record) => record.id}
-        columns={customerColumns}
+        className={compact ? 'customer-admin-compact-table' : undefined}
+        columns={compact ? compactCustomerColumns : customerColumns}
         dataSource={filteredCustomers}
-        pagination={{ pageSize: 8, hideOnSinglePage: true }}
-        scroll={{ x: 1400, y: '100%' }}
+        pagination={listPagination}
+        scroll={compact ? undefined : { x: 1400, y: '100%' }}
         locale={{ emptyText: <Empty description={customerSearch.trim() || customerStatusFilter !== 'all' ? '没有匹配的用户' : '暂无用户'} /> }}
       />
     </Card>
@@ -1046,7 +1107,7 @@ export function CustomerManagementModal(props: {
             loading={billingReconciliationLoading}
             columns={billingReconciliationColumns}
             dataSource={billingReconciliation?.items || []}
-            pagination={{ pageSize: 8, hideOnSinglePage: true }}
+            pagination={listPagination}
             scroll={{ x: 940 }}
             locale={{ emptyText: <Empty description="暂无可对账的授权" /> }}
           />
@@ -1083,8 +1144,8 @@ export function CustomerManagementModal(props: {
         <Tabs
           className="customer-admin-tabs"
           tabBarExtraContent={(
-            <span className="admin-help-title-group">
-              <Text type="secondary">授权说明</Text>
+            <span className="admin-help-title-group customer-admin-tab-help">
+              <Text type="secondary" className="customer-admin-help-label">授权说明</Text>
               <AdminHelpHint title={(
                 <>
                   <strong>授权使用规则与停用机制</strong>

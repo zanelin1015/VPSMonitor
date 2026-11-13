@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react'
-import { Alert, App as AntdApp, Button, Card, Col, Empty, Input, Popconfirm, Row, Space, Switch, Table, Tag, Typography } from 'antd'
+import { Alert, App as AntdApp, Button, Card, Col, Empty, Input, Pagination, Popconfirm, Row, Space, Switch, Table, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons'
 
 import type { FrontProxyNode } from '../types'
 import { fetchJSON, formatDateTime } from '../lib/appHelpers'
+import { listPagination } from '../lib/pagination'
+import { useCompactLayout } from '../hooks/useCompactLayout'
+import { useListPagination } from '../hooks/useListPagination'
 import { AdminHelpHint } from './AdminHelpHint'
+import { CompactDataCardList } from './AgentClientTables'
 
 const { Text, Title } = Typography
 
@@ -25,12 +29,14 @@ const emptyFrontProxyForm: FrontProxyFormState = {
 
 export function FrontProxyManagementPage(props: { canManageNodes?: boolean }) {
   const canManageNodes = props.canManageNodes ?? true
+  const compact = useCompactLayout()
   const { message } = AntdApp.useApp()
   const [frontProxies, setFrontProxies] = useState<FrontProxyNode[]>([])
   const [frontProxyForm, setFrontProxyForm] = useState<FrontProxyFormState>(emptyFrontProxyForm)
   const [editingFrontProxyID, setEditingFrontProxyID] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const { page, pageSize, onChange: onPageChange } = useListPagination(frontProxies.length, canManageNodes ? 'admin' : 'area')
 
   useEffect(() => {
     void loadFrontProxies()
@@ -222,16 +228,24 @@ export function FrontProxyManagementPage(props: { canManageNodes?: boolean }) {
             <Input value={frontProxyForm.remark} placeholder="例如：香港入口 / 仅供某区域账号使用" onChange={(event) => setFrontProxyForm((current) => ({ ...current, remark: event.target.value }))} />
           </Col>
         </Row> : null}
-        <Table
-          style={{ marginTop: 16 }}
-          rowKey={(record) => record.id}
-          loading={loading}
-          columns={columns}
-          dataSource={frontProxies}
-          pagination={{ pageSize: 8, hideOnSinglePage: true }}
-          scroll={{ x: 1000 }}
-          locale={{ emptyText: <Empty description={canManageNodes ? '暂无第三方前置代理' : '暂无已授权前置代理'} /> }}
-        />
+        {compact ? (
+          <div style={{ marginTop: 16 }}>
+            <CompactDataCardList columns={columns} dataSource={frontProxies.slice((page - 1) * pageSize, page * pageSize)} rowKey={(record) => record.id} />
+            {!frontProxies.length ? <Empty description={canManageNodes ? '暂无第三方前置代理' : '暂无已授权前置代理'} /> : null}
+            {frontProxies.length ? <Pagination {...listPagination} current={page} pageSize={pageSize} total={frontProxies.length} onChange={onPageChange} /> : null}
+          </div>
+        ) : (
+          <Table
+            style={{ marginTop: 16 }}
+            rowKey={(record) => record.id}
+            loading={loading}
+            columns={columns}
+            dataSource={frontProxies}
+            pagination={listPagination}
+            scroll={{ x: 1000 }}
+            locale={{ emptyText: <Empty description={canManageNodes ? '暂无第三方前置代理' : '暂无已授权前置代理'} /> }}
+          />
+        )}
       </Card>
     </main>
   )

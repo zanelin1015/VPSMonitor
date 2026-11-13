@@ -883,6 +883,54 @@ html[data-theme='dark'] .customer-hero {
   margin: 0;
 }
 
+.customer-admin-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.customer-admin-search {
+  flex: 1 1 240px;
+  min-width: 0;
+  max-width: 420px;
+}
+
+.customer-admin-account-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.customer-admin-compact-row,
+.customer-admin-row-times {
+  display: grid;
+  gap: 8px;
+}
+
+.customer-admin-compact-identity {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.customer-admin-compact-identity > .ant-btn {
+  flex: none;
+}
+
+.customer-admin-row-details summary {
+  width: fit-content;
+  padding-block: 8px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.customer-admin-row-times {
+  margin-bottom: 8px;
+  gap: 4px;
+}
+
 .ant-modal.customer-assignment-modal .ant-modal-content,
 .ant-modal.area-manager-modal .ant-modal-content,
 .ant-modal.customer-account-modal .ant-modal-content {
@@ -1536,11 +1584,6 @@ html[data-theme='dark'] .customer-qr-button {
   .customer-admin-card-head {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .customer-admin-card-head .ant-space,
-  .customer-admin-card-head .ant-btn {
-    width: 100%;
   }
 
   .customer-admin-list-item {

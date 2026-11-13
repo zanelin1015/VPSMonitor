@@ -176,6 +176,7 @@ export function ClientInstallModal(props: {
 
   return (
     <Modal
+      className="admin-mobile-modal admin-client-install-modal"
       title="Client 一键安装命令"
       open={open}
       onCancel={onClose}
@@ -368,7 +369,7 @@ export function AccountSettingsModal(props: {
   }
 
   return (
-    <Modal title={passwordOnly ? '修改密码' : '修改管理员账号'} open={open} onCancel={() => { if (!saving) onClose() }} onOk={onSave} confirmLoading={saving} closable={!saving} maskClosable={!saving} keyboard={!saving} cancelButtonProps={{ disabled: saving }} okText="保存" cancelText="取消">
+    <Modal className="admin-mobile-modal admin-account-modal" title={passwordOnly ? '修改密码' : '修改管理员账号'} open={open} onCancel={() => { if (!saving) onClose() }} onOk={onSave} confirmLoading={saving} closable={!saving} maskClosable={!saving} keyboard={!saving} cancelButtonProps={{ disabled: saving }} okText="保存" cancelText="取消">
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         {passwordOnly ? <Text type="secondary">修改后当前登录保持有效，其他设备需使用新密码重新登录。</Text> : <><div className="account-avatar-editor">
           <Avatar size={72} src={form.avatar_url || undefined} className="account-avatar-preview">
@@ -711,7 +712,7 @@ export function TelegramBotSettingsModal(props: {
   const { areaManager = false, open, bots, loading, saving, editingID, form, onClose, onFormChange, onSave, onRefresh, onEditIDChange, onDelete, onTest } = props
 
   return (
-    <Modal title="Telegram 告警机器人" open={open} onCancel={onClose} footer={null} width={920}>
+    <Modal className="admin-mobile-modal admin-telegram-modal" title="Telegram 告警机器人" open={open} onCancel={onClose} footer={null} width={920}>
       <TelegramBotPanel
         areaManager={areaManager}
         bots={bots}
@@ -901,7 +902,7 @@ export function SystemUpdateModal(props: {
   const latestClientVersion = latestInfo?.latest_client_version || latestInfo?.latest_version || '-'
 
   return (
-    <Modal title="在线升级" open={open} onCancel={onClose} footer={null} width={1120}>
+    <Modal className="admin-mobile-modal admin-update-modal" title="在线升级" open={open} onCancel={onClose} footer={null} width={1120}>
       <Spin spinning={latestLoading}>
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Alert

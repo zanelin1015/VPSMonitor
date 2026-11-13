@@ -10,6 +10,7 @@ import type { ConfigSectionKey } from '../lib/appHelpers'
 import { normalizeSnellConfig, normalizeSnellConfigs, normalizeXUIOverview } from '../lib/appHelpersConfig'
 import { AdminHelpHint } from './AdminHelpHint'
 import { formatDateTime, formatRenewalHint, summarizeConfigAudit } from '../lib/appHelpers'
+import { listPagination } from '../lib/pagination'
 import { fetchJSON } from '../lib/api'
 import { EntryConnectionSection } from './EntryConnectionSection'
 import { HAProxyConfigSection } from './HAProxyConfigSection'
@@ -527,7 +528,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
           style={{ marginTop: 12 }}
           dataSource={snellRows}
           locale={{ emptyText: '暂无 Snell 节点，请点击新增 Snell' }}
-          pagination={{ pageSize: 10, hideOnSinglePage: false, showSizeChanger: false, showTotal: (total) => `共 ${total} 个节点` }}
+          pagination={{ ...listPagination, hideOnSinglePage: false, showTotal: (total) => `共 ${total} 个节点` }}
           columns={[
             { title: '名称', dataIndex: 'name', key: 'name', render: (value: string, row) => <div><Text strong>{value || 'Snell'}</Text>{row.enabled === false ? <Text type="secondary">（已停用）</Text> : null}</div> },
             { title: '端口', dataIndex: 'port', key: 'port', width: 100, render: (value: number) => value || '-' },
@@ -586,7 +587,7 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
               bordered
               style={{ marginTop: 12 }}
               dataSource={snellForwardRules}
-              pagination={{ pageSize: 5, hideOnSinglePage: true, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
+              pagination={{ ...listPagination, showTotal: (total) => `共 ${total} 条` }}
               renderItem={(rule) => {
                 const targetAgent = agents.find((agent) => agent.agent_id === rule.target_agent_id)
                 const ruleIndex = snellForwardRules.indexOf(rule)

@@ -16,6 +16,7 @@ import { Badge, Button, Space, Typography } from 'antd'
 import { useState, type ReactNode } from 'react'
 import { AdminHeaderActions, type AdminShellNavigationProps } from '../components/AdminShellNavigation'
 import { adminMenuHref, adminMenuRoutes, currentAdminMenu, visibleAdminMenu } from './adminMenu'
+import { useCompactLayout } from '../hooks/useCompactLayout'
 
 const icons = {
   dashboard: <DashboardOutlined />,
@@ -40,7 +41,10 @@ export function AdminLayout({
   children: ReactNode
   overlays?: ReactNode
 }) {
-  const [collapsed, setCollapsed] = useState(false)
+  const compact = useCompactLayout()
+  const [sidebar, setSidebar] = useState<{ compact: boolean; collapsed: boolean }>()
+  const collapsed = sidebar?.compact === compact ? sidebar.collapsed : compact
+  const setCollapsed = (value: boolean) => setSidebar({ compact, collapsed: value })
   const current = currentAdminMenu(navigation.activeAdminPage, navigation.topologyVisible)
   const menu = visibleAdminMenu(
     navigation.canManageSystem,
@@ -50,7 +54,7 @@ export function AdminLayout({
   const pathFor = (key: Parameters<typeof adminMenuHref>[0]) => adminMenuHref(key)
 
   return (
-    <div className={`admin-pro-layout page-shell admin-page-shell${current.key === 'dashboard' ? ' admin-pro-workbench-layout' : current.key === 'customers' ? ' admin-pro-customers-layout' : current.key === 'assets' ? ' admin-pro-assets-layout' : current.key === 'support' ? ' admin-pro-support-layout' : ''}`}>
+    <div className={`admin-pro-layout page-shell admin-page-shell${compact ? ' admin-pro-compact' : ''}${current.key === 'dashboard' ? ' admin-pro-workbench-layout' : current.key === 'customers' ? ' admin-pro-customers-layout' : current.key === 'assets' ? ' admin-pro-assets-layout' : current.key === 'support' ? ' admin-pro-support-layout' : ''}`}>
       <ProLayout
         title="ZaneLin"
         logo={

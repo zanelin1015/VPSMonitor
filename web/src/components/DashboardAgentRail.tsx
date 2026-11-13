@@ -31,12 +31,13 @@ import { CountryFlag } from './CountryFlag'
 import { agentHealthFilterLabel, normalizeAgentHealthFilter, type AgentHealthFilter } from '../lib/agentHealth'
 import { matchingAgentClients } from '../lib/agentSearch'
 import { useListPagination } from '../hooks/useListPagination'
+import { listPagination } from '../lib/pagination'
 
 export function AgentRail(props: AgentListProps) {
   const { agents, loading, error, selectedTag, healthFilter, selectedAgentId, tagFilterOptions, viewMode, panelExpanded, topologyVisible, restrictedView = false, searchText, onToggleViewMode, onToggleTopology, onRefresh, onSelectTag, onHealthFilterChange, onSelectAgent, onSearchTextChange } = props
   const effectiveViewMode: AgentViewMode = panelExpanded ? 'list' : viewMode
   const [compactFiltersOpen, setCompactFiltersOpen] = useState(false)
-  const { page: agentPage, pageSize: agentPageSize, onChange: onPageChange } = useListPagination(
+  const { page: agentPage, pageSize, onChange: onPageChange } = useListPagination(
     agents.length, JSON.stringify([selectedTag, healthFilter, effectiveViewMode, searchText]),
   )
   const filtersVisible = !panelExpanded || compactFiltersOpen
@@ -142,15 +143,10 @@ export function AgentRail(props: AgentListProps) {
             loading={loading}
             locale={{ emptyText: <Empty description={searchText.trim() ? '当前筛选范围内没有匹配的节点或客户端' : healthFilter !== 'all' ? `暂无${agentHealthFilterLabel(healthFilter)} Client` : selectedTag ? '该标签下暂无 client' : '暂无已注册 client'} /> }}
             pagination={{
+              ...listPagination,
               current: agentPage,
-              pageSize: agentPageSize,
+              pageSize,
               hideOnSinglePage: false,
-              showSizeChanger: {
-                labelRender: ({ value }) => `${value}/页`,
-                optionRender: (option) => `${option.value}/页`,
-              },
-              pageSizeOptions: [5, 10, 20],
-              locale: { items_per_page: '/页' },
               onChange: onPageChange,
               showTotal: (total, range) => `第 ${range[0]}-${range[1]} 台 / 共 ${total} 台`,
             }}
@@ -158,7 +154,7 @@ export function AgentRail(props: AgentListProps) {
               <AgentRailItem
                 key={item.agent_id}
                 item={item}
-                displaySortOrder={(agentPage - 1) * agentPageSize + index + 1}
+                displaySortOrder={(agentPage - 1) * pageSize + index + 1}
                 active={item.agent_id === selectedAgentId}
                 viewMode={effectiveViewMode}
                 compact={panelExpanded}

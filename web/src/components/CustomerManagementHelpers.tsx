@@ -1,6 +1,7 @@
 import { Space, Tag, Typography } from 'antd'
 
 import type { AreaManagerAssignment, AreaManagerOutboundGrant, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, DashboardAgentView, FinanceClientView, RealmForwardRule, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
+import { agentHealthCategory } from '../lib/agentHealth'
 
 const { Text } = Typography
 
@@ -825,7 +826,7 @@ export function clientBilling(agentID: string, inboundID: number, inboundTag: st
   })
 }
 
-export type AssignmentBindingStatus = 'matched' | 'legacy' | 'mismatch' | 'missing'
+export type AssignmentBindingStatus = 'matched' | 'legacy' | 'mismatch' | 'waiting_sync' | 'node_deleted' | 'select_client'
 
 export interface AssignmentBindingDiagnostic {
   status: AssignmentBindingStatus
@@ -841,6 +842,9 @@ export function assignmentBindingDiagnostic(record: CustomerAssignment, agents: 
     : undefined
   if (current) {
     return { status: 'matched', label: '已匹配', current }
+  }
+  if (!agent || agentHealthCategory(agent) === 'offline' || agent.summary.last_collection_err) {
+    return { status: 'waiting_sync', label: '等待同步' }
   }
   const legacy = clients.find((client) =>
     client.inbound_id === record.inbound_id &&
@@ -860,7 +864,10 @@ export function assignmentBindingDiagnostic(record: CustomerAssignment, agents: 
   if (!record.client_email && inbound) {
     return { status: record.client_id ? 'mismatch' : 'legacy', label: record.client_id ? 'ID 不匹配' : '节点级旧数据', current: inbound }
   }
-  return { status: 'missing', label: '未找到客户端' }
+  if (clients.some((client) => client.inbound_id === record.inbound_id)) {
+    return { status: 'select_client', label: '请选择客户端' }
+  }
+  return { status: 'node_deleted', label: '节点已删除' }
 }
 
 export function billingFormPatch(billing?: XUIClientBillingConfig): Pick<AssignmentFormState, 'revenue_amount' | 'revenue_currency' | 'revenue_cycle'> {

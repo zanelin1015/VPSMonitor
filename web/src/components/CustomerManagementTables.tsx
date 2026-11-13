@@ -1,6 +1,6 @@
 import { Button, Empty, Modal, Popconfirm, Space, Table, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { CopyOutlined, DeleteOutlined, EditOutlined, ExportOutlined, LinkOutlined, SyncOutlined } from '@ant-design/icons'
+import { CopyOutlined, DeleteOutlined, EditOutlined, ExportOutlined, LinkOutlined, MessageOutlined, SyncOutlined } from '@ant-design/icons'
 import { useState } from 'react'
 
 import type { AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerBillingDiagnostic, DashboardAgentView } from '../types'
@@ -65,6 +65,9 @@ interface CustomerManagementTableOptions {
   changingCustomerStatusIDs: number[]
   toggleCustomerStatus: (record: CustomerAdminView) => void
   deleteAreaManagerAssignment: (managerID: number, assignmentID: number) => void
+  onOpenSupportCustomer?: (customerID: number) => void
+  rebindAssignment: (record: CustomerAssignment, clientID: string) => void
+  setAssignmentEnabled: (record: CustomerAssignment, enabled: boolean) => void
 }
 
 export function buildCustomerManagementTables({
@@ -90,6 +93,9 @@ export function buildCustomerManagementTables({
   changingCustomerStatusIDs,
   toggleCustomerStatus,
   deleteAreaManagerAssignment,
+  onOpenSupportCustomer,
+  rebindAssignment,
+  setAssignmentEnabled,
 }: CustomerManagementTableOptions) {
   const assignmentColumns: ColumnsType<CustomerAssignment> = [
     {
@@ -129,7 +135,7 @@ export function buildCustomerManagementTables({
       width: 120,
       render: (_, record) => {
         const diagnostic = assignmentBindingDiagnostic(record, agents)
-        const color = diagnostic.status === 'matched' ? 'green' : diagnostic.status === 'legacy' ? 'blue' : diagnostic.status === 'mismatch' ? 'orange' : 'red'
+        const color = diagnostic.status === 'matched' ? 'green' : diagnostic.status === 'legacy' ? 'blue' : diagnostic.status === 'mismatch' || diagnostic.status === 'select_client' ? 'orange' : diagnostic.status === 'waiting_sync' ? 'gold' : 'red'
         return <Tag color={color}>{diagnostic.label}</Tag>
       },
     },
@@ -148,10 +154,19 @@ export function buildCustomerManagementTables({
     {
       title: '操作',
       key: 'actions',
-      width: 240,
+      width: 360,
       fixed: 'right',
       render: (_, record) => (
-        <Space size={6} wrap={false}>
+        <Space size={6} wrap>
+          {(() => {
+            const diagnostic = assignmentBindingDiagnostic(record, agents)
+            return diagnostic.current?.client_id && (diagnostic.status === 'legacy' || diagnostic.status === 'mismatch') ? (
+              <Button size="small" type="primary" onClick={() => rebindAssignment(record, diagnostic.current?.client_id || '')}>重新绑定</Button>
+            ) : diagnostic.status === 'select_client' || diagnostic.status === 'node_deleted' ? (
+              <Button size="small" onClick={() => editAssignment(record)}>选择客户端</Button>
+            ) : null
+          })()}
+          <Button size="small" onClick={() => setAssignmentEnabled(record, !record.enabled)}>{record.enabled ? '停用' : '启用'}</Button>
           {onOpenAssignment ? (
             <Button size="small" icon={<ExportOutlined />} onClick={() => onOpenAssignment(record)}>
               跳转
@@ -324,22 +339,13 @@ export function buildCustomerManagementTables({
       title: '用户账号',
       width: 220,
       sorter: (left, right) => left.username.localeCompare(right.username, 'zh-CN'),
-      render: (_, record) => (
-        <div>
-          <Text strong>{record.username}</Text>
-          <div className="muted-line">{record.display_name || record.username}</div>
-        </div>
-      ),
+      render: (_, record) => renderCustomerAccount(record),
     },
     {
       title: '已授权链路',
       width: 160,
       sorter: (left, right) => (left.assignments?.length || 0) - (right.assignments?.length || 0),
-      render: (_, record) => (
-        <Button size="small" onClick={() => openAssignmentViewModal(record)}>
-          查看 {record.assignments?.length || 0} 条
-        </Button>
-      ),
+      render: (_, record) => renderCustomerLinks(record),
     },
     {
       title: '状态',
@@ -366,21 +372,76 @@ export function buildCustomerManagementTables({
     {
       title: '操作',
       width: 510,
+      render: (_, record) => renderCustomerActions(record),
+    },
+  ]
+
+  const compactCustomerColumns: ColumnsType<CustomerAdminView> = [
+    {
+      title: '用户账号',
+      key: 'account',
       render: (_, record) => (
-        <Space size={6} wrap>
-          <Button size="small" icon={<EditOutlined />} onClick={() => openCustomerEditModal(record)}>编辑</Button>
-          <Button size="small" type="primary" onClick={() => openAssignmentManagerModal(record)}>管理链路</Button>
-          <Button size="small" icon={<CopyOutlined />} disabled={!record.enabled} onClick={() => openCustomerSubscriptionModal(record)}>导出 Clash</Button>
-          <Popconfirm title={`将 ${record.username} 的密码初始化为 ${DEFAULT_ACCOUNT_PASSWORD}？`} okText="初始化" cancelText="取消" onConfirm={() => void resetCustomerPassword(record.id)}>
-            <Button size="small" icon={<SyncOutlined />} loading={resettingCustomerID === record.id}>初始化密码</Button>
-          </Popconfirm>
-          <Popconfirm title="删除该用户及其全部分配？" okText="删除" cancelText="取消" onConfirm={() => void deleteCustomer(record.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
-          </Popconfirm>
-        </Space>
+        <div className="customer-admin-compact-row">
+          <div className="customer-admin-compact-identity">
+            {renderCustomerAccount(record)}
+            {renderCustomerStatusButton(record)}
+          </div>
+          {renderCustomerActions(record, true)}
+          <details className="customer-admin-row-details">
+            <summary>更多操作与时间</summary>
+            <div className="customer-admin-row-times">
+              <Text type="secondary">创建于 {formatDateTime(record.created_at)}</Text>
+              <Text type="secondary">修改于 {formatDateTime(record.updated_at)}</Text>
+            </div>
+            <Space size={8} wrap>{renderCustomerOtherActions(record)}</Space>
+          </details>
+        </div>
       ),
     },
   ]
+
+  function renderCustomerAccount(record: CustomerAdminView) {
+    return (
+      <div className="customer-admin-account-name">
+        <Text strong>{record.username}</Text>
+        {record.display_name && record.display_name !== record.username ? <div className="muted-line">{record.display_name}</div> : null}
+      </div>
+    )
+  }
+
+  function renderCustomerLinks(record: CustomerAdminView) {
+    return (
+      <Button size="small" onClick={() => openAssignmentViewModal(record)}>
+        查看 {record.assignments?.length || 0} 条
+      </Button>
+    )
+  }
+
+  function renderCustomerActions(record: CustomerAdminView, compact = false) {
+    return (
+      <Space size={compact ? 8 : 6} wrap>
+        {compact ? renderCustomerLinks(record) : null}
+        <Button size="small" icon={<EditOutlined />} onClick={() => openCustomerEditModal(record)}>编辑</Button>
+        <Button size="small" type="primary" onClick={() => openAssignmentManagerModal(record)}>管理链路</Button>
+        {onOpenSupportCustomer ? <Button size="small" icon={<MessageOutlined />} onClick={() => onOpenSupportCustomer(record.id)}>发消息</Button> : null}
+        {compact ? null : renderCustomerOtherActions(record)}
+      </Space>
+    )
+  }
+
+  function renderCustomerOtherActions(record: CustomerAdminView) {
+    return (
+      <>
+        <Button size="small" icon={<CopyOutlined />} disabled={!record.enabled} onClick={() => openCustomerSubscriptionModal(record)}>导出 Clash</Button>
+        <Popconfirm title={`将 ${record.username} 的密码初始化为 ${DEFAULT_ACCOUNT_PASSWORD}？`} okText="初始化" cancelText="取消" onConfirm={() => void resetCustomerPassword(record.id)}>
+          <Button size="small" icon={<SyncOutlined />} loading={resettingCustomerID === record.id}>初始化密码</Button>
+        </Popconfirm>
+        <Popconfirm title="删除该用户及其全部分配？" okText="删除" cancelText="取消" onConfirm={() => void deleteCustomer(record.id)}>
+          <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
+        </Popconfirm>
+      </>
+    )
+  }
 
   function timestampForSort(value?: string) {
     const timestamp = value ? Date.parse(value) : Number.NaN
@@ -450,5 +511,5 @@ export function buildCustomerManagementTables({
     )
   }
 
-  return { visibleAssignmentColumns, billingReconciliationColumns, areaManagerColumns, customerColumns, renderAreaManagerCustomers }
+  return { visibleAssignmentColumns, billingReconciliationColumns, areaManagerColumns, customerColumns, compactCustomerColumns, renderAreaManagerCustomers }
 }

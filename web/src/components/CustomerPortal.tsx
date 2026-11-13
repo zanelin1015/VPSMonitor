@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, App as AntdApp, Button, Card, Empty, Input, Modal, Pagination, Progress, QRCode, Segmented, Space, Spin, Statistic, Tag, Typography } from 'antd'
 import { BarChartOutlined, CheckCircleOutlined, CheckOutlined, CloseCircleOutlined, CloseOutlined, CopyOutlined, DashboardOutlined, DownOutlined, EditOutlined, InfoCircleOutlined, LinkOutlined, LockOutlined, LogoutOutlined, ReloadOutlined, RightOutlined, UnorderedListOutlined, WarningOutlined } from '@ant-design/icons'
 
-import type { CustomerAuthResponse, CustomerDailyLinkUsage, CustomerDailyUsage, CustomerLinkStep, CustomerLinkView, CustomerOverviewResponse, CustomerSubscriptionURLResponse, CustomerTrafficRecord, CustomerUsageResponse, CustomerUser } from '../types'
+import type { CustomerAuthResponse, CustomerDailyLinkUsage, CustomerDailyUsage, CustomerLinkStep, CustomerLinkView, CustomerOverviewResponse, CustomerSubscriptionURLResponse, CustomerUsageResponse, CustomerUser } from '../types'
 import { fetchJSON, formatDateTime } from '../lib/appHelpers'
 import { CountryFlag } from './CountryFlag'
 import { CUSTOMER_SESSION_EXPIRED_EVENT } from '../lib/api'
@@ -11,6 +11,8 @@ import { LoginScreen } from './LoginScreen'
 import { CustomerSupportWidget } from './CustomerSupportWidget'
 import { CustomerThemeButton } from './CustomerThemeButton'
 import { readNodeImportTarget, saveNodeImportTarget } from '../lib/nodeImport'
+import { listPagination, DEFAULT_PAGE_SIZE } from '../lib/pagination'
+import { useListPagination } from '../hooks/useListPagination'
 import { NodeImportTargetSelector } from './NodeImportTargetSelector'
 
 import {
@@ -868,17 +870,16 @@ function CustomerUsagePanel(props: {
   const [expandedDailyDates, setExpandedDailyDates] = useState<string[]>([])
   const [customDateFrom, setCustomDateFrom] = useState(props.dateFrom)
   const [customDateTo, setCustomDateTo] = useState(props.dateTo)
-  const [dailyPage, setDailyPage] = useState(1)
-  const [recordPage, setRecordPage] = useState(1)
   const fallback = customerUsageFallback(props.overview)
   const summary = props.usage || fallback
   const daily = props.usage?.daily || []
   const records = props.usage?.records || []
+  const history = records.length ? records : [...daily].reverse()
   const linksByAssignmentID = useMemo(() => new Map((props.overview?.links || []).map((link) => [link.assignment_id, link])), [props.overview?.links])
-  const dailyPageSize = 7
-  const recordPageSize = 20
-  const visibleDaily = daily.slice((dailyPage - 1) * dailyPageSize, dailyPage * dailyPageSize)
-  const visibleRecords = records.slice((recordPage - 1) * recordPageSize, recordPage * recordPageSize)
+  const dailyPages = useListPagination(daily.length, props.usage)
+  const historyPages = useListPagination(history.length, props.usage)
+  const visibleDaily = daily.slice((dailyPages.page - 1) * dailyPages.pageSize, dailyPages.page * dailyPages.pageSize)
+  const visibleHistory = history.slice((historyPages.page - 1) * historyPages.pageSize, historyPages.page * historyPages.pageSize)
 
   useEffect(() => {
     setCustomDateFrom(props.dateFrom)
@@ -886,8 +887,6 @@ function CustomerUsagePanel(props: {
   }, [props.dateFrom, props.dateTo])
 
   useEffect(() => {
-    setDailyPage(1)
-    setRecordPage(1)
     setExpandedDailyDates([])
   }, [props.usage])
 
@@ -956,71 +955,73 @@ function CustomerUsagePanel(props: {
         {historyView === 'chart' ? (
           <>
             {daily.length ? (
-              <div className="customer-usage-table-wrap">
-                <table className="customer-usage-table">
-                  <thead><tr><th>每日用量</th><th>上传</th><th>下载</th><th>合计</th><th>计费用量</th></tr></thead>
-                  <tbody>{visibleDaily.map((item: CustomerDailyUsage) => {
-                    const linkUsage = item.links || []
-                    const expanded = expandedDailyDates.includes(item.date)
-                    return (
-                      <Fragment key={`daily-${item.date}`}>
-                        <tr className={linkUsage.length ? 'customer-usage-daily-row customer-usage-daily-row-expandable' : 'customer-usage-daily-row'}>
-                          <td>
-                            {linkUsage.length ? (
-                              <button
-                                type="button"
-                                className="customer-usage-expand-button"
-                                aria-label={`${expanded ? '收起' : '展开'} ${item.date} 的链路用量`}
-                                aria-expanded={expanded}
-                                onClick={() => toggleDailyDate(item.date)}
-                              >
-                                {expanded ? <DownOutlined /> : <RightOutlined />}
-                                <span>{item.date}</span>
-                              </button>
-                            ) : item.date}
-                          </td>
-                          <td>{formatBytes(item.upload_bytes)}</td>
-                          <td>{formatBytes(item.download_bytes)}</td>
-                          <td>{formatBytes(item.total_bytes)}</td>
-                          <td>{formatBytes(item.counted_bytes)}</td>
-                        </tr>
-                        {expanded ? (
-                          <tr key={`detail-${item.date}-links`} className="customer-usage-daily-details-row">
-                            <td colSpan={5}>
-                              <div className="customer-usage-daily-details" aria-label={`${item.date} 链路用量明细`}>
-                                <div className="customer-usage-daily-details-title">链路用量明细</div>
-                                <div className="customer-usage-daily-details-head">
-                                  <span>链路</span><span>上传</span><span>下载</span><span>合计</span><span>计费用量</span>
-                                </div>
-                                {linkUsage.map((linkItem: CustomerDailyLinkUsage) => {
-                                  const link = linksByAssignmentID.get(linkItem.assignment_id)
-                                  return (
-                                    <div key={`${item.date}-${linkItem.assignment_id}`} className="customer-usage-daily-details-item">
-                                      <span className="customer-usage-daily-details-name">{link ? customerLinkDisplayName(link) : `链路 #${linkItem.assignment_id}`}</span>
-                                      <span>{formatBytes(linkItem.upload_bytes)}</span>
-                                      <span>{formatBytes(linkItem.download_bytes)}</span>
-                                      <span>{formatBytes(linkItem.total_bytes)}</span>
-                                      <span>{formatBytes(linkItem.counted_bytes)}</span>
-                                    </div>
-                                  )
-                                })}
-                              </div>
+              <div className="customer-usage-daily-list">
+                <div className="customer-usage-table-wrap" role="region" aria-label="每日流量表" tabIndex={0}>
+                  <table className="customer-usage-table">
+                    <thead><tr><th>每日用量</th><th>上传</th><th>下载</th><th>合计</th><th>计费用量</th></tr></thead>
+                    <tbody>{visibleDaily.map((item: CustomerDailyUsage) => {
+                      const linkUsage = item.links || []
+                      const expanded = expandedDailyDates.includes(item.date)
+                      return (
+                        <Fragment key={`daily-${item.date}`}>
+                          <tr className={linkUsage.length ? 'customer-usage-daily-row customer-usage-daily-row-expandable' : 'customer-usage-daily-row'}>
+                            <td>
+                              {linkUsage.length ? (
+                                <button
+                                  type="button"
+                                  className="customer-usage-expand-button"
+                                  aria-label={`${expanded ? '收起' : '展开'} ${item.date} 的链路用量`}
+                                  aria-expanded={expanded}
+                                  onClick={() => toggleDailyDate(item.date)}
+                                >
+                                  {expanded ? <DownOutlined /> : <RightOutlined />}
+                                  <span>{item.date}</span>
+                                </button>
+                              ) : item.date}
                             </td>
+                            <td>{formatBytes(item.upload_bytes)}</td>
+                            <td>{formatBytes(item.download_bytes)}</td>
+                            <td>{formatBytes(item.total_bytes)}</td>
+                            <td>{formatBytes(item.counted_bytes)}</td>
                           </tr>
-                        ) : null}
-                      </Fragment>
-                    )
-                  })}</tbody>
-                </table>
-                {daily.length > dailyPageSize ? (
+                          {expanded ? (
+                            <tr key={`detail-${item.date}-links`} className="customer-usage-daily-details-row">
+                              <td colSpan={5}>
+                                <div className="customer-usage-daily-details" aria-label={`${item.date} 链路用量明细`}>
+                                  <div className="customer-usage-daily-details-title">链路用量明细</div>
+                                  <div className="customer-usage-daily-details-head">
+                                    <span>链路</span><span>上传</span><span>下载</span><span>合计</span><span>计费用量</span>
+                                  </div>
+                                  {linkUsage.map((linkItem: CustomerDailyLinkUsage) => {
+                                    const link = linksByAssignmentID.get(linkItem.assignment_id)
+                                    return (
+                                      <div key={`${item.date}-${linkItem.assignment_id}`} className="customer-usage-daily-details-item">
+                                        <span className="customer-usage-daily-details-name">{link ? customerLinkDisplayName(link) : `链路 #${linkItem.assignment_id}`}</span>
+                                        <span>{formatBytes(linkItem.upload_bytes)}</span>
+                                        <span>{formatBytes(linkItem.download_bytes)}</span>
+                                        <span>{formatBytes(linkItem.total_bytes)}</span>
+                                        <span>{formatBytes(linkItem.counted_bytes)}</span>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
+                      )
+                    })}</tbody>
+                  </table>
+                </div>
+                {daily.length > DEFAULT_PAGE_SIZE ? (
                   <Pagination
+                    {...listPagination}
                     className="customer-usage-pagination"
-                    current={dailyPage}
-                    pageSize={dailyPageSize}
+                    current={dailyPages.page}
+                    pageSize={dailyPages.pageSize}
                     total={daily.length}
-                    showSizeChanger={false}
                     size="small"
-                    onChange={(page) => setDailyPage(page)}
+                    onChange={dailyPages.onChange}
                   />
                 ) : null}
               </div>
@@ -1032,34 +1033,31 @@ function CustomerUsagePanel(props: {
               <Text strong>最近流量记录</Text>
               <Text type="secondary">仅保留最近 3 天 · 上传 / 下载</Text>
             </div>
-            {records.length ? visibleRecords.map((item: CustomerTrafficRecord) => (
-              <div key={`history-${item.recorded_at}`} className="customer-usage-history-row">
-                <Text className="customer-usage-history-date">{formatCustomerTrafficRecordTime(item.recorded_at)}</Text>
-                <div className="customer-usage-history-values">
-                  <span className="customer-usage-history-upload">↑ {formatBytes(item.upload_bytes)}</span>
-                  <span className="customer-usage-history-download">↓ {formatBytes(item.download_bytes)}</span>
+            {history.length ? visibleHistory.map((item) => {
+              const isRecord = 'recorded_at' in item
+              const date = isRecord ? item.recorded_at : item.date
+              const label = isRecord ? formatCustomerTrafficRecordTime(date) : date
+              return (
+                <div key={`history-${date}`} className="customer-usage-history-row">
+                  <Text className="customer-usage-history-date">{label}</Text>
+                  <div className="customer-usage-history-values">
+                    <span className="customer-usage-history-upload">↑ {formatBytes(item.upload_bytes)}</span>
+                    <span className="customer-usage-history-download">↓ {formatBytes(item.download_bytes)}</span>
+                  </div>
                 </div>
-              </div>
-            )) : daily.length ? [...daily].reverse().map((item) => (
-              <div key={`history-${item.date}`} className="customer-usage-history-row">
-                <Text className="customer-usage-history-date">{item.date}</Text>
-                <div className="customer-usage-history-values">
-                  <span className="customer-usage-history-upload">↑ {formatBytes(item.upload_bytes)}</span>
-                  <span className="customer-usage-history-download">↓ {formatBytes(item.download_bytes)}</span>
-                </div>
-              </div>
-            )) : (
+              )
+            }) : (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无流量历史记录，等待下一次采集" />
             )}
-            {records.length > recordPageSize ? (
+            {history.length > DEFAULT_PAGE_SIZE ? (
               <Pagination
+                {...listPagination}
                 className="customer-usage-pagination"
-                current={recordPage}
-                pageSize={recordPageSize}
-                total={records.length}
-                showSizeChanger={false}
+                current={historyPages.page}
+                pageSize={historyPages.pageSize}
+                total={history.length}
                 size="small"
-                onChange={(page) => setRecordPage(page)}
+                onChange={historyPages.onChange}
               />
             ) : null}
           </div>

@@ -5,6 +5,8 @@ import { ReloadOutlined } from '@ant-design/icons'
 import type { AccessLogEntry, DashboardAgentView } from '../types'
 import type { AccessLogFilters } from '../hooks/useAdminSystemTools'
 import { formatDateTime } from '../lib/appHelpers'
+import { useCompactLayout } from '../hooks/useCompactLayout'
+import { CompactDataCardList } from './AgentClientTables'
 
 const { Text, Title } = Typography
 
@@ -17,6 +19,7 @@ export function AdminAccessLogsPage(props: {
   onFiltersChange: Dispatch<SetStateAction<AccessLogFilters>>
   onLoad: () => void
 }) {
+  const compact = useCompactLayout()
   const { agents, filters, logs, loading, total, onFiltersChange, onLoad } = props
   const agentOptions = [
     { value: '', label: '全部 Client' },
@@ -116,16 +119,26 @@ export function AdminAccessLogsPage(props: {
             />
           </Col>
         </Row>
-        <Table
-          style={{ marginTop: 16 }}
-          rowKey={(record) => String(record.id || `${record.agent_id}-${record.created_at}-${record.raw_summary}`)}
-          size="small"
-          loading={loading}
-          columns={columns}
-          dataSource={logs}
-          pagination={false}
-          scroll={{ x: 1200 }}
-        />
+        {compact ? (
+          <div style={{ marginTop: 16 }}>
+            <CompactDataCardList
+              columns={columns}
+              dataSource={logs}
+              rowKey={(record) => String(record.id || `${record.agent_id}-${record.created_at}-${record.raw_summary}`)}
+            />
+          </div>
+        ) : (
+          <Table
+            style={{ marginTop: 16 }}
+            rowKey={(record) => String(record.id || `${record.agent_id}-${record.created_at}-${record.raw_summary}`)}
+            size="small"
+            loading={loading}
+            columns={columns}
+            dataSource={logs}
+            pagination={false}
+            scroll={{ x: 1200 }}
+          />
+        )}
       </Card>
     </main>
   )

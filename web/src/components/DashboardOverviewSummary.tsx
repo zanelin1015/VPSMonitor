@@ -9,13 +9,14 @@ import { buildMonthlyFinanceCostDetails, buildMonthlyFinanceExcludedRevenueDetai
 import { fetchJSON } from '../lib/appHelpers'
 import { type AgentNetworkSummary, formatBytes, formatSpeed } from '../lib/traffic'
 import { readFinanceVisibilityPreference, writeFinanceVisibilityPreference } from '../lib/financeVisibility'
+import { listPagination } from '../lib/pagination'
+import { useCompactLayout } from '../hooks/useCompactLayout'
+import { CompactDataCardList } from './AgentClientTables'
 
 const { Text } = Typography
 
 const financeTablePagination: TablePaginationConfig = {
-  pageSize: 6,
-  showSizeChanger: false,
-  hideOnSinglePage: true,
+  ...listPagination,
   position: ['topRight'],
   showTotal: (total) => `共 ${total} 条`,
 }
@@ -73,6 +74,7 @@ export function OverviewSummaryCard(props: {
     restrictedView = false,
     onCostCurrencyChange,
   } = props
+  const compactLayout = useCompactLayout() || Boolean(compact)
   const [financeDetailOpen, setFinanceDetailOpen] = useState(financePage)
   const [profitVisible, setProfitVisible] = useState(readFinanceVisibilityPreference)
   const [customerRows, setCustomerRows] = useState<CustomerAdminView[]>([])
@@ -311,6 +313,14 @@ export function OverviewSummaryCard(props: {
     },
   ]
 
+  function renderFinanceRows<T>(columns: ColumnsType<T>, dataSource: T[], rowKey: (record: T) => string, loading = false, scrollX = 880) {
+    return compactLayout ? (
+      <CompactDataCardList columns={columns} dataSource={dataSource} rowKey={(record) => rowKey(record)} />
+    ) : (
+      <Table size="small" rowKey={(record) => rowKey(record)} columns={columns} dataSource={dataSource} loading={loading} pagination={financeTablePagination} scroll={{ x: scrollX }} />
+    )
+  }
+
   return (
     <Card className={`surface-card summary-card${compact ? ' compact-summary-card' : ''}`} bordered={false}>
       {dashboardView ? (
@@ -441,73 +451,27 @@ export function OverviewSummaryCard(props: {
                   {
                     key: 'cost',
                     label: `成本 · Client VPS ${costRows.length}`,
-                    children: (
-                      <Table
-                        size="small"
-                        rowKey="key"
-                        columns={costColumns}
-                        dataSource={costRows}
-                        pagination={financeTablePagination}
-                        scroll={{ x: 880 }}
-                      />
-                    ),
+                    children: renderFinanceRows(costColumns, costRows, (record) => record.key, false, 880),
                   },
                   {
                     key: 'revenue',
                     label: `收入 · 用户/区域 ${revenueRows.length}`,
-                    children: (
-                      <Table
-                        size="small"
-                        rowKey="key"
-                        columns={revenueColumns}
-                        dataSource={revenueRows}
-                        pagination={financeTablePagination}
-                        scroll={{ x: 1120 }}
-                      />
-                    ),
+                    children: renderFinanceRows(revenueColumns, revenueRows, (record) => record.key, false, 1120),
                   },
                   {
                     key: 'revenue-excluded',
                     label: `未计收入 ${excludedRevenueRows.length}`,
-                    children: (
-                      <Table
-                        size="small"
-                        rowKey="key"
-                        columns={excludedRevenueColumns}
-                        dataSource={excludedRevenueRows}
-                        pagination={financeTablePagination}
-                        scroll={{ x: 1260 }}
-                      />
-                    ),
+                    children: renderFinanceRows(excludedRevenueColumns, excludedRevenueRows, (record) => record.key, false, 1260),
                   },
                   {
                     key: 'revenue-customer',
                     label: `收入 · 用户 ${customerRevenueRows.length}`,
-                    children: (
-                      <Table
-                        size="small"
-                        rowKey="key"
-                        columns={revenueGroupColumns}
-                        dataSource={customerRevenueRows}
-                        loading={customerRowsLoading}
-                        pagination={financeTablePagination}
-                        scroll={{ x: 620 }}
-                      />
-                    ),
+                    children: renderFinanceRows(revenueGroupColumns, customerRevenueRows, (record) => record.key, customerRowsLoading, 620),
                   },
                   {
                     key: 'revenue-node',
                     label: `收入 · 节点 ${nodeRevenueRows.length}`,
-                    children: (
-                      <Table
-                        size="small"
-                        rowKey="key"
-                        columns={nodeRevenueColumns}
-                        dataSource={nodeRevenueRows}
-                        pagination={financeTablePagination}
-                        scroll={{ x: 880 }}
-                      />
-                    ),
+                    children: renderFinanceRows(nodeRevenueColumns, nodeRevenueRows, (record) => record.key, false, 880),
                   },
                 ]}
               />

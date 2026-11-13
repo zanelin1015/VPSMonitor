@@ -222,7 +222,7 @@ try {
   const offline = render(false, [offlineAgent])
   assert.match(offline, /离线/)
   assert.match(offline, /203\.0\.113\.10/, 'offline clients retain their identifying IP')
-  for (const [label, count] of [['CPU', 2], ['内存', 2], ['硬盘', 1], ['实时网速', 2]]) {
+  for (const [label, count] of [['CPU', 2], ['内存', 2], ['硬盘', 2], ['实时网速', 2]]) {
     assert.equal(
       offline.split(`aria-label="${label}：Client 离线，暂无实时数据"`).length - 1,
       count,

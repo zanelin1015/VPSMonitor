@@ -6,6 +6,7 @@ import { SaveOutlined } from '@ant-design/icons'
 
 import type { CustomerAdminView, CustomerAssignment } from '../types'
 import { REVENUE_CURRENCIES } from '../lib/currency'
+import { listPagination } from '../lib/pagination'
 import type { AssignmentFormState } from './CustomerManagementHelpers'
 import { emptyAssignmentForm } from './CustomerManagementHelpers'
 import { AdminHelpHint } from './AdminHelpHint'
@@ -93,7 +94,7 @@ export function CustomerAssignmentManagerCard(props: CustomerAssignmentManagerCa
         rowKey={(record) => record.id}
         columns={visibleAssignmentColumns}
         dataSource={selectedCustomer?.assignments || []}
-        pagination={{ pageSize: 8, hideOnSinglePage: true }}
+        pagination={listPagination}
         scroll={{ x: visibleAssignmentColumns.reduce((width, column) => width + Number(column.width || 120), 0) }}
         locale={{ emptyText: <Empty description="暂无授权链路" /> }}
       />

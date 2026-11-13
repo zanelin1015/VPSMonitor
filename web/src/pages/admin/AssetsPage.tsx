@@ -20,6 +20,7 @@ import { useEffect, useState } from 'react'
 import type { AgentListProps } from '../../lib/agentList'
 import { CountryFlag } from '../../components/CountryFlag'
 import { useListPagination } from '../../hooks/useListPagination'
+import { listPagination } from '../../lib/pagination'
 import { agentHealthCategory, agentHealthFilterLabel } from '../../lib/agentHealth'
 import { agentCountryCode, calculateRenewalStatus, formatAgentLocation, formatLocalDate } from '../../lib/appHelpers'
 import { normalizeCurrencyCode } from '../../lib/currency'
@@ -423,9 +424,9 @@ export function AssetsPage(props: AssetsPageProps) {
             </Button>
           )}
           pagination={{
+            ...listPagination,
             current: page,
             pageSize,
-            showSizeChanger: true,
             showTotal: (total) => `共 ${total} 台`,
             onChange: onPageChange,
           }}
@@ -455,6 +456,14 @@ export function AssetsPage(props: AssetsPageProps) {
                       label="内存"
                     />
                   </div>
+                  <div>
+                    <Typography.Text type="secondary">硬盘</Typography.Text>
+                    <ResourceMetric
+                      agent={agent}
+                      value={agent.summary.disk_total ? calculateDiskPercent(agent.summary) : undefined}
+                      label="硬盘"
+                    />
+                  </div>
                 </>
               ) : null}
               <div>
@@ -464,6 +473,10 @@ export function AssetsPage(props: AssetsPageProps) {
               <div>
                 <Typography.Text type="secondary">实时网速</Typography.Text>
                 <SpeedMetric agent={agent} />
+              </div>
+              <div>
+                <Typography.Text type="secondary">节点 / 客户端</Typography.Text>
+                <Typography.Text>{agent.node_count} / {agent.client_count}</Typography.Text>
               </div>
               {!props.restrictedView ? (
                 <>
@@ -490,12 +503,12 @@ export function AssetsPage(props: AssetsPageProps) {
         ))}
         {!props.agents.length ? <Empty description={props.loading ? '正在加载 Client' : '没有匹配的 Client'} /> : null}
         <Pagination
+          {...listPagination}
           size="small"
           current={page}
           pageSize={pageSize}
           total={props.agents.length}
           onChange={onPageChange}
-          showSizeChanger={false}
         />
       </div>
     </section>

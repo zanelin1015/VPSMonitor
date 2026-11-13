@@ -1,21 +1,23 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { DEFAULT_PAGE_SIZE } from '../lib/pagination'
 
-export function useListPagination(total: number, resetKey: string) {
+export function useListPagination(total: number, resetKey: unknown) {
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
+  const lastPage = Math.max(1, Math.ceil(total / pageSize))
 
   useEffect(() => {
     setPage(1)
   }, [resetKey])
 
   useEffect(() => {
-    setPage((current) => Math.min(current, Math.max(1, Math.ceil(total / pageSize))))
-  }, [total, pageSize])
+    setPage((current) => Math.min(current, lastPage))
+  }, [lastPage])
 
-  function onChange(nextPage: number, nextPageSize = pageSize) {
+  const onChange = useCallback((nextPage: number, nextPageSize = pageSize) => {
+    setPage(nextPageSize === pageSize ? nextPage : 1)
     setPageSize(nextPageSize)
-    setPage(nextPageSize !== pageSize ? 1 : nextPage)
-  }
+  }, [pageSize])
 
-  return { page, pageSize, onChange }
+  return { page: Math.min(page, lastPage), pageSize, onChange }
 }

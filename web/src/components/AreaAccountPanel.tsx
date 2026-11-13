@@ -1,11 +1,15 @@
 import type { AreaManagerAdminView, DashboardAgentView, XUIOverview } from '../types'
 import type { AreaBatchAssignmentFormState } from './CustomerManagementHelpers'
-import { Button, Card, Col, Empty, Modal, Row, Select, Space, Table, TreeSelect, Typography } from 'antd';
+import { Button, Card, Col, Empty, Modal, Pagination, Row, Select, Space, Table, TreeSelect, Typography } from 'antd';
 import { PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
 import { AdminHelpHint } from './AdminHelpHint';
 import { assignmentTreeKeys, buildAreaAssignmentTreeData, normalizeAreaAssignmentTreeKeys } from './CustomerManagementHelpers';
 import type { Dispatch, ReactNode, SetStateAction } from 'react'
 import type { ColumnsType } from 'antd/es/table'
+import { listPagination } from '../lib/pagination'
+import { useCompactLayout } from '../hooks/useCompactLayout'
+import { useListPagination } from '../hooks/useListPagination'
+import { CompactDataCardList } from './AgentClientTables'
 
 const { Text, Title } = Typography
 type AgentOptions = Array<{ value: string; label: string }>
@@ -60,6 +64,8 @@ export function AreaAccountPanel({
   areaManagerColumns,
   renderAreaManagerCustomers,
 }: AreaAccountPanelProps) {
+  const compact = useCompactLayout()
+  const { page, pageSize, onChange: onPageChange } = useListPagination(areaManagers.length, 'area-managers')
   return canManageAreaManagers ? (
     <Card className="customer-admin-card" bordered={false}>
       <div className="customer-admin-card-head">
@@ -187,19 +193,31 @@ export function AreaAccountPanel({
           </Col>
         </Row>
       </Modal>
-      <Table
-        style={{ marginTop: 14 }}
-        rowKey={(record) => record.id}
-        columns={areaManagerColumns}
-        dataSource={areaManagers}
-        scroll={{ x: 1200, y: '100%' }}
-        pagination={{ pageSize: 5, hideOnSinglePage: true }}
-        expandable={{
-          expandedRowRender: renderAreaManagerCustomers,
-          rowExpandable: (record) => Boolean(record.customers?.length || record.assignments?.length),
-        }}
-        locale={{ emptyText: <Empty description="暂无区域账号" /> }}
-      />
+      {compact ? (
+        <div style={{ marginTop: 14 }}>
+          <CompactDataCardList
+            columns={areaManagerColumns}
+            dataSource={areaManagers.slice((page - 1) * pageSize, page * pageSize)}
+            rowKey={(record) => record.id}
+          />
+          {!areaManagers.length ? <Empty description="暂无区域账号" /> : null}
+          {areaManagers.length ? <Pagination {...listPagination} current={page} pageSize={pageSize} total={areaManagers.length} onChange={onPageChange} /> : null}
+        </div>
+      ) : (
+        <Table
+          style={{ marginTop: 14 }}
+          rowKey={(record) => record.id}
+          columns={areaManagerColumns}
+          dataSource={areaManagers}
+          scroll={{ x: 1200, y: '100%' }}
+          pagination={listPagination}
+          expandable={{
+            expandedRowRender: renderAreaManagerCustomers,
+            rowExpandable: (record) => Boolean(record.customers?.length || record.assignments?.length),
+          }}
+          locale={{ emptyText: <Empty description="暂无区域账号" /> }}
+        />
+      )}
     </Card>
   ) : null
 

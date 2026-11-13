@@ -3,6 +3,7 @@ import { Alert, AutoComplete, Button, Card, Col, Collapse, Empty, Input, InputNu
 import { DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 import type { AgentEntryConfig, AgentEntryMapping, XUINodeView } from '../types'
 import { entryTargets, entryUsesDockerMapping, entryUsesPortMapping, formatEntryEndpoint, resolveEntryEndpoint, validateEntryConnection } from '../lib/entryConnection'
+import { listPagination } from '../lib/pagination'
 import './EntryConnectionSection.css'
 
 const { Text, Title } = Typography
@@ -116,7 +117,7 @@ export function EntryConnectionSection({ mode = 'all', entry, nodes, fallbackHos
         {error && <Alert type="error" showIcon message={error} />}
         <div className="entry-connection-preview-table">
           <Title level={5}>导出预览</Title>
-          <Table size="small" pagination={{ pageSize: 10, hideOnSinglePage: true }} dataSource={preview} scroll={{ x: 640 }} columns={[
+          <Table size="small" pagination={listPagination} dataSource={preview} scroll={{ x: 640 }} columns={[
             { title: '节点', dataIndex: 'name', width: 220 },
             { title: '监听端口', dataIndex: 'port', width: 110 },
             { title: '对外连接 / 待处理', render: (_, item) => item.endpoint.error ? <Text type="warning">{item.endpoint.error}</Text> : <Text copyable>{formatEntryEndpoint(item.endpoint)}</Text> },

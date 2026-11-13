@@ -5,6 +5,7 @@ import type { ColumnsType } from 'antd/es/table'
 import type { XUILocalCertificate } from '../types'
 import type { AgentDetailPanelProps } from './AgentDetailPanel.types'
 import { formatDateTime } from '../lib/appHelpers'
+import { listPagination } from '../lib/pagination'
 import { buildPrimaryDomainOptions, firstCertificateDomainCandidate } from './AgentDetailHelpers'
 
 const { Text } = Typography
@@ -115,7 +116,7 @@ export function AgentCertificatesPanel({ certificates, currentPrimaryDomain, sel
       <Text type="secondary">
         {currentPrimaryDomain ? `当前主域名：${currentPrimaryDomain}` : '当前未设置主域名；未设置时会继续按证书域名、入口地址、公网 IP 的顺序回退。'}
       </Text>
-      <Table rowKey={(record) => record.id} columns={certificateColumns} dataSource={certificates} pagination={{ pageSize: 8, hideOnSinglePage: true }} scroll={{ x: 1360 }} />
+      <Table rowKey={(record) => record.id} columns={certificateColumns} dataSource={certificates} pagination={listPagination} scroll={{ x: 1360 }} />
     </Space>
   ) : (
     <Empty description="暂无本机证书数据" />

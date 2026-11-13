@@ -1,5 +1,5 @@
 import { Badge, Button, Popconfirm, Space, Switch, Tag, Tooltip, Typography } from 'antd';
-import type { ColumnsType } from 'antd/es/table';
+import type { ColumnType, ColumnsType } from 'antd/es/table';
 import { ReloadOutlined } from '@ant-design/icons';
 import type { XUIClientView, XUINodeView } from '../types';
 import { clientBidirectionalTrafficTotal, formatBytes } from '../lib/traffic';
@@ -8,7 +8,7 @@ import { RouteBadge } from './RouteBadge';
 import { beijingDateInput, clientConfigSaveStatus } from '../lib/clientConfig';
 import { clientTrafficResetSummary } from '../lib/clientTrafficReset';
 import { type HAProxyForwardClientView, type HAProxyForwardNodeView, type RealmForwardClientView, type RealmForwardNodeView } from './AgentDetailHelpers';
-import type { Dispatch, SetStateAction } from 'react'
+import type { Dispatch, Key, ReactNode, SetStateAction } from 'react'
 import type { AgentDetailPanelProps } from './AgentDetailPanel.types'
 
 const { Text } = Typography
@@ -38,6 +38,62 @@ function billingCycleLabel(cycle?: string): string {
 
 function isAccountBasedProxyClient(client: XUIClientView): boolean {
   return ['http', 'socks', 'socks5'].includes((client.protocol || '').toLowerCase())
+}
+
+function leafColumns<T>(columns: ColumnsType<T>): ColumnType<T>[] {
+  return columns.filter((column): column is ColumnType<T> => !('children' in column))
+}
+
+function cellValue<T>(column: ColumnType<T>, record: T): unknown {
+  const dataIndex = column.dataIndex
+  if (dataIndex === undefined || dataIndex === null) return undefined
+  const parts = Array.isArray(dataIndex) ? dataIndex : [dataIndex]
+  return parts.reduce<unknown>((value, part) => {
+    if (value === null || value === undefined) return undefined
+    return (value as Record<string, unknown>)[String(part)]
+  }, record)
+}
+
+function renderCompactCell<T>(column: ColumnType<T>, record: T, index: number): ReactNode {
+  const value = cellValue(column, record)
+  const rendered = column.render ? column.render(value, record, index) : value
+  return rendered === undefined || rendered === null || rendered === '' ? '-' : rendered as ReactNode
+}
+
+export function CompactDataCardList<T>({
+  columns,
+  dataSource,
+  rowKey,
+}: {
+  columns: ColumnsType<T>
+  dataSource: T[]
+  rowKey: (record: T, index: number) => Key
+}) {
+  const visibleColumns = leafColumns(columns)
+  const primaryColumn = visibleColumns[0]
+  const lastColumn = visibleColumns[visibleColumns.length - 1]
+  const lastColumnTitle = lastColumn && typeof lastColumn.title === 'string' ? lastColumn.title : ''
+  const actionColumn = lastColumn && (lastColumn.key === 'actions' || lastColumn.key === 'import' || /操作|导出/.test(lastColumnTitle)) ? lastColumn : undefined
+  const detailColumns = actionColumn ? visibleColumns.slice(1, -1) : visibleColumns.slice(1)
+  if (!primaryColumn) return null
+  return (
+    <div className="agent-client-compact-list">
+      {dataSource.map((record, index) => (
+        <article className="agent-client-compact-card" key={rowKey(record, index)}>
+          <header className="agent-client-compact-card-head">
+            <div className="agent-client-compact-card-primary">{renderCompactCell(primaryColumn, record, index)}</div>
+          </header>
+          {detailColumns.map((column, columnIndex) => (
+            <div className="agent-client-compact-card-field" key={`${String(column.key || column.dataIndex || columnIndex)}`}>
+              <span className="agent-client-compact-card-label">{typeof column.title === 'function' ? '详情' : column.title}</span>
+              <div className="agent-client-compact-card-value">{renderCompactCell(column, record, index)}</div>
+            </div>
+          ))}
+          {actionColumn ? <footer className="agent-client-compact-card-actions">{renderCompactCell(actionColumn, record, index)}</footer> : null}
+        </article>
+      ))}
+    </div>
+  )
 }
 
 export function buildAgentClientTables({

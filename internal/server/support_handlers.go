@@ -147,6 +147,46 @@ func (a *App) handleAdminSupport(w http.ResponseWriter, r *http.Request, parts [
 		writeJSON(w, http.StatusOK, model.SupportUnreadResponse{UnreadCount: count})
 		return
 	}
+	if len(parts) == 1 && parts[0] == "conversations" {
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		var req model.SupportStartConversationRequest
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16*1024)).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode support conversation request: %v", err))
+			return
+		}
+		if req.CustomerID <= 0 || strings.TrimSpace(req.Body) == "" {
+			writeError(w, http.StatusBadRequest, "customer_id and body are required")
+			return
+		}
+		visible, err := a.customerVisibleToAdmin(user, req.CustomerID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if !visible {
+			writeError(w, http.StatusNotFound, "customer not found")
+			return
+		}
+		customer, found, err := a.store.GetCustomer(req.CustomerID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if !found || customer.OwnerType == model.CustomerOwnerGuest {
+			writeError(w, http.StatusNotFound, "registered customer not found")
+			return
+		}
+		message, _, err := a.store.AddSupportMessage(req.CustomerID, user.Role, user.ID, firstNonEmptyString(user.DisplayName, user.Username), req.Body)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusCreated, message)
+		return
+	}
 	if len(parts) < 2 || parts[0] != "conversations" {
 		writeError(w, http.StatusNotFound, "route not found")
 		return

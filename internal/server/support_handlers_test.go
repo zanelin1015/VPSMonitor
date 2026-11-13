@@ -403,6 +403,56 @@ func TestSupportHandlersEnforceAreaOwnershipAndSendOfflineTelegram(t *testing.T)
 	}
 }
 
+func TestAdminCanStartRegisteredSupportConversation(t *testing.T) {
+	tempDir := t.TempDir()
+	s, err := store.NewSQLiteStore(filepath.Join(tempDir, "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer s.Close()
+	if err := s.EnsureAdminAccount("admin", "password123"); err != nil {
+		t.Fatalf("EnsureAdminAccount: %v", err)
+	}
+	customer, err := s.CreateCustomerForOwner(model.CustomerAccountRequest{Username: "alice", DisplayName: "Alice", Password: "password123"}, model.AdminRoleRoot, 1)
+	if err != nil {
+		t.Fatalf("CreateCustomerForOwner: %v", err)
+	}
+	guest, err := s.GetOrCreateGuestCustomer("198.51.100.55", time.Hour, model.CustomerOwnerGuest, 0)
+	if err != nil {
+		t.Fatalf("GetOrCreateGuestCustomer: %v", err)
+	}
+	app := &App{store: s, supportPresence: newSupportPresenceHub()}
+	handler := app.Handler()
+	adminToken := supportAdminToken(t, s, "admin")
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/admin/support/conversations", bytes.NewBufferString(`{"customer_id":`+strconvFormat(customer.ID)+`,"body":"你的套餐即将到期"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.AddCookie(&http.Cookie{Name: adminSessionCookieName, Value: adminToken})
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("start support conversation status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var message model.SupportMessage
+	if err := json.Unmarshal(recorder.Body.Bytes(), &message); err != nil {
+		t.Fatalf("decode support message: %v", err)
+	}
+	if message.ConversationID <= 0 || message.SenderRole != model.SupportSenderAdmin {
+		t.Fatalf("unexpected proactive message: %#v", message)
+	}
+	conversation, found, err := s.GetSupportConversationByCustomer(customer.ID, model.SupportSenderCustomer)
+	if err != nil || !found || conversation.Status != model.SupportConversationOpen {
+		t.Fatalf("expected open customer conversation: %#v found=%v err=%v", conversation, found, err)
+	}
+	guestRequest := httptest.NewRequest(http.MethodPost, "/api/v1/admin/support/conversations", bytes.NewBufferString(`{"customer_id":`+strconvFormat(guest.ID)+`,"body":"guest"}`))
+	guestRequest.Header.Set("Content-Type", "application/json")
+	guestRequest.AddCookie(&http.Cookie{Name: adminSessionCookieName, Value: adminToken})
+	guestRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(guestRecorder, guestRequest)
+	if guestRecorder.Code != http.StatusNotFound {
+		t.Fatalf("guest proactive message status=%d body=%s", guestRecorder.Code, guestRecorder.Body.String())
+	}
+}
+
 func TestFormatOfflineSupportNotificationUsesBeijingTime(t *testing.T) {
 	text := formatOfflineSupportNotification(
 		model.CustomerUser{Username: "alice", DisplayName: "Alice"},

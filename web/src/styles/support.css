@@ -278,6 +278,10 @@
   margin: 0;
 }
 
+.support-admin-toolbar[hidden] {
+  display: none;
+}
+
 .support-admin-toolbar-actions {
   display: flex;
   align-items: center;
@@ -296,6 +300,11 @@
   border: 1px solid color-mix(in srgb, var(--red) 42%, var(--border));
   border-radius: 8px;
   background: var(--red-soft);
+}
+
+.support-compose-form {
+  display: grid;
+  gap: 14px;
 }
 
 .support-admin-layout {
@@ -448,6 +457,66 @@
   padding: 12px 14px;
 }
 
+.support-thread-header .support-thread-identity {
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+
+.support-admin-layout-compact {
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+}
+
+.support-admin-layout-compact > :is(.support-conversation-pane, .support-thread-pane) {
+  grid-area: 1 / 1;
+  overflow: hidden;
+}
+
+.support-admin-layout-compact > [aria-hidden='true'] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.support-admin-layout-compact .support-conversation-pane {
+  border-right: 0;
+}
+
+.support-admin-layout-compact .support-thread-header {
+  gap: 8px;
+  min-height: 56px;
+  padding: 6px 10px;
+}
+
+.support-admin-layout-compact .support-thread-header .ant-btn {
+  min-height: 44px;
+  flex: 0 0 auto;
+  padding-inline: 9px;
+}
+
+.support-admin-layout-compact .support-thread-identity strong,
+.support-admin-layout-compact .support-thread-identity small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.support-admin-layout-compact .support-thread-messages {
+  padding: 12px;
+}
+
+.support-admin-layout-compact .support-thread-composer {
+  padding: 8px 10px;
+}
+
+.support-admin-layout-compact .support-thread-composer textarea {
+  min-height: 44px;
+}
+
+.support-admin-layout-compact .support-thread-composer .ant-btn {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+}
+
 .admin-support-nav-badge {
   grid-row: span 2;
   justify-self: start;
@@ -482,21 +551,5 @@
     font-size: 20px;
   }
 
-  .support-admin-layout {
-    display: grid;
-    min-height: 0;
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(120px, 30%) minmax(0, 1fr);
-    overflow: hidden;
-  }
-
-  .support-conversation-pane {
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .support-thread-header { min-height: 48px; padding: 8px 12px; }
-  .support-thread-messages { padding: 12px; }
-  .support-thread-composer { padding: 8px 10px; }
   .support-scroll-latest { min-height: 44px; }
 }

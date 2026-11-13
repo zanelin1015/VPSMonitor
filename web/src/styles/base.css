@@ -435,7 +435,7 @@ body {
   }
 
   .admin-customers-route .customer-admin-card-head,
-  .admin-customers-route .customer-admin-card > .ant-card-body > .ant-space {
+  .admin-customers-route .customer-admin-card > .ant-card-body > :is(.ant-space, .customer-admin-filters) {
     flex: 0 0 auto;
   }
 

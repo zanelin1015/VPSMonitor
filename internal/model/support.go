@@ -57,6 +57,11 @@ type SupportMessageRequest struct {
 	Body string `json:"body"`
 }
 
+type SupportStartConversationRequest struct {
+	CustomerID int64  `json:"customer_id"`
+	Body       string `json:"body"`
+}
+
 type SupportStatusRequest struct {
 	Status string `json:"status"`
 }

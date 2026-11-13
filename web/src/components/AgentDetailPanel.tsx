@@ -1,6 +1,6 @@
 import { useAgentRoutingTools } from './useAgentRoutingTools'
 import { useAgentTerminalTools } from './useAgentTerminalTools';
-import { buildAgentClientTables } from './AgentClientTables';
+import { buildAgentClientTables, CompactDataCardList } from './AgentClientTables';
 import { useEffect, useState } from 'react';
 import { Alert, Button, Card, Empty, Input, Modal, Popconfirm, Select, Space, Table, Tabs, Tag, Typography } from 'antd';
 import type { TabsProps } from 'antd';
@@ -8,6 +8,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { ArrowLeftOutlined, ReloadOutlined, SettingOutlined, SwapOutlined } from '@ant-design/icons';
 
 import type { AgentLogsResponse, XUIAction, XUIClientView, XUINodeView } from '../types';
+import { listPagination } from '../lib/pagination';
 import { AgentCertificatesPanel } from './AgentCertificatesPanel';
 import { AdminHelpHint } from './AdminHelpHint';
 import { formatBytes, formatSpeed } from '../lib/traffic';
@@ -16,6 +17,7 @@ import { buildCertificateDomainOptions } from '../lib/managedConfigHelpers';
 import { renderGlobalOverviewPanel } from './DashboardTopologyPanels';
 import { FeatureSwitch } from './AgentDetailTerminal';
 import { ManagedConfigPanel } from './ManagedConfigPanel';
+import { useCompactLayout } from '../hooks/useCompactLayout'
 
 import { XUINodeList } from './XUINodeList';
 import { XUIClientConfigModal } from './XUIClientConfigModal';
@@ -28,6 +30,7 @@ export type { AgentDetailPanelProps } from './AgentDetailPanel.types'
 const { Text, Title } = Typography
 
 export function AgentDetailPanel(props: AgentDetailPanelProps) {
+  const compactLayout = useCompactLayout()
   const { routingTabs, routingModals } = useAgentRoutingTools(props)
   const {
     activeTabKey,
@@ -425,7 +428,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
 
             <Button icon={<ReloadOutlined />} disabled={!selectedAgentId} loading={xuiActionsLoading} onClick={onRefreshXUIActions}>刷新操作记录</Button>
           </Space>
-          <Table rowKey={(record) => record.id} columns={xuiActionColumns} dataSource={xuiActions} loading={xuiActionsLoading} pagination={{ pageSize: 8, hideOnSinglePage: true }} scroll={{ x: 820 }} />
+          <Table rowKey={(record) => record.id} columns={xuiActionColumns} dataSource={xuiActions} loading={xuiActionsLoading} pagination={listPagination} scroll={{ x: 820 }} />
         </Space>
       ),
     },
@@ -468,18 +471,26 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       children: overview ? (
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
           <Input.Search allowClear style={{ minWidth: 280 }} placeholder="按邮箱、备注、节点标签筛选客户端" value={clientSearch} onChange={(event) => onClientSearchChange(event.target.value)} />
-          <Table
-            className="xui-client-table"
-            rowKey={(record) => `${record.realm_target_agent_id || ''}-${record.inbound_id}-${record.inbound_tag || ''}-${record.email || record.comment || record.sub_id || ''}`}
-            columns={visibleClientColumns}
-            dataSource={filteredClients}
-            pagination={false}
-            tableLayout="fixed"
-            // Let rc-table measure the declared column widths intrinsically. A
-            // numeric x value equal to their sum can leave the sticky layer
-            // with a stale scroll range after a fast right-to-left fling.
-            scroll={{ x: 'max-content' }}
-          />
+          {compactLayout ? (
+            <CompactDataCardList
+              columns={visibleClientColumns}
+              dataSource={filteredClients}
+              rowKey={(record) => `${record.realm_target_agent_id || ''}-${record.inbound_id}-${record.inbound_tag || ''}-${record.email || record.comment || record.sub_id || ''}`}
+            />
+          ) : (
+            <Table
+              className="xui-client-table"
+              rowKey={(record) => `${record.realm_target_agent_id || ''}-${record.inbound_id}-${record.inbound_tag || ''}-${record.email || record.comment || record.sub_id || ''}`}
+              columns={visibleClientColumns}
+              dataSource={filteredClients}
+              pagination={false}
+              tableLayout="fixed"
+              // Let rc-table measure the declared column widths intrinsically. A
+              // numeric x value equal to their sum can leave the sticky layer
+              // with a stale scroll range after a fast right-to-left fling.
+              scroll={{ x: 'max-content' }}
+            />
+          )}
         </Space>
       ) : (
         <Empty description="暂无客户端数据" />
@@ -547,13 +558,22 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       children: realmForwardClients.length ? (
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
           <Input.Search allowClear style={{ minWidth: 280 }} placeholder="按邮箱、备注、节点标签筛选 Realm 命中客户端" value={clientSearch} onChange={(event) => onClientSearchChange(event.target.value)} />
-          <Table
-            rowKey={(record) => `${record.realm_target_agent_id || ''}-${record.inbound_id}-${record.inbound_tag || ''}-${record.email || record.comment || record.sub_id || ''}`}
-            columns={visibleRealmClientColumns}
-            dataSource={realmFilteredClients}
-            pagination={false}
-            scroll={{ x: restrictedView ? 760 : 1120 }}
-          />
+          {compactLayout ? (
+            <CompactDataCardList
+              columns={visibleRealmClientColumns}
+              dataSource={realmFilteredClients}
+              rowKey={(record) => `${record.realm_target_agent_id || ''}-${record.inbound_id}-${record.inbound_tag || ''}-${record.email || record.comment || record.sub_id || ''}`}
+            />
+          ) : (
+            <Table
+              className="xui-client-table agent-forward-client-table"
+              rowKey={(record) => `${record.realm_target_agent_id || ''}-${record.inbound_id}-${record.inbound_tag || ''}-${record.email || record.comment || record.sub_id || ''}`}
+              columns={visibleRealmClientColumns}
+              dataSource={realmFilteredClients}
+              pagination={false}
+              scroll={{ x: restrictedView ? 760 : 1120 }}
+            />
+          )}
         </Space>
       ) : (
         <Empty description="暂无通过 Realm 转发命中的客户端" />
@@ -627,13 +647,22 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       children: haProxyForwardClients.length ? (
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
           <Input.Search allowClear style={{ minWidth: 280 }} placeholder="按邮箱、备注、节点标签筛选 HAProxy 命中客户端" value={clientSearch} onChange={(event) => onClientSearchChange(event.target.value)} />
-          <Table
-            rowKey={(record) => `${record.realm_target_agent_id || ''}-${record.inbound_id}-${record.inbound_tag || ''}-${record.email || record.comment || record.sub_id || ''}`}
-            columns={visibleHAProxyClientColumns}
-            dataSource={haProxyFilteredClients}
-            pagination={false}
-            scroll={{ x: restrictedView ? 760 : 1120 }}
-          />
+          {compactLayout ? (
+            <CompactDataCardList
+              columns={visibleHAProxyClientColumns}
+              dataSource={haProxyFilteredClients}
+              rowKey={(record) => `${record.realm_target_agent_id || ''}-${record.inbound_id}-${record.inbound_tag || ''}-${record.email || record.comment || record.sub_id || ''}`}
+            />
+          ) : (
+            <Table
+              className="xui-client-table agent-forward-client-table"
+              rowKey={(record) => `${record.realm_target_agent_id || ''}-${record.inbound_id}-${record.inbound_tag || ''}-${record.email || record.comment || record.sub_id || ''}`}
+              columns={visibleHAProxyClientColumns}
+              dataSource={haProxyFilteredClients}
+              pagination={false}
+              scroll={{ x: restrictedView ? 760 : 1120 }}
+            />
+          )}
         </Space>
       ) : (
         <Empty description="暂无通过 HAProxy 转发命中的客户端" />
@@ -664,7 +693,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
             columns={agentLogColumns}
             dataSource={agentLogs?.logs || []}
             loading={agentLogsLoading}
-            pagination={{ pageSize: 10, hideOnSinglePage: true }}
+            pagination={listPagination}
             scroll={{ x: 760 }}
             locale={{ emptyText: <Empty description="暂无异常日志" /> }}
           />

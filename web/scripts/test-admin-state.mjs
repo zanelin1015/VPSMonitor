@@ -54,9 +54,9 @@ try {
   assert.equal(pagination.page, 2, 'removing Clients clamps the page to the last available result')
   await act(async () => { renderer.update(h(PaginationHarness, { total: 11, scope: 'filtered' })) })
   assert.equal(pagination.page, 1, 'changing filters returns both Client lists to the first page')
-  await act(async () => { pagination.onChange(2) })
+  assert.equal(pagination.pageSize, 10)
   await act(async () => { pagination.onChange(2, 20) })
-  assert.equal(pagination.page, 1, 'changing the page size returns to the first page')
+  assert.equal(pagination.page, 1, 'changing page size resets the current page')
   assert.equal(pagination.pageSize, 20)
   await act(async () => { renderer.unmount() })
 

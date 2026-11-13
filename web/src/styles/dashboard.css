@@ -1055,10 +1055,6 @@
     display: grid;
   }
 
-  .admin-workbench-grid > :not(.workbench-client-expiry-card) {
-    display: none;
-  }
-
   .finance-detail-panel {
     overflow-x: auto;
   }
@@ -1073,10 +1069,6 @@
     overscroll-behavior-x: contain;
   }
 
-  .finance-detail-panel .ant-table,
-  .admin-pro-route .ant-table {
-    min-width: 760px;
-  }
 }
 
 .overview-stat-grid {

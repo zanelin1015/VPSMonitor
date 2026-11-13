@@ -1,0 +1,378 @@
+/* Leave page scrolling to the shell on touch screens. Wide tables keep their
+ * horizontal scroller, while compact account rows fit the available width. */
+.admin-pro-compact:not(.admin-pro-support-layout) {
+  height: 100dvh;
+  min-height: 0;
+  overflow-x: clip;
+  overflow-y: auto;
+  scrollbar-gutter: auto;
+}
+
+.admin-pro-compact .ant-pro-layout-header-fixed-header {
+  background: var(--card);
+  backdrop-filter: none;
+}
+
+.admin-pro-compact:not(.admin-pro-support-layout) :is(
+  .ant-pro-layout, .ant-pro-layout > .ant-layout, .admin-pro-route,
+  #customer-management-panel, .customer-management-body,
+  .customer-admin-tabs, .customer-admin-tabs .ant-tabs-tabpane-active,
+  .customer-admin-card, .customer-admin-card > .ant-card-body
+) {
+  height: auto;
+  min-width: 0;
+  overflow: visible;
+}
+
+.admin-pro-compact .admin-customers-route :is(
+  .ant-tabs-content-holder, .ant-tabs-content, .ant-spin-container,
+  .ant-table-wrapper, .ant-table, .ant-table-container
+) {
+  height: auto;
+  min-width: 0;
+}
+
+.admin-pro-compact .admin-customers-route .ant-table-body {
+  overflow-x: auto;
+  overscroll-behavior-y: auto;
+}
+
+.admin-pro-compact .admin-pro-page .ant-pro-page-container-children-container {
+  padding: 12px 12px max(16px, env(safe-area-inset-bottom));
+}
+
+.admin-pro-compact .admin-pro-page .ant-page-header {
+  padding: 10px 12px 0;
+}
+
+.admin-pro-compact .admin-assets-desktop { display: none; }
+.admin-pro-compact .admin-assets-mobile {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 305px), 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+.admin-pro-compact .admin-assets-mobile > .ant-pagination,
+.admin-pro-compact .admin-assets-mobile > .ant-empty { grid-column: 1 / -1; }
+.admin-pro-compact .admin-assets-mobile-install { display: inline-flex; margin-top: 12px; }
+.admin-pro-compact .admin-assets-mobile-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.admin-pro-compact .admin-assets-mobile-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-block: 12px; }
+.admin-pro-compact .admin-assets-mobile .ant-card-body { padding: 14px; }
+
+.admin-pro-compact .admin-workbench-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  grid-template-rows: none;
+}
+.admin-pro-compact .workbench-speed-card { grid-column: 1 / -1; }
+
+.customer-admin-compact-table .ant-table { min-width: 0; }
+.customer-admin-compact-table :is(.ant-table-thead, .ant-table-tbody) > tr > :is(th, td) { padding: 10px 12px; }
+
+@media (min-width: 720px) {
+  .customer-admin-compact-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 16px;
+  }
+  .customer-admin-row-details { grid-column: 1 / -1; }
+}
+
+@media (max-width: 980px), (max-width: 1366px) and (pointer: coarse) {
+  .admin-pro-layout .ant-pro-drawer-sider :is(.ant-drawer-content, .ant-drawer-body) {
+    height: 100dvh !important;
+  }
+  .admin-pro-layout .ant-pro-drawer-sider .ant-pro-sider { height: 100%; }
+  /* Client details are a full-screen mobile workspace. The desktop drawer
+   * width leaves too little room for the action bar and nested tabs on an
+   * iPhone, which makes the right side look clipped before a table can scroll. */
+  .admin-agent-drawer,
+  .admin-agent-drawer .ant-drawer-content-wrapper {
+    width: 100vw !important;
+    max-width: 100vw;
+  }
+  .admin-agent-drawer .ant-drawer-content,
+  .admin-agent-drawer .ant-drawer-body {
+    min-width: 0;
+    overflow-x: clip;
+  }
+  .admin-agent-drawer .ant-drawer-body { padding: 8px; }
+  .admin-agent-drawer .tabs-card,
+  .admin-agent-drawer .tabs-card > .ant-card-body {
+    min-width: 0;
+  }
+  .admin-agent-drawer .tabs-card > .ant-card-body { padding: 10px; }
+  .admin-agent-drawer .selected-agent-toolbar {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+  }
+  .admin-agent-drawer .selected-agent-toolbar > :first-child {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .admin-agent-drawer .selected-agent-toolbar > :first-child .ant-typography {
+    overflow-wrap: anywhere;
+  }
+  .admin-agent-drawer .selected-agent-toolbar > .ant-space {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+    gap: 8px !important;
+  }
+  .admin-agent-drawer .selected-agent-toolbar > .ant-space .ant-space-item {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .admin-agent-drawer .selected-agent-toolbar .ant-btn {
+    min-height: 44px;
+    height: auto;
+    max-width: 100%;
+    white-space: normal;
+  }
+  .admin-agent-drawer .ant-tabs {
+    min-width: 0;
+  }
+  .admin-agent-drawer .ant-tabs-nav {
+    max-width: 100%;
+    margin-bottom: 12px !important;
+  }
+  .admin-agent-drawer .ant-tabs-nav-wrap {
+    min-width: 0;
+    overflow-x: auto !important;
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+  }
+  .admin-agent-drawer .ant-tabs-nav-wrap::-webkit-scrollbar { display: none; }
+  .admin-agent-drawer .ant-tabs-nav-list { min-width: max-content; }
+  .admin-agent-drawer .ant-tabs-tab {
+    padding: 10px 8px;
+    white-space: nowrap;
+  }
+  .admin-agent-drawer .ant-tabs-tab + .ant-tabs-tab { margin-inline-start: 8px; }
+  .admin-agent-drawer .ant-tabs-content-holder {
+    min-width: 0;
+    overflow-x: clip;
+  }
+  .admin-agent-drawer .ant-space {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .admin-agent-drawer .ant-table-wrapper {
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: clip;
+  }
+  .admin-agent-drawer .ant-table-content {
+    max-width: 100%;
+    overscroll-behavior-x: contain;
+  }
+
+  .agent-client-compact-list {
+    display: grid;
+    min-width: 0;
+    gap: 12px;
+  }
+  .agent-client-compact-card {
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--table-cell-bg);
+  }
+  .agent-client-compact-card-head {
+    display: flex;
+    min-width: 0;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    padding-bottom: 10px;
+  }
+  .agent-client-compact-card-primary,
+  .agent-client-compact-card-primary > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .agent-client-compact-card-primary {
+    color: var(--text);
+    overflow-wrap: anywhere;
+  }
+  .agent-client-compact-card-field {
+    display: grid;
+    grid-template-columns: minmax(68px, 88px) minmax(0, 1fr);
+    gap: 8px;
+    align-items: start;
+    min-width: 0;
+    padding: 8px 0;
+    border-top: 1px solid var(--border);
+  }
+  .agent-client-compact-card-label {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .agent-client-compact-card-value {
+    min-width: 0;
+    color: var(--text);
+    overflow-wrap: anywhere;
+  }
+  .agent-client-compact-card-value > * {
+    max-width: 100%;
+  }
+  .agent-client-compact-card-actions {
+    min-width: 0;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+  .agent-client-compact-card-actions .client-action-controls {
+    width: 100%;
+    max-width: 100%;
+  }
+  .agent-client-compact-card-actions .client-action-row {
+    flex-wrap: wrap;
+  }
+  .agent-client-compact-card-actions .ant-btn {
+    min-height: 40px;
+  }
+
+  .customer-admin-card > .ant-card-body { padding: 12px; }
+  .customer-admin-card-head { flex-wrap: wrap; }
+  .customer-admin-tabs > .ant-tabs-nav { margin-bottom: 12px; }
+  .customer-admin-tabs .ant-tabs-tab { padding: 10px 4px; }
+  .customer-admin-tabs .ant-tabs-tab + .ant-tabs-tab { margin-inline-start: 12px; }
+  .customer-admin-tab-help { margin-inline-start: 8px; }
+
+  .customer-console-theme .customer-board-layout {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+  }
+  .customer-console-theme .customer-board-side { display: block; position: static; }
+  .customer-console-theme .customer-board-profile { display: none; }
+  .customer-console-theme .customer-section-nav {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    padding: 4px;
+  }
+  .customer-console-theme .customer-section-nav-item {
+    min-width: 0;
+    justify-content: center;
+    gap: 4px;
+    padding-inline: 4px;
+  }
+  .customer-console-theme .customer-usage-header { flex-wrap: wrap; }
+  .customer-console-theme .customer-usage-date-filter { flex-wrap: wrap; max-width: 100%; }
+  .customer-console-theme .customer-usage-daily-list { min-width: 0; }
+  .customer-console-theme .customer-usage-table-wrap { max-height: none; overflow-x: auto; }
+  .customer-console-theme .customer-usage-table { min-width: 440px; }
+
+  .ant-pagination {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    row-gap: 6px;
+  }
+  .ant-pagination .ant-pagination-options {
+    display: inline-flex;
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 600px) {
+  .customer-admin-search { flex-basis: 100%; max-width: none; }
+  .customer-admin-tab-help .customer-admin-help-label { display: none; }
+  .admin-pro-compact .admin-pro-brand-copy { display: none; }
+  .admin-settings-section-heading,
+  .admin-content-title {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .admin-settings-section-heading > .ant-space,
+  .admin-content-title > .ant-space {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .update-status-grid { grid-template-columns: 1fr; }
+  .telegram-bot-list-item { flex-wrap: wrap; }
+  .telegram-bot-list-item .ant-list-item-action { width: 100%; margin-inline-start: 0; }
+  .admin-announcement-editor .ant-card-head-wrapper { align-items: flex-start; flex-wrap: wrap; }
+  .admin-announcement-editor .ant-card-extra { max-width: 100%; }
+  .admin-mobile-modal.ant-modal {
+    top: 8px;
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px);
+    margin: 0 auto;
+    padding-bottom: 8px;
+  }
+  .admin-mobile-modal .ant-modal-content { padding: 14px; }
+  .admin-mobile-modal .ant-modal-header {
+    margin-bottom: 12px;
+    padding-inline-end: 48px;
+  }
+  .admin-mobile-modal .ant-modal-title { line-height: 1.35; overflow-wrap: anywhere; }
+  .admin-mobile-modal .ant-modal-close {
+    top: 10px;
+    inset-inline-end: 10px;
+    width: 44px;
+    height: 44px;
+  }
+  .admin-mobile-modal .ant-modal-body {
+    max-height: calc(100dvh - 150px);
+    overflow-y: auto;
+    overflow-x: clip;
+  }
+  .admin-mobile-modal .ant-modal-footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .admin-mobile-modal .ant-modal-footer .ant-btn { min-height: 44px; margin-inline-start: 0; }
+  .admin-mobile-modal .ant-tabs-nav-wrap { overflow-x: auto; scrollbar-width: none; }
+  .admin-mobile-modal .ant-tabs-nav-wrap::-webkit-scrollbar { display: none; }
+  .admin-mobile-modal .ant-tabs-nav-list { min-width: max-content; }
+  .admin-console-modal.ant-modal { top: 12px; }
+  .admin-console-modal .ant-modal-content { padding-inline: 14px; }
+  .admin-console-modal .ant-modal-footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+  .admin-console-modal .ant-modal-footer > .ant-btn { margin-inline-start: 0; }
+  .customer-console-theme .customer-usage-panel > .ant-card-body { padding: 12px; }
+}
+
+@media (pointer: coarse) {
+  .admin-console-theme :is(.ant-input, .ant-input-number-input, .ant-select-selection-search-input),
+  .admin-console-modal :is(.ant-input, .ant-input-number-input, .ant-select-selection-search-input),
+  .customer-console-theme .customer-usage-date-filter input { font-size: 16px; }
+
+  .admin-pro-compact :is(.admin-assets-mobile, .customer-admin-card-head, .customer-admin-compact-row) .ant-btn,
+  .admin-pro-compact .personal-center-button,
+  .admin-pro-compact .customer-theme-button,
+  .admin-pro-compact .ant-pro-global-header-collapsed-button { min-height: 44px; }
+
+  .customer-console-theme .customer-mobile-actions .ant-btn { min-width: 44px; min-height: 44px; }
+
+  .admin-pro-compact .ant-pagination :is(.ant-pagination-item, .ant-pagination-prev, .ant-pagination-next),
+  .customer-page-shell .ant-pagination :is(.ant-pagination-item, .ant-pagination-prev, .ant-pagination-next) {
+    min-width: 36px;
+    min-height: 36px;
+    line-height: 34px;
+  }
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+  .admin-console-theme .console-login-shell {
+    grid-template-columns: minmax(0, 1fr);
+    height: 100dvh;
+    min-height: 0;
+    align-content: start;
+  }
+  .admin-console-theme .console-login-shell .console-login-scene { display: none; }
+  .admin-console-theme .console-login-shell .login-panel { margin: 62px auto 16px; }
+  .admin-console-theme .console-login-shell .login-brand { margin-bottom: 12px; }
+  .admin-console-theme .console-login-wordmark { top: 12px; left: 16px; }
+  .admin-console-modal.ant-modal { top: 8px; padding-bottom: 8px; }
+  :root .customer-console-theme .customer-dashboard-header { position: static; padding: 12px 16px; }
+  :root .customer-console-theme .customer-mobile-header { position: static; }
+  .support-admin-toolbar { margin-bottom: 6px; padding: 6px 10px; }
+  .support-admin-toolbar .ant-typography { font-size: 18px; }
+  .support-conversation-filters { padding: 6px; gap: 6px; }
+}

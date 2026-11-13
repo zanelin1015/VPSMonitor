@@ -503,6 +503,10 @@ export function AdminApp() {
     onInitialAssignmentApplied: () => setCustomerAssignmentDraft(null),
     onConfigChanged: refreshAfterExternalConfigChange,
     onOpenAssignment: openCustomerAssignment,
+    onOpenSupportCustomer: (customerID) => {
+      window.sessionStorage.setItem('vpsmonitor-support-compose-customer', String(customerID))
+      openSupportPage()
+    },
   }
 
   const accessLogPageProps: ComponentProps<typeof AdminAccessLogsPage> = {

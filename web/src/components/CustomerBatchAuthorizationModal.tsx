@@ -3,6 +3,7 @@ import { LockOutlined } from '@ant-design/icons'
 import { Alert, App, Button, Input, Modal, Space, Table, Tag, Tooltip, Typography } from 'antd'
 import type { CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft } from '../types'
 import { fetchJSON } from '../lib/appHelpers'
+import { listPagination } from '../lib/pagination'
 import { authorizeCustomersBatch, customerMatchesSearch, existingCustomerAuthorization } from '../lib/customerBatchAuthorization'
 
 export function CustomerBatchAuthorizationModal(props: {
@@ -97,7 +98,7 @@ export function CustomerBatchAuthorizationModal(props: {
       </Space>
       <Table<CustomerAdminView>
         size="small" loading={loading} rowKey="id" dataSource={filtered}
-        pagination={{ pageSize: 8, hideOnSinglePage: true, showSizeChanger: false }}
+        pagination={listPagination}
         scroll={{ x: 460 }}
         rowSelection={{
           selectedRowKeys: selectedIDs, preserveSelectedRowKeys: true,

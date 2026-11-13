@@ -1020,11 +1020,45 @@ textarea,
   }
 
   .cn-flow-lanes {
-    min-width: 960px;
+    min-width: 0;
+    overflow: visible;
   }
 
   .cn-flow-lane {
-    min-width: 900px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .cn-flow-agent-cluster,
+  .cn-flow-entry-cluster {
+    min-width: 0;
+    flex-direction: column;
+  }
+  .cn-flow-agent-cluster-rows,
+  .cn-flow-entry-cluster-rows {
+    min-width: 0;
+  }
+  .cn-flow-hop-body,
+  .cn-flow-hop-column {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .cn-flow-node,
+  .cn-flow-node.rule-node,
+  .cn-flow-node.forward-node,
+  .cn-flow-node.country-node {
+    width: 100%;
+    min-height: 76px;
+  }
+  .cn-flow-arrow,
+  .cn-flow-arrow.rule-arrow {
+    width: 100%;
+    min-width: 0;
+    min-height: 26px;
+    flex-direction: row;
   }
 
   .overview-stat-grid,
