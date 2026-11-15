@@ -157,8 +157,8 @@ func (a *App) handleAdminSupport(w http.ResponseWriter, r *http.Request, parts [
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode support conversation request: %v", err))
 			return
 		}
-		if req.CustomerID <= 0 || strings.TrimSpace(req.Body) == "" {
-			writeError(w, http.StatusBadRequest, "customer_id and body are required")
+		if req.CustomerID <= 0 {
+			writeError(w, http.StatusBadRequest, "customer_id is required")
 			return
 		}
 		visible, err := a.customerVisibleToAdmin(user, req.CustomerID)
@@ -179,12 +179,21 @@ func (a *App) handleAdminSupport(w http.ResponseWriter, r *http.Request, parts [
 			writeError(w, http.StatusNotFound, "registered customer not found")
 			return
 		}
-		message, _, err := a.store.AddSupportMessage(req.CustomerID, user.Role, user.ID, firstNonEmptyString(user.DisplayName, user.Username), req.Body)
+		if strings.TrimSpace(req.Body) == "" {
+			conversation, err := a.store.EnsureSupportConversation(req.CustomerID)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, model.SupportStartConversationResponse{Conversation: conversation})
+			return
+		}
+		message, conversation, err := a.store.AddSupportMessage(req.CustomerID, user.Role, user.ID, firstNonEmptyString(user.DisplayName, user.Username), req.Body)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusCreated, message)
+		writeJSON(w, http.StatusCreated, model.SupportStartConversationResponse{Conversation: conversation, Message: &message})
 		return
 	}
 	if len(parts) < 2 || parts[0] != "conversations" {

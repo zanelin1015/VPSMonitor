@@ -715,6 +715,11 @@ export interface SupportConversationListResponse {
   unread_count: number
 }
 
+export interface SupportStartConversationResponse {
+  conversation: SupportConversation
+  message?: SupportMessage
+}
+
 export interface SupportUnreadResponse {
   unread_count: number
 }

@@ -36,6 +36,14 @@ try {
   assert.equal(request.expected.enabled, true)
   assert.equal(request.previous_billing, billing)
   assert.equal(request.billing.start_time, draft.billing.start_time)
+
+  const remoteExpiry = Date.parse('2026-04-30T00:00:00+08:00')
+  const localOnlyExpiry = Date.parse('2026-05-31T00:00:00+08:00')
+  const driftBilling = { ...billing, expire_time: localOnlyExpiry }
+  const driftInitial = lib.createClientConfigDraft(record, driftBilling)
+  const driftRequest = lib.buildClientConfigRequest(record, driftBilling, driftInitial, { ...driftInitial, totalGB: 75 }, 'request-drift-repair')
+  assert.equal(driftRequest.changes.expiry_time, localOnlyExpiry, 'a traffic edit repairs a stale remote expiry')
+  assert.equal(driftRequest.expected.expiry_time, remoteExpiry, 'remote expiry is used as the concurrency baseline')
   const endOfMonth = lib.buildClientConfigRequest(record, billing, initial, { ...initial, resetChoice: 'monthly_from_start' }, 'request-month-end')
   assert.equal(endOfMonth.changes.traffic_reset_day, 31, 'the original day is retained for x-ui short-month fallback')
   const manualExpiry = Date.parse('2028-05-15T16:22:33+08:00')

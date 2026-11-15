@@ -432,16 +432,28 @@ func TestAdminCanStartRegisteredSupportConversation(t *testing.T) {
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("start support conversation status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
-	var message model.SupportMessage
-	if err := json.Unmarshal(recorder.Body.Bytes(), &message); err != nil {
+	var response model.SupportStartConversationResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode support message: %v", err)
 	}
-	if message.ConversationID <= 0 || message.SenderRole != model.SupportSenderAdmin {
-		t.Fatalf("unexpected proactive message: %#v", message)
+	if response.Conversation.ID <= 0 || response.Message == nil || response.Message.SenderRole != model.SupportSenderAdmin {
+		t.Fatalf("unexpected proactive message: %#v", response)
 	}
 	conversation, found, err := s.GetSupportConversationByCustomer(customer.ID, model.SupportSenderCustomer)
 	if err != nil || !found || conversation.Status != model.SupportConversationOpen {
 		t.Fatalf("expected open customer conversation: %#v found=%v err=%v", conversation, found, err)
+	}
+	ensureRequest := httptest.NewRequest(http.MethodPost, "/api/v1/admin/support/conversations", bytes.NewBufferString(`{"customer_id":`+strconvFormat(customer.ID)+`,"body":""}`))
+	ensureRequest.Header.Set("Content-Type", "application/json")
+	ensureRequest.AddCookie(&http.Cookie{Name: adminSessionCookieName, Value: adminToken})
+	ensureRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(ensureRecorder, ensureRequest)
+	if ensureRecorder.Code != http.StatusOK {
+		t.Fatalf("ensure support conversation status=%d body=%s", ensureRecorder.Code, ensureRecorder.Body.String())
+	}
+	var ensured model.SupportStartConversationResponse
+	if err := json.Unmarshal(ensureRecorder.Body.Bytes(), &ensured); err != nil || ensured.Conversation.ID != conversation.ID || ensured.Message != nil {
+		t.Fatalf("unexpected ensured conversation: %#v err=%v", ensured, err)
 	}
 	guestRequest := httptest.NewRequest(http.MethodPost, "/api/v1/admin/support/conversations", bytes.NewBufferString(`{"customer_id":`+strconvFormat(guest.ID)+`,"body":"guest"}`))
 	guestRequest.Header.Set("Content-Type", "application/json")

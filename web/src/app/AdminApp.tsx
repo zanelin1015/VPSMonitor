@@ -504,7 +504,7 @@ export function AdminApp() {
     onConfigChanged: refreshAfterExternalConfigChange,
     onOpenAssignment: openCustomerAssignment,
     onOpenSupportCustomer: (customerID) => {
-      window.sessionStorage.setItem('vpsmonitor-support-compose-customer', String(customerID))
+      window.sessionStorage.setItem('vpsmonitor-support-customer', String(customerID))
       openSupportPage()
     },
   }

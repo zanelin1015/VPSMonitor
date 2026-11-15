@@ -302,11 +302,6 @@
   background: var(--red-soft);
 }
 
-.support-compose-form {
-  display: grid;
-  gap: 14px;
-}
-
 .support-admin-layout {
   display: grid;
   min-height: 0;

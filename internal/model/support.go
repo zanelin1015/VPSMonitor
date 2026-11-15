@@ -62,6 +62,11 @@ type SupportStartConversationRequest struct {
 	Body       string `json:"body"`
 }
 
+type SupportStartConversationResponse struct {
+	Conversation SupportConversation `json:"conversation"`
+	Message      *SupportMessage     `json:"message,omitempty"`
+}
+
 type SupportStatusRequest struct {
 	Status string `json:"status"`
 }

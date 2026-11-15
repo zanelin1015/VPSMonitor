@@ -293,6 +293,27 @@ func (s *SQLiteStore) ListSupportMessages(conversationID int64) ([]model.Support
 	return items, nil
 }
 
+func (s *SQLiteStore) EnsureSupportConversation(customerID int64) (model.SupportConversation, error) {
+	if customerID <= 0 {
+		return model.SupportConversation{}, fmt.Errorf("invalid customer id")
+	}
+	nowText := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := s.db.Exec(`
+		INSERT OR IGNORE INTO support_conversations (customer_id, status, created_at, updated_at)
+		SELECT id, ?, ?, ? FROM customer_accounts WHERE id = ? AND guest_ip = ''
+	`, model.SupportConversationOpen, nowText, nowText, customerID); err != nil {
+		return model.SupportConversation{}, fmt.Errorf("ensure support conversation: %w", err)
+	}
+	conversation, found, err := s.GetSupportConversationByCustomer(customerID, model.SupportSenderAdmin)
+	if err != nil {
+		return model.SupportConversation{}, err
+	}
+	if !found {
+		return model.SupportConversation{}, fmt.Errorf("registered customer not found")
+	}
+	return conversation, nil
+}
+
 func (s *SQLiteStore) AddSupportMessage(customerID int64, senderRole string, senderAccountID int64, senderName, body string) (model.SupportMessage, model.SupportConversation, error) {
 	body, err := normalizeSupportMessageBody(body)
 	if err != nil {

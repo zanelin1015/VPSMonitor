@@ -55,7 +55,12 @@ export function buildClientConfigRequest(record: XUIClientView, previous: XUICli
   if (!accountBasedClient(record)) {
     if (draft.enabled !== initial.enabled) { changes.enabled = draft.enabled; expected.enabled = initial.enabled }
     if (draft.totalGB !== initial.totalGB) { changes.total_bytes = Math.round(draft.totalGB * 1024 ** 3); expected.total_bytes = Math.max(0, Number(record.total_gb || 0)) }
-    if (billing.expire_time !== initial.billing.expire_time) { changes.expiry_time = billing.expire_time; expected.expiry_time = Math.max(0, Number(record.expiry_time || 0)) }
+    // The local billing record and the value currently stored in x-ui can
+    // drift when a previous remote action failed. Compare against the x-ui
+    // snapshot so a later save (including a traffic-only edit) repairs the
+    // remote expiry instead of treating the local value as already synced.
+    const remoteExpiryTime = Math.max(0, Number(record.expiry_time || 0))
+    if (billing.expire_time !== remoteExpiryTime) { changes.expiry_time = billing.expire_time; expected.expiry_time = remoteExpiryTime }
     const reset = resolveClientTrafficResetChoice(draft.resetChoice, draft.resetDay, draft.billing.start_time)
     if (!reset) throw new Error('每月重置日必须为 1–31 的整数，按开始日重置需先设置开始日期')
     if (record.traffic_reset_supported && (reset.period !== (record.traffic_reset || 'never') || reset.day !== clientTrafficResetDay(record.traffic_reset_day))) {

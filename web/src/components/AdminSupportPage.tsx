@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Badge, Button, Empty, Input, Modal, Segmented, Select, Spin, Tag, Tooltip, Typography } from 'antd'
+import { Badge, Button, Empty, Input, Segmented, Spin, Tag, Tooltip, Typography } from 'antd'
 import { CheckCircleOutlined, CloseCircleOutlined, CustomerServiceOutlined, MinusOutlined, ReloadOutlined, SendOutlined } from '@ant-design/icons'
 
 import type {
@@ -7,8 +7,8 @@ import type {
   SupportConversationListResponse,
   SupportConversationStatus,
   SupportMessage,
+  SupportStartConversationResponse,
   SupportThreadResponse,
-  CustomerAdminView,
 } from '../types'
 import { fetchJSON, formatDateTime } from '../lib/appHelpers'
 import { useCompactLayout } from '../hooks/useCompactLayout'
@@ -34,12 +34,6 @@ export function AdminSupportPage({ onUnreadCountChange }: AdminSupportPageProps)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'open' | 'all'>('open')
   const [error, setError] = useState('')
-  const [composeOpen, setComposeOpen] = useState(false)
-  const [composeLoading, setComposeLoading] = useState(false)
-  const [composeError, setComposeError] = useState('')
-  const [recipients, setRecipients] = useState<CustomerAdminView[]>([])
-  const [recipientID, setRecipientID] = useState<number | undefined>()
-  const [composeBody, setComposeBody] = useState('')
   const messageListRef = useRef<SupportMessageListHandle>(null)
   const listRequestIDRef = useRef(0)
   const threadRequestIDRef = useRef(0)
@@ -54,10 +48,10 @@ export function AdminSupportPage({ onUnreadCountChange }: AdminSupportPageProps)
   const draft = drafts[selectedID] || ''
 
   useEffect(() => {
-    const pendingCustomerID = Number(window.sessionStorage.getItem('vpsmonitor-support-compose-customer') || '')
+    const pendingCustomerID = Number(window.sessionStorage.getItem('vpsmonitor-support-customer') || '')
     if (!pendingCustomerID) return
-    window.sessionStorage.removeItem('vpsmonitor-support-compose-customer')
-    void openCompose(pendingCustomerID)
+    window.sessionStorage.removeItem('vpsmonitor-support-customer')
+    void openCustomerConversation(pendingCustomerID)
   }, [])
 
   useLayoutEffect(() => {
@@ -108,41 +102,18 @@ export function AdminSupportPage({ onUnreadCountChange }: AdminSupportPageProps)
     }
   }
 
-  async function openCompose(initialCustomerID?: number) {
-    setComposeOpen(true)
-    setComposeError('')
-    setComposeLoading(true)
+  async function openCustomerConversation(customerID: number) {
+    if (!customerID) return
     try {
-      const users = await fetchJSON<CustomerAdminView[]>('/api/v1/admin/customers')
-      setRecipients(users)
-      setRecipientID(initialCustomerID && users.some((item) => item.id === initialCustomerID) ? initialCustomerID : undefined)
-    } catch (requestError) {
-      setComposeError(requestError instanceof Error ? requestError.message : '注册用户加载失败')
-    } finally {
-      setComposeLoading(false)
-    }
-  }
-
-  async function sendProactiveMessage() {
-    const body = composeBody.trim()
-    if (!recipientID || !body || composeLoading) return
-    setComposeLoading(true)
-    setComposeError('')
-    try {
-      const message = await fetchJSON<SupportMessage>('/api/v1/admin/support/conversations', {
+      const response = await fetchJSON<SupportStartConversationResponse>('/api/v1/admin/support/conversations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customer_id: recipientID, body }),
+        body: JSON.stringify({ customer_id: customerID, body: '' }),
       })
-      setComposeOpen(false)
-      setComposeBody('')
-      setRecipientID(undefined)
       await loadConversations(true)
-      if (message.conversation_id) selectConversation(message.conversation_id)
+      if (response.conversation.id) selectConversation(response.conversation.id)
     } catch (requestError) {
-      setComposeError(requestError instanceof Error ? requestError.message : '主动消息发送失败')
-    } finally {
-      setComposeLoading(false)
+      setError(requestError instanceof Error ? requestError.message : '打开用户会话失败')
     }
   }
 
@@ -274,7 +245,6 @@ export function AdminSupportPage({ onUnreadCountChange }: AdminSupportPageProps)
           <Title level={2}>在线客服</Title>
         </div>
         <div className="support-admin-toolbar-actions">
-          <Button type="primary" onClick={() => void openCompose()}>主动联系</Button>
           <Badge count={unreadCount} overflowCount={99}>
             <Tag icon={<CustomerServiceOutlined />} color="blue">待处理消息</Tag>
           </Badge>
@@ -285,51 +255,6 @@ export function AdminSupportPage({ onUnreadCountChange }: AdminSupportPageProps)
       </header>
 
       {error ? <div className="support-admin-error"><Text type="danger">{error}</Text></div> : null}
-
-      <Modal
-        title="主动联系注册用户"
-        open={composeOpen}
-        onCancel={() => { if (!composeLoading) { setComposeOpen(false); setComposeBody(''); setComposeError('') } }}
-        onOk={() => void sendProactiveMessage()}
-        okText="发送消息"
-        cancelText="取消"
-        confirmLoading={composeLoading}
-        okButtonProps={{ disabled: !recipientID || !composeBody.trim() }}
-        destroyOnClose
-      >
-        <div className="support-compose-form">
-          <div>
-            <Text type="secondary">注册用户</Text>
-            <Select
-              showSearch
-              allowClear
-              value={recipientID}
-              loading={composeLoading && !recipients.length}
-              placeholder="搜索用户名或显示名"
-              optionFilterProp="label"
-              style={{ width: '100%', marginTop: 6 }}
-              options={recipients.map((item) => ({
-                value: item.id,
-                label: `${item.display_name || item.username} · @${item.username}${item.enabled ? '' : ' · 已停用'}`,
-              }))}
-              onChange={(value) => setRecipientID(value)}
-            />
-          </div>
-          <div>
-            <Text type="secondary">消息内容</Text>
-            <Input.TextArea
-              autoSize={{ minRows: 4, maxRows: 8 }}
-              maxLength={2000}
-              showCount
-              value={composeBody}
-              placeholder="输入要发送给用户的消息"
-              onChange={(event) => setComposeBody(event.target.value)}
-            />
-          </div>
-          {composeError ? <Text type="danger">{composeError}</Text> : null}
-          <Text type="secondary">访客不在主动联系列表中，只能回复已有访客会话。</Text>
-        </div>
-      </Modal>
 
       <div className={`support-admin-layout${compact ? ' support-admin-layout-compact' : ''}`}>
         <aside ref={conversationPaneRef} className="support-conversation-pane" aria-label="会话列表" aria-hidden={compact && showThread}>
