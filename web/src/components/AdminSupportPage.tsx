@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Badge, Button, Empty, Input, Segmented, Spin, Tag, Tooltip, Typography } from 'antd'
+import { Badge, Button, Empty, Input, Segmented, Spin, Tabs, Tag, Tooltip, Typography } from 'antd'
 import { CheckCircleOutlined, CloseCircleOutlined, CustomerServiceOutlined, MinusOutlined, ReloadOutlined, SendOutlined } from '@ant-design/icons'
 
 import type {
@@ -33,6 +33,7 @@ export function AdminSupportPage({ onUnreadCountChange }: AdminSupportPageProps)
   const [drafts, setDrafts] = useState<Record<number, string>>({})
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'open' | 'all'>('open')
+  const [audience, setAudience] = useState<'all' | 'registered' | 'guest'>('all')
   const [error, setError] = useState('')
   const messageListRef = useRef<SupportMessageListHandle>(null)
   const listRequestIDRef = useRef(0)
@@ -228,12 +229,17 @@ export function AdminSupportPage({ onUnreadCountChange }: AdminSupportPageProps)
   const filtered = useMemo(() => {
     const keyword = search.trim().toLowerCase()
     return conversations.filter((item) => {
+      if (audience === 'registered' && item.is_guest) return false
+      if (audience === 'guest' && !item.is_guest) return false
       if (filter === 'open' && item.status !== 'open') return false
       if (!keyword) return true
       return [item.customer_display_name, item.customer_username, item.guest_ip, item.last_message_preview]
         .some((value) => String(value || '').toLowerCase().includes(keyword))
     })
-  }, [conversations, filter, search])
+  }, [audience, conversations, filter, search])
+
+  const registeredConversationCount = conversations.filter((item) => !item.is_guest).length
+  const guestConversationCount = conversations.filter((item) => item.is_guest).length
 
   const unreadCount = conversations.reduce((total, item) => total + item.unread_count, 0)
 
@@ -260,6 +266,16 @@ export function AdminSupportPage({ onUnreadCountChange }: AdminSupportPageProps)
         <aside ref={conversationPaneRef} className="support-conversation-pane" aria-label="会话列表" aria-hidden={compact && showThread}>
           <div className="support-conversation-filters">
             <Input.Search value={search} allowClear aria-label="搜索用户或消息" placeholder="搜索用户或消息" onChange={(event) => setSearch(event.target.value)} />
+            <Tabs
+              className="support-conversation-type-tabs"
+              activeKey={audience}
+              onChange={(key) => setAudience(key as 'all' | 'registered' | 'guest')}
+              items={[
+                { key: 'all', label: `全部 (${conversations.length})` },
+                { key: 'registered', label: `用户 (${registeredConversationCount})` },
+                { key: 'guest', label: `访客 (${guestConversationCount})` },
+              ]}
+            />
             <Segmented
               block
               value={filter}

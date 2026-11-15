@@ -332,6 +332,25 @@
   border-bottom: 1px solid var(--border);
 }
 
+.support-conversation-type-tabs {
+  min-width: 0;
+}
+
+.support-conversation-type-tabs .ant-tabs-nav {
+  margin: 0;
+}
+
+.support-conversation-type-tabs .ant-tabs-tab {
+  min-height: 40px;
+  padding: 8px 6px;
+}
+
+.support-conversation-type-tabs .ant-tabs-tab-btn {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .support-conversation-list {
   min-height: 0;
   overflow-y: auto;
