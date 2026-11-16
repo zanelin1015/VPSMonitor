@@ -147,6 +147,10 @@ func (a *App) handleAdminSupport(w http.ResponseWriter, r *http.Request, parts [
 		writeJSON(w, http.StatusOK, model.SupportUnreadResponse{UnreadCount: count})
 		return
 	}
+	if len(parts) == 1 && parts[0] == "auto-reply" {
+		a.handleAdminSupportAutoReply(w, r)
+		return
+	}
 	if len(parts) == 1 && parts[0] == "conversations" {
 		if r.Method != http.MethodPost {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")

@@ -204,7 +204,9 @@
 }
 
 .customer-support-message p,
-.support-thread-message p {
+.support-thread-message p,
+.customer-support-message .support-markdown,
+.support-thread-message .support-markdown {
   margin: 0;
   padding: 9px 11px;
   border: 1px solid var(--border);
@@ -217,10 +219,32 @@
 }
 
 .customer-support-message.mine p,
-.support-thread-message.operator p {
+.support-thread-message.operator p,
+.customer-support-message.mine .support-markdown,
+.support-thread-message.operator .support-markdown {
   border-color: color-mix(in srgb, var(--blue) 44%, var(--border));
   background: var(--blue);
   color: #fff;
+}
+
+.support-markdown ul {
+  margin: 0 0 0 18px;
+  padding: 0;
+}
+
+.support-markdown a {
+  color: var(--blue);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.customer-support-message.mine .support-markdown a,
+.support-thread-message.operator .support-markdown a {
+  color: #fff;
+}
+
+.support-markdown strong {
+  font-weight: 700;
 }
 
 .customer-support-composer,
@@ -300,6 +324,14 @@
   border: 1px solid color-mix(in srgb, var(--red) 42%, var(--border));
   border-radius: 8px;
   background: var(--red-soft);
+}
+
+.support-auto-reply-preview-bubble {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--blue) 36%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--blue-soft) 68%, var(--surface));
 }
 
 .support-admin-layout {

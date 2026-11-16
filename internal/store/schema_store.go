@@ -460,6 +460,19 @@ func (s *SQLiteStore) init() error {
 			FOREIGN KEY(conversation_id) REFERENCES support_conversations(id) ON DELETE CASCADE
 		);
 		`,
+		`
+		CREATE TABLE IF NOT EXISTS support_auto_reply_settings (
+			scope_type TEXT NOT NULL,
+			scope_id INTEGER NOT NULL DEFAULT 0,
+			mode TEXT NOT NULL DEFAULT 'disabled',
+			sender_name TEXT NOT NULL DEFAULT '',
+			message TEXT NOT NULL DEFAULT '',
+			updated_by_role TEXT NOT NULL DEFAULT '',
+			updated_by_account_id INTEGER NOT NULL DEFAULT 0,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY(scope_type, scope_id)
+		);
+		`,
 	}
 	schema = append(schema, `CREATE TRIGGER IF NOT EXISTS client_update_task_log
 	 AFTER UPDATE OF status, error, claimed_at, completed_at ON xui_actions
@@ -632,6 +645,7 @@ func (s *SQLiteStore) init() error {
 		`CREATE INDEX IF NOT EXISTS idx_access_logs_target ON access_logs(target_host, target_ip, created_at DESC);`,
 		`CREATE INDEX IF NOT EXISTS idx_support_conversations_updated ON support_conversations(status, updated_at DESC, id DESC);`,
 		`CREATE INDEX IF NOT EXISTS idx_support_messages_conversation ON support_messages(conversation_id, id DESC);`,
+		`CREATE INDEX IF NOT EXISTS idx_support_auto_reply_scope ON support_auto_reply_settings(scope_type, scope_id);`,
 	}
 	for _, stmt := range indexes {
 		if _, err := s.db.Exec(stmt); err != nil {

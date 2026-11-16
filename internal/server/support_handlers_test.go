@@ -265,6 +265,84 @@ func TestPublicGuestSupportScopesRecommendationURLToAreaManager(t *testing.T) {
 	}
 }
 
+func TestGuestSupportAutoReplyRunsOnceAndUsesAreaOverride(t *testing.T) {
+	tempDir := t.TempDir()
+	s, err := store.NewSQLiteStore(filepath.Join(tempDir, "bridge.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer s.Close()
+	if err := s.EnsureAdminAccount("admin", "password123"); err != nil {
+		t.Fatalf("EnsureAdminAccount: %v", err)
+	}
+	enabled := true
+	area, err := s.CreateAreaManager(model.AreaManagerAccountRequest{Username: "reply-area", DisplayName: "Reply Area", Password: "password123", Enabled: &enabled})
+	if err != nil {
+		t.Fatalf("CreateAreaManager: %v", err)
+	}
+	if _, err := s.SaveSupportAutoReply(model.SupportAutoReplySettings{ScopeType: model.SupportAutoReplyScopeGlobal, Mode: model.SupportAutoReplyCustom, SenderName: "全局客服", Message: "全局回复"}); err != nil {
+		t.Fatalf("Save global auto reply: %v", err)
+	}
+	if _, err := s.SaveSupportAutoReply(model.SupportAutoReplySettings{ScopeType: model.SupportAutoReplyScopeArea, ScopeID: area.ID, Mode: model.SupportAutoReplyCustom, SenderName: "区域客服", Message: "区域回复 **已收到**"}); err != nil {
+		t.Fatalf("Save area auto reply: %v", err)
+	}
+	app := &App{store: s, supportPresence: newSupportPresenceHub()}
+	handler := app.Handler()
+	adminToken := supportAdminToken(t, s, "admin")
+	configRequest := httptest.NewRequest(http.MethodGet, "/api/v1/admin/support/auto-reply", nil)
+	configRequest.AddCookie(&http.Cookie{Name: adminSessionCookieName, Value: adminToken})
+	configRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(configRecorder, configRequest)
+	if configRecorder.Code != http.StatusOK {
+		t.Fatalf("global auto reply config status=%d body=%s", configRecorder.Code, configRecorder.Body.String())
+	}
+	var configResponse model.SupportAutoReplyConfigResponse
+	if err := json.Unmarshal(configRecorder.Body.Bytes(), &configResponse); err != nil || configResponse.ScopeType != model.SupportAutoReplyScopeGlobal {
+		t.Fatalf("unexpected global auto reply config: %#v err=%v", configResponse, err)
+	}
+	get := httptest.NewRequest(http.MethodGet, "https://monitor.example/api/v1/public/support?area="+area.RecommendationToken, nil)
+	get.RemoteAddr = "198.51.100.88:443"
+	getRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(getRecorder, get)
+	cookie := authCookie(t, getRecorder, guestSupportCookieName)
+	if cookie == nil {
+		t.Fatal("expected guest support cookie")
+	}
+	post := httptest.NewRequest(http.MethodPost, "https://monitor.example/api/v1/public/support/messages?area="+area.RecommendationToken, bytes.NewBufferString(`{"body":"第一次咨询"}`))
+	post.RemoteAddr = "198.51.100.88:443"
+	post.Header.Set("Content-Type", "application/json")
+	post.AddCookie(cookie)
+	postRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(postRecorder, post)
+	if postRecorder.Code != http.StatusCreated {
+		t.Fatalf("first guest message status=%d body=%s", postRecorder.Code, postRecorder.Body.String())
+	}
+	var first model.SupportCustomerMessageResponse
+	if err := json.Unmarshal(postRecorder.Body.Bytes(), &first); err != nil {
+		t.Fatalf("decode first guest response: %v", err)
+	}
+	if first.AutoReply == nil || first.AutoReply.SenderRole != model.SupportSenderAreaManager || first.AutoReply.SenderName != "区域客服" || first.AutoReply.Body != "区域回复 **已收到**" {
+		t.Fatalf("unexpected area auto reply: %#v", first.AutoReply)
+	}
+	second := httptest.NewRequest(http.MethodPost, "https://monitor.example/api/v1/public/support/messages?area="+area.RecommendationToken, bytes.NewBufferString(`{"body":"第二次咨询"}`))
+	second.RemoteAddr = "198.51.100.88:443"
+	second.Header.Set("Content-Type", "application/json")
+	second.AddCookie(cookie)
+	secondRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(secondRecorder, second)
+	if secondRecorder.Code != http.StatusCreated {
+		t.Fatalf("second guest message status=%d body=%s", secondRecorder.Code, secondRecorder.Body.String())
+	}
+	var secondResponse model.SupportCustomerMessageResponse
+	if err := json.Unmarshal(secondRecorder.Body.Bytes(), &secondResponse); err != nil || secondResponse.AutoReply != nil {
+		t.Fatalf("auto reply should run once: %#v err=%v", secondResponse, err)
+	}
+	messages, err := s.ListSupportMessages(first.Message.ConversationID)
+	if err != nil || len(messages) != 3 {
+		t.Fatalf("expected customer, auto reply and second customer messages: %#v err=%v", messages, err)
+	}
+}
+
 func TestSupportHandlersEnforceAreaOwnershipAndSendOfflineTelegram(t *testing.T) {
 	tempDir := t.TempDir()
 	cipher, err := store.LoadOrCreateCredentialCipher(filepath.Join(tempDir, "credential.key"))

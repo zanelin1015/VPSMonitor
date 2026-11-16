@@ -1,11 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Badge, Button, Empty, Input, Segmented, Spin, Tabs, Tag, Tooltip, Typography } from 'antd'
-import { CheckCircleOutlined, CloseCircleOutlined, CustomerServiceOutlined, MinusOutlined, ReloadOutlined, SendOutlined } from '@ant-design/icons'
+import { Alert, Badge, Button, Empty, Input, Modal, Segmented, Select, Spin, Space, Tabs, Tag, Tooltip, Typography } from 'antd'
+import { CheckCircleOutlined, CloseCircleOutlined, CustomerServiceOutlined, MinusOutlined, ReloadOutlined, SendOutlined, SettingOutlined } from '@ant-design/icons'
 
 import type {
   SupportConversation,
   SupportConversationListResponse,
   SupportConversationStatus,
+  SupportAutoReplyConfigResponse,
+  SupportAutoReplyMode,
   SupportMessage,
   SupportStartConversationResponse,
   SupportThreadResponse,
@@ -13,6 +15,7 @@ import type {
 import { fetchJSON, formatDateTime } from '../lib/appHelpers'
 import { useCompactLayout } from '../hooks/useCompactLayout'
 import { SupportMessageList, type SupportMessageListHandle } from './SupportMessageList'
+import { SupportMarkdown } from './SupportMarkdown'
 
 const { Text, Title } = Typography
 
@@ -35,6 +38,14 @@ export function AdminSupportPage({ onUnreadCountChange }: AdminSupportPageProps)
   const [filter, setFilter] = useState<'open' | 'all'>('open')
   const [audience, setAudience] = useState<'all' | 'registered' | 'guest'>('all')
   const [error, setError] = useState('')
+  const [autoReplyOpen, setAutoReplyOpen] = useState(false)
+  const [autoReplyLoading, setAutoReplyLoading] = useState(false)
+  const [autoReplySaving, setAutoReplySaving] = useState(false)
+  const [autoReplyError, setAutoReplyError] = useState('')
+  const [autoReplyConfig, setAutoReplyConfig] = useState<SupportAutoReplyConfigResponse | null>(null)
+  const [autoReplyMode, setAutoReplyMode] = useState<SupportAutoReplyMode>('disabled')
+  const [autoReplySenderName, setAutoReplySenderName] = useState('')
+  const [autoReplyMessage, setAutoReplyMessage] = useState('')
   const messageListRef = useRef<SupportMessageListHandle>(null)
   const listRequestIDRef = useRef(0)
   const threadRequestIDRef = useRef(0)
@@ -115,6 +126,44 @@ export function AdminSupportPage({ onUnreadCountChange }: AdminSupportPageProps)
       if (response.conversation.id) selectConversation(response.conversation.id)
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : '打开用户会话失败')
+    }
+  }
+
+  async function openAutoReplyConfig() {
+    setAutoReplyOpen(true)
+    setAutoReplyLoading(true)
+    setAutoReplyError('')
+    try {
+      const data = await fetchJSON<SupportAutoReplyConfigResponse>('/api/v1/admin/support/auto-reply')
+      setAutoReplyConfig(data)
+      setAutoReplyMode((data.settings.mode || 'disabled') as SupportAutoReplyMode)
+      setAutoReplySenderName(data.settings.sender_name || '')
+      setAutoReplyMessage(data.settings.message || '')
+    } catch (requestError) {
+      setAutoReplyError(requestError instanceof Error ? requestError.message : '自动回复配置加载失败')
+    } finally {
+      setAutoReplyLoading(false)
+    }
+  }
+
+  async function saveAutoReplyConfig() {
+    if (!autoReplyConfig || autoReplySaving) return
+    setAutoReplySaving(true)
+    setAutoReplyError('')
+    try {
+      const data = await fetchJSON<SupportAutoReplyConfigResponse>('/api/v1/admin/support/auto-reply', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: autoReplyMode, sender_name: autoReplySenderName, message: autoReplyMessage }),
+      })
+      setAutoReplyConfig(data)
+      setAutoReplyMode((data.settings.mode || 'disabled') as SupportAutoReplyMode)
+      setAutoReplySenderName(data.settings.sender_name || '')
+      setAutoReplyMessage(data.settings.message || '')
+    } catch (requestError) {
+      setAutoReplyError(requestError instanceof Error ? requestError.message : '自动回复配置保存失败')
+    } finally {
+      setAutoReplySaving(false)
     }
   }
 
@@ -251,6 +300,7 @@ export function AdminSupportPage({ onUnreadCountChange }: AdminSupportPageProps)
           <Title level={2}>在线客服</Title>
         </div>
         <div className="support-admin-toolbar-actions">
+          <Button icon={<SettingOutlined />} onClick={() => void openAutoReplyConfig()}>自动回复</Button>
           <Badge count={unreadCount} overflowCount={99}>
             <Tag icon={<CustomerServiceOutlined />} color="blue">待处理消息</Tag>
           </Badge>
@@ -261,6 +311,68 @@ export function AdminSupportPage({ onUnreadCountChange }: AdminSupportPageProps)
       </header>
 
       {error ? <div className="support-admin-error"><Text type="danger">{error}</Text></div> : null}
+
+      <Modal
+        title={autoReplyConfig?.scope_type === 'area_manager' ? `自动回复 · ${autoReplyConfig.scope_name || '当前区域账号'}` : '自动回复 · 全局管理员'}
+        open={autoReplyOpen}
+        width={680}
+        onCancel={() => { if (!autoReplySaving) setAutoReplyOpen(false) }}
+        onOk={() => void saveAutoReplyConfig()}
+        okText="保存配置"
+        cancelText="取消"
+        confirmLoading={autoReplySaving}
+        destroyOnClose
+      >
+        {autoReplyError && !autoReplyConfig ? <Alert type="error" showIcon message={autoReplyError} /> : null}
+        {autoReplyLoading ? <Spin /> : autoReplyConfig ? (
+          <Space direction="vertical" size={14} style={{ width: '100%' }}>
+            {autoReplyError ? <Alert type="error" showIcon message={autoReplyError} /> : null}
+            <div>
+              <Text type="secondary">触发范围</Text>
+              <Select
+                style={{ width: '100%', marginTop: 6 }}
+                value={autoReplyMode}
+                options={autoReplyConfig.scope_type === 'area_manager'
+                  ? [
+                      { value: 'inherit', label: '使用管理员全局回复' },
+                      { value: 'custom', label: '使用当前区域自定义回复' },
+                      { value: 'disabled', label: '关闭自动回复' },
+                    ]
+                  : [
+                      { value: 'custom', label: '启用全局自动回复' },
+                      { value: 'disabled', label: '关闭自动回复' },
+                    ]}
+                onChange={(value) => setAutoReplyMode(value as SupportAutoReplyMode)}
+              />
+            </div>
+            {autoReplyMode === 'custom' ? (
+              <>
+                <div>
+                  <Text type="secondary">客服名称</Text>
+                  <Input value={autoReplySenderName} maxLength={80} placeholder="例如：在线客服" onChange={(event) => setAutoReplySenderName(event.target.value)} style={{ marginTop: 6 }} />
+                </div>
+                <div>
+                  <Text type="secondary">首次回复内容（支持安全 Markdown）</Text>
+                  <Input.TextArea
+                    value={autoReplyMessage}
+                    maxLength={2000}
+                    showCount
+                    autoSize={{ minRows: 5, maxRows: 10 }}
+                    placeholder={'您好，已收到您的消息。\n\nTelegram：[联系 TG](https://t.me/example)\nWhatsApp：[联系 WhatsApp](https://wa.me/8613800138000)'}
+                    onChange={(event) => setAutoReplyMessage(event.target.value)}
+                    style={{ marginTop: 6 }}
+                  />
+                </div>
+                <div className="support-auto-reply-preview">
+                  <Text type="secondary">访客看到的预览</Text>
+                  <div className="support-auto-reply-preview-bubble"><SupportMarkdown body={autoReplyMessage || '暂无内容'} /></div>
+                </div>
+              </>
+            ) : null}
+            <Text type="secondary">仅对访客的第一条消息自动回复一次，注册用户不会触发。</Text>
+          </Space>
+        ) : null}
+      </Modal>
 
       <div className={`support-admin-layout${compact ? ' support-admin-layout-compact' : ''}`}>
         <aside ref={conversationPaneRef} className="support-conversation-pane" aria-label="会话列表" aria-hidden={compact && showThread}>
@@ -387,7 +499,7 @@ function AdminSupportMessage({ message }: { message: SupportMessage }) {
         <span>{fromCustomer ? message.sender_name || 'Customer' : message.sender_name || '客服'}</span>
         <time>{formatDateTime(message.created_at)}</time>
       </div>
-      <p>{message.body}</p>
+      <SupportMarkdown body={message.body} />
     </div>
   )
 }

@@ -9,6 +9,12 @@ const (
 	SupportSenderCustomer    = "customer"
 	SupportSenderAdmin       = AdminRoleRoot
 	SupportSenderAreaManager = AdminRoleAreaManager
+
+	SupportAutoReplyScopeGlobal = "global"
+	SupportAutoReplyScopeArea   = "area_manager"
+	SupportAutoReplyDisabled    = "disabled"
+	SupportAutoReplyCustom      = "custom"
+	SupportAutoReplyInherit     = "inherit"
 )
 
 type SupportConversation struct {
@@ -65,6 +71,37 @@ type SupportStartConversationRequest struct {
 type SupportStartConversationResponse struct {
 	Conversation SupportConversation `json:"conversation"`
 	Message      *SupportMessage     `json:"message,omitempty"`
+}
+
+type SupportCustomerMessageResponse struct {
+	Message   SupportMessage  `json:"message"`
+	AutoReply *SupportMessage `json:"auto_reply,omitempty"`
+}
+
+type SupportAutoReplySettings struct {
+	ScopeType          string    `json:"scope_type"`
+	ScopeID            int64     `json:"scope_id"`
+	Mode               string    `json:"mode"`
+	SenderName         string    `json:"sender_name,omitempty"`
+	Message            string    `json:"message,omitempty"`
+	UpdatedByRole      string    `json:"updated_by_role,omitempty"`
+	UpdatedByAccountID int64     `json:"updated_by_account_id,omitempty"`
+	UpdatedAt          time.Time `json:"updated_at"`
+}
+
+type SupportAutoReplyConfigResponse struct {
+	ScopeType string                   `json:"scope_type"`
+	ScopeID   int64                    `json:"scope_id"`
+	ScopeName string                   `json:"scope_name,omitempty"`
+	Settings  SupportAutoReplySettings `json:"settings"`
+	Global    SupportAutoReplySettings `json:"global"`
+	Effective SupportAutoReplySettings `json:"effective"`
+}
+
+type SupportAutoReplyConfigRequest struct {
+	Mode       string `json:"mode"`
+	SenderName string `json:"sender_name"`
+	Message    string `json:"message"`
 }
 
 type SupportStatusRequest struct {

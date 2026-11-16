@@ -315,9 +315,14 @@ func (s *SQLiteStore) EnsureSupportConversation(customerID int64) (model.Support
 }
 
 func (s *SQLiteStore) AddSupportMessage(customerID int64, senderRole string, senderAccountID int64, senderName, body string) (model.SupportMessage, model.SupportConversation, error) {
+	message, _, conversation, err := s.AddSupportMessageWithAutoReply(customerID, senderRole, senderAccountID, senderName, body, nil)
+	return message, conversation, err
+}
+
+func (s *SQLiteStore) AddSupportMessageWithAutoReply(customerID int64, senderRole string, senderAccountID int64, senderName, body string, autoReply *model.SupportAutoReplySettings) (model.SupportMessage, *model.SupportMessage, model.SupportConversation, error) {
 	body, err := normalizeSupportMessageBody(body)
 	if err != nil {
-		return model.SupportMessage{}, model.SupportConversation{}, err
+		return model.SupportMessage{}, nil, model.SupportConversation{}, err
 	}
 	senderRole = normalizeSupportSenderRole(senderRole)
 	senderName = strings.TrimSpace(senderName)
@@ -326,20 +331,24 @@ func (s *SQLiteStore) AddSupportMessage(customerID int64, senderRole string, sen
 
 	tx, err := s.db.Begin()
 	if err != nil {
-		return model.SupportMessage{}, model.SupportConversation{}, fmt.Errorf("begin support message: %w", err)
+		return model.SupportMessage{}, nil, model.SupportConversation{}, fmt.Errorf("begin support message: %w", err)
 	}
 	defer tx.Rollback()
 	if _, err := tx.Exec(`
 		INSERT OR IGNORE INTO support_conversations (customer_id, status, created_at, updated_at)
 		SELECT id, ?, ?, ? FROM customer_accounts WHERE id = ?
 	`, model.SupportConversationOpen, nowText, nowText, customerID); err != nil {
-		return model.SupportMessage{}, model.SupportConversation{}, fmt.Errorf("ensure support conversation: %w", err)
+		return model.SupportMessage{}, nil, model.SupportConversation{}, fmt.Errorf("ensure support conversation: %w", err)
 	}
 	var conversationID int64
 	if err := tx.QueryRow(`SELECT id FROM support_conversations WHERE customer_id = ?`, customerID).Scan(&conversationID); err == sql.ErrNoRows {
-		return model.SupportMessage{}, model.SupportConversation{}, fmt.Errorf("customer not found")
+		return model.SupportMessage{}, nil, model.SupportConversation{}, fmt.Errorf("customer not found")
 	} else if err != nil {
-		return model.SupportMessage{}, model.SupportConversation{}, fmt.Errorf("load support conversation id: %w", err)
+		return model.SupportMessage{}, nil, model.SupportConversation{}, fmt.Errorf("load support conversation id: %w", err)
+	}
+	var customerMessageCount int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM support_messages WHERE conversation_id = ? AND sender_role = ?`, conversationID, model.SupportSenderCustomer).Scan(&customerMessageCount); err != nil {
+		return model.SupportMessage{}, nil, model.SupportConversation{}, fmt.Errorf("count customer support messages: %w", err)
 	}
 	if senderRole == model.SupportSenderCustomer {
 		var recent int
@@ -347,10 +356,10 @@ func (s *SQLiteStore) AddSupportMessage(customerID int64, senderRole string, sen
 			SELECT COUNT(*) FROM support_messages
 			WHERE conversation_id = ? AND sender_role = ? AND created_at >= ?
 		`, conversationID, model.SupportSenderCustomer, now.Add(-supportMessageRateWindow).Format(time.RFC3339Nano)).Scan(&recent); err != nil {
-			return model.SupportMessage{}, model.SupportConversation{}, fmt.Errorf("check support message rate: %w", err)
+			return model.SupportMessage{}, nil, model.SupportConversation{}, fmt.Errorf("check support message rate: %w", err)
 		}
 		if recent >= supportMessageRateLimit {
-			return model.SupportMessage{}, model.SupportConversation{}, ErrSupportRateLimit
+			return model.SupportMessage{}, nil, model.SupportConversation{}, ErrSupportRateLimit
 		}
 	}
 	result, err := tx.Exec(`
@@ -358,23 +367,12 @@ func (s *SQLiteStore) AddSupportMessage(customerID int64, senderRole string, sen
 		VALUES (?, ?, ?, ?, ?, ?)
 	`, conversationID, senderRole, senderAccountID, senderName, body, nowText)
 	if err != nil {
-		return model.SupportMessage{}, model.SupportConversation{}, fmt.Errorf("create support message: %w", err)
+		return model.SupportMessage{}, nil, model.SupportConversation{}, fmt.Errorf("create support message: %w", err)
 	}
 	messageID, err := result.LastInsertId()
 	if err != nil {
-		return model.SupportMessage{}, model.SupportConversation{}, fmt.Errorf("load support message id: %w", err)
+		return model.SupportMessage{}, nil, model.SupportConversation{}, fmt.Errorf("load support message id: %w", err)
 	}
-	if _, err := tx.Exec(`
-		UPDATE support_conversations
-		SET status = ?, last_message_id = ?, last_message_preview = ?, last_sender_role = ?, last_message_at = ?, updated_at = ?
-		WHERE id = ?
-	`, model.SupportConversationOpen, messageID, supportMessagePreview(body), senderRole, nowText, nowText, conversationID); err != nil {
-		return model.SupportMessage{}, model.SupportConversation{}, fmt.Errorf("update support conversation: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return model.SupportMessage{}, model.SupportConversation{}, fmt.Errorf("commit support message: %w", err)
-	}
-
 	message := model.SupportMessage{
 		ID:              messageID,
 		ConversationID:  conversationID,
@@ -384,14 +382,56 @@ func (s *SQLiteStore) AddSupportMessage(customerID int64, senderRole string, sen
 		Body:            body,
 		CreatedAt:       now,
 	}
+	var autoReplyMessage *model.SupportMessage
+	lastMessage := message
+	if senderRole == model.SupportSenderCustomer && customerMessageCount == 0 && autoReply != nil && autoReply.Mode == model.SupportAutoReplyCustom && strings.TrimSpace(autoReply.Message) != "" {
+		replyBody, replyErr := normalizeSupportMessageBody(autoReply.Message)
+		if replyErr != nil {
+			return model.SupportMessage{}, nil, model.SupportConversation{}, replyErr
+		}
+		replyRole := model.SupportSenderAdmin
+		replyAccountID := int64(0)
+		if autoReply.ScopeType == model.SupportAutoReplyScopeArea {
+			replyRole = model.SupportSenderAreaManager
+			replyAccountID = autoReply.ScopeID
+		}
+		replyName := strings.TrimSpace(autoReply.SenderName)
+		if replyName == "" {
+			replyName = "客服"
+		}
+		replyResult, replyErr := tx.Exec(`
+			INSERT INTO support_messages (conversation_id, sender_role, sender_account_id, sender_name, body, created_at)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, conversationID, replyRole, replyAccountID, replyName, replyBody, now.Add(time.Nanosecond).Format(time.RFC3339Nano))
+		if replyErr != nil {
+			return model.SupportMessage{}, nil, model.SupportConversation{}, fmt.Errorf("create support auto reply: %w", replyErr)
+		}
+		replyID, replyErr := replyResult.LastInsertId()
+		if replyErr != nil {
+			return model.SupportMessage{}, nil, model.SupportConversation{}, fmt.Errorf("load support auto reply id: %w", replyErr)
+		}
+		autoReplyValue := model.SupportMessage{ID: replyID, ConversationID: conversationID, SenderRole: replyRole, SenderAccountID: replyAccountID, SenderName: replyName, Body: replyBody, CreatedAt: now.Add(time.Nanosecond)}
+		autoReplyMessage = &autoReplyValue
+		lastMessage = autoReplyValue
+	}
+	if _, err := tx.Exec(`
+		UPDATE support_conversations
+		SET status = ?, last_message_id = ?, last_message_preview = ?, last_sender_role = ?, last_message_at = ?, updated_at = ?
+		WHERE id = ?
+	`, model.SupportConversationOpen, lastMessage.ID, supportMessagePreview(lastMessage.Body), lastMessage.SenderRole, now.Add(time.Nanosecond).Format(time.RFC3339Nano), nowText, conversationID); err != nil {
+		return model.SupportMessage{}, nil, model.SupportConversation{}, fmt.Errorf("update support conversation: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return model.SupportMessage{}, nil, model.SupportConversation{}, fmt.Errorf("commit support message: %w", err)
+	}
 	conversation, found, err := s.GetSupportConversation(conversationID, model.SupportSenderAdmin)
 	if err != nil {
-		return model.SupportMessage{}, model.SupportConversation{}, err
+		return model.SupportMessage{}, nil, model.SupportConversation{}, err
 	}
 	if !found {
-		return model.SupportMessage{}, model.SupportConversation{}, fmt.Errorf("support conversation not found")
+		return model.SupportMessage{}, nil, model.SupportConversation{}, fmt.Errorf("support conversation not found")
 	}
-	return message, conversation, nil
+	return message, autoReplyMessage, conversation, nil
 }
 
 func (s *SQLiteStore) MarkSupportConversationRead(conversationID int64, audience string) error {

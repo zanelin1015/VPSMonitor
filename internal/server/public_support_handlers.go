@@ -73,7 +73,12 @@ func (a *App) handlePublicSupport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode support message: %v", err))
 		return
 	}
-	message, conversation, err := a.store.AddSupportMessage(user.ID, model.SupportSenderCustomer, user.ID, user.DisplayName, req.Body)
+	autoReply, err := a.guestSupportAutoReply(user)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	message, autoReplyMessage, conversation, err := a.store.AddSupportMessageWithAutoReply(user.ID, model.SupportSenderCustomer, user.ID, user.DisplayName, req.Body, autoReply)
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, store.ErrSupportRateLimit) {
@@ -83,7 +88,7 @@ func (a *App) handlePublicSupport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.notifySupportMessage(user, conversation, message, requestPublicBaseURL(r))
-	writeJSON(w, http.StatusCreated, message)
+	writeJSON(w, http.StatusCreated, model.SupportCustomerMessageResponse{Message: message, AutoReply: autoReplyMessage})
 }
 
 func (a *App) requireGuestSupport(w http.ResponseWriter, r *http.Request, ownerType string, ownerID int64) (model.CustomerUser, string, bool) {

@@ -5,6 +5,7 @@ import type { SupportMessage } from '../types'
 import { formatDateTime } from '../lib/appHelpers'
 import { useSupportThread, type SupportIdentity } from '../hooks/useSupportThread'
 import { SupportMessageList, type SupportMessageListHandle } from './SupportMessageList'
+import { SupportMarkdown } from './SupportMarkdown'
 
 const labels = {
   guest: { title: '访客在线客服', online: '客服在线 · 未登录临时会话', offline: '客服离线 · 留言后会通知客服' },
@@ -66,7 +67,7 @@ function SupportMessageBubble({ message }: { message: SupportMessage }) {
   return (
     <div className={`customer-support-message${mine ? ' mine' : ''}`}>
       <div className="customer-support-message-meta"><span>{mine ? '我' : message.sender_name || '客服'}</span><time>{formatDateTime(message.created_at)}</time></div>
-      <p>{message.body}</p>
+      <SupportMarkdown body={message.body} />
     </div>
   )
 }

@@ -704,6 +704,33 @@ export interface SupportMessage {
   created_at: string
 }
 
+export interface SupportCustomerMessageResponse {
+  message: SupportMessage
+  auto_reply?: SupportMessage
+}
+
+export type SupportAutoReplyMode = 'disabled' | 'custom' | 'inherit'
+
+export interface SupportAutoReplySettings {
+  scope_type: 'global' | 'area_manager' | string
+  scope_id: number
+  mode: SupportAutoReplyMode | string
+  sender_name?: string
+  message?: string
+  updated_by_role?: string
+  updated_by_account_id?: number
+  updated_at: string
+}
+
+export interface SupportAutoReplyConfigResponse {
+  scope_type: 'global' | 'area_manager' | string
+  scope_id: number
+  scope_name?: string
+  settings: SupportAutoReplySettings
+  global: SupportAutoReplySettings
+  effective: SupportAutoReplySettings
+}
+
 export interface SupportThreadResponse {
   conversation: SupportConversation
   messages: SupportMessage[]
