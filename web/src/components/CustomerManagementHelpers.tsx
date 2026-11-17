@@ -1,7 +1,7 @@
 import { Space, Tag, Typography } from 'antd'
 
-import type { AreaManagerAssignment, AreaManagerOutboundGrant, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, DashboardAgentView, FinanceClientView, RealmForwardRule, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
-import { agentHealthCategory } from '../lib/agentHealth'
+import type { AreaManagerAssignment, AreaManagerOutboundGrant, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, DashboardAgentView, RealmForwardRule, XUIClientBillingConfig, XUIClientView, XUINodeView, XUIOverview } from '../types'
+export { assignmentBindingDiagnostic } from '../lib/customerAssignmentBinding'
 
 const { Text } = Typography
 
@@ -824,50 +824,6 @@ export function clientBilling(agentID: string, inboundID: number, inboundTag: st
     }
     return Boolean(emailKey && billingEmailKey(Number(billing.inbound_id || 0), billing.email || '') === emailKey)
   })
-}
-
-export type AssignmentBindingStatus = 'matched' | 'legacy' | 'mismatch' | 'waiting_sync' | 'node_deleted' | 'select_client'
-
-export interface AssignmentBindingDiagnostic {
-  status: AssignmentBindingStatus
-  label: string
-  current?: FinanceClientView
-}
-
-export function assignmentBindingDiagnostic(record: CustomerAssignment, agents: DashboardAgentView[]): AssignmentBindingDiagnostic {
-  const agent = agents.find((item) => item.agent_id === record.agent_id)
-  const clients = agent?.finance_clients || []
-  const current = record.client_id
-    ? clients.find((client) => client.client_id === record.client_id)
-    : undefined
-  if (current) {
-    return { status: 'matched', label: '已匹配', current }
-  }
-  if (!agent || agentHealthCategory(agent) === 'offline' || agent.summary.last_collection_err) {
-    return { status: 'waiting_sync', label: '等待同步' }
-  }
-  const legacy = clients.find((client) =>
-    client.inbound_id === record.inbound_id &&
-    (!record.client_email || String(client.email || '').trim().toLowerCase() === record.client_email.trim().toLowerCase()),
-  )
-  if (legacy) {
-    return { status: record.client_id ? 'mismatch' : 'legacy', label: record.client_id ? 'ID 不匹配' : '旧数据匹配', current: legacy }
-  }
-  const suspicious = clients.find((client) =>
-    client.inbound_id === record.inbound_id &&
-    [client.comment, client.email].some((value) => value && [record.client_email, record.public_client_name].includes(value)),
-  )
-  if (suspicious) {
-    return { status: 'mismatch', label: '疑似备注误绑', current: suspicious }
-  }
-  const inbound = clients.find((client) => client.inbound_id === record.inbound_id)
-  if (!record.client_email && inbound) {
-    return { status: record.client_id ? 'mismatch' : 'legacy', label: record.client_id ? 'ID 不匹配' : '节点级旧数据', current: inbound }
-  }
-  if (clients.some((client) => client.inbound_id === record.inbound_id)) {
-    return { status: 'select_client', label: '请选择客户端' }
-  }
-  return { status: 'node_deleted', label: '节点已删除' }
 }
 
 export function billingFormPatch(billing?: XUIClientBillingConfig): Pick<AssignmentFormState, 'revenue_amount' | 'revenue_currency' | 'revenue_cycle'> {

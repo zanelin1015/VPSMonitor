@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"bridge-core/internal/dashboard"
 	"bridge-core/internal/model"
 )
 
@@ -29,15 +28,13 @@ func (a *App) customerBillingReconciliationForAdmin(user model.AdminUser) (model
 		return model.CustomerBillingReconciliationResponse{}, err
 	}
 	snapshots := a.store.ListLatest()
-	entryByAgent := make(map[string]model.AgentEntryConfig, len(agents))
-	for _, agent := range agents {
-		entryByAgent[agent.AgentID] = agent.Config.Entry
-	}
+	context := buildForwardedOverviewContext(agents, snapshots)
 	clientsByAgent := make(map[string][]model.XUIClientView, len(snapshots))
-	for _, snapshot := range snapshots {
-		overview := dashboard.BuildXUIOverviewWithOptions(snapshot, dashboard.XUIOverviewOptions{Entry: entryByAgent[snapshot.AgentID]})
-		if overview != nil {
-			clientsByAgent[snapshot.AgentID] = overview.Clients
+	for _, customer := range customers {
+		for _, assignment := range customer.Assignments {
+			if _, loaded := clientsByAgent[assignment.AgentID]; !loaded {
+				clientsByAgent[assignment.AgentID] = customerAssignmentBindingClients(assignment.AgentID, context)
+			}
 		}
 	}
 
@@ -83,10 +80,22 @@ func (a *App) customerBillingReconciliationForAdmin(user model.AdminUser) (model
 	return response, nil
 }
 
+// Match forwarding assignments in the entry listener's namespace, just as the
+// assignment picker does. Clone the base overview so diagnostics never add
+// forwarded clients to the underlying finance or target snapshot data.
+func customerAssignmentBindingClients(agentID string, context forwardedOverviewContext) []model.XUIClientView {
+	overview := cloneForwardedBaseOverview(context.targetOverviewByAgent[agentID])
+	if overview == nil {
+		overview = &model.XUIOverview{AgentID: agentID}
+	}
+	appendForwardedImportURLsWithContext(agentID, overview, context)
+	return overview.Clients
+}
+
 func reconcileCustomerAssignment(assignment model.CustomerAssignment, clients []model.XUIClientView) (*model.XUIClientView, string, string) {
 	if assignment.ClientID != "" {
 		for index := range clients {
-			if clients[index].ClientID == assignment.ClientID {
+			if clients[index].InboundID == assignment.InboundID && clients[index].ClientID == assignment.ClientID {
 				return &clients[index], "matched", "稳定 ID 已匹配"
 			}
 		}
@@ -135,28 +144,25 @@ func sameBindingLabel(value string, labels ...string) bool {
 	return false
 }
 
-func (a *App) currentXUIClient(agentID, clientID string) (model.XUIClientView, bool, error) {
+func (a *App) currentXUIClient(agentID, clientID string, inboundID int) (model.XUIClientView, bool, error) {
 	clientID = strings.TrimSpace(clientID)
 	if agentID == "" || clientID == "" {
 		return model.XUIClientView{}, false, fmt.Errorf("agent_id and client_id are required")
 	}
-	agent, found, err := a.store.GetAgent(agentID)
+	_, found, err := a.store.GetAgent(agentID)
 	if err != nil {
 		return model.XUIClientView{}, false, err
 	}
 	if !found {
 		return model.XUIClientView{}, false, fmt.Errorf("agent not found")
 	}
-	snapshot, ok := a.store.GetLatest(agentID)
-	if !ok {
-		return model.XUIClientView{}, false, nil
+	agents, err := a.store.ListAgents()
+	if err != nil {
+		return model.XUIClientView{}, false, err
 	}
-	overview := dashboard.BuildXUIOverviewWithOptions(snapshot, dashboard.XUIOverviewOptions{Entry: agent.Config.Entry})
-	if overview == nil {
-		return model.XUIClientView{}, false, nil
-	}
-	for _, client := range overview.Clients {
-		if client.ClientID == clientID {
+	context := buildForwardedOverviewContext(agents, a.store.ListLatest())
+	for _, client := range customerAssignmentBindingClients(agentID, context) {
+		if client.InboundID == inboundID && client.ClientID == clientID {
 			return client, true, nil
 		}
 	}

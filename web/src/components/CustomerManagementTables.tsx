@@ -2,6 +2,7 @@ import { Button, Empty, Modal, Popconfirm, Space, Table, Tag, Typography } from 
 import type { ColumnsType } from 'antd/es/table'
 import { CopyOutlined, DeleteOutlined, EditOutlined, ExportOutlined, LinkOutlined, MessageOutlined, SyncOutlined } from '@ant-design/icons'
 import { useState } from 'react'
+import type { AssignmentBindingOverviews } from '../lib/customerAssignmentBinding'
 
 import type { AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerBillingDiagnostic, DashboardAgentView } from '../types'
 import { formatDateTime } from '../lib/appHelpers'
@@ -44,6 +45,7 @@ function AreaManagerNodesCell({ record, agents }: { record: AreaManagerAdminView
 
 interface CustomerManagementTableOptions {
   agents: DashboardAgentView[]
+  assignmentBindingOverviews: AssignmentBindingOverviews
   canViewFinance: boolean
   onOpenAssignment: ((record: CustomerAssignment) => void) | undefined
   editAssignment: (record: CustomerAssignment) => void
@@ -72,6 +74,7 @@ interface CustomerManagementTableOptions {
 
 export function buildCustomerManagementTables({
   agents,
+  assignmentBindingOverviews,
   canViewFinance,
   onOpenAssignment,
   editAssignment,
@@ -134,7 +137,7 @@ export function buildCustomerManagementTables({
       key: 'binding',
       width: 120,
       render: (_, record) => {
-        const diagnostic = assignmentBindingDiagnostic(record, agents)
+        const diagnostic = assignmentBindingDiagnostic(record, agents, assignmentBindingOverviews)
         const color = diagnostic.status === 'matched' ? 'green' : diagnostic.status === 'legacy' ? 'blue' : diagnostic.status === 'mismatch' || diagnostic.status === 'select_client' ? 'orange' : diagnostic.status === 'waiting_sync' ? 'gold' : 'red'
         return <Tag color={color}>{diagnostic.label}</Tag>
       },
@@ -159,7 +162,7 @@ export function buildCustomerManagementTables({
       render: (_, record) => (
         <Space size={6} wrap>
           {(() => {
-            const diagnostic = assignmentBindingDiagnostic(record, agents)
+            const diagnostic = assignmentBindingDiagnostic(record, agents, assignmentBindingOverviews)
             return diagnostic.current?.client_id && (diagnostic.status === 'legacy' || diagnostic.status === 'mismatch') ? (
               <Button size="small" type="primary" onClick={() => rebindAssignment(record, diagnostic.current?.client_id || '')}>重新绑定</Button>
             ) : diagnostic.status === 'select_client' || diagnostic.status === 'node_deleted' ? (

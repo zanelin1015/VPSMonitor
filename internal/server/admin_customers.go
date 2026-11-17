@@ -281,7 +281,7 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 			writeError(w, http.StatusForbidden, "agent is not assigned to this account")
 			return
 		}
-		client, found, err := a.currentXUIClient(assignment.AgentID, req.ClientID)
+		client, found, err := a.currentXUIClient(assignment.AgentID, req.ClientID, assignment.InboundID)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return

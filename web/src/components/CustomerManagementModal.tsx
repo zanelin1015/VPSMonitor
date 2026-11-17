@@ -1,5 +1,6 @@
 import { useCustomerAccounts } from '../hooks/useCustomerAccounts'
 import { useAccountDirectory } from '../hooks/useAccountDirectory';
+import { useAssignmentBindingOverviews } from '../hooks/useAssignmentBindingOverviews';
 import { AreaAccountPanel } from './AreaAccountPanel';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, App as AntdApp, Button, Card, Empty, Input, Modal, Select, Space, Spin, Table, Tabs, Typography } from 'antd';
@@ -115,6 +116,11 @@ export function CustomerManagementModal(props: {
   })
 
   const selectedCustomer = customers.find((item) => item.id === selectedCustomerID) || null
+  const assignmentBindingOverviews = useAssignmentBindingOverviews(
+    selectedCustomer?.assignments,
+    agents,
+    active && (assignmentManagerModalOpen || assignmentViewModalOpen),
+  )
   const inheritedAssignmentBilling = useMemo(() => clientBilling(
     assignmentForm.agent_id,
     assignmentForm.inbound_id,
@@ -325,6 +331,7 @@ export function CustomerManagementModal(props: {
 
   const { visibleAssignmentColumns, billingReconciliationColumns, areaManagerColumns, customerColumns, compactCustomerColumns, renderAreaManagerCustomers } = buildCustomerManagementTables({
     agents,
+    assignmentBindingOverviews,
     canViewFinance,
     onOpenAssignment,
     editAssignment,
