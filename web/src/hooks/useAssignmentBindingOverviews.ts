@@ -6,11 +6,14 @@ import { isForwardingAssignment, type AssignmentBindingOverviews } from '../lib/
 const noAssignments: CustomerAssignment[] = []
 
 export function useAssignmentBindingOverviews(
-  assignments: CustomerAssignment[] = noAssignments,
+  assignments: CustomerAssignment[] | null | undefined,
   agents: DashboardAgentView[],
   active: boolean,
 ): AssignmentBindingOverviews {
-  const agentKey = JSON.stringify([...new Set(assignments
+  // Older Servers serialize users with no grants as assignments: null.
+  // A parameter default only handles undefined, so normalize both here.
+  const records = assignments ?? noAssignments
+  const agentKey = JSON.stringify([...new Set(records
     .filter(record => isForwardingAssignment(record, agents))
     .map(record => record.agent_id))].sort())
   const [result, setResult] = useState<{ key: string; entries: AssignmentBindingOverviews }>({ key: '', entries: {} })
@@ -30,7 +33,7 @@ export function useAssignmentBindingOverviews(
         })
     }
     return () => { cancelled = true }
-  }, [active, agentKey, assignments])
+  }, [active, agentKey, records])
 
   return active && result.key === agentKey ? result.entries : {}
 }

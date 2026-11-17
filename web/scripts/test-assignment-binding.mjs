@@ -54,6 +54,17 @@ try {
   const assignments = [assignment, { ...assignment, client_id: 'second' }, { ...assignment, agent_id: 'direct' }]
   const agents = [gz, direct]
   let renderer
+  // The customers API can encode a Go nil assignment slice as JSON null.
+  // A new user with no grants must not crash the entire management page,
+  // including while the assignment dialog is closed.
+  for (const empty of [null, undefined, []]) {
+    for (const active of [false, true]) {
+      await act(async () => { renderer = create(React.createElement(Probe, { assignments: empty, agents, active })) })
+      assert.deepEqual(state, {}, 'null/missing/empty assignments render as an empty list')
+      await act(async () => { renderer.unmount() })
+    }
+  }
+  assert.equal(requests.length, 0, 'users without assignments must not fetch an overview')
   await act(async () => { renderer = create(React.createElement(Probe, { assignments, agents, active: false })) })
   assert.equal(requests.length, 0, 'closed assignment dialogs issue no requests')
   await act(async () => { renderer.update(React.createElement(Probe, { assignments, agents, active: true })) })

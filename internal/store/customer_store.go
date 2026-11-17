@@ -67,6 +67,9 @@ func (s *SQLiteStore) listCustomers(ownerType string, ownerID int64) ([]model.Cu
 	}
 	for i := range customers {
 		customers[i].Assignments = assignmentsByCustomer[customers[i].ID]
+		if customers[i].Assignments == nil {
+			customers[i].Assignments = []model.CustomerAssignment{}
+		}
 		customers[i].FrontProxies = frontProxyNodeViews(frontProxiesByCustomer[customers[i].ID])
 	}
 	return customers, nil
