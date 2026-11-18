@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -846,7 +847,7 @@ func (s *SQLiteStore) getAreaManagerBase(id int64) (model.AreaManagerAdminView, 
 		WHERE id = ?
 	`, id)
 	item, err := scanAreaManager(row)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return model.AreaManagerAdminView{}, false, nil
 	}
 	if err != nil {

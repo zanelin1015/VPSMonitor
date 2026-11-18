@@ -22,6 +22,7 @@ const { Text } = Typography
 
 export interface CustomerManagementModalsProps {
   canManageAreaManagers: boolean
+  customerOwnerOptions: Array<{ value: number; label: string; disabled?: boolean }>
   agents: Parameters<typeof renderAssignmentHierarchy>[1]
   agentOptions: Array<{ value: string; label: string }>
   realmAgentOptions: Array<{ value: string; label: string }>
@@ -78,6 +79,7 @@ export interface CustomerManagementModalsProps {
 export function CustomerManagementModals(props: CustomerManagementModalsProps) {
   const {
     canManageAreaManagers,
+    customerOwnerOptions,
     agents,
     realmAgentOptions, lineAgentOptions, landingAgentOptions, onFrontLinksChanged,
     frontProxyOptions,
@@ -373,6 +375,21 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
             <Text type="secondary">用户显示名</Text>
             <Input value={customerCreateForm.display_name} onChange={(event) => setCustomerCreateForm((current) => ({ ...current, display_name: event.target.value }))} />
           </Col>
+          {canManageAreaManagers && (
+            <Col xs={24}>
+              <Text type="secondary">所属区域</Text>
+              <Select
+                aria-label="新用户所属区域"
+                style={{ width: '100%' }}
+                value={customerCreateForm.owner_area_manager_id}
+                options={customerOwnerOptions}
+                showSearch
+                optionFilterProp="label"
+                onChange={(value) => setCustomerCreateForm((current) => ({ ...current, owner_area_manager_id: value }))}
+              />
+              <Text type="secondary">区域账号可以查看和管理自己名下的普通用户。</Text>
+            </Col>
+          )}
           <Col xs={24} md={12}>
             <Text type="secondary">密码（默认 12345678）</Text>
             <Input.Password value={customerCreateForm.password} onChange={(event) => setCustomerCreateForm((current) => ({ ...current, password: event.target.value }))} />
@@ -497,6 +514,21 @@ export function CustomerManagementModals(props: CustomerManagementModalsProps) {
             <Text type="secondary">用户显示名</Text>
             <Input value={customerForm.display_name} onChange={(event) => setCustomerForm((current) => ({ ...current, display_name: event.target.value }))} />
           </Col>
+          {canManageAreaManagers && (
+            <Col xs={24}>
+              <Text type="secondary">所属区域</Text>
+              <Select
+                aria-label="用户所属区域"
+                style={{ width: '100%' }}
+                value={customerForm.owner_area_manager_id}
+                options={customerOwnerOptions}
+                showSearch
+                optionFilterProp="label"
+                onChange={(value) => setCustomerForm((current) => ({ ...current, owner_area_manager_id: value }))}
+              />
+              <Text type="secondary">移交前会校验现有链路授权；账号、密码和订阅地址保持不变。</Text>
+            </Col>
+          )}
           <Col xs={24} md={12}>
             <Text type="secondary">密码（留空不改）</Text>
             <Input.Password value={customerForm.password} onChange={(event) => setCustomerForm((current) => ({ ...current, password: event.target.value }))} />

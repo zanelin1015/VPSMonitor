@@ -243,6 +243,7 @@ export function CustomerManagementModal(props: {
       display_name: selectedCustomer.display_name || selectedCustomer.username,
       enabled: selectedCustomer.enabled,
       front_proxy_node_ids: (selectedCustomer.front_proxies || []).map((item) => item.id),
+      owner_area_manager_id: selectedCustomer.owner_type === 'area_manager' ? selectedCustomer.owner_id || 0 : 0,
     })
     if (skipAssignmentResetRef.current) {
       skipAssignmentResetRef.current = false
@@ -331,6 +332,8 @@ export function CustomerManagementModal(props: {
 
   const { visibleAssignmentColumns, billingReconciliationColumns, areaManagerColumns, customerColumns, compactCustomerColumns, renderAreaManagerCustomers } = buildCustomerManagementTables({
     agents,
+    canManageAreaManagers,
+    areaManagers,
     assignmentBindingOverviews,
     canViewFinance,
     onOpenAssignment,
@@ -1046,6 +1049,14 @@ export function CustomerManagementModal(props: {
     <>
       <CustomerManagementModals
       canManageAreaManagers={canManageAreaManagers}
+      customerOwnerOptions={[
+        { value: 0, label: '总管理员' },
+        ...areaManagers.map((manager) => ({
+          value: manager.id,
+          label: `${manager.display_name || manager.username}（${manager.username}）${manager.enabled ? '' : ' · 已停用'}`,
+          disabled: !manager.enabled,
+        })),
+      ]}
       realmAgentOptions={realmAgentOptions}
       lineAgentOptions={lineAgentOptions}
       landingAgentOptions={landingAgentOptions}

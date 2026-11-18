@@ -134,6 +134,17 @@ func (s *SQLiteStore) ReplaceFrontProxyGrants(granteeType string, granteeID int6
 		return fmt.Errorf("begin front proxy grants: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := s.replaceFrontProxyGrantsTx(tx, granteeType, granteeID, nodeIDs); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit front proxy grants: %w", err)
+	}
+	return nil
+}
+
+// nodeIDs have already been normalized before beginning the transaction.
+func (s *SQLiteStore) replaceFrontProxyGrantsTx(tx *sql.Tx, granteeType string, granteeID int64, nodeIDs []int64) error {
 	if err := s.validateFrontProxyGranteeTx(tx, granteeType, granteeID); err != nil {
 		return err
 	}
@@ -148,9 +159,6 @@ func (s *SQLiteStore) ReplaceFrontProxyGrants(granteeType string, granteeID int6
 		`, nodeID, granteeType, granteeID, now); err != nil {
 			return fmt.Errorf("save front proxy grant: %w", err)
 		}
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit front proxy grants: %w", err)
 	}
 	return nil
 }
@@ -180,6 +188,42 @@ func (s *SQLiteStore) ListFrontProxyNodeViewsForGrantee(granteeType string, gran
 		return nil, err
 	}
 	return frontProxyNodeViews(nodes), nil
+}
+
+// Ownership checks must include disabled nodes, whose grants would become
+// effective again if the node is re-enabled later.
+func (s *SQLiteStore) ListFrontProxyGrantNodeIDs(granteeType string, granteeID int64) ([]int64, error) {
+	rows, err := s.db.Query(`SELECT node_id FROM front_proxy_grants WHERE grantee_type = ? AND grantee_id = ? ORDER BY node_id`, granteeType, granteeID)
+	if err != nil {
+		return nil, fmt.Errorf("list front proxy grant ids: %w", err)
+	}
+	defer rows.Close()
+	return scanFrontProxyNodeIDs(rows)
+}
+
+func (s *SQLiteStore) ListCustomerAssignmentFrontProxyNodeIDs(customerID int64) ([]int64, error) {
+	rows, err := s.db.Query(`
+		SELECT DISTINCT p.node_id FROM customer_assignment_front_proxies p
+		INNER JOIN customer_assignments a ON a.id = p.assignment_id
+		WHERE a.customer_id = ? ORDER BY p.node_id
+	`, customerID)
+	if err != nil {
+		return nil, fmt.Errorf("list customer assignment front proxy ids: %w", err)
+	}
+	defer rows.Close()
+	return scanFrontProxyNodeIDs(rows)
+}
+
+func scanFrontProxyNodeIDs(rows *sql.Rows) ([]int64, error) {
+	ids := make([]int64, 0)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 func (s *SQLiteStore) ListFrontProxyNodesForGrantees(granteeType string, granteeIDs []int64) (map[int64][]model.FrontProxyNode, error) {

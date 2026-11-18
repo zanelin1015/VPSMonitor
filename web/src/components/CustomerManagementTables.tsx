@@ -45,6 +45,8 @@ function AreaManagerNodesCell({ record, agents }: { record: AreaManagerAdminView
 
 interface CustomerManagementTableOptions {
   agents: DashboardAgentView[]
+  canManageAreaManagers?: boolean
+  areaManagers?: AreaManagerAdminView[]
   assignmentBindingOverviews: AssignmentBindingOverviews
   canViewFinance: boolean
   onOpenAssignment: ((record: CustomerAssignment) => void) | undefined
@@ -74,6 +76,8 @@ interface CustomerManagementTableOptions {
 
 export function buildCustomerManagementTables({
   agents,
+  canManageAreaManagers = false,
+  areaManagers = [],
   assignmentBindingOverviews,
   canViewFinance,
   onOpenAssignment,
@@ -404,10 +408,13 @@ export function buildCustomerManagementTables({
   ]
 
   function renderCustomerAccount(record: CustomerAdminView) {
+    const owner = record.owner_type === 'area_manager' ? areaManagers.find((manager) => manager.id === record.owner_id) : undefined
+    const ownerName = record.owner_type === 'area_manager' ? owner?.display_name || owner?.username || `区域账号 #${record.owner_id}` : '总管理员'
     return (
       <div className="customer-admin-account-name">
         <Text strong>{record.username}</Text>
         {record.display_name && record.display_name !== record.username ? <div className="muted-line">{record.display_name}</div> : null}
+        {canManageAreaManagers && <div className="muted-line">所属区域：{ownerName}</div>}
       </div>
     )
   }

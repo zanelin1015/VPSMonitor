@@ -38,11 +38,12 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 				writeError(w, http.StatusBadRequest, fmt.Sprintf("decode customer request: %v", err))
 				return
 			}
-			ownerType := model.AdminRoleRoot
-			ownerID := int64(1)
+			ownerType, ownerID, status, err := a.customerOwnerForRequest(user, 0, req)
+			if err != nil {
+				writeError(w, status, err.Error())
+				return
+			}
 			if isAreaManager(user) {
-				ownerType = model.AdminRoleAreaManager
-				ownerID = user.ID
 				if !a.adminCanUseFrontProxyNodes(user, req.FrontProxyNodeIDs) {
 					writeError(w, http.StatusForbidden, "front proxy is outside the area manager authorization scope")
 					return
@@ -106,6 +107,10 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 			var req model.CustomerAccountRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				writeError(w, http.StatusBadRequest, fmt.Sprintf("decode customer request: %v", err))
+				return
+			}
+			if _, _, status, err := a.customerOwnerForRequest(user, customerID, req); err != nil {
+				writeError(w, status, err.Error())
 				return
 			}
 			if isAreaManager(user) && !a.adminCanUseFrontProxyNodes(user, req.FrontProxyNodeIDs) {

@@ -15,6 +15,7 @@ export interface CustomerFormState {
   display_name: string
   enabled: boolean
   front_proxy_node_ids: number[]
+  owner_area_manager_id: number
 }
 
 export interface AssignmentFormState {
@@ -85,6 +86,7 @@ export const emptyCustomerForm: CustomerFormState = {
   display_name: '',
   enabled: true,
   front_proxy_node_ids: [],
+  owner_area_manager_id: 0,
 }
 
 export const emptyAssignmentForm: AssignmentFormState = {

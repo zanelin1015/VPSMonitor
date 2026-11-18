@@ -423,16 +423,18 @@ func (s *SQLiteStore) UpdateCustomer(id int64, req model.CustomerAccountRequest)
 		return model.CustomerAdminView{}, fmt.Errorf("invalid customer id")
 	}
 	var (
-		currentUsername string
-		currentHash     string
-		currentDisplay  string
-		currentEnabled  int
+		currentUsername  string
+		currentHash      string
+		currentDisplay   string
+		currentEnabled   int
+		currentOwnerType string
+		currentOwnerID   int64
 	)
 	err := s.db.QueryRow(`
-		SELECT username, password_hash, display_name, enabled
+		SELECT username, password_hash, display_name, enabled, owner_type, owner_id
 		FROM customer_accounts
 		WHERE id = ?
-	`, id).Scan(&currentUsername, &currentHash, &currentDisplay, &currentEnabled)
+	`, id).Scan(&currentUsername, &currentHash, &currentDisplay, &currentEnabled, &currentOwnerType, &currentOwnerID)
 	if err == sql.ErrNoRows {
 		return model.CustomerAdminView{}, fmt.Errorf("customer not found")
 	}
@@ -465,6 +467,22 @@ func (s *SQLiteStore) UpdateCustomer(id int64, req model.CustomerAccountRequest)
 		passwordChanged = true
 	}
 
+	if req.OwnerAreaManagerID != nil {
+		if *req.OwnerAreaManagerID < 0 {
+			return model.CustomerAdminView{}, fmt.Errorf("invalid owner area manager id")
+		}
+		currentOwnerType, currentOwnerID = model.AdminRoleRoot, adminAccountID
+		if *req.OwnerAreaManagerID > 0 {
+			currentOwnerType, currentOwnerID = model.AdminRoleAreaManager, *req.OwnerAreaManagerID
+		}
+	}
+	var frontProxyIDs []int64
+	if req.FrontProxyNodeIDs != nil {
+		frontProxyIDs, err = s.normalizeFrontProxyNodeIDs(req.FrontProxyNodeIDs, false)
+		if err != nil {
+			return model.CustomerAdminView{}, err
+		}
+	}
 	now := time.Now().UTC()
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -473,9 +491,9 @@ func (s *SQLiteStore) UpdateCustomer(id int64, req model.CustomerAccountRequest)
 	defer tx.Rollback()
 	_, err = tx.Exec(`
 		UPDATE customer_accounts
-		SET username = ?, password_hash = ?, display_name = ?, enabled = ?, updated_at = ?
+		SET username = ?, password_hash = ?, display_name = ?, enabled = ?, owner_type = ?, owner_id = ?, updated_at = ?
 		WHERE id = ?
-	`, username, passwordHash, displayName, boolInt(enabled), now.Format(time.RFC3339Nano), id)
+	`, username, passwordHash, displayName, boolInt(enabled), currentOwnerType, currentOwnerID, now.Format(time.RFC3339Nano), id)
 	if err != nil {
 		return model.CustomerAdminView{}, fmt.Errorf("update customer: %w", err)
 	}
@@ -484,13 +502,13 @@ func (s *SQLiteStore) UpdateCustomer(id int64, req model.CustomerAccountRequest)
 			return model.CustomerAdminView{}, err
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return model.CustomerAdminView{}, fmt.Errorf("commit customer update: %w", err)
-	}
 	if req.FrontProxyNodeIDs != nil {
-		if err := s.ReplaceFrontProxyGrants(model.FrontProxyGranteeCustomer, id, req.FrontProxyNodeIDs); err != nil {
+		if err := s.replaceFrontProxyGrantsTx(tx, model.FrontProxyGranteeCustomer, id, frontProxyIDs); err != nil {
 			return model.CustomerAdminView{}, err
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		return model.CustomerAdminView{}, fmt.Errorf("commit customer update: %w", err)
 	}
 	customer, found, err := s.GetCustomer(id)
 	if err != nil {

@@ -34,6 +34,8 @@ type CustomerAccountRequest struct {
 	DisplayName       string  `json:"display_name,omitempty"`
 	Enabled           *bool   `json:"enabled,omitempty"`
 	FrontProxyNodeIDs []int64 `json:"front_proxy_node_ids,omitempty"`
+	// Nil preserves ownership on update; zero assigns the root admin.
+	OwnerAreaManagerID *int64 `json:"owner_area_manager_id,omitempty"`
 }
 
 type CustomerAssignment struct {

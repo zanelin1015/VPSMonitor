@@ -13,6 +13,7 @@
     "test:area-permissions": "node scripts/test-area-permissions.mjs",
     "test:area-password": "node scripts/test-area-password.mjs",
     "test:customer-authorization": "node scripts/test-customer-authorization.mjs",
+    "test:customer-owner": "node scripts/test-customer-owner.mjs",
     "test:assignment-binding": "node scripts/test-assignment-binding.mjs",
     "test:customer-session": "node scripts/test-customer-session.mjs",
     "test:dev-proxy": "node scripts/test-dev-proxy.mjs",

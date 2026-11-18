@@ -41,6 +41,7 @@ export function useCustomerAccounts({ canManageAreaManagers, message, selectedCu
       display_name: record.display_name || record.username,
       enabled: record.enabled,
       front_proxy_node_ids: (record.front_proxies || []).map((item) => item.id),
+      owner_area_manager_id: record.owner_type === 'area_manager' ? record.owner_id || 0 : 0,
     })
     setCustomerEditModalOpen(true)
   }
@@ -77,6 +78,7 @@ export function useCustomerAccounts({ canManageAreaManagers, message, selectedCu
           display_name: customerCreateForm.display_name.trim(),
           enabled: customerCreateForm.enabled,
           front_proxy_node_ids: customerCreateForm.front_proxy_node_ids,
+          ...(canManageAreaManagers ? { owner_area_manager_id: customerCreateForm.owner_area_manager_id } : {}),
         }),
       })
       message.success('用户已创建')
@@ -138,6 +140,7 @@ export function useCustomerAccounts({ canManageAreaManagers, message, selectedCu
         display_name: customerForm.display_name.trim(),
         enabled: customerForm.enabled,
         front_proxy_node_ids: customerForm.front_proxy_node_ids,
+        ...(canManageAreaManagers ? { owner_area_manager_id: customerForm.owner_area_manager_id } : {}),
       }
       if (selectedCustomerID) {
         await fetchJSON<CustomerAdminView>(`/api/v1/admin/customers/${selectedCustomerID}`, {
