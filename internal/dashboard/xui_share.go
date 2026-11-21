@@ -294,8 +294,11 @@ func buildHysteriaImportURL(inbound inboundRecord, cfg clientConfig) string {
 	query.Set("security", "tls")
 	addSingleNodeStreamQuery(query, inbound.view)
 	scheme := "hysteria2"
-	if inbound.hysteriaVersion == 1 || strings.EqualFold(inbound.view.Protocol, "hysteria") {
+	if inbound.hysteriaVersion == 1 {
 		scheme = "hysteria"
+	} else if inbound.obfsPassword != "" {
+		query.Set("obfs", "salamander")
+		query.Set("obfs-password", inbound.obfsPassword)
 	}
 	return buildUserInfoURL(scheme, url.User(cfg.auth), inbound, cfg, query)
 }

@@ -668,22 +668,56 @@ func TestBuildShadowsocksImportURLMatchesXUIShape(t *testing.T) {
 	}
 }
 
-func TestBuildHysteriaImportURLMatchesXUIShape(t *testing.T) {
-	link := buildHysteriaImportURL(inboundRecord{
-		importHost:      "hkvm.kynbbz.top",
-		hysteriaVersion: 2,
-		view:            testNode("hysteria2"),
-	}, clientConfig{
-		email: "alice",
-		auth:  "hy-auth",
-	})
-	parsed := mustParseURL(t, link)
-	if parsed.Scheme != "hysteria2" || parsed.User.Username() != "hy-auth" {
-		t.Fatalf("unexpected hysteria authority %q", link)
-	}
-	assertQuery(t, parsed.Query(), "security", "tls")
-	if got := parsed.Fragment; got != "临时-alice" {
-		t.Fatalf("unexpected fragment %q", got)
+func TestBuildXUIOverviewHysteriaShareLinks(t *testing.T) {
+	const stream = `{"network":"hysteria","security":"tls","tlsSettings":{"alpn":["h3"],"serverName":"tls.example.com"}`
+	const salamander = `,"finalmask":{"udp":[{"type":"header-custom"},{"type":"salamander","settings":{"password":"mask+pass&word"}}]}`
+	for _, tt := range []struct {
+		name       string
+		protocol   string
+		version    string
+		mask       string
+		wantScheme string
+		wantObfs   string
+	}{
+		{"3x-ui v2 with salamander", "hysteria", `,"version":2`, salamander, "hysteria2", "salamander"},
+		{"3x-ui v2 without salamander", "hysteria", `,"version":2`, "", "hysteria2", ""},
+		{"version omitted", "hysteria", "", "", "hysteria2", ""},
+		{"explicit hysteria2 protocol", "hysteria2", "", "", "hysteria2", ""},
+		{"legacy v1", "hysteria", `,"version":1`, "", "hysteria", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			snapshot := model.AgentSnapshot{XUI: &model.XUISnapshot{Inbounds: []map[string]any{{
+				"id":             7,
+				"protocol":       tt.protocol,
+				"port":           54432,
+				"remark":         "test-hy",
+				"settings":       `{"clients":[{"email":"alice","auth":"hy-auth","enable":true}]` + tt.version + "}",
+				"streamSettings": stream + tt.mask + "}",
+			}}}}
+			options := XUIOverviewOptions{Entry: model.AgentEntryConfig{ImportDomain: "entry.example.com"}}
+			overview := BuildXUIOverviewWithOptions(snapshot, options)
+			if len(overview.Clients) != 1 {
+				t.Fatalf("got %d clients, want 1", len(overview.Clients))
+			}
+			link := overview.Clients[0].ImportURL
+			parsed := mustParseURL(t, link)
+			if parsed.Scheme != tt.wantScheme || parsed.User.Username() != "hy-auth" || parsed.Host != "entry.example.com:54432" {
+				t.Fatalf("unexpected hysteria authority %q, want %s scheme", link, tt.wantScheme)
+			}
+			query := parsed.Query()
+			assertQuery(t, query, "security", "tls")
+			assertQuery(t, query, "alpn", "h3")
+			assertQuery(t, query, "sni", "tls.example.com")
+			if tt.wantObfs != "" {
+				assertQuery(t, query, "obfs", tt.wantObfs)
+				assertQuery(t, query, "obfs-password", "mask+pass&word")
+			} else if query.Has("obfs") || query.Has("obfs-password") {
+				t.Fatalf("unexpected obfuscation parameters in %q", link)
+			}
+			if parsed.Fragment != "test-hy-alice" {
+				t.Fatalf("unexpected fragment %q", parsed.Fragment)
+			}
+		})
 	}
 }
 

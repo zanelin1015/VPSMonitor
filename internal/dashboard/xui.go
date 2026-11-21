@@ -30,6 +30,7 @@ type inboundRecord struct {
 	shadowsocksMethod   string
 	shadowsocksPassword string
 	hysteriaVersion     int
+	obfsPassword        string
 }
 
 type clientConfig struct {
@@ -67,6 +68,7 @@ type inboundStreamMeta struct {
 	realityShortID string
 	realityFP      string
 	realitySpider  string
+	obfsPassword   string
 }
 
 type inboundProtocolMeta struct {
@@ -260,6 +262,7 @@ func normalizeInbounds(rawInbounds []map[string]any, rules []routeRule, defaultO
 			shadowsocksMethod:   protocolMeta.shadowsocksMethod,
 			shadowsocksPassword: protocolMeta.shadowsocksPassword,
 			hysteriaVersion:     protocolMeta.hysteriaVersion,
+			obfsPassword:        streamMeta.obfsPassword,
 		}
 		record.view.ClientCount = len(record.clients)
 		endpoint := model.ResolveEntryEndpoint(entry, model.EntryTarget{Type: "xui", ID: strconv.Itoa(record.view.ID), Port: record.view.Port, Transport: model.XUIEntryTransport(record.view)}, importHost)
@@ -851,6 +854,17 @@ func parseInboundStreamSettings(raw any) inboundStreamMeta {
 		meta.realityShortID = defaultString(firstString(stringList(realitySettings["shortIds"])), defaultString(stringValue(realitySettings["shortId"]), defaultString(firstString(stringList(realityOption["shortIds"])), stringValue(realityOption["shortId"]))))
 		meta.realityFP = defaultString(stringValue(realitySettings["fingerprint"]), stringValue(realityOption["fingerprint"]))
 		meta.realitySpider = defaultString(stringValue(realitySettings["spiderX"]), stringValue(realityOption["spiderX"]))
+	}
+	finalmask := objectMap(settings["finalmask"])
+	for _, mask := range objectList(finalmask["udp"]) {
+		if stringValue(mask["type"]) != "salamander" {
+			continue
+		}
+		password, _ := objectMap(mask["settings"])["password"].(string)
+		if password != "" {
+			meta.obfsPassword = password
+			break
+		}
 	}
 	return meta
 }
