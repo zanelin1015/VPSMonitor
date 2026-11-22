@@ -337,6 +337,33 @@ func TestParseMihomoProxySupportsHTTPAndSocks(t *testing.T) {
 	}
 }
 
+func TestParseMihomoProxySupportsHysteria2(t *testing.T) {
+	proxy, ok := parseMihomoProxy("hysteria2://8905djl5843fkpso@usdm4ge1.stoneluna.top:54432?alpn=h3&obfs=salamander&obfs-password=50mqasoovads80s9&security=tls&sni=usdm4ge1.stoneluna.top#US-hy2-COX", "US-hy2-COX")
+	if !ok {
+		t.Fatal("Hysteria2 share URL was rejected")
+	}
+	content := renderMihomoProxyForTest(proxy)
+	for _, expected := range []string{
+		`name: "US-hy2-COX"`,
+		`type: "hysteria2"`,
+		`server: "usdm4ge1.stoneluna.top"`,
+		`port: 54432`,
+		`password: "8905djl5843fkpso"`,
+		`sni: "usdm4ge1.stoneluna.top"`,
+		`alpn: ["h3"]`,
+		`obfs: "salamander"`,
+		`obfs-password: "50mqasoovads80s9"`,
+	} {
+		assertContains(t, content, expected)
+	}
+}
+
+func renderMihomoProxyForTest(proxy mihomoProxy) string {
+	var content strings.Builder
+	proxy.writeYAML(&content)
+	return content.String()
+}
+
 func assertContains(t *testing.T, content, expected string) {
 	t.Helper()
 	if !strings.Contains(content, expected) {

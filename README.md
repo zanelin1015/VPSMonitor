@@ -249,6 +249,10 @@ VPSMONITOR_HAPROXY_AUTO_INSTALL=false
 
 Realm 和 HAProxy 的规则由 Server 下发，Client 负责加载并上报运行状态。OpenWrt 不会自动修改 firewall4、SQM、Cake 或 qosify 规则。
 
+Realm 支持按监听规则查询周期流量：更新 Server 和 Client 后，在 Realm 转发配置中开启“统计端口流量”，进入“周期流量”选择日期，查看上行、下行和合计。采集要求原生 Linux、nftables 及网络管理权限，默认关闭；历史从首次有效采样开始。统计口径、重启处理和权限说明见 [Realm 周期流量](docs/realm-traffic.md)。
+
+总管理员还可在 Client 详情 → 网卡流量中查看[逐网卡周期流量](docs/network-interface-traffic.md)。Client 自动发现网卡，分别记录 RX/TX，默认选择主出网卡，可切换单向发送、单向接收和双向合计；Linux/OpenWrt 采集不依赖 nftables。网卡流量包含该接口上所有程序的数据。
+
 访问日志需要在对应 Client 的“托管配置”中启用 x-ui access log，并填写 Client 实际可读的日志路径；例如：
 
 ```json

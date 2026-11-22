@@ -132,13 +132,14 @@ type NetworkPortPolicyRule struct {
 }
 
 type RealmForwardConfig struct {
-	Enabled     bool               `json:"enabled,omitempty"`
-	Backend     string             `json:"backend,omitempty"`
-	BinaryPath  string             `json:"binary_path,omitempty"`
-	ConfigPath  string             `json:"config_path,omitempty"`
-	ServiceName string             `json:"service_name,omitempty"`
-	LogLevel    string             `json:"log_level,omitempty"`
-	Rules       []RealmForwardRule `json:"rules,omitempty"`
+	TrafficEnabled bool               `json:"traffic_enabled,omitempty"`
+	Enabled        bool               `json:"enabled,omitempty"`
+	Backend        string             `json:"backend,omitempty"`
+	BinaryPath     string             `json:"binary_path,omitempty"`
+	ConfigPath     string             `json:"config_path,omitempty"`
+	ServiceName    string             `json:"service_name,omitempty"`
+	LogLevel       string             `json:"log_level,omitempty"`
+	Rules          []RealmForwardRule `json:"rules,omitempty"`
 }
 
 type RealmForwardRule struct {

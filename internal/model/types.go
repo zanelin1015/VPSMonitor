@@ -6,21 +6,22 @@ import (
 )
 
 type AgentSnapshot struct {
-	Capabilities       AgentCapabilities      `json:"capabilities,omitempty"`
-	AgentID            string                 `json:"agent_id"`
-	AgentName          string                 `json:"agent_name,omitempty"`
-	Version            string                 `json:"version,omitempty"`
-	VerifiedSelfUpdate bool                   `json:"verified_self_update,omitempty"`
-	OS                 string                 `json:"os,omitempty"`
-	Arch               string                 `json:"arch,omitempty"`
-	SystemVersion      string                 `json:"system_version,omitempty"`
-	ReportedAt         time.Time              `json:"reported_at"`
-	Summary            VPSSummary             `json:"summary"`
-	XUI                *XUISnapshot           `json:"xui,omitempty"`
-	Realm              *RealmSnapshot         `json:"realm,omitempty"`
-	HAProxy            *HAProxySnapshot       `json:"haproxy,omitempty"`
-	NetworkPolicy      *NetworkPolicySnapshot `json:"network_policy,omitempty"`
-	Logs               []AgentLogEntry        `json:"logs,omitempty"`
+	NetworkInterfaces  *NetworkInterfacesSnapshot `json:"network_interfaces,omitempty"`
+	Capabilities       AgentCapabilities          `json:"capabilities,omitempty"`
+	AgentID            string                     `json:"agent_id"`
+	AgentName          string                     `json:"agent_name,omitempty"`
+	Version            string                     `json:"version,omitempty"`
+	VerifiedSelfUpdate bool                       `json:"verified_self_update,omitempty"`
+	OS                 string                     `json:"os,omitempty"`
+	Arch               string                     `json:"arch,omitempty"`
+	SystemVersion      string                     `json:"system_version,omitempty"`
+	ReportedAt         time.Time                  `json:"reported_at"`
+	Summary            VPSSummary                 `json:"summary"`
+	XUI                *XUISnapshot               `json:"xui,omitempty"`
+	Realm              *RealmSnapshot             `json:"realm,omitempty"`
+	HAProxy            *HAProxySnapshot           `json:"haproxy,omitempty"`
+	NetworkPolicy      *NetworkPolicySnapshot     `json:"network_policy,omitempty"`
+	Logs               []AgentLogEntry            `json:"logs,omitempty"`
 }
 
 type AgentLogEntry struct {
@@ -89,13 +90,14 @@ type XUILocalCertificate struct {
 }
 
 type RealmSnapshot struct {
-	ConfigPath  string             `json:"config_path,omitempty"`
-	ServiceName string             `json:"service_name,omitempty"`
-	BinaryPath  string             `json:"binary_path,omitempty"`
-	Running     bool               `json:"running"`
-	CollectedAt time.Time          `json:"collected_at"`
-	Error       string             `json:"error,omitempty"`
-	Rules       []RealmForwardRule `json:"rules,omitempty"`
+	Traffic     *RealmTrafficSnapshot `json:"traffic,omitempty"`
+	ConfigPath  string                `json:"config_path,omitempty"`
+	ServiceName string                `json:"service_name,omitempty"`
+	BinaryPath  string                `json:"binary_path,omitempty"`
+	Running     bool                  `json:"running"`
+	CollectedAt time.Time             `json:"collected_at"`
+	Error       string                `json:"error,omitempty"`
+	Rules       []RealmForwardRule    `json:"rules,omitempty"`
 }
 
 type HAProxySnapshot struct {

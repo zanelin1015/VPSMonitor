@@ -123,6 +123,12 @@ func (s *SQLiteStore) SaveSnapshot(snapshot model.AgentSnapshot) error {
 	if err = s.saveCustomerTrafficSamplesTx(tx, snapshot); err != nil {
 		return err
 	}
+	if err = s.saveRealmTrafficTx(tx, snapshot); err != nil {
+		return err
+	}
+	if err = s.saveNetworkInterfaceTrafficTx(tx, snapshot); err != nil {
+		return err
+	}
 
 	nowText := time.Now().UTC().Format(time.RFC3339Nano)
 	emptyXUIJSON, err := s.storedXUIConfigJSON(config.XUIConfig{})

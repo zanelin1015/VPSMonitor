@@ -402,6 +402,11 @@ func (s *SQLiteStore) DeleteAgent(agentID string) error {
 	}()
 
 	tables := []string{
+		"network_interface_daily",
+		"network_interface_counters",
+		"network_interface_observations",
+		"realm_traffic_daily",
+		"realm_traffic_counters",
 		"xui_actions",
 		"config_audit_logs",
 		"snapshot_component_events",

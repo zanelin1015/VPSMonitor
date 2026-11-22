@@ -291,6 +291,7 @@ export interface NetworkPolicySnapshot {
 }
 
 export interface RealmSnapshot {
+  traffic?: RealmTrafficSnapshot
   running?: boolean
   config_path?: string
   service_name?: string
@@ -301,6 +302,7 @@ export interface RealmSnapshot {
 }
 
 export interface RealmForwardConfig {
+  traffic_enabled?: boolean
   enabled?: boolean
   backend?: 'realm' | 'none' | string
   binary_path?: string
@@ -322,6 +324,66 @@ export interface RealmForwardRule {
   target_port_mode?: 'auto' | 'custom'
   network?: 'tcp' | 'udp' | 'both' | string
   note?: string
+}
+
+export interface RealmTrafficSnapshot {
+  enabled: boolean
+  backend?: string
+  collected_at: string
+  error?: string
+}
+
+export interface RealmTrafficUsage {
+  key: string
+  rule_id: string
+  name?: string
+  listen_address: string
+  listen_port: number
+  network: string
+  upload_bytes: number
+  download_bytes: number
+  total_bytes: number
+  first_observed_at: string
+  last_observed_at: string
+}
+
+export interface RealmTrafficUsageResponse {
+  from: string
+  to: string
+  timezone: string
+  enabled: boolean
+  reported: boolean
+  collected_at?: string
+  error?: string
+  items: RealmTrafficUsage[]
+}
+
+export interface NetworkInterfaceTrafficUsage {
+  key: string
+  name: string
+  index: number
+  mac?: string
+  kind: string
+  up: boolean
+  loopback: boolean
+  primary: boolean
+  present: boolean
+  received_bytes: number
+  sent_bytes: number
+  total_bytes: number
+  first_observed_at: string
+  last_observed_at: string
+}
+
+export interface NetworkInterfaceTrafficResponse {
+  from: string
+  to: string
+  timezone: string
+  reported: boolean
+  collected_at?: string
+  error?: string
+  warnings?: string[]
+  items: NetworkInterfaceTrafficUsage[]
 }
 
 export interface HAProxyConfig {

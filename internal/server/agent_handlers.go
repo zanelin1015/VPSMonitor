@@ -156,11 +156,21 @@ func (a *App) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 	case "config":
 		a.handleAgentConfig(w, r, agentID)
 	case "realm":
+		if len(parts) == 3 && parts[2] == "traffic" {
+			a.handleRealmTraffic(w, r, agentID)
+			return
+		}
 		if len(parts) != 3 || parts[2] != "copy" {
 			writeError(w, http.StatusNotFound, "route not found")
 			return
 		}
 		a.handleRealmConfigCopy(w, r, agentID)
+	case "interfaces":
+		if len(parts) != 3 || parts[2] != "traffic" {
+			writeError(w, http.StatusNotFound, "route not found")
+			return
+		}
+		a.handleNetworkInterfaceTraffic(w, r, agentID)
 	case "logs":
 		if r.Method != http.MethodGet {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -342,6 +352,11 @@ func (a *App) handleHeartbeat(w http.ResponseWriter, r *http.Request, agentID st
 	}
 	// Online freshness must be based on the server receive time; VPS clocks can drift.
 	snapshot.ReportedAt = time.Now().UTC()
+	if sample := snapshot.NetworkInterfaces; sample != nil {
+		if sample.CollectedAt.IsZero() || sample.CollectedAt.After(snapshot.ReportedAt.Add(2*time.Minute)) {
+			sample.Error = "Client 网卡采样时间无效或超前，请检查系统时间同步"
+		}
+	}
 	if snapshot.HAProxy != nil {
 		snapshot.HAProxy.CollectedAt = snapshot.ReportedAt
 	}

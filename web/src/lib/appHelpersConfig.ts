@@ -325,6 +325,7 @@ export function normalizeXUIOverview(overview: XUIOverview): XUIOverview {
 
 function normalizeRealmForwardConfig(config?: RealmForwardConfig): RealmForwardConfig {
   return {
+    traffic_enabled: Boolean(config?.traffic_enabled),
     enabled: Boolean(config?.enabled),
     backend: config?.backend === 'none' ? 'none' : 'realm',
     binary_path: (config?.binary_path || '').trim(),

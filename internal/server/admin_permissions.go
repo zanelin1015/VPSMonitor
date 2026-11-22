@@ -60,13 +60,21 @@ func (a *App) filterAgentRecordsForAdmin(user model.AdminUser, agents []model.Ag
 }
 
 func (a *App) filterSnapshotsForAdmin(user model.AdminUser, snapshots []model.AgentSnapshot) []model.AgentSnapshot {
-	if isRootAdmin(user) || isOperatorAdmin(user) {
+	if isRootAdmin(user) {
 		return snapshots
+	}
+	if isOperatorAdmin(user) {
+		filtered := append([]model.AgentSnapshot(nil), snapshots...)
+		for i := range filtered {
+			filtered[i].NetworkInterfaces = nil
+		}
+		return filtered
 	}
 	allowed := a.adminVisibleAgentSet(user)
 	filtered := make([]model.AgentSnapshot, 0, len(snapshots))
 	for _, snapshot := range snapshots {
 		if _, ok := allowed[snapshot.AgentID]; ok {
+			snapshot.NetworkInterfaces = nil
 			filtered = append(filtered, snapshot)
 		}
 	}

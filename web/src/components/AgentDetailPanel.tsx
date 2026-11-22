@@ -22,6 +22,8 @@ import { useCompactLayout } from '../hooks/useCompactLayout'
 import { XUINodeList } from './XUINodeList';
 import { XUIClientConfigModal } from './XUIClientConfigModal';
 import { EntryConnectionSection } from './EntryConnectionSection';
+import { RealmTrafficPanel } from './RealmTrafficPanel';
+import { NetworkInterfaceTrafficPanel } from './NetworkInterfaceTrafficPanel';
 
 import { buildHAProxyForwardClients, buildHAProxyForwardNodes, buildRealmForwardClients, buildRealmForwardNodes, filterRealmForwardClients, renderNodeClientHierarchySections } from './AgentDetailHelpers';
 import type { AgentDetailPanelProps } from './AgentDetailPanel.types';
@@ -532,6 +534,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       label: 'Realm 转发',
       children: renderManagedConfigSection('realm'),
     }] : []),
+    { key: 'realm-traffic', label: '周期流量', children: <RealmTrafficPanel key={selectedAgentId} agentID={selectedAgentId} /> },
     {
       key: 'realm-nodes',
       label: `节点 (${realmForwardNodes.length})`,
@@ -733,6 +736,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
 
   const detailTabs: TabsProps['items'] = [
     overviewTab,
+    ...(canManageConfig ? [{ key: 'network-interface-traffic', label: '网卡流量', children: <NetworkInterfaceTrafficPanel key={selectedAgentId} agentID={selectedAgentId} /> }] : []),
     ...xuiTabs,
     ...snellTabs,
     ...realmTabs,

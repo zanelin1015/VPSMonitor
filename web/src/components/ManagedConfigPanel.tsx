@@ -1072,6 +1072,11 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
             {sectionSaveButton('entry', '保存 Realm 转发')}
           </Space>
         </div>
+        <Space wrap style={{ marginBottom: 16 }}>
+          <Switch aria-label="统计 Realm 端口流量" checked={Boolean(portForwarding.traffic_enabled)} onChange={(checked) => updatePortForwarding({ traffic_enabled: checked })} />
+          <Text>统计端口流量</Text>
+          <Text type="secondary">保存后从 Client 采集，每条规则可在“周期流量”中按日期查询。需要原生 Linux、nftables 及管理网络权限。</Text>
+        </Space>
         <Alert
           type="info"
           showIcon

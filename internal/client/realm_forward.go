@@ -77,6 +77,8 @@ func isEmptyClientRealmForwardConfig(cfg model.RealmForwardConfig) bool {
 }
 
 func realmForwardSignature(cfg model.RealmForwardConfig) string {
+	// Accounting is managed separately and must not restart active relays.
+	cfg.TrafficEnabled = false
 	body, _ := json.Marshal(cfg)
 	sum := sha256.Sum256(body)
 	return hex.EncodeToString(sum[:])

@@ -474,6 +474,8 @@ func writeMihomoField(b *strings.Builder, indent string, field mihomoField) {
 func parseMihomoProxy(rawURL, name string) (mihomoProxy, bool) {
 	scheme := strings.ToLower(strings.TrimSpace(strings.SplitN(rawURL, ":", 2)[0]))
 	switch scheme {
+	case "hysteria2", "hy2":
+		return parseHysteria2MihomoProxy(rawURL, name)
 	case "vless":
 		return parseVLESSMihomoProxy(rawURL, name)
 	case "vmess":
@@ -489,6 +491,57 @@ func parseMihomoProxy(rawURL, name string) (mihomoProxy, bool) {
 	default:
 		return mihomoProxy{}, false
 	}
+}
+
+func parseHysteria2MihomoProxy(rawURL, name string) (mihomoProxy, bool) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.User == nil || parsed.Hostname() == "" {
+		return mihomoProxy{}, false
+	}
+	port, ok := parseProxyPort(parsed.Port())
+	if !ok {
+		return mihomoProxy{}, false
+	}
+	password := parsed.User.Username()
+	if password == "" {
+		return mihomoProxy{}, false
+	}
+	query := parsed.Query()
+	fields := []mihomoField{
+		{"type", "hysteria2"},
+		{"server", parsed.Hostname()},
+		{"port", port},
+		{"password", password},
+		{"udp", true},
+	}
+	if sni := firstNonEmptyString(query.Get("sni"), query.Get("servername")); sni != "" {
+		fields = append(fields, mihomoField{"sni", sni})
+	}
+	if alpn := splitList(query.Get("alpn")); len(alpn) > 0 {
+		fields = append(fields, mihomoField{"alpn", alpn})
+	}
+	if obfs := strings.TrimSpace(query.Get("obfs")); obfs != "" {
+		fields = append(fields, mihomoField{"obfs", obfs})
+		if obfsPassword := query.Get("obfs-password"); obfsPassword != "" {
+			fields = append(fields, mihomoField{"obfs-password", obfsPassword})
+		}
+	}
+	if shouldSkipCertVerify(query) {
+		fields = append(fields, mihomoField{"skip-cert-verify", true})
+	}
+	if ports := query.Get("ports"); ports != "" {
+		fields = append(fields, mihomoField{"ports", ports})
+	}
+	if hopInterval := query.Get("hop-interval"); hopInterval != "" {
+		fields = append(fields, mihomoField{"hop-interval", hopInterval})
+	}
+	if up := query.Get("up"); up != "" {
+		fields = append(fields, mihomoField{"up", up})
+	}
+	if down := query.Get("down"); down != "" {
+		fields = append(fields, mihomoField{"down", down})
+	}
+	return mihomoProxy{Name: name, Fields: fields}, true
 }
 
 func parseVLESSMihomoProxy(rawURL, name string) (mihomoProxy, bool) {

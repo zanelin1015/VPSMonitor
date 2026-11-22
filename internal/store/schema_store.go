@@ -18,6 +18,33 @@ func (s *SQLiteStore) init() error {
 	}
 
 	schema := []string{
+		`CREATE TABLE IF NOT EXISTS network_interface_observations (agent_id TEXT PRIMARY KEY, reported_at TEXT NOT NULL);`,
+		`CREATE TABLE IF NOT EXISTS network_interface_counters (
+			agent_id TEXT NOT NULL, counter_key TEXT NOT NULL, name TEXT NOT NULL, interface_index INTEGER NOT NULL,
+			mac TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL, is_up INTEGER NOT NULL, loopback INTEGER NOT NULL,
+			is_primary INTEGER NOT NULL, present INTEGER NOT NULL DEFAULT 1, epoch TEXT NOT NULL,
+			received_bytes INTEGER NOT NULL, sent_bytes INTEGER NOT NULL, first_observed_at TEXT NOT NULL, reported_at TEXT NOT NULL,
+			PRIMARY KEY(agent_id, counter_key)
+		);`,
+		`CREATE TABLE IF NOT EXISTS network_interface_daily (
+			agent_id TEXT NOT NULL, counter_key TEXT NOT NULL, day TEXT NOT NULL,
+			received_bytes INTEGER NOT NULL DEFAULT 0, sent_bytes INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY(agent_id, counter_key, day)
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_network_interface_daily_agent_day ON network_interface_daily(agent_id, day);`,
+		`CREATE TABLE IF NOT EXISTS realm_traffic_counters (
+			agent_id TEXT NOT NULL, counter_key TEXT NOT NULL, rule_id TEXT NOT NULL,
+			name TEXT NOT NULL DEFAULT '', listen_address TEXT NOT NULL, listen_port INTEGER NOT NULL, network TEXT NOT NULL,
+			epoch TEXT NOT NULL, upload_bytes INTEGER NOT NULL, download_bytes INTEGER NOT NULL,
+			first_observed_at TEXT NOT NULL, reported_at TEXT NOT NULL,
+			PRIMARY KEY(agent_id, counter_key)
+		);`,
+		`CREATE TABLE IF NOT EXISTS realm_traffic_daily (
+			agent_id TEXT NOT NULL, counter_key TEXT NOT NULL, day TEXT NOT NULL,
+			upload_bytes INTEGER NOT NULL DEFAULT 0, download_bytes INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY(agent_id, counter_key, day)
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_realm_traffic_daily_agent_day ON realm_traffic_daily(agent_id, day);`,
 		`CREATE TABLE IF NOT EXISTS xui_client_config_saves (
 			request_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, client_key TEXT NOT NULL,
 			actor_role TEXT NOT NULL, actor_id INTEGER NOT NULL, request_json TEXT NOT NULL,
