@@ -147,7 +147,7 @@ export function AdminApp() {
     message,
     returnHome: () => returnHome(),
   })
-  const { agentRefreshLoading, requestAgentSnapshot } = operations
+  const { agentRefreshLoading, agentDeleteLoading, requestAgentSnapshot, deleteAgent } = operations
 
   const currentOverview = overview?.agent_id === selectedAgentId ? overview : null
 
@@ -402,6 +402,8 @@ export function AdminApp() {
     panelExpanded: centerPanelOpen,
     topologyVisible: topologyVisible,
     restrictedView: isAreaManagerAccount,
+    canManageConfig: canManageSystem,
+    agentDeleteLoading,
     onToggleViewMode: toggleAgentViewMode,
     onToggleTopology: () => {
       if (topologyVisible) {
@@ -417,6 +419,7 @@ export function AdminApp() {
     onHealthFilterChange: setAgentHealthFilter,
     searchText: agentListSearch,
     onSearchTextChange: setAgentListSearch,
+    onDeleteAgent: canManageSystem ? (agentID) => void deleteAgent(agentID) : undefined,
     onSelectAgent: (agentID, active) => {
       if (topologyVisible) {
         selectTopologyAgent(agentID)

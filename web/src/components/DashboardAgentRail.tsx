@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Alert, Button, Card, Empty, Input, List, Segmented, Space, Tag } from 'antd'
-import { ApartmentOutlined, BarsOutlined, CloudServerOutlined, FilterOutlined, ReloadOutlined } from '@ant-design/icons'
+import { Alert, Button, Card, Empty, Input, List, Popconfirm, Segmented, Space, Tag } from 'antd'
+import { ApartmentOutlined, BarsOutlined, CloudServerOutlined, DeleteOutlined, FilterOutlined, ReloadOutlined } from '@ant-design/icons'
 
 import type { DashboardAgentView } from '../types'
 import type { AgentListProps } from '../lib/agentList'
@@ -34,7 +34,7 @@ import { useListPagination } from '../hooks/useListPagination'
 import { listPagination } from '../lib/pagination'
 
 export function AgentRail(props: AgentListProps) {
-  const { agents, loading, error, selectedTag, healthFilter, selectedAgentId, tagFilterOptions, viewMode, panelExpanded, topologyVisible, restrictedView = false, searchText, onToggleViewMode, onToggleTopology, onRefresh, onSelectTag, onHealthFilterChange, onSelectAgent, onSearchTextChange } = props
+  const { agents, loading, error, selectedTag, healthFilter, selectedAgentId, tagFilterOptions, viewMode, panelExpanded, topologyVisible, restrictedView = false, canManageConfig = false, agentDeleteLoading = false, searchText, onToggleViewMode, onToggleTopology, onRefresh, onSelectTag, onHealthFilterChange, onSelectAgent, onDeleteAgent, onSearchTextChange } = props
   const effectiveViewMode: AgentViewMode = panelExpanded ? 'list' : viewMode
   const [compactFiltersOpen, setCompactFiltersOpen] = useState(false)
   const { page: agentPage, pageSize, onChange: onPageChange } = useListPagination(
@@ -159,8 +159,11 @@ export function AgentRail(props: AgentListProps) {
                 viewMode={effectiveViewMode}
                 compact={panelExpanded}
                 restrictedView={restrictedView}
+                canManageConfig={canManageConfig}
+                agentDeleteLoading={agentDeleteLoading}
                 searchText={searchText}
                 onSelect={onSelectAgent}
+                onDelete={onDeleteAgent}
               />
             )}
           />
@@ -177,10 +180,13 @@ function AgentRailItem(props: {
   viewMode: AgentViewMode
   compact?: boolean
   restrictedView?: boolean
+  canManageConfig?: boolean
+  agentDeleteLoading?: boolean
   searchText: string
   onSelect: (agentID: string, active: boolean) => void
+  onDelete?: (agentID: string) => void
 }) {
-  const { item, displaySortOrder, active, viewMode, compact = false, restrictedView = false, searchText, onSelect } = props
+  const { item, displaySortOrder, active, viewMode, compact = false, restrictedView = false, canManageConfig = false, agentDeleteLoading = false, searchText, onSelect, onDelete } = props
   const renewalStatus = calculateRenewalStatus(item.renewal)
   const trafficStatus = calculateTrafficStatus(item)
   const trafficTotalLabel = restrictedView ? '周期已用流量' : trafficStatus.isPeriod ? '周期总流量' : '总流量'
@@ -209,7 +215,7 @@ function AgentRailItem(props: {
 
   if (compact) {
     return (
-      <List.Item className="agent-list-item agent-list-item-compact">
+      <List.Item className="agent-list-item agent-list-item-compact" actions={agentDeleteAction(item, canManageConfig, agentDeleteLoading, onDelete)}>
         <button className={`agent-button agent-button-compact${active ? ' active' : ''}`} onClick={() => onSelect(item.agent_id, active)}>
           <AgentRailHeader
             item={item}
@@ -238,7 +244,7 @@ function AgentRailItem(props: {
   }
 
   return (
-    <List.Item className={`agent-list-item agent-list-item-${viewMode}`}>
+    <List.Item className={`agent-list-item agent-list-item-${viewMode}`} actions={agentDeleteAction(item, canManageConfig, agentDeleteLoading, onDelete)}>
       <button className={`agent-button agent-button-${viewMode}${active ? ' active' : ''}`} onClick={() => onSelect(item.agent_id, active)}>
         {viewMode === 'list' ? (
           <>
@@ -306,6 +312,38 @@ function AgentRailItem(props: {
       </button>
     </List.Item>
   )
+}
+
+function agentDeleteAction(
+  item: DashboardAgentView,
+  canManageConfig: boolean,
+  agentDeleteLoading: boolean,
+  onDelete?: (agentID: string) => void,
+) {
+  if (!canManageConfig || !onDelete) {
+    return undefined
+  }
+  return [
+    <Popconfirm
+      key="delete"
+      title={`删除 ${item.agent_name || item.agent_id}？`}
+      description="删除后会清理该 Client 的配置、授权和历史数据，无法恢复。"
+      okText="删除"
+      cancelText="取消"
+      okButtonProps={{ danger: true, loading: agentDeleteLoading }}
+      onConfirm={() => onDelete(item.agent_id)}
+    >
+      <Button
+        danger
+        type="text"
+        size="small"
+        icon={<DeleteOutlined />}
+        loading={agentDeleteLoading}
+        aria-label={`删除 ${item.agent_name || item.agent_id}`}
+        onClick={(event) => event.stopPropagation()}
+      />
+    </Popconfirm>,
+  ]
 }
 
 function AgentSearchMatches({ item, searchText }: { item: DashboardAgentView; searchText: string }) {

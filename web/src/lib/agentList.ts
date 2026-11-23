@@ -14,12 +14,15 @@ export interface AgentListProps {
   panelExpanded: boolean
   topologyVisible: boolean
   restrictedView?: boolean
+  canManageConfig?: boolean
+  agentDeleteLoading?: boolean
   onToggleViewMode: () => void
   onToggleTopology: () => void
   onRefresh: () => void
   onSelectTag: (tag: string) => void
   onHealthFilterChange: (filter: AgentHealthFilter) => void
   onSelectAgent: (agentID: string, active: boolean) => void
+  onDeleteAgent?: (agentID: string) => void
   searchText: string
   onSearchTextChange: (value: string) => void
 }

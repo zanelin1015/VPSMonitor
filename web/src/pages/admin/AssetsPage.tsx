@@ -398,6 +398,7 @@ export function AssetsPage(props: AssetsPageProps) {
           columns={columns}
           dataSource={props.agents}
           loading={props.loading}
+          tableLayout="fixed"
           search={false}
           columnsState={{
             persistenceKey: `vpsmonitor.assets.columns.${props.accountKey}.${props.restrictedView ? 'area' : 'admin'}`,
@@ -430,7 +431,11 @@ export function AssetsPage(props: AssetsPageProps) {
             showTotal: (total) => `共 ${total} 台`,
             onChange: onPageChange,
           }}
-          scroll={{ x: props.restrictedView ? 910 : 1432, y: '100%' }}
+          // The column set changes by role and its total width is larger than
+          // the old fixed scroll.x values. Let rc-table measure the intrinsic
+          // width so the fixed right action column keeps a correct offset
+          // while the table is dragged horizontally.
+          scroll={{ x: 'max-content', y: '100%' }}
           locale={{ emptyText: <Empty description="没有匹配的 Client" /> }}
         />
       </div>
