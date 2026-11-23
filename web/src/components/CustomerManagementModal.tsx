@@ -3,7 +3,7 @@ import { useAccountDirectory } from '../hooks/useAccountDirectory';
 import { useAssignmentBindingOverviews } from '../hooks/useAssignmentBindingOverviews';
 import { AreaAccountPanel } from './AreaAccountPanel';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, App as AntdApp, Button, Card, Empty, Input, Modal, Select, Space, Spin, Table, Tabs, Typography } from 'antd';
+import { App as AntdApp, Button, Card, Empty, Input, Modal, Select, Space, Spin, Table, Tabs, Typography } from 'antd';
 import { PlusOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons';
 
 import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, CustomerAssignmentSourceView, DashboardAgentView, XUIClientView, XUINodeView, XUIOverview } from '../types';
@@ -19,6 +19,7 @@ import { CustomerManagementModals } from './CustomerManagementModals';
 import { AgentRolePanel } from './AgentRolePanel';
 import { OperatorManagementPanel } from './OperatorManagementPanel';
 import { useCustomerBillingReconciliation } from '../hooks/useCustomerBillingReconciliation';
+import { CustomerBillingReconciliationModal } from './CustomerBillingReconciliationModal';
 
 const { Text, Title } = Typography
 
@@ -1079,31 +1080,13 @@ export function CustomerManagementModal(props: {
       readOnlyAssignmentColumns={readOnlyAssignmentColumns}
       assignmentManagerContent={assignmentManagerContent}
       />
-      <Modal
-        title="用户费用与客户端绑定对账"
+      <CustomerBillingReconciliationModal
         open={billingReconciliationModalOpen}
-        onCancel={() => setBillingReconciliationModalOpen(false)}
-        footer={<Button onClick={() => setBillingReconciliationModalOpen(false)}>关闭</Button>}
-        width={1080}
-      >
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <Alert
-            type="info"
-            showIcon
-            message={billingReconciliation ? `已匹配 ${billingReconciliation.matched}，旧数据 ${billingReconciliation.legacy}，需修复 ${billingReconciliation.mismatch}，未找到 ${billingReconciliation.missing}` : '按最新 x-ui 上报检查授权绑定'}
-            description="“重新绑定”会保留授权名称、费用模式和前置代理，只把客户端关联更新为当前 x-ui 的稳定 ID。"
-          />
-          <Table
-            rowKey={(record) => record.assignment_id}
-            loading={billingReconciliationLoading}
-            columns={billingReconciliationColumns}
-            dataSource={billingReconciliation?.items || []}
-            pagination={listPagination}
-            scroll={{ x: 940 }}
-            locale={{ emptyText: <Empty description="暂无可对账的授权" /> }}
-          />
-        </Space>
-      </Modal>
+        onClose={() => setBillingReconciliationModalOpen(false)}
+        result={billingReconciliation}
+        loading={billingReconciliationLoading}
+        columns={billingReconciliationColumns}
+      />
     </>
   )
 
