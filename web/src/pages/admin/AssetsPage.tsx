@@ -397,7 +397,6 @@ export function AssetsPage(props: AssetsPageProps) {
           columns={columns}
           dataSource={props.agents}
           loading={props.loading}
-          tableLayout="fixed"
           search={false}
           columnsState={{
             persistenceKey: `vpsmonitor.assets.columns.${props.accountKey}.${props.restrictedView ? 'area' : 'admin'}`,
