@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, App as AntdApp, Button, Card, Empty, Input, Modal, Select, Space, Spin, Table, Tabs, Typography } from 'antd';
 import { PlusOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons';
 
-import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, CustomerAssignmentSourceView, CustomerBillingDiagnostic, CustomerBillingReconciliationResponse, DashboardAgentView, XUIClientView, XUINodeView, XUIOverview } from '../types';
+import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, CustomerAssignmentSourceView, DashboardAgentView, XUIClientView, XUINodeView, XUIOverview } from '../types';
 import { fetchJSON } from '../lib/appHelpers';
 import { listPagination } from '../lib/pagination';
 import { useCompactLayout } from '../hooks/useCompactLayout';
@@ -18,6 +18,7 @@ import { DEFAULT_ACCOUNT_PASSWORD, type AreaBatchAssignmentFormState, type AreaM
 import { CustomerManagementModals } from './CustomerManagementModals';
 import { AgentRolePanel } from './AgentRolePanel';
 import { OperatorManagementPanel } from './OperatorManagementPanel';
+import { useCustomerBillingReconciliation } from '../hooks/useCustomerBillingReconciliation';
 
 const { Text, Title } = Typography
 
@@ -61,10 +62,6 @@ export function CustomerManagementModal(props: {
   const [areaManagerModalOpen, setAreaManagerModalOpen] = useState(false)
   const [assignmentManagerModalOpen, setAssignmentManagerModalOpen] = useState(false)
   const [assignmentViewModalOpen, setAssignmentViewModalOpen] = useState(false)
-  const [billingReconciliationModalOpen, setBillingReconciliationModalOpen] = useState(false)
-  const [billingReconciliation, setBillingReconciliation] = useState<CustomerBillingReconciliationResponse | null>(null)
-  const [billingReconciliationLoading, setBillingReconciliationLoading] = useState(false)
-  const [repairingAssignmentID, setRepairingAssignmentID] = useState<number | null>(null)
   const [editingAreaManagerID, setEditingAreaManagerID] = useState<number | null>(null)
   const [editingAssignmentID, setEditingAssignmentID] = useState<number | null>(null)
   const [customerSearch, setCustomerSearch] = useState('')
@@ -114,6 +111,15 @@ export function CustomerManagementModal(props: {
       setAssignmentViewModalOpen(false)
     },
   })
+  const {
+    modalOpen: billingReconciliationModalOpen,
+    setModalOpen: setBillingReconciliationModalOpen,
+    result: billingReconciliation,
+    loading: billingReconciliationLoading,
+    repairingAssignmentID,
+    open: openBillingReconciliation,
+    rebind: rebindBillingAssignment,
+  } = useCustomerBillingReconciliation(message, loadCustomers)
 
   const selectedCustomer = customers.find((item) => item.id === selectedCustomerID) || null
   const assignmentBindingOverviews = useAssignmentBindingOverviews(
@@ -632,39 +638,6 @@ export function CustomerManagementModal(props: {
     }
   }
 
-  async function openBillingReconciliation() {
-    setBillingReconciliationModalOpen(true)
-    setBillingReconciliationLoading(true)
-    try {
-      const result = await fetchJSON<CustomerBillingReconciliationResponse>('/api/v1/admin/customers/billing-reconciliation')
-      setBillingReconciliation(result)
-    } catch (error) {
-      setBillingReconciliation(null)
-      message.error(error instanceof Error ? error.message : '加载费用对账失败')
-    } finally {
-      setBillingReconciliationLoading(false)
-    }
-  }
-
-  async function rebindBillingAssignment(record: CustomerBillingDiagnostic) {
-    if (!record.current_client_id) {
-      return
-    }
-    setRepairingAssignmentID(record.assignment_id)
-    try {
-      await fetchJSON<CustomerAssignment>(`/api/v1/admin/customers/${record.customer_id}/assignments/${record.assignment_id}/rebind`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ client_id: record.current_client_id }),
-      })
-      message.success('客户端已重新绑定')
-      await Promise.all([loadCustomers(), openBillingReconciliation()])
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '重新绑定失败')
-    } finally {
-      setRepairingAssignmentID(null)
-    }
-  }
 
   async function rebindAssignment(record: CustomerAssignment, clientID: string) {
     if (!clientID) return
