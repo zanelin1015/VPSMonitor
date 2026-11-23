@@ -141,13 +141,8 @@ type CustomerLinkView struct {
 	// XrayVersion belongs to the client-facing Xray inbound, including when
 	// its address is rewritten to a Realm/HAProxy entry. It is server-only
 	// metadata for choosing compatible client-specific REALITY exports.
-	XrayVersion string `json:"-"`
-	// Snell is server-only metadata used when rendering the customer
-	// subscription. It must never be returned in the customer overview JSON.
-	Snell                 *SnellConfig   `json:"-"`
-	Snells                []*SnellConfig `json:"-"`
-	SnellChain            *SnellConfig   `json:"-"`
-	SubscriptionImportURL string         `json:"-"`
+	XrayVersion           string `json:"-"`
+	SubscriptionImportURL string `json:"-"`
 }
 
 // CustomerTrafficDailyUsage is the raw per-assignment delta collected from

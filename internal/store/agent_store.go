@@ -116,8 +116,6 @@ func (s *SQLiteStore) RegisterAgentWithTokenOrLegacyBootstrap(req model.AgentReg
 				Renewal:             normalizeRenewalConfig(req.SeedConfig.Renewal),
 				Entry:               normalizeEntryConfig(req.SeedConfig.Entry),
 				XUI:                 req.SeedConfig.XUI,
-				Snell:               firstSnellConfig(req.SeedConfig.Snells, req.SeedConfig.Snell),
-				Snells:              model.NormalizeSnellConfigs(req.SeedConfig.Snells, req.SeedConfig.Snell),
 			},
 			HasConfig: hasManagedConfig(req.SeedConfig),
 		}
@@ -188,10 +186,6 @@ func (s *SQLiteStore) RegisterAgentWithTokenOrLegacyBootstrap(req model.AgentReg
 		if !hasEntryConfig(record.Config.Entry) && hasEntryConfig(req.SeedConfig.Entry) {
 			record.Config.Entry = normalizeEntryConfig(req.SeedConfig.Entry)
 		}
-		if !model.HasSnellConfigs(record.Config.Snells, record.Config.Snell) && model.HasSnellConfigs(req.SeedConfig.Snells, req.SeedConfig.Snell) {
-			record.Config.Snells = model.NormalizeSnellConfigs(req.SeedConfig.Snells, req.SeedConfig.Snell)
-			record.Config.Snell = firstSnellConfig(record.Config.Snells, record.Config.Snell)
-		}
 		record.Config.AgentID = req.AgentID
 		record.Config.AgentName = record.AgentName
 		record.Config.CustomerDisplayName = record.CustomerDisplayName
@@ -259,8 +253,6 @@ func (s *SQLiteStore) RegisterAgentWithTokenOrLegacyBootstrap(req model.AgentReg
 			Renewal:             record.Config.Renewal,
 			Entry:               record.Config.Entry,
 			XUI:                 record.Config.XUI,
-			Snell:               record.Config.Snell,
-			Snells:              model.NormalizeSnellConfigs(record.Config.Snells, record.Config.Snell),
 		},
 	}, nil
 }
@@ -300,13 +292,6 @@ func (s *SQLiteStore) updateAgentConfig(agentID string, cfg model.ManagedAgentCo
 	if err := model.ValidateEntryConnection(cfg.Entry); err != nil {
 		return model.AgentRecord{}, err
 	}
-	cfg.Snells = model.NormalizeSnellConfigs(cfg.Snells, cfg.Snell)
-	if len(cfg.Snells) > 0 {
-		cfg.Snell = cfg.Snells[0]
-	}
-	if err := model.ValidateSnellConfigs(cfg.Snells, cfg.Snell); err != nil {
-		return model.AgentRecord{}, err
-	}
 	record, found, err := s.GetAgent(agentID)
 	if err != nil {
 		return model.AgentRecord{}, err
@@ -336,8 +321,6 @@ func (s *SQLiteStore) updateAgentConfig(agentID string, cfg model.ManagedAgentCo
 		Renewal:             normalizeRenewalConfig(cfg.Renewal),
 		Entry:               normalizeEntryConfig(cfg.Entry),
 		XUI:                 cfg.XUI,
-		Snell:               firstSnellConfig(cfg.Snells, cfg.Snell),
-		Snells:              model.NormalizeSnellConfigs(cfg.Snells, cfg.Snell),
 	}
 	record.Tags = cloneStrings(record.Config.Tags)
 	record.UpdatedAt = time.Now().UTC()

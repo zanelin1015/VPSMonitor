@@ -17,7 +17,6 @@ import {
   normalizeXUIOverview,
   parseTagInput,
 } from '../../lib/appHelpers'
-import { bestAgentAddress } from '../../lib/managedConfigHelpers'
 import type {
   AdminUser,
   AgentLogsResponse,
@@ -456,15 +455,7 @@ export function useAgentDetailData({
       return
     }
     const baseConfig = savedManagedConfig || createEmptyManagedConfig(selectedAgentId, selectedAgent?.agent_name)
-    const autoSnellServer = section === 'client' ? bestAgentAddress(selectedAgent) : ''
-    const saveDraft = autoSnellServer
-      ? {
-        ...draftConfig,
-        snell: { ...draftConfig.snell, server: autoSnellServer },
-        snells: (draftConfig.snells || []).map((snell) => ({ ...snell, server: autoSnellServer })),
-      }
-      : draftConfig
-    const payload = buildSectionSavePayload(baseConfig, saveDraft, section, selectedAgentId)
+    const payload = buildSectionSavePayload(baseConfig, draftConfig, section, selectedAgentId)
     setConfigSavingSection(section)
     setConfigError('')
     try {

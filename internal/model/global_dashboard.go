@@ -34,8 +34,6 @@ type DashboardAgentView struct {
 	Tags                []string               `json:"tags,omitempty"`
 	Renewal             VPSRenewalConfig       `json:"renewal,omitempty"`
 	Entry               AgentEntryConfig       `json:"entry,omitempty"`
-	Snell               SnellConfig            `json:"-"`
-	Snells              []SnellConfig          `json:"-"`
 	ReportedAt          *time.Time             `json:"reported_at,omitempty"`
 	RealtimeAt          *time.Time             `json:"realtime_at,omitempty"`
 	RegisteredAt        *time.Time             `json:"registered_at,omitempty"`

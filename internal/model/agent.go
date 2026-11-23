@@ -17,13 +17,10 @@ type ManagedAgentConfig struct {
 	Renewal             VPSRenewalConfig   `json:"renewal,omitempty"`
 	Entry               AgentEntryConfig   `json:"entry,omitempty"`
 	XUI                 config.XUIConfig   `json:"xui"`
-	Snell               SnellConfig        `json:"snell,omitempty"`
-	Snells              []SnellConfig      `json:"snells,omitempty"`
 }
 
 type AgentFeatureConfig struct {
 	XUI                         bool `json:"xui"`
-	Snell                       bool `json:"snell"`
 	Realm                       bool `json:"realm"`
 	HAProxy                     bool `json:"haproxy"`
 	NAT                         bool `json:"nat"`
@@ -36,7 +33,6 @@ type AgentFeatureConfig struct {
 func (c *AgentFeatureConfig) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		XUI        bool `json:"xui"`
-		Snell      bool `json:"snell"`
 		Realm      bool `json:"realm"`
 		HAProxy    bool `json:"haproxy"`
 		NAT        bool `json:"nat"`
@@ -46,7 +42,6 @@ func (c *AgentFeatureConfig) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	c.XUI = raw.XUI
-	c.Snell = raw.Snell
 	c.Realm = raw.Realm
 	c.HAProxy = raw.HAProxy
 	c.NAT = raw.NAT

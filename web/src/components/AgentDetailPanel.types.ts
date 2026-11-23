@@ -1,4 +1,4 @@
-import type { AgentEntryConfig, AgentLogsResponse, ConfigAuditLog, CustomerAssignmentDraft, DashboardAgentView, GlobalDashboardView, ManagedAgentConfig, SnellConfig, TopologyLinkView, VPSRenewalConfig, XUIAction, XUIClientBillingConfig, XUIClientConfigSave, XUIClientView, XUIConfig, XUINodeView, XUIOverview } from '../types'
+import type { AgentEntryConfig, AgentLogsResponse, ConfigAuditLog, CustomerAssignmentDraft, DashboardAgentView, GlobalDashboardView, ManagedAgentConfig, TopologyLinkView, VPSRenewalConfig, XUIAction, XUIClientBillingConfig, XUIClientConfigSave, XUIClientView, XUIConfig, XUINodeView, XUIOverview } from '../types'
 import type { RoutingRulesDeletePayload } from '../lib/routingRules'
 import type { RoutingRuleUpdatePayload } from '../lib/routingRuleEditor'
 import type { OutboundsDeletePayload } from '../lib/outbounds'
@@ -97,6 +97,5 @@ export interface AgentDetailPanelProps {
   onTagsChange: (values: string[]) => void
   onSaveAreaTags?: (values: string[]) => void
   onXUIChange: (patch: Partial<XUIConfig>) => void
-  onSnellChange: (patch: Partial<SnellConfig>) => void
   onFeatureChange: (feature: AgentFeatureKey, enabled: boolean) => void
 }

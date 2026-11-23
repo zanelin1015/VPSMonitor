@@ -258,23 +258,6 @@ func (a *App) customerOverview(user model.CustomerUser) (model.CustomerOverviewR
 	for _, agent := range view.Agents {
 		agentMap[agent.AgentID] = agent
 	}
-	// Snell PSKs are intentionally omitted from the dashboard JSON. Reattach
-	// them from the server-side AgentRecord only while rendering subscriptions.
-	for _, agent := range agents {
-		if viewAgent, ok := agentMap[agent.AgentID]; ok {
-			if agent.Config.Features.Snell {
-				viewAgent.Snells = model.NormalizeSnellConfigs(agent.Config.Snells, agent.Config.Snell)
-				if len(viewAgent.Snells) > 0 {
-					viewAgent.Snell = viewAgent.Snells[0]
-				}
-			} else {
-				viewAgent.Snell = model.SnellConfig{}
-				viewAgent.Snells = nil
-			}
-			agentMap[agent.AgentID] = viewAgent
-		}
-	}
-
 	links := make([]model.CustomerLinkView, 0, len(assignments))
 	assignmentIDs := make([]int64, 0, len(assignments))
 	for _, assignment := range assignments {

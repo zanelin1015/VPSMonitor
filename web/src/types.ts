@@ -182,39 +182,10 @@ export interface ManagedAgentConfig {
   renewal?: VPSRenewalConfig
   entry?: AgentEntryConfig
   xui: XUIConfig
-  snell?: SnellConfig
-  snells?: SnellConfig[]
-}
-
-export interface SnellConfig {
-  enabled?: boolean
-  name?: string
-  remark?: string
-  server?: string
-  port?: number
-  psk?: string
-  version?: number
-  udp?: boolean
-  obfs_mode?: 'none' | 'http' | string
-  obfs_host?: string
-  obfs_path?: string
-  forward_rules?: SnellForwardRule[]
-}
-
-export interface SnellForwardRule {
-  id?: string
-  name?: string
-  enabled?: boolean
-  target_agent_id?: string
-  target_inbound_id?: number
-  target_inbound_tag?: string
-  target_client_id?: string
-  target_client_email?: string
 }
 
 export interface AgentFeatureConfig {
   xui?: boolean
-  snell?: boolean
   realm?: boolean
   haproxy?: boolean
   nat?: boolean

@@ -115,7 +115,6 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     onTagsChange,
     onSaveAreaTags,
     onXUIChange,
-    onSnellChange,
     onFeatureChange,
   } = props
   const canManageClients = canManageConfig || restrictedView
@@ -157,7 +156,6 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
   const entryConfig = managedConfig?.entry || selectedAgent.entry || {}
   const featureEnabled = {
     xui: Boolean(managedConfig?.features?.xui),
-    snell: Boolean(managedConfig?.features?.snell),
     realm: Boolean(managedConfig?.features?.realm),
     haproxy: Boolean(managedConfig?.features?.haproxy),
     nat: Boolean(managedConfig?.features?.nat),
@@ -316,7 +314,7 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     },
   ]
 
-  function renderManagedConfigSection(section: 'basic' | 'snell' | 'xui' | 'nat' | 'network' | 'realm' | 'haproxy' | 'audit') {
+  function renderManagedConfigSection(section: 'basic' | 'xui' | 'nat' | 'network' | 'realm' | 'haproxy' | 'audit') {
     return (
       <ManagedConfigPanel
         selectedAgent={selectedAgent}
@@ -345,7 +343,6 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         onEntryAddressesTextChange={onEntryAddressesTextChange}
         onEntryChange={onEntryChange}
         onXUIChange={onXUIChange}
-        onSnellChange={onSnellChange}
         onCopyRealmConfig={onCopyRealmConfig}
         realmCopyLoading={realmCopyLoading}
         configAudits={configAudits}
@@ -364,7 +361,6 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
       </div>
       <Space wrap>
         <FeatureSwitch label="x-ui" checked={featureEnabled.xui} onChange={(checked) => onFeatureChange('xui', checked)} />
-        <FeatureSwitch label="Snell" checked={featureEnabled.snell} onChange={(checked) => onFeatureChange('snell', checked)} />
         <FeatureSwitch label="Realm" checked={featureEnabled.realm} onChange={(checked) => onFeatureChange('realm', checked)} />
         <FeatureSwitch label="HAProxy" checked={featureEnabled.haproxy} onChange={(checked) => onFeatureChange('haproxy', checked)} />
         <FeatureSwitch label="NAT" checked={featureEnabled.nat} onChange={(checked) => onFeatureChange('nat', checked)} />
@@ -520,12 +516,6 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
         />
       </Card>
     ),
-  }] : []
-
-  const snellTabs: TabsProps['items'] = featureEnabled.snell && canManageConfig ? [{
-    key: 'snell',
-    label: 'Snell',
-    children: renderManagedConfigSection('snell'),
   }] : []
 
   const realmTabs: TabsProps['items'] = featureEnabled.realm ? [
@@ -738,7 +728,6 @@ export function AgentDetailPanel(props: AgentDetailPanelProps) {
     overviewTab,
     ...(canManageConfig ? [{ key: 'network-interface-traffic', label: '网卡流量', children: <NetworkInterfaceTrafficPanel key={selectedAgentId} agentID={selectedAgentId} /> }] : []),
     ...xuiTabs,
-    ...snellTabs,
     ...realmTabs,
     ...haProxyTabs,
     ...natTabs,

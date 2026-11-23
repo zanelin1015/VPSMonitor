@@ -19,7 +19,6 @@ VPSMonitor 是一套围绕 `x-ui / 3x-ui` 的 VPS 集中管理系统。它不替
 - 从一台 Client 导入另一台 Client 的节点客户端，配置 Realm 中转或 HAProxy 主备转发。
 - 拓扑图和 Client 链路追踪；工作台和 Client 页面会对同一条转发链路去重，避免网速与流量重复累加。
 - Client 收费周期、流量上限、收入、成本和利润统计。
-- Client 手动 Snell 节点配置，并按 Client 授权范围下发到 Clash/Mihomo 订阅。
 - 客户账号、节点授权、Clash/Mihomo 订阅、前置代理组和在线客服。
 - 客户公告历史、按账号的已读状态和访问日志排查。
 - Server 和 Client 的 GitHub Release 检查、校验和升级。Client 可以在管理台中逐台选择升级。
@@ -172,10 +171,6 @@ Client 的 x-ui 访问参数由 Server 集中管理。管理员在 Client 详情
 本地 x-ui 数据库路径位于“高级设置”，用于 API 不可用时的本地兜底读取。常规安装留空即可自动探测；Docker 或非标准安装可填写 Client 本机可读取的数据库路径。
 
 X-UI 配置中的开关紧邻说明，窄屏自动换行。“日志保留天数”和“Xray access.log 路径”仅在开启“采集访问日志”后显示；关闭时保留已填写的值，再次开启后恢复显示。
-
-Client 详情页的“Snell”页面用于按列表管理多个 Snell 节点。服务器地址会优先使用 Client 的公网入口配置，再使用 Client 最近上报的域名或 IP，无需手动填写；每个节点可填写名称、端口、PSK、版本、备注和可选 HTTP 混淆，列表支持分页，新增和修改通过弹窗完成。启用后，授权到该 Client 的用户会在 Clash/Mihomo 订阅中收到已启用节点。这项配置只登记并生成订阅，不会在 Client 上安装或修改 Snell 服务。停用或删除配置后，后续订阅不再包含该节点。
-
-Snell 配置下可以添加“Snell 转发链路”，选择另一个 Client 的具体 X-UI 客户端。该客户端授权给用户后，订阅会生成 `Snell → X-UI` 的 `dialer-proxy` 链路，门户显示完整链路但不暴露后端直连 URL。链路的流量、到期时间、流量倍率和费用继承目标 X-UI 客户端；Snell 链路使用订阅导出，不会改动远端 Snell 服务或自动创建 X-UI 转发规则。
 
 ## 手动运行与本地开发
 

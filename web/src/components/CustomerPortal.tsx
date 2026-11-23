@@ -1133,8 +1133,6 @@ function topologyNodeIcon(role: string) {
   switch (role) {
     case 'entry':
       return '入口'
-    case 'snell':
-      return 'Snell'
     case 'relay':
       return '转发'
     case 'exit':

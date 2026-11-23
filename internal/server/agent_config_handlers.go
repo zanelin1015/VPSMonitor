@@ -116,22 +116,6 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		cfg.Snells = model.NormalizeSnellConfigs(cfg.Snells, cfg.Snell)
-		if len(cfg.Snells) > 0 {
-			cfg.Snell = cfg.Snells[0]
-		}
-		if err := model.ValidateSnellConfigs(cfg.Snells, cfg.Snell); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		if cfg.Features.Snell {
-			for _, snell := range cfg.Snells {
-				if err := a.validateSnellForwardRules(agentID, snell); err != nil {
-					writeError(w, http.StatusBadRequest, err.Error())
-					return
-				}
-			}
-		}
 		cfg = a.hydrateRealmForwardTargets(cfg)
 		if featuresRaw, ok := raw["features"]; ok {
 			var featureFields map[string]json.RawMessage
@@ -193,8 +177,7 @@ func inferLegacyAgentFeatures(cfg model.ManagedAgentConfig, snapshot *model.Agen
 	}
 	entry := cfg.Entry
 	cfg.Features = model.AgentFeatureConfig{
-		XUI:   legacyXUIConfigPresent(cfg) || snapshotHasXUI(snapshot),
-		Snell: model.HasSnellConfigs(cfg.Snells, cfg.Snell),
+		XUI: legacyXUIConfigPresent(cfg) || snapshotHasXUI(snapshot),
 		Realm: entry.PortForwarding.Enabled ||
 			len(entry.PortForwarding.Rules) > 0 ||
 			strings.TrimSpace(entry.PortForwarding.ConfigPath) != "" ||

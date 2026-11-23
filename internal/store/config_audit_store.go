@@ -94,14 +94,6 @@ func redactManagedAgentConfig(cfg model.ManagedAgentConfig) model.ManagedAgentCo
 	if cfg.XUI.TwoFactorCode != "" {
 		cfg.XUI.TwoFactorCode = "******"
 	}
-	if cfg.Snell.PSK != "" {
-		cfg.Snell.PSK = "******"
-	}
-	for index := range cfg.Snells {
-		if cfg.Snells[index].PSK != "" {
-			cfg.Snells[index].PSK = "******"
-		}
-	}
 	return cfg
 }
 

@@ -247,18 +247,7 @@ func buildCustomerLinkView(
 			{Role: "entry", Label: entryName},
 		},
 	}
-	if agent, ok := agentMap[assignment.AgentID]; ok {
-		for _, rawSnell := range model.NormalizeSnellConfigs(agent.Snells, agent.Snell) {
-			snell := model.NormalizeSnellConfig(rawSnell)
-			if !snell.Enabled || model.ValidateSnellConfig(snell) != nil {
-				continue
-			}
-			link.Snells = append(link.Snells, &snell)
-			if link.Snell == nil {
-				link.Snell = &snell
-			}
-		}
-	}
+
 	link.NodeExpireTime = customerNodeExpireTime(assignment.AgentID, agentMap)
 	chain, chainFound := findCustomerChain(assignment, chainMap)
 	trafficMultiplier := 1.0
@@ -367,7 +356,6 @@ func buildCustomerLinkView(
 	if chain.UnresolvedReason != "" && link.UnresolvedReason == "" {
 		link.UnresolvedReason = chain.UnresolvedReason
 	}
-	applySnellForwardToCustomerLink(&link, assignment, agentMap)
 	return link
 }
 
@@ -430,62 +418,6 @@ func customerRealmImportName(assignment model.CustomerAssignment, chain model.Cl
 	}
 	appendPart(firstNonEmptyString(client.Email, assignment.ClientEmail, client.Comment, client.ClientID, client.InboundRemark, client.InboundTag))
 	return strings.Join(parts, "-")
-}
-
-func applySnellForwardToCustomerLink(link *model.CustomerLinkView, assignment model.CustomerAssignment, agentMap map[string]model.DashboardAgentView) {
-	if link == nil || !link.Resolved || strings.TrimSpace(link.ImportURL) == "" || len(agentMap) == 0 {
-		return
-	}
-	agentIDs := make([]string, 0, len(agentMap))
-	for agentID := range agentMap {
-		agentIDs = append(agentIDs, agentID)
-	}
-	sort.Strings(agentIDs)
-	for _, sourceAgentID := range agentIDs {
-		if sourceAgentID == assignment.AgentID {
-			continue
-		}
-		for _, rawSnell := range model.NormalizeSnellConfigs(agentMap[sourceAgentID].Snells, agentMap[sourceAgentID].Snell) {
-			cfg := model.NormalizeSnellConfig(rawSnell)
-			if !cfg.Enabled || model.ValidateSnellConfig(cfg) != nil {
-				continue
-			}
-			for _, rule := range cfg.ForwardRules {
-				if !rule.Enabled || !snellForwardMatchesAssignment(rule, assignment) {
-					continue
-				}
-				link.Snell = nil
-				link.Snells = nil
-				link.SnellChain = &cfg
-				link.SubscriptionImportURL = link.ImportURL
-				link.ImportURL = ""
-				link.ShadowrocketImportURL = ""
-				link.SubscriptionOnly = true
-				link.Steps = append([]model.CustomerLinkStep{{Role: "snell", Label: cfg.Name}}, link.Steps...)
-				link.Summary = cfg.Name + " → " + link.Summary
-				return
-			}
-		}
-	}
-}
-
-func snellForwardMatchesAssignment(rule model.SnellForwardRule, assignment model.CustomerAssignment) bool {
-	if rule.TargetAgentID != assignment.AgentID {
-		return false
-	}
-	if rule.TargetInboundID > 0 && rule.TargetInboundID != assignment.InboundID {
-		return false
-	}
-	if rule.TargetInboundTag != "" && !strings.EqualFold(rule.TargetInboundTag, assignment.InboundTag) {
-		return false
-	}
-	if rule.TargetClientID != "" {
-		return rule.TargetClientID == assignment.ClientID
-	}
-	if rule.TargetClientEmail != "" {
-		return strings.EqualFold(rule.TargetClientEmail, assignment.ClientEmail)
-	}
-	return false
 }
 
 func customerClientTrafficUsed(client model.XUIClientView) int64 {
