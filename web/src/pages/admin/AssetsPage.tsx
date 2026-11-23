@@ -429,10 +429,8 @@ export function AssetsPage(props: AssetsPageProps) {
             showTotal: (total) => `共 ${total} 台`,
             onChange: onPageChange,
           }}
-          // The column set changes by role and its total width is larger than
-          // the old fixed scroll.x values. Let rc-table measure the intrinsic
-          // width so the fixed right action column keeps a correct offset
-          // while the table is dragged horizontally.
+          // Let rc-table size the complete column set and keep the header and
+          // body measurements in sync while the table is dragged horizontally.
           scroll={{ x: 'max-content', y: '100%' }}
           locale={{ emptyText: <Empty description="没有匹配的 Client" /> }}
         />
