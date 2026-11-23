@@ -3,7 +3,7 @@ import { useAccountDirectory } from '../hooks/useAccountDirectory';
 import { useAssignmentBindingOverviews } from '../hooks/useAssignmentBindingOverviews';
 import { AreaAccountPanel } from './AreaAccountPanel';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { App as AntdApp, Button, Card, Empty, Input, Modal, Select, Space, Spin, Table, Tabs, Typography } from 'antd';
+import { App as AntdApp, Button, Card, Empty, Input, Modal, Select, Space, Table, Typography } from 'antd';
 import { PlusOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons';
 
 import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, CustomerAssignmentSourceView, DashboardAgentView, XUIClientView, XUINodeView, XUIOverview } from '../types';
@@ -16,10 +16,9 @@ import { CustomerAssignmentManagerCard } from './CustomerAssignmentManagerCard';
 import { AdminHelpHint } from './AdminHelpHint';
 import { DEFAULT_ACCOUNT_PASSWORD, type AreaBatchAssignmentFormState, type AreaManagerAssignmentDraft, type AreaManagerFormState, type AssignmentFormState, type ManagementTabKey, areaAssignmentDraftFromTargetOption, areaAssignmentKey, assignmentFormFromAssignment, assignmentFormFromDraft, assignmentMatchesInbound, billingFormPatch, buildAreaAssignmentTreeData, buildAssignmentTargetOptions, buildClientAssignmentTreeData, buildRealmGrantOptions, clientBilling, clientKey, clientLabel, defaultPublicClientName, defaultPublicNodeName, dedupeAreaManagerAssignmentDrafts, emptyAreaBatchAssignmentForm, emptyAreaManagerForm, emptyAssignmentForm, emptyCustomerForm, findMatchingAssignment, findRealmTargetNode, firstRealmAssignmentAgentID, isRealmAssignmentDraft, nodeKey, nodeLabel, normalizeAreaManagerAssignmentDrafts, normalizeAreaManagerOutboundGrants, normalizeRevenueCycle, realmRuleTargetAgentID, revenueCycleLabel, uniqueStrings } from './CustomerManagementHelpers';
 import { CustomerManagementModals } from './CustomerManagementModals';
-import { AgentRolePanel } from './AgentRolePanel';
-import { OperatorManagementPanel } from './OperatorManagementPanel';
 import { useCustomerBillingReconciliation } from '../hooks/useCustomerBillingReconciliation';
 import { CustomerBillingReconciliationModal } from './CustomerBillingReconciliationModal';
+import { CustomerManagementTabs } from './CustomerManagementTabs';
 
 const { Text, Title } = Typography
 
@@ -1090,51 +1089,26 @@ export function CustomerManagementModal(props: {
     </>
   )
 
-  const managementTabs = [
-    ...((canManageAreaManagers || adminUser?.role === 'operator') ? [{ key: 'roles', label: 'Client 角色', children: <AgentRolePanel onChanged={() => onConfigChanged?.()} /> }] : []),
-    ...(canManageAreaManagers && areaManagersPanel ? [{ key: 'area', label: '区域账号', children: areaManagersPanel }] : []),
-    ...(canManageAreaManagers ? [{
-      key: 'operators',
-      label: '运营管理员',
-      children: (
-        <OperatorManagementPanel
-          operators={operators}
-          loading={operatorsLoading}
-          saving={savingOperator}
-          resettingID={resettingOperatorID}
-          onReload={() => void loadOperators()}
-          onSave={saveOperator}
-          onDelete={(id) => void deleteOperator(id)}
-          onResetPassword={(id) => void resetOperatorPassword(id)}
-        />
-      ),
-    }] : []),
-    { key: 'customers', label: '用户账号', children: customersPanel },
-  ]
-
   const content = (
-    <Spin spinning={loading || areaManagersLoading || operatorsLoading}>
-      <div className="customer-management-body">
-        <Tabs
-          className="customer-admin-tabs"
-          tabBarExtraContent={(
-            <span className="admin-help-title-group customer-admin-tab-help">
-              <Text type="secondary" className="customer-admin-help-label">授权说明</Text>
-              <AdminHelpHint title={(
-                <>
-                  <strong>授权使用规则与停用机制</strong>
-                  <br />
-                  建议仅给已授权用户开放链路，可用于独享或多人共享场景；禁止滥发、攻击、诈骗、爬虫滥用、扫描爆破等行为。出现异常时，可先停用用户账号或单条授权链路；如需彻底切断连接，再到对应 Client 的 x-ui 客户端列表中删除或停用该 client。
-                </>
-              )} />
-            </span>
-          )}
-          activeKey={activeManagementTab}
-          items={managementTabs}
-          onChange={(key) => setActiveManagementTab(key as ManagementTabKey)}
-        />
-      </div>
-    </Spin>
+    <CustomerManagementTabs
+      activeKey={activeManagementTab}
+      onChange={setActiveManagementTab}
+      canManageAreaManagers={canManageAreaManagers}
+      showRolePanel={canManageAreaManagers || adminUser?.role === 'operator'}
+      areaManagersPanel={areaManagersPanel}
+      customersPanel={customersPanel}
+      operators={operators}
+      operatorsLoading={operatorsLoading}
+      savingOperator={savingOperator}
+      resettingOperatorID={resettingOperatorID}
+      onConfigChanged={() => onConfigChanged?.()}
+      onReloadOperators={() => void loadOperators()}
+      onSaveOperator={saveOperator}
+      onDeleteOperator={(id) => void deleteOperator(id)}
+      onResetOperatorPassword={(id) => void resetOperatorPassword(id)}
+      loading={loading}
+      areaManagersLoading={areaManagersLoading}
+    />
   )
 
   if (embedded) {
