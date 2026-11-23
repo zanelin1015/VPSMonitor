@@ -109,7 +109,6 @@ type CustomerLinkView struct {
 	ClientRemark          string                   `json:"client_remark,omitempty"`
 	ImportName            string                   `json:"import_name,omitempty"`
 	ImportURL             string                   `json:"import_url,omitempty"`
-	SubscriptionOnly      bool                     `json:"subscription_only,omitempty"`
 	ShadowrocketImportURL string                   `json:"shadowrocket_import_url,omitempty"`
 	Remark                string                   `json:"remark,omitempty"`
 	Summary               string                   `json:"summary"`
@@ -141,8 +140,7 @@ type CustomerLinkView struct {
 	// XrayVersion belongs to the client-facing Xray inbound, including when
 	// its address is rewritten to a Realm/HAProxy entry. It is server-only
 	// metadata for choosing compatible client-specific REALITY exports.
-	XrayVersion           string `json:"-"`
-	SubscriptionImportURL string `json:"-"`
+	XrayVersion string `json:"-"`
 }
 
 // CustomerTrafficDailyUsage is the raw per-assignment delta collected from

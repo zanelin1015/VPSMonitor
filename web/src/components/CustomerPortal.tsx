@@ -638,7 +638,6 @@ export function CustomerPortal() {
                               {link.exit_country_code || link.exit_country_name ? <Tag color="blue">出口 <CountryFlag code={link.exit_country_code} label={link.exit_country_name} /> {link.exit_country_code || link.exit_country_name}</Tag> : null}
                               {link.exit_ip ? <Tag color="geekblue">{link.exit_ip}</Tag> : null}
                               {!link.resolved ? <Tag color="orange">待解析</Tag> : null}
-                              {link.resolved && link.subscription_only ? <Tag color="purple">订阅链路</Tag> : null}
                               <Button
                                 type="primary"
                                 size="small"
