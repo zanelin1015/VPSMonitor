@@ -314,7 +314,6 @@ export function AssetsPage(props: AssetsPageProps) {
       key: 'actions',
       valueType: 'option',
       width: 92,
-      fixed: 'right',
       render: (_, agent) => [
         <Button key="open" type="link" onClick={() => open(agent)}>
           详情
