@@ -1,20 +1,19 @@
 import { buildCertificateDomainOptions, normalizeNetworkPolicyRules, defaultNetworkPolicyRuleName, shouldUsePortAsNetworkPolicyName, bestAgentAddress, realmForwardAddressOptions, realmForwardTargetPortOptions } from '../lib/managedConfigHelpers'
-import { useEffect, useId, useState } from 'react'
+import { useId, useState } from 'react'
 import { Alert, Button, Card, Col, Collapse, Empty, Input, InputNumber, List, Row, Select, Space, Spin, Switch, Typography } from 'antd'
 import { SaveOutlined } from '@ant-design/icons'
 
-import type { AgentEntryConfig, AgentListItem, ConfigAuditLog, ManagedAgentConfig, NetworkPortPolicyRule, RealmForwardRule, VPSRenewalConfig, XUIConfig, XUILocalCertificate, XUINodeView, XUIOverview } from '../types'
+import type { AgentEntryConfig, AgentListItem, ConfigAuditLog, ManagedAgentConfig, NetworkPortPolicyRule, RealmForwardRule, VPSRenewalConfig, XUIConfig, XUILocalCertificate, XUINodeView } from '../types'
 import { DEFAULT_COST_CURRENCY, type CurrencyCode } from '../lib/currency'
 import { bytesToGB, gbToBytes } from '../lib/traffic'
 import type { ConfigSectionKey } from '../lib/appHelpers'
-import { normalizeXUIOverview } from '../lib/appHelpersConfig'
 import { AdminHelpHint } from './AdminHelpHint'
 import { formatDateTime, formatRenewalHint, summarizeConfigAudit } from '../lib/appHelpers'
-import { fetchJSON } from '../lib/api'
 import { EntryConnectionSection } from './EntryConnectionSection'
 import { HAProxyConfigSection } from './HAProxyConfigSection'
 import { NetworkPolicyConfigSection } from './ManagedConfigNetworkSection'
 import { RealmForwardingSection } from './ManagedConfigRealmSection'
+import { useRealmTargetOverviews } from '../hooks/useRealmTargetOverviews'
 
 const { Text, Title } = Typography
 
@@ -86,57 +85,9 @@ export function ManagedConfigPanel(props: ConfigPanelProps) {
   } = props
   const [realmCopyTargetAgentID, setRealmCopyTargetAgentID] = useState('')
   const [networkPolicyEditedAgentID, setNetworkPolicyEditedAgentID] = useState('')
-  const [realmTargetOverviews, setRealmTargetOverviews] = useState<Record<string, XUIOverview>>({})
-  const [realmTargetOverviewLoading, setRealmTargetOverviewLoading] = useState<Record<string, boolean>>({})
   const xuiFieldID = useId()
 
-  const realmTargetAgentIDs = Array.from(new Set((managedConfig?.entry?.port_forwarding?.rules || []).map((rule) => rule.target_agent_id || '').filter(Boolean))).sort()
-  const realmTargetAgentKey = realmTargetAgentIDs.join('|')
-  useEffect(() => {
-    let cancelled = false
-    realmTargetAgentIDs.forEach((agentID) => {
-      if (realmTargetOverviews[agentID] || realmTargetOverviewLoading[agentID]) {
-        return
-      }
-      setRealmTargetOverviewLoading((current) => ({ ...current, [agentID]: true }))
-      void fetchJSON<XUIOverview>(`/api/v1/agents/${encodeURIComponent(agentID)}/xui/overview`)
-        .then((overview) => {
-          if (!cancelled) {
-            setRealmTargetOverviews((current) => ({ ...current, [agentID]: normalizeXUIOverview(overview) }))
-          }
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          if (!cancelled) {
-            setRealmTargetOverviewLoading((current) => ({ ...current, [agentID]: false }))
-          }
-        })
-    })
-    return () => { cancelled = true }
-  }, [realmTargetAgentKey])
-
-  useEffect(() => {
-    const rules = managedConfig?.entry?.port_forwarding?.rules || []
-    if (!rules.length) {
-      return
-    }
-    let changed = false
-    const nextRules = rules.map((rule) => {
-      if (!rule.target_agent_id || rule.target_port_mode === 'custom' || Number(rule.target_port || 0) > 0) {
-        return rule
-      }
-      const agent = agents.find((item) => item.agent_id === rule.target_agent_id)
-      const option = realmForwardTargetPortOptions(agent, realmTargetOverviews[rule.target_agent_id])[0]
-      if (!option) {
-        return rule
-      }
-      changed = true
-      return { ...rule, target_port: option.port, target_port_mode: 'auto' as const }
-    })
-    if (changed) {
-      onEntryChange({ port_forwarding: { ...managedConfig?.entry?.port_forwarding, rules: nextRules } })
-    }
-  }, [managedConfig?.entry?.port_forwarding?.rules, realmTargetOverviews, agents, onEntryChange])
+  const { targetOverviews: realmTargetOverviews, targetOverviewLoading: realmTargetOverviewLoading } = useRealmTargetOverviews(managedConfig, agents, onEntryChange)
 
   if (!selectedAgent) {
     return <Empty description="先选择一个 client" />
