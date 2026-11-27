@@ -56,7 +56,8 @@ export function useDashboardData({
 
   const customerDisplayNameCacheRef = useRef<Record<string, string>>({})
 
-  const [tagOptions, setTagOptions] = useState<string[]>([])
+  const [tagOptions, setTagOptionsState] = useState<string[]>([])
+  const removedTagKeys = useRef(new Set<string>())
 
   const [topologyLoading, setTopologyLoading] = useState(false)
 
@@ -70,6 +71,39 @@ export function useDashboardData({
 
   useDashboardRealtime(adminUser, applyRealtimeMetrics)
 
+  function filterManagedTags(tags: string[]): string[] {
+    if (isAreaManagerAccount || !removedTagKeys.current.size) return tags
+    return tags.filter(tag => !removedTagKeys.current.has(tag.toLowerCase()))
+  }
+
+  function setTagOptions(update: SetStateAction<string[]>) {
+    setTagOptionsState(current => filterManagedTags(typeof update === 'function' ? update(current) : update))
+  }
+
+  function filterAgentTags(agent: DashboardAgentView): DashboardAgentView {
+    if (!agent.tags?.length) return agent
+    const tags = filterManagedTags(agent.tags)
+    return tags.length === agent.tags.length ? agent : { ...agent, tags }
+  }
+
+  function filterDashboardTags(view: GlobalDashboardView): GlobalDashboardView {
+    if (isAreaManagerAccount || !removedTagKeys.current.size) return view
+    return { ...view, agents: (view.agents || []).map(filterAgentTags),
+      tags: (view.tags || []).filter(item => !removedTagKeys.current.has(item.tag.toLowerCase())) }
+  }
+
+  function applyAgentTagChanges(tags: string[], deletedTag?: string) {
+    if (deletedTag) {
+      removedTagKeys.current.add(deletedTag.toLowerCase())
+      setTagOptions(tags)
+      setAgents(current => current.map(filterAgentTags))
+      setDashboardView(current => current ? filterDashboardTags(current) : current)
+      return
+    }
+    for (const tag of tags) removedTagKeys.current.delete(tag.toLowerCase())
+    setTagOptions(current => mergeTagOptions(current, tags))
+  }
+
   async function loadAgents(options: LoadOptions = {}) {
     const requestKey = 'dashboard'
     if (inFlightRequestsRef.current.has(requestKey)) {
@@ -82,7 +116,7 @@ export function useDashboardData({
       setAgentsError('')
     }
     try {
-      const data = await fetchJSON<GlobalDashboardView>('/api/v1/dashboard')
+      const data = filterDashboardTags(await fetchJSON<GlobalDashboardView>('/api/v1/dashboard'))
       const sortedAgents = sortAgentsByOrder((data.agents || []).map(applyCachedCustomerDisplayName))
       const nextView = { ...data, agents: sortedAgents }
       setDashboardView((current) => {
@@ -146,7 +180,7 @@ export function useDashboardData({
       setTopologyError('')
     }
     try {
-      const data = await fetchJSON<GlobalDashboardView>('/api/v1/dashboard/topology')
+      const data = filterDashboardTags(await fetchJSON<GlobalDashboardView>('/api/v1/dashboard/topology'))
       const sortedAgents = sortAgentsByOrder((data.agents || []).map(applyCachedCustomerDisplayName))
       setDashboardView({ ...data, agents: sortedAgents })
       setAgents(sortedAgents)
@@ -249,6 +283,8 @@ export function useDashboardData({
     customerDisplayNameCacheRef,
     tagOptions,
     setTagOptions,
+    filterManagedTags,
+    applyAgentTagChanges,
     topologyLoading,
     setTopologyLoading,
     topologyError,

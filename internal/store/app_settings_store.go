@@ -137,40 +137,6 @@ func normalizeExchangeRatesCache(rates model.ExchangeRatesResponse) model.Exchan
 	return rates
 }
 
-func (s *SQLiteStore) GetTagSettings() ([]string, bool, error) {
-	var raw string
-	err := s.db.QueryRow(`SELECT value_json FROM app_settings WHERE key = ?`, tagSettingsKey).Scan(&raw)
-	if err == sql.ErrNoRows {
-		return nil, false, nil
-	}
-	if err != nil {
-		return nil, false, fmt.Errorf("load tag settings: %w", err)
-	}
-	var payload model.TagSettingsResponse
-	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
-		return nil, false, fmt.Errorf("decode tag settings: %w", err)
-	}
-	return normalizeTags(payload.Tags), true, nil
-}
-
-func (s *SQLiteStore) SaveTagSettings(tags []string) ([]string, error) {
-	normalized := normalizeTags(tags)
-	data, err := json.Marshal(model.TagSettingsResponse{Tags: normalized})
-	if err != nil {
-		return nil, fmt.Errorf("encode tag settings: %w", err)
-	}
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	_, err = s.db.Exec(`
-		INSERT INTO app_settings (key, value_json, updated_at)
-		VALUES (?, ?, ?)
-		ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
-	`, tagSettingsKey, string(data), now)
-	if err != nil {
-		return nil, fmt.Errorf("save tag settings: %w", err)
-	}
-	return normalized, nil
-}
-
 func (s *SQLiteStore) GetFrontendSettings() (model.FrontendSettings, bool, error) {
 	return getFrontendSettings(s.db)
 }

@@ -112,10 +112,6 @@ func (a *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		}
 		a.handleClientInstallInfo(w, r)
 	case "tags":
-		if r.Method != http.MethodGet && r.Method != http.MethodPut {
-			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-			return
-		}
 		a.handleAdminTags(w, r)
 	case "frontend-settings":
 		if r.Method != http.MethodGet && r.Method != http.MethodPut {

@@ -631,6 +631,14 @@ export function AdminApp() {
               {...agentRailProps}
               accountKey={String(adminUser.id)}
               onOpenClientInstall={canManageSystem ? () => void openClientInstallModal() : undefined}
+              onAgentTagsChanged={canManageSystem ? (tags, deletedTag) => {
+                dashboard.applyAgentTagChanges(tags, deletedTag)
+                if (deletedTag) {
+                  details.dropDeletedTag(deletedTag)
+                  setSelectedTag(current => current.toLowerCase() === deletedTag.toLowerCase() ? '' : current)
+                  void loadAgents({ silent: true })
+                }
+              } : undefined}
             />
           )
         }

@@ -83,6 +83,13 @@ func (s *SQLiteStore) RegisterAgentWithTokenOrLegacyBootstrap(req model.AgentReg
 	if found && !allowLegacyBootstrap && record.AgentToken != "" && subtle.ConstantTimeCompare([]byte(record.AgentToken), []byte(presentedAgentToken)) != 1 {
 		return model.AgentRegisterResponse{}, ErrAgentRegistrationUnauthorized
 	}
+	if len(req.SeedConfig.Tags) > 0 {
+		settings, _, err := getAgentTagSettings(tx)
+		if err != nil {
+			return model.AgentRegisterResponse{}, err
+		}
+		req.SeedConfig.Tags = settings.active(normalizeTags(req.SeedConfig.Tags))
+	}
 
 	if !found {
 		token, tokenErr := randomToken()
@@ -339,7 +346,20 @@ func (s *SQLiteStore) updateAgentConfig(agentID string, cfg model.ManagedAgentCo
 	if err != nil {
 		return model.AgentRecord{}, err
 	}
-	_, err = s.db.Exec(`
+	tx, err := s.db.Begin()
+	if err != nil {
+		return model.AgentRecord{}, err
+	}
+	defer tx.Rollback()
+	if len(record.Tags) > 0 {
+		settings, _, err := getAgentTagSettings(tx)
+		if err != nil {
+			return model.AgentRecord{}, err
+		}
+		record.Config.Tags = settings.active(record.Config.Tags)
+		record.Tags = cloneStrings(record.Config.Tags)
+	}
+	_, err = tx.Exec(`
 		UPDATE agents
 		SET agent_name = ?, customer_display_name = ?, sort_order = ?, agent_tags_json = ?, updated_at = ?, xui_config_json = ?, renewal_config_json = ?,
 			entry_config_json = json_patch(?, json_object('classification', json_extract(entry_config_json, '$.classification')))
@@ -357,6 +377,9 @@ func (s *SQLiteStore) updateAgentConfig(agentID string, cfg model.ManagedAgentCo
 	)
 	if err != nil {
 		return model.AgentRecord{}, fmt.Errorf("update agent config: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return model.AgentRecord{}, err
 	}
 
 	return record, nil

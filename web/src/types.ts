@@ -915,6 +915,12 @@ export interface TagSettingsResponse {
   tags: string[]
 }
 
+export interface AgentTagInventoryItem {
+  tag: string
+  agent_count: number
+  protected: boolean
+}
+
 export interface AreaAgentTagsResponse {
   agent_id: string
   tags: string[]

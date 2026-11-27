@@ -1,4 +1,4 @@
-import { CopyOutlined, DeploymentUnitOutlined } from '@ant-design/icons'
+import { CopyOutlined, DeploymentUnitOutlined, TagsOutlined } from '@ant-design/icons'
 import { ProTable, type ProColumns } from '@ant-design/pro-table'
 import {
   Alert,
@@ -20,6 +20,7 @@ import { useEffect, useState } from 'react'
 import type { AgentListProps } from '../../lib/agentList'
 import { CountryFlag } from '../../components/CountryFlag'
 import { AgentClassificationModal } from '../../components/AgentClassificationModal'
+import { AgentTagManager } from '../../components/AgentTagManager'
 import { useListPagination } from '../../hooks/useListPagination'
 import { listPagination } from '../../lib/pagination'
 import { agentHealthCategory, agentHealthFilterLabel } from '../../lib/agentHealth'
@@ -35,7 +36,11 @@ import {
 } from '../../lib/traffic'
 import type { DashboardAgentView, VPSRenewalConfig } from '../../types'
 
-export type AssetsPageProps = AgentListProps & { accountKey: string; onOpenClientInstall?: () => void }
+export type AssetsPageProps = AgentListProps & {
+  accountKey: string
+  onOpenClientInstall?: () => void
+  onAgentTagsChanged?: (tags: string[], deletedTag?: string) => void
+}
 const healthOptions = (['all', 'healthy', 'warning', 'offline'] as const).map((value) => ({
   value,
   label: agentHealthFilterLabel(value),
@@ -164,6 +169,8 @@ export function AssetsPage(props: AssetsPageProps) {
   const [purpose, setPurpose] = useState('')
   const [country, setCountry] = useState('')
   const [classificationAgents, setClassificationAgents] = useState<DashboardAgentView[]>([])
+  const [tagManagerOpen, setTagManagerOpen] = useState(false)
+  const canManageTags = props.canManageConfig && Boolean(props.onAgentTagsChanged)
   const filterClassification = !props.restrictedView
   const agents = props.agents.filter(agent => !filterClassification || (
     (!country || classificationCountry(agent) === country)
@@ -409,6 +416,7 @@ export function AssetsPage(props: AssetsPageProps) {
       ) : null}
       <Card className="admin-assets-filter-card">
         {filters}
+        {canManageTags ? <Button className="admin-assets-mobile-install" icon={<TagsOutlined />} onClick={() => setTagManagerOpen(true)}>标签管理</Button> : null}
         {props.onOpenClientInstall ? (
           <Button className="admin-assets-mobile-install" icon={<DeploymentUnitOutlined />} onClick={props.onOpenClientInstall}>
             安装 Client
@@ -429,11 +437,12 @@ export function AssetsPage(props: AssetsPageProps) {
             persistenceType: 'localStorage',
           }}
           options={{ reload: props.onRefresh, density: true, setting: true, fullScreen: false }}
-          toolBarRender={() => props.onOpenClientInstall ? [
-            <Button key="install" type="primary" icon={<DeploymentUnitOutlined />} onClick={props.onOpenClientInstall}>
+          toolBarRender={() => [
+            ...(canManageTags ? [<Button key="tags" icon={<TagsOutlined />} onClick={() => setTagManagerOpen(true)}>标签管理</Button>] : []),
+            ...(props.onOpenClientInstall ? [<Button key="install" type="primary" icon={<DeploymentUnitOutlined />} onClick={props.onOpenClientInstall}>
               安装 Client
-            </Button>,
-          ] : []}
+            </Button>] : []),
+          ]}
           rowSelection={{ selectedRowKeys: selected, onChange: setSelected }}
           tableAlertRender={({ selectedRowKeys }) => (
             <Space wrap>
@@ -543,6 +552,8 @@ export function AssetsPage(props: AssetsPageProps) {
       </div>
       {classificationAgents.length > 0 ? <AgentClassificationModal agents={classificationAgents}
         onClose={() => setClassificationAgents([])} onSaved={() => { setClassificationAgents([]); props.onRefresh() }} /> : null}
+      {tagManagerOpen && canManageTags && props.onAgentTagsChanged ? <AgentTagManager
+        onClose={() => setTagManagerOpen(false)} onChanged={props.onAgentTagsChanged} /> : null}
     </section>
   )
 }

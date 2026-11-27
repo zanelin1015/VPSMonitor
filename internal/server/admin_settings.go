@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"bridge-core/internal/model"
+	"bridge-core/internal/store"
 )
 
 func (a *App) handleAdminFrontendSettings(w http.ResponseWriter, r *http.Request) {
@@ -124,29 +126,63 @@ func (a *App) handleAdminScheduledTasks(w http.ResponseWriter, r *http.Request) 
 }
 
 func (a *App) handleAdminTags(w http.ResponseWriter, r *http.Request) {
-	if _, _, ok := a.requireRootAdmin(w, r); !ok {
+	user, _, ok := a.requireRootAdmin(w, r)
+	if !ok {
 		return
 	}
 	switch r.Method {
 	case http.MethodGet:
+		if r.URL.Query().Get("details") == "1" {
+			items, err := a.store.ListAgentTagInventory()
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, items)
+			return
+		}
 		tags, _, err := a.store.GetTagSettings()
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		writeJSON(w, http.StatusOK, model.TagSettingsResponse{Tags: tags})
-	case http.MethodPut:
+	case http.MethodPut, http.MethodPost:
 		var req model.TagSettingsResponse
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("decode tags request: %v", err))
 			return
 		}
-		tags, err := a.store.SaveTagSettings(req.Tags)
+		save := a.store.SaveTagSettings
+		if r.Method == http.MethodPost {
+			save = a.store.AddTagSettings
+		}
+		tags, err := save(req.Tags)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		writeJSON(w, http.StatusOK, model.TagSettingsResponse{Tags: tags})
+	case http.MethodDelete:
+		var req struct {
+			Tag string `json:"tag"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Tag) == "" {
+			writeError(w, http.StatusBadRequest, "请输入要删除的标签")
+			return
+		}
+		items, removed, err := a.store.DeleteAgentTag(strings.TrimSpace(req.Tag), user.Username)
+		if errors.Is(err, store.ErrProtectedAgentTag) {
+			writeError(w, http.StatusConflict, "线路机和落地机参与授权，请在「Client 角色」中调整")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		a.clearDashboardCache()
+		a.clearCustomerOverviewCache()
+		writeJSON(w, http.StatusOK, map[string]any{"items": items, "removed_clients": removed})
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}

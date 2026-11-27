@@ -260,6 +260,12 @@ type TagSettingsResponse struct {
 	Tags []string `json:"tags"`
 }
 
+type AgentTagInventoryItem struct {
+	Tag        string `json:"tag"`
+	AgentCount int    `json:"agent_count"`
+	Protected  bool   `json:"protected"`
+}
+
 type AreaAgentTagsRequest struct {
 	Tags []string `json:"tags"`
 }

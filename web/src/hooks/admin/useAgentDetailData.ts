@@ -56,6 +56,8 @@ interface Options {
   rememberCustomerDisplayName: (agentID: string, name: string) => void
   message: MessageInstance
   setTagOptions: Dispatch<SetStateAction<string[]>>
+  filterManagedTags?: (tags: string[]) => string[]
+  applyAgentTagChanges?: (tags: string[]) => void
   loadAgents: (options?: LoadOptions) => Promise<void>
   canManageSystem: boolean
   tagOptions: string[]
@@ -79,6 +81,8 @@ export function useAgentDetailData({
   rememberCustomerDisplayName,
   message,
   setTagOptions,
+  filterManagedTags = tags => tags,
+  applyAgentTagChanges,
   loadAgents,
   canManageSystem,
   tagOptions,
@@ -233,7 +237,7 @@ export function useAgentDetailData({
           ? { ...data, customer_display_name: cachedName }
           : data
       const agentName = agents.find((item) => item.agent_id === agentID)?.agent_name
-      const normalized = normalizeManagedConfig(dataWithCustomerName, agentID, agentName)
+      const normalized = normalizeManagedConfig({ ...dataWithCustomerName, tags: filterManagedTags(dataWithCustomerName.tags || []) }, agentID, agentName)
       rememberCustomerDisplayName(agentID, normalized.customer_display_name || '')
       setSavedManagedConfig(normalized)
       if (silent && managedConfigDirtyRef.current) {
@@ -376,11 +380,13 @@ export function useAgentDetailData({
     try {
       const normalized = mergeTagOptions([], nextTags)
       const data = await fetchJSON<TagSettingsResponse>('/api/v1/admin/tags', {
-        method: 'PUT',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tags: normalized }),
       })
-      setTagOptions(mergeTagOptions(normalized, data.tags || []))
+      const activeTags = data.tags || []
+      if (applyAgentTagChanges) applyAgentTagChanges(activeTags)
+      else setTagOptions(current => mergeTagOptions(current, activeTags))
       return true
     } catch (error) {
       if (isUnauthorized(error)) {
@@ -441,8 +447,7 @@ export function useAgentDetailData({
       message.success('标签已加入当前区域草稿，请保存后生效')
       return
     }
-    const nextTags = mergeTagOptions(tagOptions, parsed)
-    const ok = await saveTagOptions(nextTags)
+    const ok = await saveTagOptions(parsed)
     if (ok) {
       setNewTagName('')
       message.success('标签已创建')
@@ -469,13 +474,14 @@ export function useAgentDetailData({
         ? { ...saved, customer_display_name: payload.customer_display_name || '' }
         : saved
       const normalized = normalizeManagedConfig(
-        savedWithSubmittedCustomerName,
+        { ...savedWithSubmittedCustomerName, tags: filterManagedTags(savedWithSubmittedCustomerName.tags || []) },
         selectedAgentId,
         saved.agent_name || selectedAgent?.agent_name,
       )
       rememberCustomerDisplayName(selectedAgentId, normalized.customer_display_name || '')
       setSavedManagedConfig(normalized)
       const nextDraft = mergeSavedSectionIntoDraft(draftConfig, normalized, section)
+      nextDraft.tags = filterManagedTags(nextDraft.tags || [])
       managedConfigDirtyRef.current = configSignature(nextDraft) !== configSignature(normalized)
       setManagedConfig(nextDraft)
       if (section === 'client') {
@@ -534,6 +540,14 @@ export function useAgentDetailData({
     })
   }
 
+  function dropDeletedTag(tag: string) {
+    const stripTag = (config: ManagedAgentConfig | null) => config && {
+      ...config, tags: config.tags?.filter(value => value.toLowerCase() !== tag.toLowerCase()),
+    }
+    setManagedConfig(stripTag)
+    setSavedManagedConfig(stripTag)
+  }
+
   return {
     overview,
     setOverview,
@@ -586,5 +600,6 @@ export function useAgentDetailData({
     saveManagedConfigSection,
     savePrimaryDomain,
     updateManagedConfig,
+    dropDeletedTag,
   }
 }
