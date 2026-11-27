@@ -193,6 +193,7 @@ export interface AgentFeatureConfig {
 }
 
 export interface AgentEntryConfig {
+  classification?: AgentClassification
   connection?: EntryConnectionConfig
   addresses?: string[]
   import_domain?: string
@@ -200,6 +201,18 @@ export interface AgentEntryConfig {
   network_policy?: NetworkPolicyConfig
   port_forwarding?: RealmForwardConfig
   haproxy?: HAProxyConfig
+}
+
+export interface AgentClassification {
+  purposes?: string[]
+  country_code?: string
+  city?: string
+}
+
+export interface CustomerRouteConfig {
+  name?: string
+  type?: 'iepl' | 'optimized' | 'standard'
+  visibility?: 'public' | 'internal'
 }
 
 export interface AgentEntryMapping {
@@ -284,6 +297,7 @@ export interface RealmForwardConfig {
 }
 
 export interface RealmForwardRule {
+  customer_route?: CustomerRouteConfig
   id?: string
   name?: string
   enabled?: boolean
@@ -366,6 +380,7 @@ export interface HAProxyConfig {
 }
 
 export interface HAProxyRule {
+  customer_route?: CustomerRouteConfig
   id?: string
   name?: string
   enabled?: boolean
@@ -617,6 +632,8 @@ export interface CustomerLinkStep {
 }
 
 export interface CustomerLinkView {
+  entrances?: CustomerLinkEntrance[]
+  traffic_reported_at?: string
   assignment_id: number
   entry_client_name: string
   inbound_tag?: string
@@ -629,6 +646,7 @@ export interface CustomerLinkView {
   summary: string
   exit_country_code?: string
   exit_country_name?: string
+  exit_type?: 'residential' | 'datacenter'
   exit_ip?: string
   resolved: boolean
   unresolved_reason?: string
@@ -651,6 +669,15 @@ export interface CustomerLinkView {
   expire_auto_renew?: boolean
   steps: CustomerLinkStep[]
   updated_at: string
+}
+
+export interface CustomerLinkEntrance {
+  assignment_id: number
+  name: string
+  route_type?: CustomerRouteConfig['type']
+  status: 'online' | 'offline' | 'disabled' | 'unresolved'
+  import_url?: string
+  shadowrocket_import_url?: string
 }
 
 export interface CustomerOverviewResponse {

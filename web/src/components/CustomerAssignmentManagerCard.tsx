@@ -1,5 +1,5 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
-import { Alert, Button, Card, Col, Empty, Input, InputNumber, Modal, Row, Select, Switch, Table, TreeSelect, Typography } from 'antd'
+import { Alert, Button, Card, Col, Empty, Input, InputNumber, Modal, Row, Select, Space, Switch, Table, TreeSelect, Typography } from 'antd'
 import type { TreeSelectProps } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { SaveOutlined } from '@ant-design/icons'
@@ -10,6 +10,7 @@ import { listPagination } from '../lib/pagination'
 import type { AssignmentFormState } from './CustomerManagementHelpers'
 import { emptyAssignmentForm } from './CustomerManagementHelpers'
 import { AdminHelpHint } from './AdminHelpHint'
+import { CustomerEntranceAuthorizationModal } from './CustomerEntranceAuthorizationModal'
 
 const { Text, Title } = Typography
 
@@ -30,6 +31,7 @@ export interface CustomerAssignmentManagerCardProps {
   onReset: () => void
   onSelectClient: (value: string) => void
   onSaveAssignment: () => Promise<boolean>
+  onEntrancesChanged?: () => Promise<void>
 }
 
 export function CustomerAssignmentManagerCard(props: CustomerAssignmentManagerCardProps) {
@@ -52,6 +54,7 @@ export function CustomerAssignmentManagerCard(props: CustomerAssignmentManagerCa
     onSaveAssignment,
   } = props
   const [editorOpen, setEditorOpen] = useState(false)
+  const [entranceEditorOpen, setEntranceEditorOpen] = useState(false)
 
   useEffect(() => {
     if (editingAssignmentID || assignmentForm.agent_id) {
@@ -88,7 +91,10 @@ export function CustomerAssignmentManagerCard(props: CustomerAssignmentManagerCa
           <Title level={5}>授权链路分配</Title>
           <Text type="secondary">当前用户：{selectedCustomer ? selectedCustomer.display_name || selectedCustomer.username : '未选择'}</Text>
         </div>
-        <Button type="primary" onClick={openNewEditor} disabled={!selectedCustomerID}>新增链路</Button>
+        <Space wrap>
+          {props.onEntrancesChanged ? <Button onClick={() => setEntranceEditorOpen(true)} disabled={!selectedCustomerID}>授权多个入口</Button> : null}
+          <Button type="primary" onClick={openNewEditor} disabled={!selectedCustomerID}>新增链路</Button>
+        </Space>
       </div>
       <Table
         rowKey={(record) => record.id}
@@ -99,6 +105,9 @@ export function CustomerAssignmentManagerCard(props: CustomerAssignmentManagerCa
         locale={{ emptyText: <Empty description="暂无授权链路" /> }}
       />
       </Card>
+      {entranceEditorOpen && selectedCustomerID && props.onEntrancesChanged ? <CustomerEntranceAuthorizationModal
+        key={selectedCustomerID} customerID={selectedCustomerID} agentOptions={agentOptions}
+        onClose={() => setEntranceEditorOpen(false)} onSaved={props.onEntrancesChanged} /> : null}
       <Modal
         className="customer-assignment-modal"
         title={editorTitle}

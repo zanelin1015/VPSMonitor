@@ -101,6 +101,14 @@ func (a *App) handleAdminCustomers(w http.ResponseWriter, r *http.Request, parts
 		writeError(w, http.StatusNotFound, "customer not found")
 		return
 	}
+	if len(parts) == 2 && parts[1] == "entrances" {
+		if !isRootAdmin(user) {
+			writeError(w, http.StatusForbidden, "root admin permission required")
+			return
+		}
+		a.handleCustomerEntrances(w, r, customerID)
+		return
+	}
 	if len(parts) == 1 {
 		switch r.Method {
 		case http.MethodPut:

@@ -1155,6 +1155,28 @@ html[data-theme='dark'] .customer-topology-canvas {
   align-items: center;
 }
 
+.customer-entrance-list { display: grid; gap: 8px; }
+.customer-topology-multi-entrance .customer-topology-track { height: auto; min-height: 170px; }
+.customer-entrance-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #d7e0eb);
+  border-radius: 10px;
+}
+.customer-entrance-segment { align-items: center; }
+@media (max-width: 640px) {
+  .customer-topology-multi-entrance .customer-topology-track { flex-direction: column; align-items: stretch; min-width: 0; }
+  .customer-topology-multi-entrance .customer-topology-segment { flex-direction: column; }
+  .customer-topology-multi-entrance .customer-topology-node { width: 100%; min-width: 0; flex: none; }
+  .customer-topology-multi-entrance .customer-topology-edge { transform: rotate(90deg); margin: 16px auto; }
+  .customer-entrance-list { width: 100%; }
+  .customer-entrance-row { justify-content: flex-start; min-width: 0; overflow-wrap: anywhere; }
+}
+
 .customer-topology-node {
   position: relative;
   flex: 0 0 220px;

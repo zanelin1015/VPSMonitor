@@ -4,6 +4,7 @@ import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import type { AgentEntryConfig, AgentListItem, DashboardAgentView, RealmForwardRule, XUIOverview } from '../types'
 import { formatRealmEndpoint, realmForwardAddressOptions, realmForwardTargetPortOptions } from '../lib/managedConfigHelpers'
 import { formatDateTime } from '../lib/appHelpers'
+import { CustomerRouteFields } from './CustomerRouteFields'
 
 const { Text, Title } = Typography
 type PortForwarding = NonNullable<AgentEntryConfig['port_forwarding']>
@@ -269,6 +270,7 @@ export function RealmForwardingSection(props: RealmForwardingSectionProps) {
                       <Text type="secondary">备注</Text>
                       <Input value={rule.note || ''} placeholder="可选" onChange={(event) => onUpdateRule(index, { note: event.target.value })} />
                     </Col>
+                    <CustomerRouteFields value={rule.customer_route} onChange={customer_route => onUpdateRule(index, { customer_route })} />
                   </Row>
                 </List.Item>
               }}

@@ -85,6 +85,7 @@ type XUIClientBillingConfig struct {
 }
 
 type AgentEntryConfig struct {
+	Classification *AgentClassification  `json:"classification,omitempty"`
 	Connection     EntryConnectionConfig `json:"connection,omitempty"`
 	Addresses      []string              `json:"addresses,omitempty"`
 	ImportDomain   string                `json:"import_domain,omitempty"`
@@ -138,17 +139,18 @@ type RealmForwardConfig struct {
 }
 
 type RealmForwardRule struct {
-	ID             string `json:"id,omitempty"`
-	Name           string `json:"name,omitempty"`
-	Enabled        bool   `json:"enabled,omitempty"`
-	ListenAddress  string `json:"listen_address,omitempty"`
-	ListenPort     int    `json:"listen_port,omitempty"`
-	TargetAgentID  string `json:"target_agent_id,omitempty"`
-	TargetAddress  string `json:"target_address,omitempty"`
-	TargetPort     int    `json:"target_port,omitempty"`
-	TargetPortMode string `json:"target_port_mode,omitempty"` // auto, custom
-	Network        string `json:"network,omitempty"`
-	Note           string `json:"note,omitempty"`
+	CustomerRoute  CustomerRouteConfig `json:"customer_route,omitzero"`
+	ID             string              `json:"id,omitempty"`
+	Name           string              `json:"name,omitempty"`
+	Enabled        bool                `json:"enabled,omitempty"`
+	ListenAddress  string              `json:"listen_address,omitempty"`
+	ListenPort     int                 `json:"listen_port,omitempty"`
+	TargetAgentID  string              `json:"target_agent_id,omitempty"`
+	TargetAddress  string              `json:"target_address,omitempty"`
+	TargetPort     int                 `json:"target_port,omitempty"`
+	TargetPortMode string              `json:"target_port_mode,omitempty"` // auto, custom
+	Network        string              `json:"network,omitempty"`
+	Note           string              `json:"note,omitempty"`
 }
 
 type HAProxyConfig struct {
@@ -160,6 +162,7 @@ type HAProxyConfig struct {
 }
 
 type HAProxyRule struct {
+	CustomerRoute         CustomerRouteConfig  `json:"customer_route,omitzero"`
 	ID                    string               `json:"id,omitempty"`
 	Name                  string               `json:"name,omitempty"`
 	Enabled               bool                 `json:"enabled,omitempty"`

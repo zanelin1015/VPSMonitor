@@ -1010,6 +1010,7 @@ export function CustomerManagementModal(props: {
       }}
       onSelectClient={(value) => selectClient(value)}
       onSaveAssignment={saveAssignment}
+      onEntrancesChanged={canManageAreaManagers ? async () => { await loadCustomers(); await onConfigChanged?.() } : undefined}
     />
   )
 

@@ -21,12 +21,17 @@ func (a *App) handleCustomerUsage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	items, err := a.store.ListCustomerTrafficUsage(user.ID, from, to)
+	overview, err := a.customerOverview(user)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	overview, err := a.customerOverview(user)
+	sources, err := a.customerUsageSources(user.ID, overview.Links)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	items, err := a.store.ListCustomerTrafficUsage(user.ID, from, to, sources)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -36,6 +41,9 @@ func (a *App) handleCustomerUsage(w http.ResponseWriter, r *http.Request) {
 	var rawUpload, rawDownload, countedUpload, countedDownload, counted, quota uint64
 	unlimited := false
 	for _, link := range overview.Links {
+		if len(link.Entrances) > 0 && link.TrafficSource == nil {
+			continue
+		}
 		links[link.AssignmentID] = link
 		multiplier := normalizeClientTrafficMultiplier(link.TrafficMultiplier)
 		multipliers[link.AssignmentID] = multiplier
@@ -56,7 +64,7 @@ func (a *App) handleCustomerUsage(w http.ResponseWriter, r *http.Request) {
 	// days. Daily aggregates below remain available for the requested range.
 	recordTo := time.Now().UTC()
 	recordFrom := recordTo.Add(-72 * time.Hour)
-	records, err := a.store.ListCustomerTrafficRecords(user.ID, recordFrom, recordTo, multipliers)
+	records, err := a.store.ListCustomerTrafficRecords(user.ID, recordFrom, recordTo, multipliers, sources)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -120,6 +128,27 @@ func (a *App) handleCustomerUsage(w http.ResponseWriter, r *http.Request) {
 		Daily:             daily,
 		Records:           records,
 	})
+}
+
+func (a *App) customerUsageSources(customerID int64, links []model.CustomerLinkView) ([]model.CustomerTrafficSource, error) {
+	assignments, err := a.store.ListEnabledCustomerAssignments(customerID)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[int64]model.CustomerAssignment, len(assignments))
+	for _, assignment := range assignments {
+		byID[assignment.ID] = assignment
+	}
+	sources := make([]model.CustomerTrafficSource, 0, len(links))
+	for _, link := range links {
+		if link.TrafficSource != nil {
+			sources = append(sources, *link.TrafficSource)
+		} else if assignment, ok := byID[link.AssignmentID]; ok && len(link.Entrances) == 0 {
+			sources = append(sources, model.CustomerTrafficSource{AssignmentID: assignment.ID, AgentID: assignment.AgentID,
+				InboundID: assignment.InboundID, ClientID: assignment.ClientID, Email: assignment.ClientEmail})
+		}
+	}
+	return sources, nil
 }
 
 func customerUsageRange(r *http.Request, now time.Time) (time.Time, time.Time, error) {

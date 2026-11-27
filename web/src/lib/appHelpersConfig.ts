@@ -6,6 +6,7 @@ import { parseAddressInput, parseTagInput } from './appHelpersTags'
 
 export function normalizeEntryConfig(config?: AgentEntryConfig): AgentEntryConfig {
   return {
+    classification: config?.classification,
     connection: { ...(config?.connection || {}), public_address: (config?.connection?.public_address || "").trim() },
     addresses: parseAddressInput((config?.addresses || []).join('\n')),
     import_domain: normalizeImportDomain(config?.import_domain),
@@ -63,6 +64,7 @@ export function buildSectionSavePayload(base: ManagedAgentConfig, draft: Managed
     features: { ...(base.features || {}) },
     renewal: { ...(base.renewal || {}) },
     entry: {
+      classification: base.entry?.classification,
       connection: { ...(base.entry?.connection || {}) },
       addresses: [...(base.entry?.addresses || [])],
       import_domain: base.entry?.import_domain || '',
@@ -100,6 +102,7 @@ export function buildSectionSavePayload(base: ManagedAgentConfig, draft: Managed
       break
     case 'entry':
       payload.entry = {
+        classification: base.entry?.classification,
         connection: { ...(draft.entry?.connection || {}) },
         addresses: [...(draft.entry?.addresses || [])],
         import_domain: draft.entry?.import_domain || '',
@@ -140,6 +143,7 @@ export function mergeSavedSectionIntoDraft(draft: ManagedAgentConfig, saved: Man
       break
     case 'entry':
       next.entry = {
+        classification: saved.entry?.classification,
         connection: { ...(saved.entry?.connection || {}) },
         addresses: [...(saved.entry?.addresses || [])],
         import_domain: saved.entry?.import_domain || '',
@@ -290,6 +294,7 @@ function normalizeRealmForwardConfig(config?: RealmForwardConfig): RealmForwardC
     log_level: ['trace', 'debug', 'warn', 'error'].includes(String(config?.log_level || '')) ? config?.log_level : 'info',
     rules: (config?.rules || []).map((rule, index) => ({
       id: rule.id || `realm-${rule.listen_port || 0}-${rule.target_port || 0}-${index}`,
+      customer_route: rule.customer_route,
       name: rule.name || '',
       enabled: rule.enabled !== false,
       listen_address: '0.0.0.0',
@@ -312,6 +317,7 @@ function normalizeHAProxyConfig(config?: HAProxyConfig): HAProxyConfig {
     service_name: (config?.service_name || '').trim(),
     rules: (config?.rules || []).map((rule, index) => ({
       id: rule.id || `haproxy-${rule.listen_port || 0}-${index}`,
+      customer_route: rule.customer_route,
       name: rule.name || '',
       enabled: rule.enabled !== false,
       listen_address: (rule.listen_address || '').trim() || '0.0.0.0',

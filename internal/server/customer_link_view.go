@@ -104,6 +104,9 @@ func appendForwardedCustomerChainAliasesForResolution(
 		if _, exists := chainMap[aliasKey]; !exists {
 			chainMap[aliasKey] = chain
 		}
+		if client.ClientID != "" {
+			chainMap[customerAssignmentClientKey(sourceAgentID, listenPort, client.ClientID)] = chain
+		}
 	}
 }
 
@@ -179,6 +182,7 @@ type customerClientRef struct {
 	Client            model.XUIClientView
 	TemplateImportURL string
 	XrayVersion       string
+	ReportedAt        time.Time
 }
 
 func buildCustomerClientMap(snapshots []model.AgentSnapshot, agents []model.AgentRecord) map[string]customerClientRef {
@@ -199,6 +203,7 @@ func buildCustomerClientMap(snapshots []model.AgentSnapshot, agents []model.Agen
 				Client:            client,
 				TemplateImportURL: templateImportURLs[key],
 				XrayVersion:       snapshot.XUI.ServerStatus.Xray.Version,
+				ReportedAt:        snapshot.ReportedAt,
 			}
 			result[key] = ref
 			if client.ClientID != "" {
@@ -339,7 +344,12 @@ func buildCustomerLinkView(
 		link.Steps = append(link.Steps, model.CustomerLinkStep{Role: "relay", Label: relay})
 	}
 	exitIP, exitCountryCode, exitCountryName := customerExitInfo(chain, agentMap)
+	exitType, classifiedCountry := customerClassifiedExit(chain, agentMap)
+	if exitCountryCode == "" && exitCountryName == "" {
+		exitCountryCode = classifiedCountry
+	}
 	link.ExitIP = exitIP
+	link.ExitType = exitType
 	link.ExitCountryCode = exitCountryCode
 	link.ExitCountryName = exitCountryName
 	if exitCountryCode != "" || exitCountryName != "" || exitIP != "" {
@@ -577,6 +587,11 @@ func customerAgentDisplayName(agentID string, agentMap map[string]model.Dashboar
 }
 
 func findCustomerChain(assignment model.CustomerAssignment, chainMap map[string]model.ClientChainView) (model.ClientChainView, bool) {
+	if assignment.ClientID != "" {
+		if chain, ok := chainMap[customerAssignmentClientKey(assignment.AgentID, assignment.InboundID, assignment.ClientID)]; ok {
+			return chain, true
+		}
+	}
 	if assignment.ClientEmail != "" {
 		chain, ok := chainMap[customerAssignmentKey(assignment.AgentID, assignment.InboundID, assignment.ClientEmail)]
 		return chain, ok

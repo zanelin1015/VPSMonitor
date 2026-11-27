@@ -629,6 +629,7 @@ func normalizeHAProxyConfig(cfg model.HAProxyConfig) model.HAProxyConfig {
 	for _, rule := range cfg.Rules {
 		rule.ID = strings.TrimSpace(rule.ID)
 		rule.Name = strings.TrimSpace(rule.Name)
+		rule.CustomerRoute = rule.CustomerRoute.Normalize()
 		rule.ListenAddress = strings.TrimSpace(rule.ListenAddress)
 		if rule.ListenAddress == "" {
 			rule.ListenAddress = "0.0.0.0"
@@ -732,6 +733,7 @@ func normalizeRealmForwardConfig(cfg model.RealmForwardConfig) model.RealmForwar
 	for _, rule := range cfg.Rules {
 		rule.ID = strings.TrimSpace(rule.ID)
 		rule.Name = strings.TrimSpace(rule.Name)
+		rule.CustomerRoute = rule.CustomerRoute.Normalize()
 		rule.ListenAddress = strings.TrimSpace(rule.ListenAddress)
 		rule.TargetAgentID = strings.TrimSpace(rule.TargetAgentID)
 		rule.TargetAddress = strings.TrimSpace(rule.TargetAddress)

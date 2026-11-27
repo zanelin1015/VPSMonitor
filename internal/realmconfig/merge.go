@@ -60,7 +60,9 @@ func MergeSnapshotIntoForwardConfig(cfg model.RealmForwardConfig, snapshot *mode
 		if !ok {
 			continue
 		}
+		normalized.CustomerRoute = model.CustomerRouteConfig{}
 		if existing, exists := existingByListen[listenKey(normalized)]; exists {
+			normalized.CustomerRoute = existing.CustomerRoute
 			normalized.Name = firstNonEmpty(existing.Name, normalized.Name)
 			normalized.TargetAgentID = firstNonEmpty(normalized.TargetAgentID, existing.TargetAgentID)
 			normalized.Note = firstNonEmpty(normalized.Note, existing.Note)

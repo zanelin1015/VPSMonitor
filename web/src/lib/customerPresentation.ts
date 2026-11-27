@@ -8,6 +8,7 @@ export function customerUsageFallback(overview: CustomerOverviewResponse | null)
   let quota = 0
   let unlimited = false
   for (const link of overview?.links || []) {
+    if (link.entrances?.length && !link.traffic_reported_at && !link.resolved) continue
     const multiplierValue = Number(link.traffic_multiplier || 1)
     const multiplier = Number.isFinite(multiplierValue) && multiplierValue > 0 ? multiplierValue : 1
     upload += Math.max(0, Math.round(Number(link.traffic_upload_bytes || 0) * multiplier))

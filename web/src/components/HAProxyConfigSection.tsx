@@ -202,6 +202,7 @@ export function HAProxyConfigSection(props: HAProxyConfigSectionProps) {
                         ))}
                       </Space>
                     </Col>
+                    <CustomerRouteFields value={rule.customer_route} onChange={customer_route => updateRule(ruleIndex, { customer_route })} />
                   </Row>
                 </List.Item>
               )
@@ -363,3 +364,4 @@ function realmTargetValue(target?: HAProxyRealmTarget): string {
 function emptyTarget(): HAProxyRealmTarget {
   return { agent_id: '', realm_rule_id: '', address: '', port: 0 }
 }
+import { CustomerRouteFields } from './CustomerRouteFields'

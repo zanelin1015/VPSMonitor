@@ -101,7 +101,28 @@ type CustomerLinkStep struct {
 	ExitIP      string `json:"exit_ip,omitempty"`
 }
 
+type CustomerLinkEntrance struct {
+	AssignmentID          int64  `json:"assignment_id"`
+	Name                  string `json:"name"`
+	RouteType             string `json:"route_type,omitempty"`
+	Status                string `json:"status"`
+	ImportURL             string `json:"import_url,omitempty"`
+	ShadowrocketImportURL string `json:"shadowrocket_import_url,omitempty"`
+}
+
+// CustomerTrafficSource identifies the real Xray account behind an authorization.
+type CustomerTrafficSource struct {
+	AssignmentID int64  `json:"assignment_id"`
+	AgentID      string `json:"agent_id"`
+	InboundID    int    `json:"inbound_id"`
+	ClientID     string `json:"client_id"`
+	Email        string `json:"client_email"`
+}
+
 type CustomerLinkView struct {
+	Entrances             []CustomerLinkEntrance   `json:"entrances,omitempty"`
+	TrafficReportedAt     *time.Time               `json:"traffic_reported_at,omitempty"`
+	TrafficSource         *CustomerTrafficSource   `json:"-"`
 	AssignmentID          int64                    `json:"assignment_id"`
 	EntryClientName       string                   `json:"entry_client_name"`
 	InboundTag            string                   `json:"inbound_tag,omitempty"`
@@ -114,6 +135,7 @@ type CustomerLinkView struct {
 	Summary               string                   `json:"summary"`
 	ExitCountryCode       string                   `json:"exit_country_code,omitempty"`
 	ExitCountryName       string                   `json:"exit_country_name,omitempty"`
+	ExitType              string                   `json:"exit_type,omitempty"`
 	ExitIP                string                   `json:"exit_ip,omitempty"`
 	Resolved              bool                     `json:"resolved"`
 	UnresolvedReason      string                   `json:"unresolved_reason,omitempty"`
@@ -207,6 +229,7 @@ type CustomerOverviewResponse struct {
 	Announcements         []CustomerAnnouncement `json:"announcements,omitempty"`
 	ReadAnnouncementIDs   []string               `json:"read_announcement_ids,omitempty"`
 	Links                 []CustomerLinkView     `json:"links"`
+	SubscriptionLinks     []CustomerLinkView     `json:"-"`
 }
 
 type CustomerAnnouncementReadRequest struct {

@@ -91,6 +91,7 @@ export function agentDisplayStatus(agent: AgentListItem): { label: string; level
 }
 
 export function agentCountryCode(agent: AgentListItem): string {
+  if (agent.entry?.classification?.country_code) return agent.entry.classification.country_code
   const explicitCode = explicitAgentCountryCode(agent)
   if (explicitCode) {
     return explicitCode
@@ -132,6 +133,9 @@ export function normalizeCountryCode(value?: string): string {
 }
 
 export function formatAgentLocation(agent: AgentListItem, displayCountryCode: string): string {
+  if (agent.entry?.classification?.country_code) {
+    return [countryName(displayCountryCode), agent.entry.classification.city].filter(Boolean).join(' · ')
+  }
   const geoCode = normalizeCountryCode(agent.geo?.country_code)
   const geoLabel = formatGeoLabel(agent.geo)
   if (!displayCountryCode) {

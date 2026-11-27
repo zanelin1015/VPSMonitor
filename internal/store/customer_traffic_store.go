@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
@@ -19,13 +20,13 @@ type customerTrafficPoint struct {
 // client counters. It intentionally includes history before the requested
 // range so the first sample in the range has a baseline, while only deltas
 // whose current sample falls inside the range are returned.
-func (s *SQLiteStore) ListCustomerTrafficUsage(customerID int64, from, to time.Time) ([]model.CustomerTrafficDailyUsage, error) {
+func (s *SQLiteStore) ListCustomerTrafficUsage(customerID int64, from, to time.Time, sources ...[]model.CustomerTrafficSource) ([]model.CustomerTrafficDailyUsage, error) {
 	from = from.UTC()
 	to = to.UTC()
 	if customerID <= 0 || !from.Before(to) {
 		return nil, fmt.Errorf("invalid customer traffic range")
 	}
-	byAssignment, err := s.listCustomerTrafficPoints(customerID, from, to)
+	byAssignment, err := s.listCustomerTrafficPoints(customerID, from, to, sources...)
 	if err != nil {
 		return nil, err
 	}
@@ -72,13 +73,13 @@ func (s *SQLiteStore) ListCustomerTrafficUsage(customerID int64, from, to time.T
 // ListCustomerTrafficRecords returns recent counter deltas at the sampler's
 // cadence. It is kept separate from daily aggregation so the customer portal
 // can offer a compact "recent records" view without exposing raw counters.
-func (s *SQLiteStore) ListCustomerTrafficRecords(customerID int64, from, to time.Time, multipliers map[int64]float64) ([]model.CustomerTrafficRecord, error) {
+func (s *SQLiteStore) ListCustomerTrafficRecords(customerID int64, from, to time.Time, multipliers map[int64]float64, sources ...[]model.CustomerTrafficSource) ([]model.CustomerTrafficRecord, error) {
 	from = from.UTC()
 	to = to.UTC()
 	if customerID <= 0 || !from.Before(to) {
 		return nil, fmt.Errorf("invalid customer traffic range")
 	}
-	byAssignment, err := s.listCustomerTrafficPoints(customerID, from, to)
+	byAssignment, err := s.listCustomerTrafficPoints(customerID, from, to, sources...)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +129,19 @@ const customerTrafficPointsQuery = `
 		SELECT id AS assignment_id, agent_id, inbound_id, client_id, client_email
 		FROM customer_assignments
 		WHERE customer_id = ? AND enabled = 1
-	), baseline_ids AS (
+	), ` + customerTrafficPointSelection
+
+const customerTrafficSourcePointsQuery = `
+	WITH enabled_assignments AS (
+		SELECT a.id AS assignment_id, json_extract(src.value, '$.agent_id') AS agent_id,
+			json_extract(src.value, '$.inbound_id') AS inbound_id, json_extract(src.value, '$.client_id') AS client_id,
+			json_extract(src.value, '$.client_email') AS client_email
+		FROM json_each(?) src
+		JOIN customer_assignments a ON a.id = json_extract(src.value, '$.assignment_id')
+		WHERE a.customer_id = ? AND a.enabled = 1
+	), ` + customerTrafficPointSelection
+
+const customerTrafficPointSelection = `baseline_ids AS (
 		SELECT a.assignment_id, (
 			SELECT t.id FROM customer_traffic_samples t
 			WHERE t.agent_id = a.agent_id AND t.inbound_id = a.inbound_id
@@ -168,10 +181,20 @@ const customerTrafficPointsQuery = `
 
 // listCustomerTrafficPoints reads the requested range and one preceding sample
 // per enabled assignment, preserving the baseline needed to calculate deltas.
-func (s *SQLiteStore) listCustomerTrafficPoints(customerID int64, from, to time.Time) (map[int64][]customerTrafficPoint, error) {
+func (s *SQLiteStore) listCustomerTrafficPoints(customerID int64, from, to time.Time, sources ...[]model.CustomerTrafficSource) (map[int64][]customerTrafficPoint, error) {
 	fromText := from.UTC().Format(time.RFC3339Nano)
 	toText := to.UTC().Format(time.RFC3339Nano)
-	rows, err := s.db.Query(customerTrafficPointsQuery, customerID, fromText, fromText, fromText, toText, fromText, toText)
+	query := customerTrafficPointsQuery
+	args := []any{customerID, fromText, fromText, fromText, toText, fromText, toText}
+	if len(sources) > 0 {
+		encoded, err := json.Marshal(sources[0])
+		if err != nil {
+			return nil, err
+		}
+		query = customerTrafficSourcePointsQuery
+		args = append([]any{string(encoded)}, args...)
+	}
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query customer traffic points: %w", err)
 	}

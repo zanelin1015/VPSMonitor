@@ -19,11 +19,13 @@ import {
 import { useEffect, useState } from 'react'
 import type { AgentListProps } from '../../lib/agentList'
 import { CountryFlag } from '../../components/CountryFlag'
+import { AgentClassificationModal } from '../../components/AgentClassificationModal'
 import { useListPagination } from '../../hooks/useListPagination'
 import { listPagination } from '../../lib/pagination'
 import { agentHealthCategory, agentHealthFilterLabel } from '../../lib/agentHealth'
 import { agentCountryCode, calculateRenewalStatus, formatAgentLocation, formatLocalDate } from '../../lib/appHelpers'
 import { normalizeCurrencyCode } from '../../lib/currency'
+import { classificationCountry, classificationCountryLabel, purposeGroups, purposeLabels } from '../../lib/agentClassification'
 import {
   calculateDiskPercent,
   calculateMemoryPercent,
@@ -40,6 +42,10 @@ const healthOptions = (['all', 'healthy', 'warning', 'offline'] as const).map((v
 }))
 const statusText = { healthy: '健康在线', warning: '运行告警', offline: '离线' } as const
 const statusBadge = { healthy: 'success', warning: 'warning', offline: 'error' } as const
+
+function AgentPurposeTags({ agent }: { agent: DashboardAgentView }) {
+  return <>{agent.entry?.classification?.purposes?.map(purpose => <Tag color="blue" key={purpose}>{purposeLabels[purpose]}</Tag>)}</>
+}
 
 function UnavailableMetric({ label, offline }: { label: string; offline: boolean }) {
   const reason = offline ? 'Client 离线，暂无实时数据' : '暂无数据'
@@ -155,18 +161,28 @@ function CostMetric({ agent }: { agent: DashboardAgentView }) {
 export function AssetsPage(props: AssetsPageProps) {
   const { message } = App.useApp()
   const [selected, setSelected] = useState<React.Key[]>([])
+  const [purpose, setPurpose] = useState('')
+  const [country, setCountry] = useState('')
+  const [classificationAgents, setClassificationAgents] = useState<DashboardAgentView[]>([])
+  const filterClassification = !props.restrictedView
+  const agents = props.agents.filter(agent => !filterClassification || (
+    (!country || classificationCountry(agent) === country)
+    && (!purpose || (purpose === 'unclassified' ? !agent.entry?.classification?.purposes?.length : agent.entry?.classification?.purposes?.includes(purpose)))
+  ))
+  const countryOptions = [...new Set(props.agents.map(classificationCountry).filter(Boolean))].sort()
+    .map(code => ({ value: code, label: classificationCountryLabel(code) }))
   const { page, pageSize, onChange: onPageChange } = useListPagination(
-    props.agents.length, JSON.stringify([props.selectedTag, props.healthFilter, props.searchText, props.accountKey]),
+    agents.length, JSON.stringify([props.selectedTag, props.healthFilter, props.searchText, props.accountKey, purpose, country]),
   )
   useEffect(() => {
     setSelected([])
-  }, [props.selectedTag, props.healthFilter, props.searchText, props.accountKey])
+  }, [props.selectedTag, props.healthFilter, props.searchText, props.accountKey, purpose, country])
   useEffect(() => {
     const ids = new Set(props.agents.map((agent) => agent.agent_id))
     setSelected((current) => current.filter((key) => ids.has(String(key))))
   }, [props.agents])
-  const online = props.agents.filter((agent) => agentHealthCategory(agent) !== 'offline').length
-  const warning = props.agents.filter((agent) => agentHealthCategory(agent) === 'warning').length
+  const online = agents.filter((agent) => agentHealthCategory(agent) !== 'offline').length
+  const warning = agents.filter((agent) => agentHealthCategory(agent) === 'warning').length
   const open = (agent: DashboardAgentView) => props.onSelectAgent(agent.agent_id, false)
   const identity = (agent: DashboardAgentView) => {
     const countryCode = agentCountryCode(agent)
@@ -220,6 +236,7 @@ export function AssetsPage(props: AssetsPageProps) {
       width: 160,
       render: (_, agent) => (
         <Space size={[0, 4]} wrap>
+          {filterClassification ? <AgentPurposeTags agent={agent} /> : null}
           {agent.tags?.length ? (
             agent.tags.map((tag) => <Tag key={tag}>{tag}</Tag>)
           ) : (
@@ -315,6 +332,7 @@ export function AssetsPage(props: AssetsPageProps) {
       valueType: 'option',
       width: 92,
       render: (_, agent) => [
+        ...(props.canManageConfig ? [<Button key="classification" type="link" onClick={() => setClassificationAgents([agent])}>分类</Button>] : []),
         <Button key="open" type="link" onClick={() => open(agent)}>
           详情
         </Button>,
@@ -358,19 +376,27 @@ export function AssetsPage(props: AssetsPageProps) {
         onChange={props.onSelectTag}
         style={{ minWidth: 160 }}
       />
-      {props.searchText || props.selectedTag || props.healthFilter !== 'all' ? (
+      {filterClassification ? <>
+        <Select aria-label="线路用途" value={purpose} onChange={setPurpose} style={{ minWidth: 145 }}
+          options={[{ value: '', label: '全部线路用途' }, { value: 'unclassified', label: '未分类' }, ...purposeGroups]} />
+        <Select aria-label="国家或地区" value={country} onChange={setCountry} style={{ minWidth: 140 }}
+          options={[{ value: '', label: '全部国家／地区' }, ...countryOptions]} />
+      </> : null}
+      {props.searchText || props.selectedTag || props.healthFilter !== 'all' || purpose || country ? (
         <Button
           onClick={() => {
             props.onSearchTextChange('')
             props.onSelectTag('')
             props.onHealthFilterChange('all')
+            setPurpose('')
+            setCountry('')
           }}
         >
           重置筛选
         </Button>
       ) : null}
       <Space className="admin-assets-summary" size={16} wrap>
-        <Typography.Text type="secondary">当前结果 <strong>{props.agents.length}</strong> 台</Typography.Text>
+        <Typography.Text type="secondary">当前结果 <strong>{agents.length}</strong> 台</Typography.Text>
         <Typography.Text type="secondary">在线 <strong>{online}</strong> 台</Typography.Text>
         <Typography.Text type={warning ? 'warning' : 'secondary'}>告警 <strong>{warning}</strong> 台</Typography.Text>
       </Space>
@@ -395,7 +421,7 @@ export function AssetsPage(props: AssetsPageProps) {
           headerTitle="Client 列表"
           defaultSize="small"
           columns={columns}
-          dataSource={props.agents}
+          dataSource={agents}
           loading={props.loading}
           search={false}
           columnsState={{
@@ -412,6 +438,7 @@ export function AssetsPage(props: AssetsPageProps) {
           tableAlertRender={({ selectedRowKeys }) => (
             <Space wrap>
               已选择 {selectedRowKeys.length} 台
+              {props.canManageConfig ? <Button size="small" onClick={() => setClassificationAgents(agents.filter(agent => selectedRowKeys.includes(agent.agent_id)))}>批量分类</Button> : null}
               <Button icon={<CopyOutlined />} size="small" onClick={() => void copySelection()}>
                 复制名称与 ID
               </Button>
@@ -436,7 +463,7 @@ export function AssetsPage(props: AssetsPageProps) {
         />
       </div>
       <div className="admin-assets-mobile" aria-busy={props.loading}>
-        {props.agents.slice((page - 1) * pageSize, page * pageSize).map((agent) => (
+        {agents.slice((page - 1) * pageSize, page * pageSize).map((agent) => (
           <Card key={agent.agent_id}>
             <div className="admin-assets-mobile-head">
               {identity(agent)}
@@ -493,25 +520,29 @@ export function AssetsPage(props: AssetsPageProps) {
               ) : null}
             </div>
             <Space wrap>
+              {filterClassification ? <AgentPurposeTags agent={agent} /> : null}
               {agent.tags?.map((tag) => (
                 <Tag key={tag}>{tag}</Tag>
               ))}
             </Space>
+            {props.canManageConfig ? <Button type="link" onClick={() => setClassificationAgents([agent])}>编辑分类</Button> : null}
             <Button block onClick={() => open(agent)} style={{ marginTop: 12 }}>
               查看详情
             </Button>
           </Card>
         ))}
-        {!props.agents.length ? <Empty description={props.loading ? '正在加载 Client' : '没有匹配的 Client'} /> : null}
+        {!agents.length ? <Empty description={props.loading ? '正在加载 Client' : '没有匹配的 Client'} /> : null}
         <Pagination
           {...listPagination}
           size="small"
           current={page}
           pageSize={pageSize}
-          total={props.agents.length}
+          total={agents.length}
           onChange={onPageChange}
         />
       </div>
+      {classificationAgents.length > 0 ? <AgentClassificationModal agents={classificationAgents}
+        onClose={() => setClassificationAgents([])} onSaved={() => { setClassificationAgents([]); props.onRefresh() }} /> : null}
     </section>
   )
 }

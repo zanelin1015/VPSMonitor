@@ -57,8 +57,8 @@ func (a *App) handleCustomerSubscription(w http.ResponseWriter, r *http.Request,
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	overview.Links = filterCustomerSubscriptionLinks(overview.Links, r.URL.Query())
-	content := buildMihomoSubscription(user, overview.Links)
+	links := filterCustomerSubscriptionLinks(overview.SubscriptionLinks, r.URL.Query())
+	content := buildMihomoSubscription(user, links)
 	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
 	w.Header().Set("Content-Disposition", customerSubscriptionContentDisposition(user.Username))
 	_, _ = w.Write([]byte(content))

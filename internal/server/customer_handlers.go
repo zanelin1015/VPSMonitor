@@ -253,11 +253,17 @@ func (a *App) customerOverview(user model.CustomerUser) (model.CustomerOverviewR
 	// when Realm dials a private or loopback address).  Customer assignments are
 	// created against the forwarding listener, so add the same aliases from the
 	// forwarding resolver before rendering customer links.
-	appendForwardedCustomerChainAliases(chainMap, buildForwardedOverviewContext(agents, snapshots))
+	forwarding := buildForwardedOverviewContext(agents, snapshots)
+	appendForwardedCustomerChainAliases(chainMap, forwarding)
 	agentMap := make(map[string]model.DashboardAgentView, len(view.Agents))
 	for _, agent := range view.Agents {
 		agentMap[agent.AgentID] = agent
 	}
+	configuredEntries := make(map[string]model.AgentEntryConfig, len(agents))
+	for _, agent := range agents {
+		configuredEntries[agent.AgentID] = agent.Config.Entry
+	}
+	now := time.Now().UTC()
 	links := make([]model.CustomerLinkView, 0, len(assignments))
 	assignmentIDs := make([]int64, 0, len(assignments))
 	for _, assignment := range assignments {
@@ -269,6 +275,11 @@ func (a *App) customerOverview(user model.CustomerUser) (model.CustomerOverviewR
 	}
 	for _, assignment := range assignments {
 		link := buildCustomerLinkView(assignment, chainMap, clientMap, agentMap)
+		configured := findCustomerEntranceRule(configuredEntries[assignment.AgentID], assignment.InboundID)
+		observed := findCustomerEntranceRule(agentMap[assignment.AgentID].Entry, assignment.InboundID)
+		if !decorateCustomerEntrance(&link, assignment, configured, observed, forwarding, agentMap, clientMap, now) {
+			continue
+		}
 		link.FrontProxies = customerLinkFrontProxies(frontProxyByAssignment[assignment.ID])
 		links = append(links, link)
 	}
@@ -282,10 +293,11 @@ func (a *App) customerOverview(user model.CustomerUser) (model.CustomerOverviewR
 	}
 	return model.CustomerOverviewResponse{
 		User:                user,
-		GeneratedAt:         time.Now().UTC(),
+		GeneratedAt:         now,
 		Announcements:       activeCustomerAnnouncements(frontendSettings.Announcements, time.Now().UTC()),
 		ReadAnnouncementIDs: readAnnouncementIDs,
-		Links:               links,
+		Links:               groupCustomerEntrances(links, agentMap),
+		SubscriptionLinks:   links,
 	}, nil
 }
 

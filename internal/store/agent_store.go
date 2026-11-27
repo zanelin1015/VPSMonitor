@@ -64,6 +64,8 @@ func (s *SQLiteStore) RegisterAgentWithTokenOrLegacyBootstrap(req model.AgentReg
 	if req.AgentID == "" {
 		return model.AgentRegisterResponse{}, fmt.Errorf("agent_id is required")
 	}
+	// Customer-facing classification belongs to the Server's asset settings.
+	req.SeedConfig.Entry.Classification = nil
 
 	now := time.Now().UTC()
 	nowText := now.Format(time.RFC3339Nano)
@@ -184,7 +186,9 @@ func (s *SQLiteStore) RegisterAgentWithTokenOrLegacyBootstrap(req model.AgentReg
 			record.Config.Renewal = normalizeRenewalConfig(req.SeedConfig.Renewal)
 		}
 		if !hasEntryConfig(record.Config.Entry) && hasEntryConfig(req.SeedConfig.Entry) {
+			classification := record.Config.Entry.Classification
 			record.Config.Entry = normalizeEntryConfig(req.SeedConfig.Entry)
+			record.Config.Entry.Classification = classification
 		}
 		record.Config.AgentID = req.AgentID
 		record.Config.AgentName = record.AgentName
@@ -311,6 +315,7 @@ func (s *SQLiteStore) updateAgentConfig(agentID string, cfg model.ManagedAgentCo
 			return model.AgentRecord{}, err
 		}
 	}
+	cfg.Entry.Classification = record.Config.Entry.Classification
 	record.Config = model.ManagedAgentConfig{
 		AgentID:             agentID,
 		AgentName:           record.AgentName,
@@ -336,7 +341,8 @@ func (s *SQLiteStore) updateAgentConfig(agentID string, cfg model.ManagedAgentCo
 	}
 	_, err = s.db.Exec(`
 		UPDATE agents
-		SET agent_name = ?, customer_display_name = ?, sort_order = ?, agent_tags_json = ?, updated_at = ?, xui_config_json = ?, renewal_config_json = ?, entry_config_json = ?
+		SET agent_name = ?, customer_display_name = ?, sort_order = ?, agent_tags_json = ?, updated_at = ?, xui_config_json = ?, renewal_config_json = ?,
+			entry_config_json = json_patch(?, json_object('classification', json_extract(entry_config_json, '$.classification')))
 		WHERE agent_id = ?
 	`,
 		record.AgentName,

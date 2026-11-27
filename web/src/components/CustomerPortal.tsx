@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, App as AntdApp, Button, Card, Empty, Input, Modal, Pagination, Progress, QRCode, Segmented, Space, Spin, Statistic, Tag, Typography } from 'antd'
 import { BarChartOutlined, CheckCircleOutlined, CheckOutlined, CloseCircleOutlined, CloseOutlined, CopyOutlined, DashboardOutlined, DownOutlined, EditOutlined, InfoCircleOutlined, LinkOutlined, LockOutlined, LogoutOutlined, ReloadOutlined, RightOutlined, UnorderedListOutlined, WarningOutlined } from '@ant-design/icons'
 
-import type { CustomerAuthResponse, CustomerDailyLinkUsage, CustomerDailyUsage, CustomerLinkStep, CustomerLinkView, CustomerOverviewResponse, CustomerSubscriptionURLResponse, CustomerUsageResponse, CustomerUser } from '../types'
+import type { CustomerAuthResponse, CustomerDailyLinkUsage, CustomerDailyUsage, CustomerLinkEntrance, CustomerLinkStep, CustomerLinkView, CustomerOverviewResponse, CustomerSubscriptionURLResponse, CustomerUsageResponse, CustomerUser } from '../types'
 import { fetchJSON, formatDateTime } from '../lib/appHelpers'
 import { CountryFlag } from './CountryFlag'
 import { CUSTOMER_SESSION_EXPIRED_EVENT } from '../lib/api'
@@ -14,6 +14,7 @@ import { readNodeImportTarget, saveNodeImportTarget } from '../lib/nodeImport'
 import { listPagination, DEFAULT_PAGE_SIZE } from '../lib/pagination'
 import { useListPagination } from '../hooks/useListPagination'
 import { NodeImportTargetSelector } from './NodeImportTargetSelector'
+import { routeTypeLabels } from '../lib/agentClassification'
 
 import {
   customerAnnouncementReadKey,
@@ -50,7 +51,7 @@ export function CustomerPortal() {
     new_password: '',
     confirm_password: '',
   })
-  const [qrLink, setQrLink] = useState<CustomerLinkView | null>(null)
+  const [qrTarget, setQrTarget] = useState<{ link: CustomerLinkView; name?: string } | null>(null)
   const [announcementModalOpen, setAnnouncementModalOpen] = useState(false)
   const [announcementIndex, setAnnouncementIndex] = useState(0)
   const [readAnnouncementIDs, setReadAnnouncementIDs] = useState<string[]>([])
@@ -59,6 +60,8 @@ export function CustomerPortal() {
   const [overview, setOverview] = useState<CustomerOverviewResponse | null>(null)
   const [loginForm, setLoginForm] = useState({ username: '', password: '' })
   const [remarkDrafts, setRemarkDrafts] = useState<Record<number, string>>({})
+  const qrLink = qrTarget?.link
+  const qrName = qrTarget?.name ?? (qrLink ? remarkDrafts[qrLink.assignment_id] : undefined)
   const [nodeImportTarget, setNodeImportTarget] = useState(readNodeImportTarget)
   const lastAnnouncementSetRef = useRef('')
 
@@ -102,7 +105,7 @@ export function CustomerPortal() {
       setUsage(null)
       setPasswordModalOpen(false)
       setSubscriptionModalOpen(false)
-      setQrLink(null)
+      setQrTarget(null)
       setAnnouncementModalOpen(false)
       setRemarkDrafts({})
     }
@@ -329,13 +332,13 @@ export function CustomerPortal() {
     }
   }
 
-  async function copyImportURL(link: CustomerLinkView) {
+  async function copyImportURL(link: CustomerLinkView, name?: string) {
     if (!link.import_url) {
       message.warning('当前链路没有可复制的客户端链接')
       return
     }
     try {
-      await navigator.clipboard.writeText(customerLinkImportURL(link, remarkDrafts[link.assignment_id], nodeImportTarget))
+      await navigator.clipboard.writeText(customerLinkImportURL(link, name ?? remarkDrafts[link.assignment_id], nodeImportTarget))
       message.success('客户端链接已复制')
     } catch {
       message.error('复制失败，请手动复制')
@@ -636,9 +639,10 @@ export function CustomerPortal() {
                             </div>
                             <Space wrap className="customer-link-exit-tags">
                               {link.exit_country_code || link.exit_country_name ? <Tag color="blue">出口 <CountryFlag code={link.exit_country_code} label={link.exit_country_name} /> {link.exit_country_code || link.exit_country_name}</Tag> : null}
+                              {link.exit_type ? <Tag color="blue">{link.exit_type === 'residential' ? '家宽出口' : '机房出口'}</Tag> : null}
                               {link.exit_ip ? <Tag color="geekblue">{link.exit_ip}</Tag> : null}
                               {!link.resolved ? <Tag color="orange">待解析</Tag> : null}
-                              <Button
+                              {!link.entrances?.length ? <Button
                                 type="primary"
                                 size="small"
                                 className="customer-link-copy-button"
@@ -647,7 +651,7 @@ export function CustomerPortal() {
                                 onClick={() => void copyImportURL(link)}
                               >
                                 复制链接
-                              </Button>
+                              </Button> : null}
                             </Space>
                             {billingItems.length ? (
                               <div className="customer-link-meta-row" aria-label="授权链路费用和过期时间">
@@ -673,17 +677,20 @@ export function CustomerPortal() {
                                 ))}
                               </div>
                             ) : null}
+                            {link.entrances?.length && link.traffic_reported_at && !link.xray_expire_time ? <Text type="secondary">Xray 客户端未设置固定到期时间</Text> : null}
                           </div>
                           <CustomerLinkTraffic link={link} />
                         </div>
 
-                        <div className="customer-link-visual-row">
+                        <div className={link.entrances?.length ? undefined : 'customer-link-visual-row'}>
                           <div className="customer-topology-scroll">
-                            <CustomerTopologyMap steps={link.steps} />
+                            <CustomerTopologyMap steps={link.steps} entrances={link.entrances}
+                              onCopy={entry => void copyImportURL(entranceImportLink(link, entry), entry.name)}
+                              onQR={entry => setQrTarget({ link: entranceImportLink(link, entry), name: entry.name })} />
                           </div>
-                          <aside className="customer-qr-inline">
+                          {!link.entrances?.length ? <aside className="customer-qr-inline">
                             {effectiveImportURL ? (
-                              <button type="button" className="customer-qr-button" onClick={() => setQrLink(link)}>
+                              <button type="button" className="customer-qr-button" onClick={() => setQrTarget({ link })}>
                                 <QRCode value={effectiveImportURL} color="#171717" bgColor="#ffffff" bordered={false} size={132} />
                                 <span>点击放大</span>
                               </button>
@@ -691,7 +698,7 @@ export function CustomerPortal() {
                               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无二维码" />
                             )}
                             <Text type="secondary" className="customer-link-import-hint">导入名称：{effectiveName}</Text>
-                          </aside>
+                          </aside> : null}
                         </div>
                       </Card>
                       )
@@ -749,22 +756,22 @@ export function CustomerPortal() {
       </Modal>
 
       <Modal
-        title={qrLink ? `${customerLinkDisplayName(qrLink, remarkDrafts[qrLink.assignment_id])} 二维码` : '客户端二维码'}
+        title={qrLink ? `${customerLinkDisplayName(qrLink, qrName)} 二维码` : '客户端二维码'}
         className="customer-qr-modal"
         open={Boolean(qrLink)}
-        onCancel={() => setQrLink(null)}
+        onCancel={() => setQrTarget(null)}
         footer={[
-          <Button key="close" onClick={() => setQrLink(null)}>关闭</Button>,
-          <Button key="copy" type="primary" disabled={!qrLink?.import_url} onClick={() => qrLink && void copyImportURL(qrLink)}>复制链接</Button>,
+          <Button key="close" onClick={() => setQrTarget(null)}>关闭</Button>,
+          <Button key="copy" type="primary" disabled={!qrLink?.import_url} onClick={() => qrLink && void copyImportURL(qrLink, qrName)}>复制链接</Button>,
         ]}
       >
         {qrLink?.import_url ? (
           <Space direction="vertical" size="middle" style={{ width: '100%', alignItems: 'center' }}>
             {qrLink.shadowrocket_import_url ? <NodeImportTargetSelector target={nodeImportTarget} onChange={setNodeImportTarget} /> : null}
             <div className="customer-qr-frame">
-              <QRCode value={customerLinkImportURL(qrLink, remarkDrafts[qrLink.assignment_id], nodeImportTarget)} color="#171717" bgColor="#ffffff" size={260} bordered={false} />
+              <QRCode value={customerLinkImportURL(qrLink, qrName, nodeImportTarget)} color="#171717" bgColor="#ffffff" size={260} bordered={false} />
             </div>
-            <Text type="secondary">导入名称：{customerLinkDisplayName(qrLink, remarkDrafts[qrLink.assignment_id])}</Text>
+            <Text type="secondary">导入名称：{customerLinkDisplayName(qrLink, qrName)}</Text>
           </Space>
         ) : <Empty description="暂无二维码" />}
       </Modal>
@@ -1097,11 +1104,44 @@ function customerAnnouncementIcon(level: string) {
   }
 }
 
-function CustomerTopologyMap({ steps }: { steps: CustomerLinkStep[] }) {
-  const visibleSteps = steps.length ? steps : [{ role: 'entry', label: '入口' }]
+function entranceImportLink(link: CustomerLinkView, entrance: CustomerLinkEntrance): CustomerLinkView {
+  return { ...link, assignment_id: entrance.assignment_id, import_name: entrance.name,
+    import_url: entrance.import_url, shadowrocket_import_url: entrance.shadowrocket_import_url }
+}
+
+const entranceStatus = {
+  online: { color: 'success', label: '已上报' },
+  offline: { color: 'warning', label: '有设备离线' },
+  disabled: { color: 'default', label: '已停用' },
+  unresolved: { color: 'warning', label: '待解析' },
+}
+
+function CustomerTopologyMap({ steps, entrances = [], onCopy, onQR }: {
+  steps: CustomerLinkStep[]
+  entrances?: CustomerLinkEntrance[]
+  onCopy: (entrance: CustomerLinkEntrance) => void
+  onQR: (entrance: CustomerLinkEntrance) => void
+}) {
+  const visibleSteps = entrances.length ? steps.filter(step => step.role !== 'entry') : steps.length ? steps : [{ role: 'entry', label: '入口' }]
   return (
-    <div className="customer-topology-canvas" aria-label="授权链路拓扑图">
+    <div className={`customer-topology-canvas${entrances.length ? ' customer-topology-multi-entrance' : ''}`} aria-label="授权链路拓扑图">
       <div className="customer-topology-track">
+        {entrances.length ? <div className="customer-topology-segment customer-entrance-segment">
+          <div className="customer-entrance-list">
+            {entrances.map(entrance => <div className="customer-entrance-row" key={entrance.assignment_id}>
+              <Space wrap size={[6, 4]}>
+                <Text strong>{entrance.name}</Text>
+                {entrance.route_type ? <Tag color="blue">{routeTypeLabels[entrance.route_type]}</Tag> : null}
+                <Tag color={entranceStatus[entrance.status]?.color}>{entranceStatus[entrance.status]?.label || '待解析'}</Tag>
+              </Space>
+              <Space size={4}>
+                <Button size="small" disabled={!entrance.import_url} onClick={() => onCopy(entrance)}>复制</Button>
+                <Button size="small" disabled={!entrance.import_url} onClick={() => onQR(entrance)}>二维码</Button>
+              </Space>
+            </div>)}
+          </div>
+          {visibleSteps.length ? <div className="customer-topology-edge"><span /></div> : null}
+        </div> : null}
         {visibleSteps.map((step, index) => {
           const displayLabel = customerTopologyStepLabel(step)
           const showExitIP = step.role === 'exit' && Boolean(step.exit_ip)
@@ -1142,6 +1182,9 @@ function topologyNodeIcon(role: string) {
 }
 
 function CustomerLinkTraffic({ link }: { link: CustomerLinkView }) {
+  if (link.entrances?.length && !link.traffic_reported_at && !link.resolved) {
+    return <div className="customer-link-traffic"><Text type="secondary">暂无 Xray 客户端用量</Text></div>
+  }
   const trafficUsed = Math.max(0, Number(link.traffic_used_bytes || 0))
   const trafficLimit = Math.max(0, Number(link.traffic_limit_bytes || 0))
   const multiplierValue = Number(link.traffic_multiplier || 1)
@@ -1173,6 +1216,7 @@ function CustomerLinkTraffic({ link }: { link: CustomerLinkView }) {
         <span>上传 {formatBytes(upload)}</span>
         <span>下载 {formatBytes(download)}</span>
       </div>
+      {link.traffic_reported_at ? <Text type="secondary">Xray 上报 {formatDateTime(link.traffic_reported_at)}</Text> : null}
     </div>
   )
 }
