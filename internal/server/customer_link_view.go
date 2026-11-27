@@ -362,7 +362,7 @@ func customerChainUsesIX(chain model.ClientChainView, agents map[string]model.Da
 	})
 }
 
-func applyCustomerLinkExit(link *model.CustomerLinkView, chain model.ClientChainView, agentMap map[string]model.DashboardAgentView, showExitName bool) {
+func applyCustomerLinkExit(link *model.CustomerLinkView, chain model.ClientChainView, agentMap map[string]model.DashboardAgentView, showExitName bool) string {
 	exitIP, exitCountryCode, exitCountryName := customerExitInfo(chain, agentMap)
 	exitName, exitType, classifiedCountry := customerExitPresentation(chain, agentMap)
 	if classifiedCountry != "" && classifiedCountry != exitCountryCode {
@@ -384,6 +384,7 @@ func applyCustomerLinkExit(link *model.CustomerLinkView, chain model.ClientChain
 			ExitIP:      exitIP,
 		})
 	}
+	return exitName
 }
 
 func customerRealmAssignment(assignment model.CustomerAssignment, agentMap map[string]model.DashboardAgentView) bool {

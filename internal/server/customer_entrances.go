@@ -124,6 +124,7 @@ func decorateCustomerEntrance(link *model.CustomerLinkView, assignment model.Cus
 	}
 	publication := configured.publication
 	resolution := observed.resolve(agent, context)
+	viaIX := resolution.viaIX || link.RouteType == model.CustomerRouteTypeIEPL
 	if link.RouteType != model.CustomerRouteTypeIEPL {
 		link.RouteType = resolution.routeType(publication.Type)
 	}
@@ -150,7 +151,23 @@ func decorateCustomerEntrance(link *model.CustomerLinkView, assignment model.Cus
 	// A disabled listener can still resolve to an Xray account without a topology alias.
 	chain, hasChain := chains[customerAssignmentKey(resolution.FinalAgentID, client.InboundID, client.Email)]
 	if hasChain && customerChainUsesIX(chain, agents) {
+		viaIX = true
 		link.RouteType, managed = model.CustomerRouteTypeIEPL, true
+	}
+	exitName := ""
+	if managed && hasChain {
+		link.Steps = link.Steps[:0]
+		exitName = applyCustomerLinkExit(link, chain, agents, true)
+	}
+	var ieplCity, ieplExit string
+	entranceName := firstNonEmptyString(publication.Name, link.Remark, name)
+	if viaIX && exitName != "" {
+		city := customerEntranceCity(agent, publication.Name, assignment.PublicClientName, agent.CustomerDisplayName, agent.AgentName)
+		if exit := customerIEPLExitName(exitName); city != "" && exit != "" {
+			ieplCity, ieplExit = city, exit
+			name = customerIEPLName(city, exit)
+			entranceName, link.ImportName = name, name
+		}
 	}
 	link.TrafficSource = &model.CustomerTrafficSource{
 		AssignmentID: assignment.ID, AgentID: resolution.FinalAgentID, InboundID: client.InboundID, ClientID: client.ClientID, Email: client.Email,
@@ -204,14 +221,10 @@ func decorateCustomerEntrance(link *model.CustomerLinkView, assignment model.Cus
 		if !link.Resolved {
 			link.UnresolvedReason = "入口暂不可用"
 		}
-		if hasChain {
-			link.Steps = link.Steps[:0]
-			applyCustomerLinkExit(link, chain, agents, true)
-		}
 		presentCustomerXrayChain(link, agents[resolution.FinalAgentID])
 	}
-	link.Entrances = []model.CustomerLinkEntrance{{AssignmentID: assignment.ID, Name: firstNonEmptyString(publication.Name, link.Remark, name), RouteType: link.RouteType,
-		Status: status, ImportURL: link.ImportURL, ShadowrocketImportURL: link.ShadowrocketImportURL}}
+	link.Entrances = []model.CustomerLinkEntrance{{AssignmentID: assignment.ID, Name: entranceName, RouteType: link.RouteType,
+		Status: status, ImportURL: link.ImportURL, ShadowrocketImportURL: link.ShadowrocketImportURL, IEPLCity: ieplCity, IEPLExit: ieplExit}}
 	return true
 }
 
@@ -296,6 +309,12 @@ func groupCustomerEntrances(links []model.CustomerLinkView, agents map[string]mo
 			group.UnresolvedReason = ""
 		}
 		presentCustomerXrayChain(group, agents[source.AgentID])
+	}
+	for index := range grouped {
+		link := &grouped[index]
+		if name := groupedCustomerIEPLName(link.Entrances); name != "" {
+			link.EntryClientName, link.ImportName, link.Summary = name, name, name
+		}
 	}
 	return grouped
 }
