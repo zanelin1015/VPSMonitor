@@ -158,6 +158,10 @@ func (a *App) handleAdminTags(w http.ResponseWriter, r *http.Request) {
 			save = a.store.AddTagSettings
 		}
 		tags, err := save(req.Tags)
+		if errors.Is(err, store.ErrProtectedAgentTag) {
+			writeError(w, http.StatusConflict, "线路用途请在「Client 资产」中编辑分类")
+			return
+		}
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -173,7 +177,7 @@ func (a *App) handleAdminTags(w http.ResponseWriter, r *http.Request) {
 		}
 		items, removed, err := a.store.DeleteAgentTag(strings.TrimSpace(req.Tag), user.Username)
 		if errors.Is(err, store.ErrProtectedAgentTag) {
-			writeError(w, http.StatusConflict, "线路机和落地机参与授权，请在「Client 角色」中调整")
+			writeError(w, http.StatusConflict, "线路用途请在「Client 资产」中编辑分类")
 			return
 		}
 		if err != nil {

@@ -25,9 +25,9 @@ func (a *App) validateAreaRoleIDs(req model.AreaManagerAccountRequest) error {
 			if !found {
 				return fmt.Errorf("Client 不存在")
 			}
-			v := agentRoleView(agent)
-			if group.role == model.AgentRoleLine && !v.LineEnabled || group.role == model.AgentRoleLanding && !v.LandingEnabled {
-				return fmt.Errorf("Client %s 未开启%s", id, group.role)
+			roles := agent.AssignmentRoles()
+			if group.role == model.AgentRoleLine && !roles.Line || group.role == model.AgentRoleLanding && !roles.Landing {
+				return fmt.Errorf("Client %s 的线路用途不符合%s授权", id, group.role)
 			}
 		}
 	}
@@ -78,9 +78,9 @@ func (a *App) validateAreaAssignments(id int64, assignments []model.AreaManagerA
 				return fmt.Errorf("Client %s 的 Realm / HAProxy 未运行", item.AgentID)
 			}
 		} else {
-			roles := agentRoleView(agent)
-			if !(manager.LineEnabled && roles.LineEnabled || manager.LandingEnabled && roles.LandingEnabled) {
-				return fmt.Errorf("Client %s 未开启线路机或落地机权限", item.AgentID)
+			roles := agent.AssignmentRoles()
+			if !(manager.LineEnabled && roles.Line || manager.LandingEnabled && roles.Landing) {
+				return fmt.Errorf("Client %s 的线路用途不符合当前区域授权", item.AgentID)
 			}
 		}
 	}

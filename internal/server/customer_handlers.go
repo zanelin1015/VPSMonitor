@@ -277,7 +277,7 @@ func (a *App) customerOverview(user model.CustomerUser) (model.CustomerOverviewR
 		link := buildCustomerLinkView(assignment, chainMap, clientMap, agentMap)
 		configured := findCustomerEntranceRule(configuredEntries[assignment.AgentID], assignment.InboundID)
 		observed := findCustomerEntranceRule(agentMap[assignment.AgentID].Entry, assignment.InboundID)
-		if !decorateCustomerEntrance(&link, assignment, configured, observed, forwarding, agentMap, clientMap, now) {
+		if !decorateCustomerEntrance(&link, assignment, configured, observed, forwarding, agentMap, clientMap, chainMap, now) {
 			continue
 		}
 		link.FrontProxies = customerLinkFrontProxies(frontProxyByAssignment[assignment.ID])

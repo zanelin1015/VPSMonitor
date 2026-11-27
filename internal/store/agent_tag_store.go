@@ -13,7 +13,7 @@ import (
 	"bridge-core/internal/model"
 )
 
-var ErrProtectedAgentTag = errors.New("Client role tags are managed in Client 角色")
+var ErrProtectedAgentTag = errors.New("Client 分类保留了该名称")
 
 type agentTagSettings struct {
 	Tags    []string `json:"tags"`
@@ -48,7 +48,7 @@ func (settings agentTagSettings) active(tags []string) []string {
 
 func (s *SQLiteStore) GetTagSettings() ([]string, bool, error) {
 	settings, found, err := getAgentTagSettings(s.db)
-	return settings.active(settings.Tags), found, err
+	return model.WithoutLegacyAgentRoleTags(settings.active(settings.Tags)), found, err
 }
 
 func (s *SQLiteStore) SaveTagSettings(tags []string) ([]string, error) {
@@ -56,6 +56,9 @@ func (s *SQLiteStore) SaveTagSettings(tags []string) ([]string, error) {
 }
 
 func (s *SQLiteStore) AddTagSettings(tags []string) ([]string, error) {
+	if slices.ContainsFunc(tags, model.IsLegacyAgentRoleTag) {
+		return nil, ErrProtectedAgentTag
+	}
 	return s.changeTagSettings(tags, true)
 }
 
@@ -74,7 +77,7 @@ func (s *SQLiteStore) changeTagSettings(tags []string, add bool) ([]string, erro
 		settings.Deleted = slices.DeleteFunc(settings.Deleted, func(tag string) bool { return containsStringFold(tags, tag) })
 		tags = normalizeTags(append(settings.Tags, tags...))
 	}
-	settings.Tags = settings.active(tags)
+	settings.Tags = model.WithoutLegacyAgentRoleTags(settings.active(tags))
 	if err := saveAgentTagSettings(tx, settings); err != nil {
 		return nil, err
 	}
@@ -128,17 +131,13 @@ func listAgentTagsRows(db interface {
 	return result, rows.Err()
 }
 
-func isProtectedAgentTag(tag string) bool {
-	return tag == model.AgentRoleLine || tag == model.AgentRoleLanding
-}
-
 func buildAgentTagInventory(settings agentTagSettings, agents []agentTagsRow) []model.AgentTagInventoryItem {
 	inventory := make(map[string]model.AgentTagInventoryItem)
-	for _, tag := range append([]string{model.AgentRoleLine, model.AgentRoleLanding}, settings.active(settings.Tags)...) {
-		inventory[strings.ToLower(tag)] = model.AgentTagInventoryItem{Tag: tag, Protected: isProtectedAgentTag(tag)}
+	for _, tag := range model.WithoutLegacyAgentRoleTags(settings.active(settings.Tags)) {
+		inventory[strings.ToLower(tag)] = model.AgentTagInventoryItem{Tag: tag}
 	}
 	for _, agent := range agents {
-		for _, tag := range settings.active(agent.tags) {
+		for _, tag := range model.WithoutLegacyAgentRoleTags(settings.active(agent.tags)) {
 			key := strings.ToLower(tag)
 			item := inventory[key]
 			if item.Tag == "" {
@@ -170,7 +169,7 @@ func (s *SQLiteStore) ListAgentTagInventory() ([]model.AgentTagInventoryItem, er
 
 func (s *SQLiteStore) DeleteAgentTag(tag, actor string) ([]model.AgentTagInventoryItem, int, error) {
 	tag = strings.TrimSpace(tag)
-	if isProtectedAgentTag(tag) {
+	if model.IsLegacyAgentRoleTag(tag) {
 		return nil, 0, ErrProtectedAgentTag
 	}
 	tx, err := s.db.Begin()

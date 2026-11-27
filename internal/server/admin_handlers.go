@@ -22,10 +22,6 @@ func (a *App) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		a.handleAdminSupport(w, r, parts)
 		return
 	}
-	if path == "agent-roles" {
-		a.handleAdminAgentRoles(w, r)
-		return
-	}
 	if path == "agent-classification" {
 		a.handleAgentClassification(w, r)
 		return

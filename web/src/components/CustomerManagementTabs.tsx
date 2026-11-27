@@ -3,7 +3,6 @@ import { Spin, Tabs, Typography } from 'antd'
 import type { OperatorAdminView } from '../types'
 import type { ManagementTabKey } from './CustomerManagementHelpers'
 import { AdminHelpHint } from './AdminHelpHint'
-import { AgentRolePanel } from './AgentRolePanel'
 import { OperatorManagementPanel } from './OperatorManagementPanel'
 
 const { Text } = Typography
@@ -12,14 +11,12 @@ interface CustomerManagementTabsProps {
   activeKey: ManagementTabKey
   onChange: (key: ManagementTabKey) => void
   canManageAreaManagers: boolean
-  showRolePanel: boolean
   areaManagersPanel: ReactNode
   customersPanel: ReactNode
   operators: OperatorAdminView[]
   operatorsLoading: boolean
   savingOperator: boolean
   resettingOperatorID: number | null
-  onConfigChanged?: () => void | Promise<void>
   onReloadOperators: () => void
   onSaveOperator: Parameters<typeof OperatorManagementPanel>[0]['onSave']
   onDeleteOperator: (id: number) => void
@@ -32,14 +29,12 @@ export function CustomerManagementTabs({
   activeKey,
   onChange,
   canManageAreaManagers,
-  showRolePanel,
   areaManagersPanel,
   customersPanel,
   operators,
   operatorsLoading,
   savingOperator,
   resettingOperatorID,
-  onConfigChanged,
   onReloadOperators,
   onSaveOperator,
   onDeleteOperator,
@@ -48,7 +43,6 @@ export function CustomerManagementTabs({
   areaManagersLoading,
 }: CustomerManagementTabsProps) {
   const managementTabs = [
-    ...(showRolePanel ? [{ key: 'roles', label: 'Client 角色', children: <AgentRolePanel onChanged={() => onConfigChanged?.()} /> }] : []),
     ...(canManageAreaManagers ? [{ key: 'area', label: '区域账号', children: areaManagersPanel }] : []),
     ...(canManageAreaManagers ? [{
       key: 'operators',

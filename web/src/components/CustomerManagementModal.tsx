@@ -8,6 +8,7 @@ import { PlusOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons';
 
 import type { AdminUser, AreaManagerAdminView, AreaManagerAssignment, CustomerAdminView, CustomerAssignment, CustomerAssignmentDraft, CustomerAssignmentSourceView, DashboardAgentView, XUIClientView, XUINodeView, XUIOverview } from '../types';
 import { fetchJSON } from '../lib/appHelpers';
+import { agentAssignmentRoles } from '../lib/agentClassification';
 import { listPagination } from '../lib/pagination';
 import { useCompactLayout } from '../hooks/useCompactLayout';
 
@@ -143,8 +144,14 @@ export function CustomerManagementModal(props: {
     label: agent.agent_name || agent.agent_id,
   })), [agents])
   const realmAgentOptions = useMemo(() => agentOptions.filter(option => buildRealmGrantOptions(option.value, agents).length > 0), [agentOptions, agents])
-  const lineAgentOptions = useMemo(() => agentOptions.filter(option => agents.find(agent => agent.agent_id === option.value)?.tags?.includes('线路机')), [agentOptions, agents])
-  const landingAgentOptions = useMemo(() => agentOptions.filter(option => agents.find(agent => agent.agent_id === option.value)?.tags?.includes('落地机')), [agentOptions, agents])
+  const rolesByAgent = useMemo(() => new Map(agents.map(agent => [agent.agent_id, agentAssignmentRoles(agent)])), [agents])
+  const lineAgentOptions = agentOptions.filter(option => rolesByAgent.get(option.value)?.line)
+  const landingAgentOptions = agentOptions.filter(option => rolesByAgent.get(option.value)?.landing)
+
+  function allowsAreaMachine(agentID: string, scope: { line_enabled?: boolean; landing_enabled?: boolean }) {
+    const roles = rolesByAgent.get(agentID)
+    return Boolean((scope.line_enabled !== false && roles?.line) || (scope.landing_enabled !== false && roles?.landing))
+  }
   const customerAssignmentAgentOptions = useMemo(() => canManageAreaManagers
     ? agentOptions
     : customerAssignmentSources.map((source) => ({
@@ -221,7 +228,7 @@ export function CustomerManagementModal(props: {
   }, [active, canManageAreaManagers])
 
   useEffect(() => {
-    if (!canManageAreaManagers && activeManagementTab === 'area') {
+    if (!canManageAreaManagers && activeManagementTab !== 'customers') {
       setActiveManagementTab('customers')
     }
   }, [activeManagementTab, canManageAreaManagers])
@@ -377,11 +384,9 @@ export function CustomerManagementModal(props: {
       message.warning('新区域账号密码至少 8 位')
       return
     }
-    const assignments = normalizeAreaManagerAssignmentDrafts(areaManagerForm.assignments, agents).filter(item => {
-      if (isRealmAssignmentDraft(item, agents)) return areaManagerForm.realm_enabled
-      const tags = agents.find(agent => agent.agent_id === item.agent_id)?.tags || []
-      return areaManagerForm.line_enabled && tags.includes('线路机') || areaManagerForm.landing_enabled && tags.includes('落地机')
-    })
+    const assignments = normalizeAreaManagerAssignmentDrafts(areaManagerForm.assignments, agents).filter(item =>
+      isRealmAssignmentDraft(item, agents) ? areaManagerForm.realm_enabled : allowsAreaMachine(item.agent_id, areaManagerForm))
+    const machineAssignments = assignments.filter(item => !isRealmAssignmentDraft(item, agents))
     const authorizedAgentIDs = new Set(assignments.map((assignment) => assignment.agent_id))
     const outboundGrants = normalizeAreaManagerOutboundGrants(areaManagerForm.outbound_grants)
       .filter((grant) => areaManagerForm.line_enabled && authorizedAgentIDs.has(grant.agent_id))
@@ -408,8 +413,8 @@ export function CustomerManagementModal(props: {
         front_proxy_node_ids: areaManagerForm.front_link_enabled ? areaManagerForm.front_proxy_node_ids : [],
         realm_enabled: areaManagerForm.realm_enabled, line_enabled: areaManagerForm.line_enabled,
         landing_enabled: areaManagerForm.landing_enabled, front_link_enabled: areaManagerForm.front_link_enabled,
-        line_agent_ids: areaManagerForm.line_enabled ? uniqueStrings(assignments.filter(item => !isRealmAssignmentDraft(item, agents) && agents.find(agent => agent.agent_id === item.agent_id)?.tags?.includes('线路机')).map(item => item.agent_id)) : [],
-        landing_agent_ids: areaManagerForm.landing_enabled ? uniqueStrings(assignments.filter(item => !isRealmAssignmentDraft(item, agents) && agents.find(agent => agent.agent_id === item.agent_id)?.tags?.includes('落地机')).map(item => item.agent_id)) : [],
+        line_agent_ids: areaManagerForm.line_enabled ? uniqueStrings(machineAssignments.filter(item => rolesByAgent.get(item.agent_id)?.line).map(item => item.agent_id)) : [],
+        landing_agent_ids: areaManagerForm.landing_enabled ? uniqueStrings(machineAssignments.filter(item => rolesByAgent.get(item.agent_id)?.landing).map(item => item.agent_id)) : [],
       }
       if (editingAreaManagerID) {
         const updatedManager = await fetchJSON<AreaManagerAdminView>(`/api/v1/admin/area-managers/${editingAreaManagerID}`, {
@@ -525,13 +530,10 @@ export function CustomerManagementModal(props: {
     setSavingAreaBatchAssignment(true)
     try {
       const inferredRealmTargetAssignments = await inferRealmTargetXUIAssignments(areaBatchForm.selected_realm_keys, areaBatchRealmOptions, xuiAssignments)
+      const manager = areaManagers.find(manager => manager.id === areaBatchForm.manager_id)
       const assignments = dedupeAreaManagerAssignmentDrafts([
         ...realmAssignments,
-        ...inferredRealmTargetAssignments.filter(item => {
-          const manager = areaManagers.find(manager => manager.id === areaBatchForm.manager_id)
-          const tags = agents.find(agent => agent.agent_id === item.agent_id)?.tags || []
-          return manager && (manager.line_enabled !== false && tags.includes('线路机') || manager.landing_enabled !== false && tags.includes('落地机'))
-        }),
+        ...inferredRealmTargetAssignments.filter(item => manager && allowsAreaMachine(item.agent_id, manager)),
         ...xuiAssignments,
       ])
       if (!assignments.length) {
@@ -828,10 +830,8 @@ export function CustomerManagementModal(props: {
       .map((key) => optionMap.get(key))
       .filter((item): item is AreaManagerAssignmentDraft => Boolean(item))
     const existingXUIAssignments = areaManagerForm.assignments.filter((assignment) => !isRealmAssignmentDraft(assignment, agents))
-    const inferredTargetAssignments = (await inferRealmTargetXUIAssignments(keys, areaManagerRealmGrantOptions, existingXUIAssignments)).filter(item => {
-      const tags = agents.find(agent => agent.agent_id === item.agent_id)?.tags || []
-      return areaManagerForm.line_enabled && tags.includes('线路机') || areaManagerForm.landing_enabled && tags.includes('落地机')
-    })
+    const inferredTargetAssignments = (await inferRealmTargetXUIAssignments(keys, areaManagerRealmGrantOptions, existingXUIAssignments))
+      .filter(item => allowsAreaMachine(item.agent_id, areaManagerForm))
     setAreaManagerForm((current) => {
       const otherAssignments = current.assignments.filter((assignment) => assignment.agent_id !== agentID || !isRealmAssignmentDraft(assignment, agents))
       const assignments = dedupeAreaManagerAssignmentDrafts([...otherAssignments, ...nextForAgent, ...inferredTargetAssignments])
@@ -857,8 +857,7 @@ export function CustomerManagementModal(props: {
         continue
       }
       const targetAgentID = realmRuleTargetAgentID(option.rule, agents)
-      if (!agents.find(agent => agent.agent_id === targetAgentID)?.tags?.some(tag => tag === '线路机' || tag === '落地机')) continue
-      if (!targetAgentID) {
+      if (!targetAgentID || !allowsAreaMachine(targetAgentID, {})) {
         continue
       }
       let targetOverview = overviewCache.get(targetAgentID)
@@ -1095,14 +1094,12 @@ export function CustomerManagementModal(props: {
       activeKey={activeManagementTab}
       onChange={setActiveManagementTab}
       canManageAreaManagers={canManageAreaManagers}
-      showRolePanel={canManageAreaManagers || adminUser?.role === 'operator'}
       areaManagersPanel={areaManagersPanel}
       customersPanel={customersPanel}
       operators={operators}
       operatorsLoading={operatorsLoading}
       savingOperator={savingOperator}
       resettingOperatorID={resettingOperatorID}
-      onConfigChanged={() => onConfigChanged?.()}
       onReloadOperators={() => void loadOperators()}
       onSaveOperator={saveOperator}
       onDeleteOperator={(id) => void deleteOperator(id)}

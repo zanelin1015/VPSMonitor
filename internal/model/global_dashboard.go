@@ -32,6 +32,7 @@ type DashboardAgentView struct {
 	SystemVersion       string                 `json:"system_version,omitempty"`
 	SortOrder           int                    `json:"sort_order,omitempty"`
 	Tags                []string               `json:"tags,omitempty"`
+	AssignmentRoles     *AgentAssignmentRoles  `json:"assignment_roles,omitempty"`
 	Renewal             VPSRenewalConfig       `json:"renewal,omitempty"`
 	Entry               AgentEntryConfig       `json:"entry,omitempty"`
 	ReportedAt          *time.Time             `json:"reported_at,omitempty"`

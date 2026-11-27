@@ -121,6 +121,7 @@ type CustomerTrafficSource struct {
 
 type CustomerLinkView struct {
 	Entrances             []CustomerLinkEntrance   `json:"entrances,omitempty"`
+	RouteType             string                   `json:"route_type,omitempty"`
 	TrafficReportedAt     *time.Time               `json:"traffic_reported_at,omitempty"`
 	TrafficSource         *CustomerTrafficSource   `json:"-"`
 	AssignmentID          int64                    `json:"assignment_id"`

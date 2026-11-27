@@ -83,6 +83,16 @@ func TestCustomerExitInfoPrefersMatchedAgentObservedGeo(t *testing.T) {
 	if ip != "24.248.245.100" || countryCode != "US" || countryName != "United States" {
 		t.Fatalf("expected matched NAT geo, got ip=%q countryCode=%q countryName=%q", ip, countryCode, countryName)
 	}
+	nat := agentMap["nat"]
+	nat.CustomerDisplayName = "COX"
+	nat.Entry.Classification = &model.AgentClassification{CountryCode: "CA", Purposes: []string{"residential_exit"}}
+	agentMap["nat"] = nat
+	var link model.CustomerLinkView
+	applyCustomerLinkExit(&link, chain, agentMap, true)
+	if link.ExitIP != ip || link.ExitCountryCode != "CA" || link.ExitCountryName != "" ||
+		len(link.Steps) != 1 || link.Steps[0].Label != "COX" || link.Steps[0].CountryCode != "CA" {
+		t.Fatalf("expected the public exit name and manual country flag to take precedence: %#v", link)
+	}
 }
 
 func TestCustomerExitInfoFallsBackToOutboundTargetGeo(t *testing.T) {

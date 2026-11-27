@@ -99,6 +99,7 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 			return
 		}
 		cfg.AgentID = agentID
+		cfg.Tags = model.WithoutLegacyAgentRoleTags(cfg.Tags)
 		if _, ok := raw["customer_display_name"]; !ok {
 			existing, found, err := a.store.GetAgentConfig(agentID)
 			if err != nil {
@@ -157,7 +158,7 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 		a.clearCustomerOverviewCache()
 		a.clearDashboardCache()
 		a.requestAgentConfigApply(agentID, record.Config)
-		writeJSON(w, http.StatusOK, disableXUIAutoInstall(record.Config))
+		writeJSON(w, http.StatusOK, a.sanitizeManagedConfigForAdmin(user, disableXUIAutoInstall(record.Config)))
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}

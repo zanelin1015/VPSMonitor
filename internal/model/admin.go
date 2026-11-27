@@ -206,19 +206,6 @@ type AreaManagerAdminView struct {
 	UpdatedAt             time.Time                  `json:"updated_at"`
 }
 
-type AgentRoleView struct {
-	AgentID        string `json:"agent_id"`
-	AgentName      string `json:"agent_name,omitempty"`
-	LineEnabled    bool   `json:"line_enabled"`
-	LandingEnabled bool   `json:"landing_enabled"`
-}
-
-type AgentRoleUpdateRequest struct {
-	AgentID        string `json:"agent_id"`
-	LineEnabled    bool   `json:"line_enabled"`
-	LandingEnabled bool   `json:"landing_enabled"`
-}
-
 type ClientInstallInfo struct {
 	ServerURL             string `json:"server_url"`
 	RegistrationToken     string `json:"registration_token"`
@@ -263,7 +250,6 @@ type TagSettingsResponse struct {
 type AgentTagInventoryItem struct {
 	Tag        string `json:"tag"`
 	AgentCount int    `json:"agent_count"`
-	Protected  bool   `json:"protected"`
 }
 
 type AreaAgentTagsRequest struct {

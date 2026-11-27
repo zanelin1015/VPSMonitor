@@ -633,6 +633,7 @@ export interface CustomerLinkStep {
 
 export interface CustomerLinkView {
   entrances?: CustomerLinkEntrance[]
+  route_type?: CustomerRouteConfig['type']
   traffic_reported_at?: string
   assignment_id: number
   entry_client_name: string
@@ -918,7 +919,7 @@ export interface TagSettingsResponse {
 export interface AgentTagInventoryItem {
   tag: string
   agent_count: number
-  protected: boolean
+  protected?: boolean
 }
 
 export interface AreaAgentTagsResponse {
@@ -1234,6 +1235,7 @@ export interface DashboardTagView {
 }
 
 export interface DashboardAgentView extends AgentListItem {
+  assignment_roles?: { line: boolean; landing: boolean }
   node_count: number
   client_count: number
   online_client_count: number

@@ -66,6 +66,7 @@ func (s *SQLiteStore) RegisterAgentWithTokenOrLegacyBootstrap(req model.AgentReg
 	}
 	// Customer-facing classification belongs to the Server's asset settings.
 	req.SeedConfig.Entry.Classification = nil
+	req.SeedConfig.Tags = model.WithoutLegacyAgentRoleTags(req.SeedConfig.Tags)
 
 	now := time.Now().UTC()
 	nowText := now.Format(time.RFC3339Nano)
@@ -323,12 +324,18 @@ func (s *SQLiteStore) updateAgentConfig(agentID string, cfg model.ManagedAgentCo
 		}
 	}
 	cfg.Entry.Classification = record.Config.Entry.Classification
+	tags := normalizeTags(cfg.Tags)
+	for _, tag := range record.Tags {
+		if model.IsLegacyAgentRoleTag(tag) {
+			tags = append(tags, tag)
+		}
+	}
 	record.Config = model.ManagedAgentConfig{
 		AgentID:             agentID,
 		AgentName:           record.AgentName,
 		CustomerDisplayName: record.CustomerDisplayName,
 		SortOrder:           record.SortOrder,
-		Tags:                normalizeTags(cfg.Tags),
+		Tags:                normalizeTags(tags),
 		Features:            cfg.Features,
 		Renewal:             normalizeRenewalConfig(cfg.Renewal),
 		Entry:               normalizeEntryConfig(cfg.Entry),

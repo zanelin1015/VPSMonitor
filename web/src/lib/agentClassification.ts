@@ -27,11 +27,19 @@ export function classificationCountryLabel(code: string) {
   return code === 'CN' ? '中国大陆' : displayRegions.of(code) || code
 }
 
+export function agentAssignmentRoles(agent: DashboardAgentView) {
+  return agent.assignment_roles ?? {
+    line: agent.tags?.includes('线路机') ?? false,
+    landing: agent.tags?.includes('落地机') ?? false,
+  }
+}
+
 export function suggestAgentPurposes(agent: DashboardAgentView) {
   const tags = agent.tags || []
   const purposes: string[] = []
-  if (tags.includes('线路机') && agent.node_count > 0) purposes.push('xray_line')
-  if (tags.includes('落地机')) purposes.push(tags.includes('家宽') ? 'residential_exit' : 'datacenter_exit')
+  const roles = agentAssignmentRoles(agent)
+  if (roles.line && agent.node_count > 0) purposes.push('xray_line')
+  if (roles.landing) purposes.push(tags.includes('家宽') ? 'residential_exit' : 'datacenter_exit')
   if (tags.includes('国内入口')) purposes.push('domestic_entry')
   if (tags.includes('IX') || tags.includes('IX 中转')) purposes.push('ix_relay')
   if (tags.includes('优化线路')) purposes.push('optimized_relay')

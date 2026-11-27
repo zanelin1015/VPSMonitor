@@ -138,7 +138,7 @@ func customerEntranceOptions(req customerEntranceSelection, records []model.Agen
 			request := model.CustomerAssignmentRequest{AgentID: agent.AgentID, InboundID: port, InboundTag: tag, ClientID: target.ClientID,
 				ClientEmail: target.Email, PublicClientName: name, PriceMode: "inherit"}
 			option := customerEntranceOption{Key: fmt.Sprintf("%s:%s:%s:%d", agent.AgentID, rule.kind, rule.id, port), Name: name,
-				Endpoint: net.JoinHostPort(endpoint.Host, strconv.Itoa(endpoint.Port)), RouteType: rule.publication.Type, request: request}
+				Endpoint: net.JoinHostPort(endpoint.Host, strconv.Itoa(endpoint.Port)), RouteType: resolution.routeType(rule.publication.Type), request: request}
 			for _, grant := range assignments {
 				if grant.AgentID == agent.AgentID && grant.InboundID == port &&
 					((target.ClientID != "" && grant.ClientID == target.ClientID) || (target.Email != "" && strings.EqualFold(target.Email, grant.ClientEmail))) {

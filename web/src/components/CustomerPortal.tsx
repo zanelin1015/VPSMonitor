@@ -638,6 +638,7 @@ export function CustomerPortal() {
                               )}
                             </div>
                             <Space wrap className="customer-link-exit-tags">
+                              {link.route_type === 'iepl' ? <Tag color="blue">{routeTypeLabels.iepl}</Tag> : null}
                               {link.exit_country_code || link.exit_country_name ? <Tag color="blue">出口 <CountryFlag code={link.exit_country_code} label={link.exit_country_name} /> {link.exit_country_code || link.exit_country_name}</Tag> : null}
                               {link.exit_type ? <Tag color="blue">{link.exit_type === 'residential' ? '家宽出口' : '机房出口'}</Tag> : null}
                               {link.exit_ip ? <Tag color="geekblue">{link.exit_ip}</Tag> : null}

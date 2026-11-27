@@ -17,6 +17,11 @@ type customerEntranceRule struct {
 	haproxy           model.HAProxyRule
 }
 
+type customerEntranceResolution struct {
+	realmForwardResolution
+	viaIX bool
+}
+
 func findCustomerEntranceRule(entry model.AgentEntryConfig, port int) customerEntranceRule {
 	if entry.HAProxy.Enabled {
 		for _, rule := range entry.HAProxy.Rules {
@@ -48,17 +53,49 @@ func internalCustomerEntrance(agent model.DashboardAgentView, publication model.
 			!agentHasPurpose(agent, "domestic_entry") && !agentHasPurpose(agent, "optimized_relay"))
 }
 
-func (rule customerEntranceRule) resolve(agent model.DashboardAgentView, context forwardedOverviewContext) realmForwardResolution {
+func (rule customerEntranceRule) resolve(agent model.DashboardAgentView, context forwardedOverviewContext) customerEntranceResolution {
+	result := customerEntranceResolution{viaIX: agentHasPurpose(agent, model.AgentPurposeIXRelay)}
 	switch rule.kind {
 	case "realm":
-		return resolveRealmForwardTarget(agent.AgentID, rule.realm, context.agentMap, context.targetOverviewByAgent)
+		result.realmForwardResolution = resolveRealmForwardTarget(agent.AgentID, rule.realm, context.agentMap, context.targetOverviewByAgent)
+		result.viaIX = result.viaIX || customerRealmPathUsesIX(result.realmForwardResolution, context.agentMap)
 	case "haproxy":
 		paths, err := resolveHAProxyRulePaths(rule.haproxy, context)
 		if err == nil && len(paths) > 0 && validateHAProxyResolvedPaths(rule.haproxy, paths) == nil {
-			return paths[0].Resolution
+			result.realmForwardResolution = paths[0].Resolution
+			for _, path := range paths {
+				result.viaIX = result.viaIX || customerRealmPathUsesIX(path.Resolution, context.agentMap)
+			}
+		} else {
+			for _, target := range append([]model.HAProxyRealmTarget{rule.haproxy.Primary}, rule.haproxy.Backups...) {
+				result.viaIX = result.viaIX || agentHasPurpose(context.agentMap[target.AgentID], model.AgentPurposeIXRelay)
+			}
 		}
 	}
-	return realmForwardResolution{}
+	return result
+}
+
+func customerRealmPathUsesIX(path realmForwardResolution, agents map[string]model.DashboardAgentView) bool {
+	if agentHasPurpose(agents[path.FinalAgentID], model.AgentPurposeIXRelay) {
+		return true
+	}
+	for _, hop := range path.Hops {
+		if agentHasPurpose(agents[hop.SourceAgentID], model.AgentPurposeIXRelay) {
+			return true
+		}
+	}
+	if !path.Resolved && len(path.Hops) > 0 {
+		targetID := findRealmTargetAgentID(path.Hops[len(path.Hops)-1].Rule, agents)
+		return agentHasPurpose(agents[targetID], model.AgentPurposeIXRelay)
+	}
+	return false
+}
+
+func (resolution customerEntranceResolution) routeType(configured string) string {
+	if resolution.viaIX {
+		return model.CustomerRouteTypeIEPL
+	}
+	return configured
 }
 
 func (rule customerEntranceRule) publicEntry(agent model.DashboardAgentView) customerPublicEntry {
@@ -69,7 +106,7 @@ func (rule customerEntranceRule) publicEntry(agent model.DashboardAgentView) cus
 	return resolveForwardPublicEntry(agent, rule.kind, rule.id, rule.port, rule.network, host)
 }
 
-func decorateCustomerEntrance(link *model.CustomerLinkView, assignment model.CustomerAssignment, configured, observed customerEntranceRule, context forwardedOverviewContext, agents map[string]model.DashboardAgentView, clients map[string]customerClientRef, now time.Time) bool {
+func decorateCustomerEntrance(link *model.CustomerLinkView, assignment model.CustomerAssignment, configured, observed customerEntranceRule, context forwardedOverviewContext, agents map[string]model.DashboardAgentView, clients map[string]customerClientRef, chains map[string]model.ClientChainView, now time.Time) bool {
 	agent := agents[assignment.AgentID]
 	if configured.kind == "" {
 		configured = observed
@@ -86,13 +123,11 @@ func decorateCustomerEntrance(link *model.CustomerLinkView, assignment model.Cus
 		observed = configured
 	}
 	publication := configured.publication
-	managed := publication != (model.CustomerRouteConfig{}) || agentHasPurpose(agent, "domestic_entry")
 	resolution := observed.resolve(agent, context)
-	for _, hop := range resolution.Hops {
-		if agentHasPurpose(agents[hop.SourceAgentID], model.AgentPurposeIXRelay) {
-			managed = true
-		}
+	if link.RouteType != model.CustomerRouteTypeIEPL {
+		link.RouteType = resolution.routeType(publication.Type)
 	}
+	managed := publication != (model.CustomerRouteConfig{}) || agentHasPurpose(agent, "domestic_entry") || link.RouteType == model.CustomerRouteTypeIEPL
 	name := firstNonEmptyString(publication.Name, assignment.PublicClientName, agent.CustomerDisplayName, agent.AgentName, "入口")
 	status := "unresolved"
 	if !configured.enabled {
@@ -100,18 +135,23 @@ func decorateCustomerEntrance(link *model.CustomerLinkView, assignment model.Cus
 	}
 	if !resolution.Resolved {
 		if managed {
-			setCustomerEntranceUnavailable(link, name, publication.Type, status)
+			setCustomerEntranceUnavailable(link, name, status)
 		}
 		return true
 	}
-	ref, ok := resolvedEntranceClient(assignment, resolution, clients)
+	ref, ok := resolvedEntranceClient(assignment, resolution.realmForwardResolution, clients)
 	if !ok {
 		if managed {
-			setCustomerEntranceUnavailable(link, name, publication.Type, status)
+			setCustomerEntranceUnavailable(link, name, status)
 		}
 		return true
 	}
 	client := ref.Client
+	// A disabled listener can still resolve to an Xray account without a topology alias.
+	chain, hasChain := chains[customerAssignmentKey(resolution.FinalAgentID, client.InboundID, client.Email)]
+	if hasChain && customerChainUsesIX(chain, agents) {
+		link.RouteType, managed = model.CustomerRouteTypeIEPL, true
+	}
 	link.TrafficSource = &model.CustomerTrafficSource{
 		AssignmentID: assignment.ID, AgentID: resolution.FinalAgentID, InboundID: client.InboundID, ClientID: client.ClientID, Email: client.Email,
 	}
@@ -164,9 +204,13 @@ func decorateCustomerEntrance(link *model.CustomerLinkView, assignment model.Cus
 		if !link.Resolved {
 			link.UnresolvedReason = "入口暂不可用"
 		}
+		if hasChain {
+			link.Steps = link.Steps[:0]
+			applyCustomerLinkExit(link, chain, agents, true)
+		}
 		presentCustomerXrayChain(link, agents[resolution.FinalAgentID])
 	}
-	link.Entrances = []model.CustomerLinkEntrance{{AssignmentID: assignment.ID, Name: firstNonEmptyString(publication.Name, link.Remark, name), RouteType: publication.Type,
+	link.Entrances = []model.CustomerLinkEntrance{{AssignmentID: assignment.ID, Name: firstNonEmptyString(publication.Name, link.Remark, name), RouteType: link.RouteType,
 		Status: status, ImportURL: link.ImportURL, ShadowrocketImportURL: link.ShadowrocketImportURL}}
 	return true
 }
@@ -192,36 +236,17 @@ func recentCustomerEntranceAgent(agent model.DashboardAgentView, now time.Time) 
 	return false
 }
 
-func setCustomerEntranceUnavailable(link *model.CustomerLinkView, name, routeType, status string) {
+func setCustomerEntranceUnavailable(link *model.CustomerLinkView, name, status string) {
 	link.EntryClientName, link.ImportName, link.Summary = name, name, name
 	link.InboundTag, link.ImportURL, link.ShadowrocketImportURL = "", "", ""
 	link.UnresolvedReason, link.Resolved = "入口暂不可用", false
 	link.Steps = []model.CustomerLinkStep{{Role: "entry", Label: name}}
-	link.Entrances = []model.CustomerLinkEntrance{{AssignmentID: link.AssignmentID, Name: name, RouteType: routeType, Status: status}}
+	link.Entrances = []model.CustomerLinkEntrance{{AssignmentID: link.AssignmentID, Name: name, RouteType: link.RouteType, Status: status}}
 	link.TrafficUploadBytes, link.TrafficDownloadBytes, link.TrafficUsedBytes, link.TrafficLimitBytes = 0, 0, 0, 0
 	link.ExpireTime, link.XrayExpireTime, link.NodeExpireTime = 0, 0, 0
 	link.TrafficReset, link.TrafficResetDay, link.TrafficResetSupported = "", 0, false
 	link.StartTime, link.ExpireCycle, link.ExpireAutoRenew = 0, "", false
 	link.ExitIP, link.ExitType, link.ExitCountryCode, link.ExitCountryName = "", "", "", ""
-}
-
-func customerClassifiedExit(chain model.ClientChainView, agents map[string]model.DashboardAgentView) (kind, country string) {
-	for i := len(chain.Steps) - 1; i >= 0; i-- {
-		step := chain.Steps[i]
-		if step.StepType != "match" && step.StepType != "inbound" {
-			continue
-		}
-		agent := agents[step.AgentID]
-		switch {
-		case agentHasPurpose(agent, "residential_exit"):
-			return "residential", agent.Entry.Classification.CountryCode
-		case agentHasPurpose(agent, "datacenter_exit"):
-			return "datacenter", agent.Entry.Classification.CountryCode
-		default:
-			return "", ""
-		}
-	}
-	return "", ""
 }
 
 func presentCustomerXrayChain(link *model.CustomerLinkView, target model.DashboardAgentView) {
@@ -261,6 +286,9 @@ func groupCustomerEntrances(links []model.CustomerLinkView, agents map[string]mo
 		}
 		group := &grouped[index]
 		group.Entrances = append(group.Entrances, link.Entrances...)
+		if group.RouteType != link.RouteType {
+			group.RouteType = ""
+		}
 		group.Resolved = group.Resolved || link.Resolved
 		group.EntryClientName = firstNonEmptyString(agents[source.AgentID].CustomerDisplayName, "Xray 线路机")
 		group.ImportName, group.Summary = group.EntryClientName, group.EntryClientName

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Alert, App, Button, Empty, Input, Modal, Space, Table, Tag } from 'antd'
+import { Alert, App, Button, Empty, Input, Modal, Space, Table } from 'antd'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import { fetchJSON } from '../lib/api'
 import { parseTagInput } from '../lib/appHelpersTags'
@@ -18,7 +18,7 @@ export function AgentTagManager({ onClose, onChanged }: {
   const [draft, setDraft] = useState('')
   const [search, setSearch] = useState('')
   const [error, setError] = useState('')
-  const shownItems = items.filter(item => item.tag.toLowerCase().includes(search.trim().toLowerCase()))
+  const shownItems = items.filter(item => !item.protected && item.tag.toLowerCase().includes(search.trim().toLowerCase()))
 
   useEffect(() => {
     const controller = new AbortController()
@@ -66,7 +66,7 @@ export function AgentTagManager({ onClose, onChanged }: {
             method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tag: item.tag }),
           })
           setItems(result.items)
-          onChanged(result.items.map(entry => entry.tag), item.tag)
+          onChanged(result.items.filter(entry => !entry.protected).map(entry => entry.tag), item.tag)
           message.success(result.removed_clients ? `标签已删除，已从 ${result.removed_clients} 台 Client 移除` : '标签已删除')
         } catch (reason) {
           setError(reason instanceof Error ? reason.message : '删除标签失败')
@@ -91,9 +91,9 @@ export function AgentTagManager({ onClose, onChanged }: {
         <Table<AgentTagInventoryItem> rowKey="tag" size="small" dataSource={shownItems} loading={loading} pagination={{ pageSize: 8 }}
           locale={{ emptyText: <Empty description={search ? '没有匹配的标签' : '暂无标签'} /> }}
           columns={[
-            { title: '标签', dataIndex: 'tag', render: (_, item) => <span style={{ overflowWrap: 'anywhere' }}>{item.tag} {item.protected ? <Tag>系统角色</Tag> : null}</span> },
+            { title: '标签', dataIndex: 'tag', render: (_, item) => <span style={{ overflowWrap: 'anywhere' }}>{item.tag}</span> },
             { title: '使用 Client 数', dataIndex: 'agent_count', width: 125, sorter: (a, b) => a.agent_count - b.agent_count },
-            { title: '操作', width: 130, render: (_, item) => item.protected ? '在 Client 角色中管理' :
+            { title: '操作', width: 130, render: (_, item) =>
               <Button type="link" danger size="small" icon={<DeleteOutlined />} disabled={saving} onClick={() => confirmDelete(item)} aria-label={`删除标签 ${item.tag}`}>删除</Button> },
           ]} />
       </Space>

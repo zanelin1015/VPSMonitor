@@ -108,6 +108,7 @@ func (a *App) sanitizeRealtimeMetricForAdmin(user model.AdminUser, metric model.
 
 func (a *App) sanitizeManagedConfigForAdmin(user model.AdminUser, cfg model.ManagedAgentConfig) model.ManagedAgentConfig {
 	if isRootAdmin(user) {
+		cfg.Tags = model.WithoutLegacyAgentRoleTags(cfg.Tags)
 		return cfg
 	}
 	cfg.AgentName = areaManagerDisplayName(cfg.CustomerDisplayName, cfg.AgentName, cfg.AgentID)
@@ -152,6 +153,8 @@ func (a *App) areaManagerVisibleClientBillings(user model.AdminUser, cfg model.M
 
 func (a *App) sanitizeAgentRecordForAdmin(user model.AdminUser, agent model.AgentRecord) model.AgentRecord {
 	if isRootAdmin(user) {
+		agent.Tags = model.WithoutLegacyAgentRoleTags(agent.Tags)
+		agent.Config.Tags = agent.Tags
 		return agent
 	}
 	tags := a.areaManagerTagsForAgent(user, agent.AgentID)
@@ -172,6 +175,9 @@ func (a *App) sanitizeAgentRecordForAdmin(user model.AdminUser, agent model.Agen
 
 func (a *App) sanitizeAgentListItemsForAdmin(user model.AdminUser, items []model.AgentListItem) []model.AgentListItem {
 	if isRootAdmin(user) {
+		for index := range items {
+			items[index].Tags = model.WithoutLegacyAgentRoleTags(items[index].Tags)
+		}
 		return items
 	}
 	if isOperatorAdmin(user) {
@@ -180,6 +186,7 @@ func (a *App) sanitizeAgentListItemsForAdmin(user model.AdminUser, items []model
 			items[index].ClientOS = ""
 			items[index].ClientArch = ""
 			items[index].SystemVersion = ""
+			items[index].Tags = model.WithoutLegacyAgentRoleTags(items[index].Tags)
 			items[index].Entry = model.AgentEntryConfig{}
 			items[index].Realm = nil
 			items[index].HAProxy = nil
@@ -243,6 +250,7 @@ func sanitizeDashboardForOperator(view *model.GlobalDashboardView) {
 		agent.ClientOS = ""
 		agent.ClientArch = ""
 		agent.SystemVersion = ""
+		agent.AssignmentRoles = nil
 		agent.Entry = model.AgentEntryConfig{}
 		agent.Realm = nil
 		agent.HAProxy = nil
@@ -588,6 +596,7 @@ func sanitizeDashboardAgentForAreaManager(agent model.DashboardAgentView, tagMap
 	agent.LineEntry = isCNLineEntryDashboardAgent(agent)
 	agent.AgentName = areaManagerDisplayName(agent.CustomerDisplayName, agent.AgentName, agent.AgentID)
 	agent.Tags = cloneStringSlice(tagMap[agent.AgentID])
+	agent.AssignmentRoles = nil
 	agent.ClientVersion = ""
 	agent.ClientOS = ""
 	agent.ClientArch = ""

@@ -68,6 +68,7 @@ func BuildGlobalDashboardWithOptions(agents []model.AgentRecord, snapshots []mod
 		}
 
 		entry := MergeRealmSnapshotIntoEntry(agent.Config.Entry, realmByAgent[agent.AgentID])
+		assignmentRoles := agent.AssignmentRoles()
 		view := model.DashboardAgentView{
 			AgentID:             agent.AgentID,
 			AgentName:           agent.AgentName,
@@ -77,7 +78,8 @@ func BuildGlobalDashboardWithOptions(agents []model.AgentRecord, snapshots []mod
 			ClientArch:          agent.Arch,
 			SystemVersion:       agent.SystemVersion,
 			SortOrder:           agent.SortOrder,
-			Tags:                cloneStrings(agent.Tags),
+			Tags:                cloneStrings(model.WithoutLegacyAgentRoleTags(agent.Tags)),
+			AssignmentRoles:     &assignmentRoles,
 			Renewal:             agent.Config.Renewal,
 			Entry:               entry,
 			ReportedAt:          agent.ReportedAt,

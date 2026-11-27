@@ -7,11 +7,62 @@ import (
 )
 
 const AgentPurposeIXRelay = "ix_relay"
+const CustomerRouteTypeIEPL = "iepl"
 
 type AgentClassification struct {
-	Purposes    []string `json:"purposes,omitempty"`
-	CountryCode string   `json:"country_code,omitempty"`
-	City        string   `json:"city,omitempty"`
+	Purposes              []string `json:"purposes,omitempty"`
+	CountryCode           string   `json:"country_code,omitempty"`
+	City                  string   `json:"city,omitempty"`
+	AssignmentPurposesSet bool     `json:"assignment_purposes_set,omitempty"`
+}
+
+type AgentAssignmentRoles struct {
+	Line    bool `json:"line"`
+	Landing bool `json:"landing"`
+}
+
+func agentPurposeRole(purpose string) string {
+	switch purpose {
+	case "domestic_entry", AgentPurposeIXRelay, "optimized_relay", "xray_line":
+		return AgentRoleLine
+	case "residential_exit", "datacenter_exit":
+		return AgentRoleLanding
+	default:
+		return ""
+	}
+}
+
+func IsLegacyAgentRoleTag(tag string) bool {
+	tag = strings.TrimSpace(tag)
+	return tag == AgentRoleLine || tag == AgentRoleLanding
+}
+
+func WithoutLegacyAgentRoleTags(tags []string) []string {
+	if !slices.ContainsFunc(tags, IsLegacyAgentRoleTag) {
+		return tags
+	}
+	return slices.DeleteFunc(slices.Clone(tags), IsLegacyAgentRoleTag)
+}
+
+func (agent AgentRecord) AssignmentRoles() AgentAssignmentRoles {
+	var roles AgentAssignmentRoles
+	classification := agent.Config.Entry.Classification
+	if classification != nil {
+		for _, purpose := range classification.Purposes {
+			switch agentPurposeRole(purpose) {
+			case AgentRoleLine:
+				roles.Line = true
+			case AgentRoleLanding:
+				roles.Landing = true
+			}
+		}
+	}
+	// Existing installations used role tags before purposes controlled authorization.
+	if classification == nil || !classification.AssignmentPurposesSet {
+		roles.Line = roles.Line || slices.Contains(agent.Tags, AgentRoleLine)
+		roles.Landing = roles.Landing || slices.Contains(agent.Tags, AgentRoleLanding)
+	}
+	return roles
 }
 
 type AgentClassificationPatch struct {
@@ -31,9 +82,7 @@ func (p AgentClassificationPatch) Apply(existing *AgentClassification) (*AgentCl
 			return nil, fmt.Errorf("unknown purpose change mode %q", p.PurposeMode)
 		}
 		for _, purpose := range *p.Purposes {
-			switch purpose {
-			case "domestic_entry", AgentPurposeIXRelay, "optimized_relay", "xray_line", "residential_exit", "datacenter_exit":
-			default:
+			if agentPurposeRole(purpose) == "" {
 				return nil, fmt.Errorf("unknown Client purpose %q", purpose)
 			}
 		}
@@ -47,6 +96,7 @@ func (p AgentClassificationPatch) Apply(existing *AgentClassification) (*AgentCl
 		}
 		slices.Sort(next.Purposes)
 		next.Purposes = slices.Compact(next.Purposes)
+		next.AssignmentPurposesSet = true
 	}
 	if p.CountryCode != nil {
 		next.CountryCode = strings.ToUpper(strings.TrimSpace(*p.CountryCode))
@@ -73,7 +123,7 @@ type CustomerRouteConfig struct {
 func (c CustomerRouteConfig) Normalize() CustomerRouteConfig {
 	c.Name = strings.TrimSpace(c.Name)
 	switch c.Type {
-	case "iepl", "optimized", "standard":
+	case CustomerRouteTypeIEPL, "optimized", "standard":
 	default:
 		c.Type = ""
 	}

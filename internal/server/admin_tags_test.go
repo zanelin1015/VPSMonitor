@@ -49,10 +49,12 @@ func TestAdminTagManagementRemovesGlobalReferencesAndRejectsStaleWrites(t *testi
 	var items []model.AgentTagInventoryItem
 	if err := json.Unmarshal(w.Body.Bytes(), &items); err != nil ||
 		!slices.Contains(items, model.AgentTagInventoryItem{Tag: "OLD", AgentCount: 2}) ||
-		!slices.Contains(items, model.AgentTagInventoryItem{Tag: "unused"}) {
+		!slices.Contains(items, model.AgentTagInventoryItem{Tag: "unused"}) ||
+		slices.ContainsFunc(items, func(item model.AgentTagInventoryItem) bool { return model.IsLegacyAgentRoleTag(item.Tag) }) {
 		t.Fatalf("inventory did not combine assigned and unused tags: %s (%v)", w.Body, err)
 	}
 	request(f.area, http.MethodDelete, "", "{\"tag\":\"OLD\"}", http.StatusForbidden)
+	request(f.root, http.MethodPost, "", "{\"tags\":[\"落地机\"]}", http.StatusConflict)
 	request(f.root, http.MethodDelete, "", "{\"tag\":\"线路机\"}", http.StatusConflict)
 	w = request(f.root, http.MethodDelete, "", "{\"tag\":\"OLD\"}", http.StatusOK)
 	if !bytes.Contains(w.Body.Bytes(), []byte("\"removed_clients\":2")) {

@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -255,6 +256,9 @@ func buildCustomerLinkView(
 
 	link.NodeExpireTime = customerNodeExpireTime(assignment.AgentID, agentMap)
 	chain, chainFound := findCustomerChain(assignment, chainMap)
+	if agentHasPurpose(agentMap[assignment.AgentID], model.AgentPurposeIXRelay) || customerChainUsesIX(chain, agentMap) {
+		link.RouteType = model.CustomerRouteTypeIEPL
+	}
 	trafficMultiplier := 1.0
 	var clientRef customerClientRef
 	clientRef, clientFound := customerClientRef{}, false
@@ -343,30 +347,43 @@ func buildCustomerLinkView(
 	for _, relay := range relays {
 		link.Steps = append(link.Steps, model.CustomerLinkStep{Role: "relay", Label: relay})
 	}
-	exitIP, exitCountryCode, exitCountryName := customerExitInfo(chain, agentMap)
-	exitType, classifiedCountry := customerClassifiedExit(chain, agentMap)
-	if exitCountryCode == "" && exitCountryName == "" {
-		exitCountryCode = classifiedCountry
-	}
-	link.ExitIP = exitIP
-	link.ExitType = exitType
-	link.ExitCountryCode = exitCountryCode
-	link.ExitCountryName = exitCountryName
-	if exitCountryCode != "" || exitCountryName != "" || exitIP != "" {
-		link.Steps = append(link.Steps, model.CustomerLinkStep{
-			Role:        "exit",
-			Label:       customerExitLabel(exitCountryCode, exitCountryName, exitIP),
-			CountryCode: exitCountryCode,
-			CountryName: exitCountryName,
-			ExitIP:      exitIP,
-		})
-	}
+	applyCustomerLinkExit(&link, chain, agentMap, false)
 	link.Summary = customerLinkSummary(entryName, relays)
 	link.ShadowrocketImportURL = model.ShadowrocketImportURL(link.ImportURL, link.XrayVersion)
 	if chain.UnresolvedReason != "" && link.UnresolvedReason == "" {
 		link.UnresolvedReason = chain.UnresolvedReason
 	}
 	return link
+}
+
+func customerChainUsesIX(chain model.ClientChainView, agents map[string]model.DashboardAgentView) bool {
+	return slices.ContainsFunc(chain.Steps, func(step model.ClientChainStep) bool {
+		return agentHasPurpose(agents[step.AgentID], model.AgentPurposeIXRelay)
+	})
+}
+
+func applyCustomerLinkExit(link *model.CustomerLinkView, chain model.ClientChainView, agentMap map[string]model.DashboardAgentView, showExitName bool) {
+	exitIP, exitCountryCode, exitCountryName := customerExitInfo(chain, agentMap)
+	exitName, exitType, classifiedCountry := customerExitPresentation(chain, agentMap)
+	if classifiedCountry != "" && classifiedCountry != exitCountryCode {
+		exitCountryCode, exitCountryName = classifiedCountry, ""
+	}
+	link.ExitIP = exitIP
+	link.ExitType = exitType
+	link.ExitCountryCode = exitCountryCode
+	link.ExitCountryName = exitCountryName
+	if !showExitName {
+		exitName = ""
+	}
+	if exitName != "" || exitCountryCode != "" || exitCountryName != "" || exitIP != "" {
+		link.Steps = append(link.Steps, model.CustomerLinkStep{
+			Role:        "exit",
+			Label:       firstNonEmptyString(exitName, customerExitLabel(exitCountryCode, exitCountryName, exitIP)),
+			CountryCode: exitCountryCode,
+			CountryName: exitCountryName,
+			ExitIP:      exitIP,
+		})
+	}
 }
 
 func customerRealmAssignment(assignment model.CustomerAssignment, agentMap map[string]model.DashboardAgentView) bool {
@@ -555,6 +572,10 @@ func customerRelayNames(chain model.ClientChainView, rootAgentID string, agentMa
 		if step.StepType != "match" && step.StepType != "inbound" {
 			continue
 		}
+		if agentHasPurpose(agentMap[step.AgentID], model.AgentPurposeIXRelay) {
+			pendingOutbound = ""
+			continue
+		}
 		label := firstNonEmptyString(customerAgentDisplayName(step.AgentID, agentMap), step.AgentName, step.Label)
 		// A forwarding assignment is rooted at the Realm/HAProxy listener,
 		// while the chain root is the final X-UI Client. Include the final
@@ -629,6 +650,50 @@ func customerExitInfo(chain model.ClientChainView, agentMap map[string]model.Das
 		}
 	}
 	return "", "", ""
+}
+
+func customerExitPresentation(chain model.ClientChainView, agents map[string]model.DashboardAgentView) (name, kind, country string) {
+	for i := len(chain.Steps) - 1; i >= 0; i-- {
+		step := chain.Steps[i]
+		if name = customerRemoteOutboundName(step); name != "" {
+			return name, "", ""
+		}
+		if step.AgentID == "" || (step.StepType != "match" && step.StepType != "inbound") {
+			continue
+		}
+		agent := agents[step.AgentID]
+		switch {
+		case agentHasPurpose(agent, "residential_exit"):
+			kind = "residential"
+		case agentHasPurpose(agent, "datacenter_exit"):
+			kind = "datacenter"
+		}
+		if kind == "" && agentHasPurpose(agent, model.AgentPurposeIXRelay) {
+			continue
+		}
+		if agent.Entry.Classification != nil {
+			country = agent.Entry.Classification.CountryCode
+		}
+		if step.AgentID != chain.RootAgentID {
+			name = strings.TrimSpace(agent.CustomerDisplayName)
+			for previous := i - 1; previous >= 0 && name == ""; previous-- {
+				name = customerRemoteOutboundName(chain.Steps[previous])
+			}
+		}
+		return name, kind, country
+	}
+	return "", "", ""
+}
+
+func customerRemoteOutboundName(step model.ClientChainStep) string {
+	if step.StepType != "outbound" || (step.Target == "" && step.TargetIP == "" && step.TargetGeo == nil) {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(step.Protocol)) {
+	case "freedom", "direct", "blackhole", "dns", "realm", "haproxy":
+		return ""
+	}
+	return firstNonEmptyString(step.OutboundTag, step.Label)
 }
 
 func customerGeoParts(ip string, geo *model.IPGeoView) (string, string, string) {
