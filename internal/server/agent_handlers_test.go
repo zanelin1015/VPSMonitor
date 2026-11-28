@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -60,6 +61,92 @@ func TestValidateRealmForwardTargetsRejectsUnresolvableDomain(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("expected valid target to pass, got %v", err)
+	}
+}
+
+func TestHandleAgentConfigCompactsClientSortOrderAfterDeletion(t *testing.T) {
+	sqliteStore, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "bridge.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqliteStore.Close()
+	if err := sqliteStore.EnsureAdminAccount("admin", "password123"); err != nil {
+		t.Fatal(err)
+	}
+	admin, ok, err := sqliteStore.AuthenticateAdmin("admin", "password123")
+	if err != nil || !ok {
+		t.Fatalf("authenticate admin: ok=%v err=%v", ok, err)
+	}
+	token, _, err := sqliteStore.CreateAdminSession(admin, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &App{store: sqliteStore}
+
+	lastID := "client-48"
+	var remaining []string
+	for i := 1; i <= 48; i++ {
+		id := fmt.Sprintf("client-%02d", i)
+		if _, err := testRegisterAgent(sqliteStore, model.AgentRegisterRequest{AgentID: id}); err != nil {
+			t.Fatal(err)
+		}
+		if i == 1 || i%3 == 0 {
+			remaining = append(remaining, id)
+		}
+	}
+	for i := 2; i <= 48; i++ {
+		if i%3 != 0 {
+			if err := sqliteStore.DeleteAgent(fmt.Sprintf("client-%02d", i)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	save := func(body string) model.ManagedAgentConfig {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/agents/"+lastID+"/config", strings.NewReader(body))
+		req.AddCookie(&http.Cookie{Name: adminSessionCookieName, Value: token})
+		rec := httptest.NewRecorder()
+		app.handleAgentByID(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("save status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		var saved model.ManagedAgentConfig
+		if err := json.NewDecoder(rec.Body).Decode(&saved); err != nil {
+			t.Fatal(err)
+		}
+		return saved
+	}
+	assertOrder := func(want []string) {
+		t.Helper()
+		agents, err := sqliteStore.ListAgents()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(agents) != len(want) {
+			t.Fatalf("got %d agents, want %d", len(agents), len(want))
+		}
+		for i, agent := range agents {
+			if agent.AgentID != want[i] || agent.SortOrder != i+1 || agent.Config.SortOrder != i+1 {
+				t.Fatalf("at position %d got %s with order %d (config %d), want %s", i+1, agent.AgentID, agent.SortOrder, agent.Config.SortOrder, want[i])
+			}
+		}
+	}
+
+	if saved := save(`{"renewal":{}}`); saved.SortOrder != 48 {
+		t.Fatalf("VPS info save returned order %d, want 48", saved.SortOrder)
+	}
+	if saved := save(`{"agent_name":"Renamed","sort_order":0}`); saved.SortOrder != 17 || saved.AgentName != "Renamed" {
+		t.Fatalf("Client info save returned name %q and order %d, want Renamed and 17", saved.AgentName, saved.SortOrder)
+	}
+	assertOrder(remaining)
+
+	reordered := append([]string{lastID}, remaining[:len(remaining)-1]...)
+	for i := 0; i < 2; i++ {
+		if saved := save(`{"agent_name":"Renamed","sort_order":1}`); saved.SortOrder != 1 {
+			t.Fatalf("manual move returned order %d, want 1", saved.SortOrder)
+		}
+		assertOrder(reordered)
 	}
 }
 

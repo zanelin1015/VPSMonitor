@@ -10,6 +10,14 @@ import (
 )
 
 func (s *SQLiteStore) UpdateAgentConfigWithActor(agentID string, cfg model.ManagedAgentConfig, actor string) (model.AgentRecord, error) {
+	return s.updateAgentConfigWithActor(agentID, cfg, actor, false)
+}
+
+func (s *SQLiteStore) UpdateAgentConfigAndNormalizeSortOrder(agentID string, cfg model.ManagedAgentConfig, actor string) (model.AgentRecord, error) {
+	return s.updateAgentConfigWithActor(agentID, cfg, actor, true)
+}
+
+func (s *SQLiteStore) updateAgentConfigWithActor(agentID string, cfg model.ManagedAgentConfig, actor string, normalizeSortOrder bool) (model.AgentRecord, error) {
 	before, found, err := s.GetAgentConfig(agentID)
 	if err != nil {
 		return model.AgentRecord{}, err
@@ -34,7 +42,7 @@ func (s *SQLiteStore) UpdateAgentConfigWithActor(agentID string, cfg model.Manag
 			billing.ExpireAutoRenew = false
 		}
 	}
-	record, err := s.updateAgentConfig(agentID, cfg)
+	record, err := s.updateAgentConfig(agentID, cfg, normalizeSortOrder)
 	if err != nil {
 		return model.AgentRecord{}, err
 	}

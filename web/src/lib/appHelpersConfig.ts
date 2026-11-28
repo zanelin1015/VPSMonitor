@@ -59,7 +59,7 @@ export function buildSectionSavePayload(base: ManagedAgentConfig, draft: Managed
     agent_id: agentID,
     agent_name: base.agent_name || draft.agent_name || agentID,
     customer_display_name: base.customer_display_name || '',
-    sort_order: base.sort_order || draft.sort_order || 0,
+    sort_order: undefined,
     tags: [...(base.tags || [])],
     features: { ...(base.features || {}) },
     renewal: { ...(base.renewal || {}) },
@@ -79,7 +79,8 @@ export function buildSectionSavePayload(base: ManagedAgentConfig, draft: Managed
     case 'client':
       payload.agent_name = draft.agent_name || agentID
       payload.customer_display_name = draft.customer_display_name || ''
-      payload.sort_order = Number(draft.sort_order || base.sort_order || 0)
+      // Zero asks the server to close gaps without moving this Client.
+      payload.sort_order = draft.sort_order === base.sort_order ? 0 : Number(draft.sort_order || 0)
       payload.tags = [...(draft.tags || [])]
       payload.features = { ...(draft.features || {}) }
       const entry = payload.entry!

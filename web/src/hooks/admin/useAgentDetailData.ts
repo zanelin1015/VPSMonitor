@@ -481,6 +481,9 @@ export function useAgentDetailData({
       rememberCustomerDisplayName(selectedAgentId, normalized.customer_display_name || '')
       setSavedManagedConfig(normalized)
       const nextDraft = mergeSavedSectionIntoDraft(draftConfig, normalized, section)
+      if (draftConfig.sort_order === baseConfig.sort_order) {
+        nextDraft.sort_order = normalized.sort_order
+      }
       nextDraft.tags = filterManagedTags(nextDraft.tags || [])
       managedConfigDirtyRef.current = configSignature(nextDraft) !== configSignature(normalized)
       setManagedConfig(nextDraft)

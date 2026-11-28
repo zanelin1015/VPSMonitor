@@ -146,7 +146,12 @@ func (a *App) handleAgentConfig(w http.ResponseWriter, r *http.Request, agentID 
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		record, err := a.store.UpdateAgentConfigWithActor(agentID, cfg, user.Username)
+		saveConfig := a.store.UpdateAgentConfigWithActor
+		// Client Info includes sort_order even when only closing gaps is requested.
+		if _, ok := raw["sort_order"]; ok {
+			saveConfig = a.store.UpdateAgentConfigAndNormalizeSortOrder
+		}
+		record, err := saveConfig(agentID, cfg, user.Username)
 		if err != nil {
 			if err.Error() == "agent not found" {
 				writeError(w, http.StatusNotFound, err.Error())

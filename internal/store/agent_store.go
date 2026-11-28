@@ -300,7 +300,7 @@ func (s *SQLiteStore) GetAgentConfig(agentID string) (model.ManagedAgentConfig, 
 	return cfg, true, nil
 }
 
-func (s *SQLiteStore) updateAgentConfig(agentID string, cfg model.ManagedAgentConfig) (model.AgentRecord, error) {
+func (s *SQLiteStore) updateAgentConfig(agentID string, cfg model.ManagedAgentConfig, normalizeSortOrder bool) (model.AgentRecord, error) {
 	if err := model.ValidateEntryConnection(cfg.Entry); err != nil {
 		return model.AgentRecord{}, err
 	}
@@ -314,15 +314,6 @@ func (s *SQLiteStore) updateAgentConfig(agentID string, cfg model.ManagedAgentCo
 
 	record.AgentName = firstNonEmpty(cfg.AgentName, record.AgentName, agentID)
 	record.CustomerDisplayName = strings.TrimSpace(cfg.CustomerDisplayName)
-	if cfg.SortOrder > 0 {
-		record.SortOrder = cfg.SortOrder
-	}
-	if record.SortOrder <= 0 {
-		record.SortOrder, err = s.nextAgentSortOrder()
-		if err != nil {
-			return model.AgentRecord{}, err
-		}
-	}
 	cfg.Entry.Classification = record.Config.Entry.Classification
 	tags := normalizeTags(cfg.Tags)
 	for _, tag := range record.Tags {
@@ -334,7 +325,6 @@ func (s *SQLiteStore) updateAgentConfig(agentID string, cfg model.ManagedAgentCo
 		AgentID:             agentID,
 		AgentName:           record.AgentName,
 		CustomerDisplayName: record.CustomerDisplayName,
-		SortOrder:           record.SortOrder,
 		Tags:                normalizeTags(tags),
 		Features:            cfg.Features,
 		Renewal:             normalizeRenewalConfig(cfg.Renewal),
@@ -366,25 +356,41 @@ func (s *SQLiteStore) updateAgentConfig(agentID string, cfg model.ManagedAgentCo
 		record.Config.Tags = settings.active(record.Config.Tags)
 		record.Tags = cloneStrings(record.Config.Tags)
 	}
-	_, err = tx.Exec(`
+	err = tx.QueryRow(`
 		UPDATE agents
-		SET agent_name = ?, customer_display_name = ?, sort_order = ?, agent_tags_json = ?, updated_at = ?, xui_config_json = ?, renewal_config_json = ?,
+		SET agent_name = ?, customer_display_name = ?, agent_tags_json = ?, updated_at = ?, xui_config_json = ?, renewal_config_json = ?,
 			entry_config_json = json_patch(?, json_object('classification', json_extract(entry_config_json, '$.classification')))
 		WHERE agent_id = ?
+		RETURNING sort_order
 	`,
 		record.AgentName,
 		record.CustomerDisplayName,
-		record.SortOrder,
 		managedTagsJSON(record.Config),
 		record.UpdatedAt.Format(time.RFC3339Nano),
 		xuiJSON,
 		mustJSON(record.Config.Renewal),
 		mustJSON(record.Config.Entry),
 		agentID,
-	)
+	).Scan(&record.SortOrder)
+	if err == sql.ErrNoRows {
+		return model.AgentRecord{}, fmt.Errorf("agent not found")
+	}
 	if err != nil {
 		return model.AgentRecord{}, fmt.Errorf("update agent config: %w", err)
 	}
+	if normalizeSortOrder {
+		position := cfg.SortOrder
+		if position == record.SortOrder {
+			position = 0
+		}
+		if err := normalizeAgentSortOrders(tx, agentID, position); err != nil {
+			return model.AgentRecord{}, err
+		}
+		if err := tx.QueryRow(`SELECT sort_order FROM agents WHERE agent_id = ?`, agentID).Scan(&record.SortOrder); err != nil {
+			return model.AgentRecord{}, fmt.Errorf("load normalized agent sort order: %w", err)
+		}
+	}
+	record.Config.SortOrder = record.SortOrder
 	if err := tx.Commit(); err != nil {
 		return model.AgentRecord{}, err
 	}
@@ -471,6 +477,32 @@ func nextAgentSortOrderQuery(db queryer) (int, error) {
 	return maxOrder + 1, nil
 }
 
+const agentSortOrderSQL = `a.sort_order <= 0, CASE WHEN a.sort_order > 0 THEN a.sort_order END, a.created_at, a.agent_id`
+
+func normalizeAgentSortOrders(tx *sql.Tx, agentID string, position int) error {
+	// A positive position inserts the moved Client before the current occupant.
+	_, err := tx.Exec(`
+		WITH positions AS (
+			SELECT a.agent_id, ROW_NUMBER() OVER (ORDER BY `+agentSortOrderSQL+`) AS position
+			FROM agents a
+			WHERE :position <= 0 OR a.agent_id <> :agent_id
+			UNION ALL
+			SELECT :agent_id, :position WHERE :position > 0
+		), ranked AS MATERIALIZED (
+			SELECT agent_id, ROW_NUMBER() OVER (ORDER BY position, agent_id <> :agent_id) AS position
+			FROM positions
+		)
+		UPDATE agents
+		SET sort_order = ranked.position
+		FROM ranked
+		WHERE agents.agent_id = ranked.agent_id AND agents.sort_order <> ranked.position
+	`, sql.Named("position", position), sql.Named("agent_id", agentID))
+	if err != nil {
+		return fmt.Errorf("normalize agent sort orders: %w", err)
+	}
+	return nil
+}
+
 func (s *SQLiteStore) ListAgents() ([]model.AgentRecord, error) {
 	agents, _, err := s.ListAgentsWithLatestSnapshots()
 	return agents, err
@@ -498,7 +530,7 @@ func (s *SQLiteStore) ListAgentsWithLatestSnapshots() ([]model.AgentRecord, []mo
 			ls.snapshot_json
 		FROM agents a
 		LEFT JOIN latest_snapshots ls ON ls.agent_id = a.agent_id
-		ORDER BY CASE WHEN a.sort_order > 0 THEN a.sort_order ELSE 2147483647 END ASC, a.created_at ASC, a.agent_id ASC
+		ORDER BY ` + agentSortOrderSQL + `
 	`)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list agents: %w", err)
