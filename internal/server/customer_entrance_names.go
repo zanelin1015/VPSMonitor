@@ -7,9 +7,9 @@ import (
 	"bridge-core/internal/model"
 )
 
-func customerIEPLExitName(exit customerExitDetails, landing model.DashboardAgentView, client model.XUIClientView) string {
+func customerIEPLExitName(exit customerExitDetails, landing model.DashboardAgentView, exitRegion string) string {
 	if exit.landingAgentID == "" {
-		return firstNonEmptyString(exit.name, client.Email, client.Comment, "出口")
+		return firstNonEmptyString(exit.name, exitRegion, "出口")
 	}
 	name := firstNonEmptyString(landing.CustomerDisplayName, landing.AgentName, exit.name, exit.landingAgentID)
 	name = strings.TrimSuffix(name, "落地")

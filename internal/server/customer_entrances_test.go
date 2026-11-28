@@ -66,7 +66,8 @@ func TestCustomerMultiEntranceSharesXrayQuotaHistoryAndExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	clientID := "78119341-e995-4216-8f88-1d0c7a92f668"
-	legacy, err := f.s.CreateCustomerAssignment(customer.ID, model.CustomerAssignmentRequest{AgentID: "ix", InboundID: 15601, ClientID: clientID, ClientEmail: "alice"})
+	const clientEmail = "ATT"
+	legacy, err := f.s.CreateCustomerAssignment(customer.ID, model.CustomerAssignmentRequest{AgentID: "ix", InboundID: 15601, ClientID: clientID, ClientEmail: clientEmail})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,15 +93,15 @@ func TestCustomerMultiEntranceSharesXrayQuotaHistoryAndExpiry(t *testing.T) {
 	}{{now.Add(-2 * time.Minute), 100, 100}, {now.Add(-time.Minute), 200, 400}} {
 		inbound := map[string]any{
 			"id": 7, "tag": "vless-in", "enable": true, "protocol": "vless", "port": 443,
-			"settings":    fmt.Sprintf("{\"clients\":[{\"id\":%q,\"email\":\"alice\",\"enable\":true,\"expiryTime\":%d,\"totalGB\":1000}]}", clientID, expiry),
-			"clientStats": []map[string]any{{"id": 91, "email": "alice", "enable": true, "up": sample.up, "down": sample.down}},
+			"settings":    fmt.Sprintf("{\"clients\":[{\"id\":%q,\"email\":%q,\"enable\":true,\"expiryTime\":%d,\"totalGB\":1000}]}", clientID, clientEmail, expiry),
+			"clientStats": []map[string]any{{"id": 91, "email": clientEmail, "enable": true, "up": sample.up, "down": sample.down}},
 		}
 		snapshot := model.AgentSnapshot{AgentID: "xray", ReportedAt: sample.at, XUI: &model.XUISnapshot{
 			Inbounds: []map[string]any{inbound},
 			Outbounds: []map[string]any{{"tag": "COX-1-COMMON", "protocol": "socks", "settings": map[string]any{
 				"servers": []map[string]any{{"address": "cox.example.com", "port": 1080}},
 			}}},
-			RoutingRules: []map[string]any{{"type": "field", "user": []string{"alice"}, "outboundTag": "COX-1-COMMON"}},
+			RoutingRules: []map[string]any{{"type": "field", "user": []string{clientEmail}, "outboundTag": "COX-1-COMMON"}},
 		}}
 		if err := f.s.SaveSnapshot(snapshot); err != nil {
 			t.Fatal(err)
@@ -217,7 +218,7 @@ func TestCustomerMultiEntranceSharesXrayQuotaHistoryAndExpiry(t *testing.T) {
 		{"external landing", "VN200", "VN", map[string]any{"tag": "VN200", "protocol": "socks", "settings": map[string]any{
 			"servers": []map[string]any{{"address": externalIP, "port": 54401}},
 		}}},
-		{"direct exit uses Xray client name", "alice", "HK", map[string]any{"tag": "direct", "protocol": "freedom"}},
+		{"direct exit uses its location", "HK", "HK", map[string]any{"tag": "direct", "protocol": "freedom"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			snapshot.ReportedAt = snapshot.ReportedAt.Add(time.Minute)

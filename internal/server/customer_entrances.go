@@ -161,7 +161,8 @@ func decorateCustomerEntrance(link *model.CustomerLinkView, assignment model.Cus
 	entranceName := firstNonEmptyString(publication.Name, link.Remark, name)
 	if link.RouteType == model.CustomerRouteTypeIEPL {
 		ieplEntry = firstNonEmptyString(agent.CustomerDisplayName, name)
-		ieplExit = customerIEPLExitName(exit, agents[exit.landingAgentID], client)
+		exitRegion := firstNonEmptyString(link.ExitCountryCode, link.ExitCountryName)
+		ieplExit = customerIEPLExitName(exit, agents[exit.landingAgentID], exitRegion)
 		name = customerIEPLName(ieplEntry, ieplExit)
 		entranceName, link.ImportName = name, name
 	}
