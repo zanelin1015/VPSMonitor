@@ -48,6 +48,7 @@ assert.match(css, /\.workspace-grid-topology \.agent-compact-footer\s*\{[\s\S]*?
 assert.match(css, /\.agent-list \.ant-spin-nested-loading\s*\{[^}]*overflow-x: hidden;[^}]*overscroll-behavior-x: none;/, 'card lists cannot pan or rubber-band horizontally')
 assert.match(css, /\.agent-list-list \.ant-spin-nested-loading\s*\{[^}]*overflow-x: auto;/, 'wide row mode retains its own horizontal viewport')
 assert.match(css, /\.xui-client-table \.ant-table-content\s*\{[^}]*overflow-x: auto !important;[^}]*overscroll-behavior-x: none(?: !important)?;/, 'client table can scroll internally without horizontal rebound')
+assert.match(layoutCSS, /\.admin-assets-desktop \.ant-table-body\s*\{[^}]*overscroll-behavior-x: none;/, 'asset table body cannot rebound independently of its header')
 assert.match(layoutCSS, /\.admin-agent-drawer \.tabs-card \.ant-tabs-content-holder\s*\{[^}]*overscroll-behavior-x: none;/, 'agent detail outer scroller cannot rebound horizontally')
 assert.match(css, /\.xui-client-table \.ant-table-cell-fix-left\s*\{[^}]*z-index: 5;/, 'compact inputs cannot paint over the pinned column')
 assert.match(source, /key: 'actions',[\s\S]*?width: restrictedView \? 230 : 240,[\s\S]*?fixed: 'right'/, 'client actions stay together in one compact fixed column')

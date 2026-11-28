@@ -362,18 +362,25 @@ func customerChainUsesIX(chain model.ClientChainView, agents map[string]model.Da
 	})
 }
 
-func applyCustomerLinkExit(link *model.CustomerLinkView, chain model.ClientChainView, agentMap map[string]model.DashboardAgentView, showExitName bool) string {
+func applyCustomerLinkExit(link *model.CustomerLinkView, chain model.ClientChainView, agentMap map[string]model.DashboardAgentView, showExitName bool) customerExitDetails {
 	exitIP, exitCountryCode, exitCountryName := customerExitInfo(chain, agentMap)
-	exitName, exitType, classifiedCountry := customerExitPresentation(chain, agentMap)
-	if classifiedCountry != "" && classifiedCountry != exitCountryCode {
-		exitCountryCode, exitCountryName = classifiedCountry, ""
+	exit := customerExitPresentation(chain, agentMap)
+	if exit.classifiedCountry != "" && exit.classifiedCountry != exitCountryCode {
+		exitCountryCode, exitCountryName = exit.classifiedCountry, ""
 	}
 	link.ExitIP = exitIP
-	link.ExitType = exitType
+	link.ExitType = exit.kind
 	link.ExitCountryCode = exitCountryCode
 	link.ExitCountryName = exitCountryName
-	if !showExitName {
+	exitName := exit.name
+	if !showExitName && exit.kind == "" {
 		exitName = ""
+	}
+	if last := len(link.Steps) - 1; exitName != "" && last >= 0 &&
+		link.Steps[last].Role == "relay" && strings.EqualFold(link.Steps[last].Label, exitName) {
+		// Preserve the default import name when the final relay is displayed as the exit.
+		link.ImportName = customerDefaultNodeName(*link)
+		link.Steps = link.Steps[:last]
 	}
 	if exitName != "" || exitCountryCode != "" || exitCountryName != "" || exitIP != "" {
 		link.Steps = append(link.Steps, model.CustomerLinkStep{
@@ -384,7 +391,7 @@ func applyCustomerLinkExit(link *model.CustomerLinkView, chain model.ClientChain
 			ExitIP:      exitIP,
 		})
 	}
-	return exitName
+	return exit
 }
 
 func customerRealmAssignment(assignment model.CustomerAssignment, agentMap map[string]model.DashboardAgentView) bool {
@@ -653,37 +660,49 @@ func customerExitInfo(chain model.ClientChainView, agentMap map[string]model.Das
 	return "", "", ""
 }
 
-func customerExitPresentation(chain model.ClientChainView, agents map[string]model.DashboardAgentView) (name, kind, country string) {
+type customerExitDetails struct {
+	name, kind, classifiedCountry, landingAgentID string
+	landingTargetGeo                              *model.IPGeoView
+}
+
+func customerExitPresentation(chain model.ClientChainView, agents map[string]model.DashboardAgentView) customerExitDetails {
 	for i := len(chain.Steps) - 1; i >= 0; i-- {
 		step := chain.Steps[i]
-		if name = customerRemoteOutboundName(step); name != "" {
-			return name, "", ""
+		if name := customerRemoteOutboundName(step); name != "" {
+			return customerExitDetails{name: name}
 		}
 		if step.AgentID == "" || (step.StepType != "match" && step.StepType != "inbound") {
 			continue
 		}
-		agent := agents[step.AgentID]
+		agent, registered := agents[step.AgentID]
+		var exit customerExitDetails
 		switch {
 		case agentHasPurpose(agent, "residential_exit"):
-			kind = "residential"
+			exit.kind = "residential"
 		case agentHasPurpose(agent, "datacenter_exit"):
-			kind = "datacenter"
+			exit.kind = "datacenter"
 		}
-		if kind == "" && agentHasPurpose(agent, model.AgentPurposeIXRelay) {
+		if exit.kind == "" && agentHasPurpose(agent, model.AgentPurposeIXRelay) {
 			continue
 		}
 		if agent.Entry.Classification != nil {
-			country = agent.Entry.Classification.CountryCode
+			exit.classifiedCountry = agent.Entry.Classification.CountryCode
 		}
 		if step.AgentID != chain.RootAgentID {
-			name = strings.TrimSpace(agent.CustomerDisplayName)
-			for previous := i - 1; previous >= 0 && name == ""; previous-- {
-				name = customerRemoteOutboundName(chain.Steps[previous])
+			if registered {
+				exit.landingAgentID = step.AgentID
+				if i > 0 && step.StepType == "match" && chain.Steps[i-1].StepType == "outbound" {
+					exit.landingTargetGeo = chain.Steps[i-1].TargetGeo
+				}
+			}
+			exit.name = strings.TrimSpace(agent.CustomerDisplayName)
+			for previous := i - 1; previous >= 0 && exit.name == ""; previous-- {
+				exit.name = customerRemoteOutboundName(chain.Steps[previous])
 			}
 		}
-		return name, kind, country
+		return exit
 	}
-	return "", "", ""
+	return customerExitDetails{}
 }
 
 func customerRemoteOutboundName(step model.ClientChainStep) string {

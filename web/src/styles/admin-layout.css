@@ -398,7 +398,8 @@
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
-    overscroll-behavior: contain;
+    overscroll-behavior-x: none;
+    overscroll-behavior-y: contain;
   }
   .admin-pro-assets-layout .admin-assets-desktop :is(
     .ant-pro-table-list-toolbar, .ant-pro-table-alert, .ant-table-header, .ant-pagination

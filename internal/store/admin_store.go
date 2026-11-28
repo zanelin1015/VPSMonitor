@@ -1,13 +1,18 @@
 package store
 
 import (
+	"context"
 	"crypto/subtle"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"bridge-core/internal/model"
+
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 func (s *SQLiteStore) EnsureAdminAccount(username, password string) error {
@@ -85,6 +90,15 @@ func (s *SQLiteStore) AuthenticateAdmin(username, password string) (model.AdminU
 }
 
 func (s *SQLiteStore) CreateAdminSession(user model.AdminUser, ttl time.Duration) (string, model.AdminSession, error) {
+	return s.CreateAdminSessionContext(context.Background(), user, ttl)
+}
+
+func IsSQLiteBusy(err error) bool {
+	var sqliteErr *sqlite.Error
+	return errors.As(err, &sqliteErr) && sqliteErr.Code()&0xff == sqlite3.SQLITE_BUSY
+}
+
+func (s *SQLiteStore) CreateAdminSessionContext(ctx context.Context, user model.AdminUser, ttl time.Duration) (string, model.AdminSession, error) {
 	token, err := randomTokenBytes(adminSessionTokenBytes)
 	if err != nil {
 		return "", model.AdminSession{}, err
@@ -100,18 +114,26 @@ func (s *SQLiteStore) CreateAdminSession(user model.AdminUser, ttl time.Duration
 		CreatedAt: now,
 		ExpiresAt: now.Add(ttl),
 	}
-	_, err = s.db.Exec(`
-		INSERT INTO admin_sessions (token_hash, username, role, account_id, created_at, expires_at, last_seen_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`,
-		sessionTokenHash(token),
-		user.Username,
-		role,
-		accountID,
-		session.CreatedAt.Format(time.RFC3339Nano),
-		session.ExpiresAt.Format(time.RFC3339Nano),
-		now.Format(time.RFC3339Nano),
-	)
+	tokenHash := sessionTokenHash(token)
+	createdAt, expiresAt := now.Format(time.RFC3339Nano), session.ExpiresAt.Format(time.RFC3339Nano)
+	insert := func() error {
+		_, err := s.db.ExecContext(ctx, `
+			INSERT INTO admin_sessions (token_hash, username, role, account_id, created_at, expires_at, last_seen_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+		`, tokenHash, user.Username, role, accountID, createdAt, expiresAt, createdAt)
+		return err
+	}
+	err = insert()
+	if IsSQLiteBusy(err) {
+		delay := time.NewTimer(100 * time.Millisecond)
+		defer delay.Stop()
+		select {
+		case <-ctx.Done():
+			err = ctx.Err()
+		case <-delay.C:
+			err = insert()
+		}
+	}
 	if err != nil {
 		return "", model.AdminSession{}, fmt.Errorf("create admin session: %w", err)
 	}
@@ -177,7 +199,6 @@ func (s *SQLiteStore) ValidateAdminSession(token string) (model.AdminUser, model
 		return model.AdminUser{}, model.AdminSession{}, false, nil
 	}
 
-	_, _ = s.db.Exec(`UPDATE admin_sessions SET last_seen_at = ? WHERE token_hash = ?`, time.Now().UTC().Format(time.RFC3339Nano), tokenHash)
 	session.Username = sessionUsername
 	return user, session, true, nil
 }

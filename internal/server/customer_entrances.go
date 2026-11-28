@@ -124,7 +124,6 @@ func decorateCustomerEntrance(link *model.CustomerLinkView, assignment model.Cus
 	}
 	publication := configured.publication
 	resolution := observed.resolve(agent, context)
-	viaIX := resolution.viaIX || link.RouteType == model.CustomerRouteTypeIEPL
 	if link.RouteType != model.CustomerRouteTypeIEPL {
 		link.RouteType = resolution.routeType(publication.Type)
 	}
@@ -151,23 +150,20 @@ func decorateCustomerEntrance(link *model.CustomerLinkView, assignment model.Cus
 	// A disabled listener can still resolve to an Xray account without a topology alias.
 	chain, hasChain := chains[customerAssignmentKey(resolution.FinalAgentID, client.InboundID, client.Email)]
 	if hasChain && customerChainUsesIX(chain, agents) {
-		viaIX = true
 		link.RouteType, managed = model.CustomerRouteTypeIEPL, true
 	}
-	exitName := ""
+	var exit customerExitDetails
 	if managed && hasChain {
 		link.Steps = link.Steps[:0]
-		exitName = applyCustomerLinkExit(link, chain, agents, true)
+		exit = applyCustomerLinkExit(link, chain, agents, true)
 	}
-	var ieplCity, ieplExit string
+	var ieplEntry, ieplExit string
 	entranceName := firstNonEmptyString(publication.Name, link.Remark, name)
-	if viaIX && exitName != "" {
-		city := customerEntranceCity(agent, publication.Name, assignment.PublicClientName, agent.CustomerDisplayName, agent.AgentName)
-		if exit := customerIEPLExitName(exitName); city != "" && exit != "" {
-			ieplCity, ieplExit = city, exit
-			name = customerIEPLName(city, exit)
-			entranceName, link.ImportName = name, name
-		}
+	if link.RouteType == model.CustomerRouteTypeIEPL {
+		ieplEntry = firstNonEmptyString(agent.CustomerDisplayName, name)
+		ieplExit = customerIEPLExitName(exit, agents[exit.landingAgentID], client)
+		name = customerIEPLName(ieplEntry, ieplExit)
+		entranceName, link.ImportName = name, name
 	}
 	link.TrafficSource = &model.CustomerTrafficSource{
 		AssignmentID: assignment.ID, AgentID: resolution.FinalAgentID, InboundID: client.InboundID, ClientID: client.ClientID, Email: client.Email,
@@ -224,7 +220,7 @@ func decorateCustomerEntrance(link *model.CustomerLinkView, assignment model.Cus
 		presentCustomerXrayChain(link, agents[resolution.FinalAgentID])
 	}
 	link.Entrances = []model.CustomerLinkEntrance{{AssignmentID: assignment.ID, Name: entranceName, RouteType: link.RouteType,
-		Status: status, ImportURL: link.ImportURL, ShadowrocketImportURL: link.ShadowrocketImportURL, IEPLCity: ieplCity, IEPLExit: ieplExit}}
+		Status: status, ImportURL: link.ImportURL, ShadowrocketImportURL: link.ShadowrocketImportURL, IEPLEntry: ieplEntry, IEPLExit: ieplExit}}
 	return true
 }
 

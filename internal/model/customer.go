@@ -108,7 +108,7 @@ type CustomerLinkEntrance struct {
 	Status                string `json:"status"`
 	ImportURL             string `json:"import_url,omitempty"`
 	ShadowrocketImportURL string `json:"shadowrocket_import_url,omitempty"`
-	IEPLCity              string `json:"-"`
+	IEPLEntry             string `json:"-"`
 	IEPLExit              string `json:"-"`
 }
 

@@ -1,15 +1,21 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"bridge-core/internal/model"
+	"bridge-core/internal/store"
 )
+
+const adminSessionWriteTimeout = 11 * time.Second
 
 func (a *App) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 	var req model.AdminLoginRequest
@@ -34,8 +40,16 @@ func (a *App) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.loginLimiter.success(accountKey)
-	token, session, err := a.store.CreateAdminSession(user, adminSessionTTL)
+	ctx, cancel := context.WithTimeout(r.Context(), adminSessionWriteTimeout)
+	defer cancel()
+	token, session, err := a.store.CreateAdminSessionContext(ctx, user, adminSessionTTL)
 	if err != nil {
+		if store.IsSQLiteBusy(err) || errors.Is(err, context.DeadlineExceeded) {
+			log.Printf("admin login: %v", err)
+			w.Header().Set("Retry-After", "2")
+			writeError(w, http.StatusServiceUnavailable, "登录服务暂时繁忙，请稍后重试")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

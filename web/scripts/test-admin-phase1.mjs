@@ -157,6 +157,25 @@ try {
   assert.match(full, /class="country-flag"/)
   assert.match(full, /aria-label="admin-only-location"/)
   assert.match(full, /查看详情/)
+  globalThis.window = {
+    localStorage: {
+      getItem: (key) => key === 'vpsmonitor.assets.columns.preview.admin' ? JSON.stringify({
+        name: { show: false, fixed: 'right', order: 3 },
+        health: { show: true, fixed: 'left', order: 0 },
+        expiry: { show: false },
+      }) : null,
+    },
+  }
+  try {
+    const headers = render(false).match(/<th\b[^>]*>[\s\S]*?<\/th>/g)
+    assert.match(headers[0], /ant-table-selection-column/)
+    assert.match(headers[1], />Client</, 'saved settings cannot hide or move Client behind another pinned column')
+    assert.match(headers[2], />状态</)
+    assert.ok(!headers.some(header => header.includes('到期时间')), 'saved visibility still applies to other columns')
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window
+    else globalThis.window = originalWindow
+  }
   assert.equal(full.split('>203.0.113.10<').length - 1, 2, 'IP appears in desktop and mobile identity')
   assert.doesNotMatch(full, /198\.51\.100\.20/, 'Client-reported IP takes precedence')
   const ipv4 = render(false, [{ ...agent, summary: { ...agent.summary, observed_ip: '' } }])

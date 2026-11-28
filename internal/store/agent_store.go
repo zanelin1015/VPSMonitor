@@ -414,11 +414,7 @@ func (s *SQLiteStore) DeleteAgent(agentID string) error {
 	if err != nil {
 		return fmt.Errorf("begin delete agent: %w", err)
 	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
+	defer tx.Rollback()
 
 	tables := []string{
 		"network_interface_daily",

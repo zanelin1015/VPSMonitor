@@ -408,6 +408,10 @@ func customerSubscriptionNodeName(link model.CustomerLinkView) string {
 	if remark := strings.TrimSpace(link.Remark); remark != "" {
 		return remark
 	}
+	return customerDefaultNodeName(link)
+}
+
+func customerDefaultNodeName(link model.CustomerLinkView) string {
 	if importName := strings.TrimSpace(link.ImportName); importName != "" {
 		return importName
 	}

@@ -149,6 +149,41 @@ func TestBuildCustomerLinkViewUsesCustomerDisplayNames(t *testing.T) {
 	}
 }
 
+func TestBuildCustomerLinkViewShowsClassifiedLandingAsTheExit(t *testing.T) {
+	assignment := model.CustomerAssignment{AgentID: "entry", InboundID: 1, ClientEmail: "acct"}
+	key := customerAssignmentKey(assignment.AgentID, assignment.InboundID, assignment.ClientEmail)
+	chainMap := map[string]model.ClientChainView{
+		key: {
+			RootAgentID: assignment.AgentID,
+			Steps: []model.ClientChainStep{
+				{StepType: "inbound", AgentID: "entry"},
+				{StepType: "outbound", AgentID: "entry", Protocol: "socks", OutboundTag: "COX-1", Target: "cox.example.com:1080"},
+				{StepType: "match", AgentID: "cox"},
+				{StepType: "outbound", AgentID: "cox", Protocol: "freedom"},
+			},
+		},
+	}
+	agents := map[string]model.DashboardAgentView{
+		"entry": {CustomerDisplayName: "US-优化"},
+		"cox": {
+			CustomerDisplayName: "COX落地",
+			Entry: model.AgentEntryConfig{Classification: &model.AgentClassification{
+				Purposes: []string{"residential_exit"}, CountryCode: "US",
+			}},
+			Geo: &model.IPGeoView{IP: "192.0.2.25", CountryCode: "US"},
+		},
+	}
+	link := buildCustomerLinkView(assignment, chainMap, nil, agents)
+	if len(link.Steps) != 2 || link.Steps[1] != (model.CustomerLinkStep{
+		Role: "exit", Label: "COX落地", CountryCode: "US", ExitIP: "192.0.2.25",
+	}) || link.ExitType != "residential" {
+		t.Fatalf("expected one named COX exit, got %#v", link)
+	}
+	if got := customerSubscriptionNodeName(link); got != "US-优化-COX落地" {
+		t.Fatalf("expected existing import name to be preserved, got %q", got)
+	}
+}
+
 func TestForwardedCustomerAssignmentResolvesWithoutTopologyAddressMatch(t *testing.T) {
 	context := forwardedOverviewContext{
 		agentMap: map[string]model.DashboardAgentView{

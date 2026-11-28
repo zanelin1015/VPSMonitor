@@ -1,5 +1,5 @@
 import { CopyOutlined, DeploymentUnitOutlined, TagsOutlined } from '@ant-design/icons'
-import { ProTable, type ProColumns } from '@ant-design/pro-table'
+import { ProTable, type ColumnsState, type ProColumns } from '@ant-design/pro-table'
 import {
   Alert,
   App,
@@ -16,7 +16,7 @@ import {
   Typography,
   theme,
 } from 'antd'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { AgentListProps } from '../../lib/agentList'
 import { CountryFlag } from '../../components/CountryFlag'
 import { AgentClassificationModal } from '../../components/AgentClassificationModal'
@@ -47,6 +47,38 @@ const healthOptions = (['all', 'healthy', 'warning', 'offline'] as const).map((v
 }))
 const statusText = { healthy: '健康在线', warning: '运行告警', offline: '离线' } as const
 const statusBadge = { healthy: 'success', warning: 'warning', offline: 'error' } as const
+
+type AssetColumnSettings = Record<string, ColumnsState>
+const defaultAssetColumnSettings: AssetColumnSettings = {
+  name: { fixed: 'left', show: true, order: -1 },
+}
+
+function useAssetColumnSettings(storageKey: string) {
+  const savedSettings = useMemo(() => {
+    try {
+      const saved = window.localStorage.getItem(storageKey)
+      if (saved) return { ...JSON.parse(saved), ...defaultAssetColumnSettings } as AssetColumnSettings
+    } catch {
+      // Use the defaults if browser storage is unavailable or invalid.
+    }
+    return defaultAssetColumnSettings
+  }, [storageKey])
+  const [settings, setSettings] = useState<{ key: string; value: AssetColumnSettings }>()
+
+  return {
+    defaultValue: defaultAssetColumnSettings,
+    value: settings?.key === storageKey ? settings.value : savedSettings,
+    onChange(next: AssetColumnSettings) {
+      const value = { ...next, ...defaultAssetColumnSettings }
+      setSettings({ key: storageKey, value })
+      try {
+        window.localStorage.setItem(storageKey, JSON.stringify(value))
+      } catch {
+        // The table still uses the current settings in memory.
+      }
+    },
+  }
+}
 
 function AgentPurposeTags({ agent }: { agent: DashboardAgentView }) {
   return <>{agent.entry?.classification?.purposes?.map(purpose => <Tag color="blue" key={purpose}>{purposeLabels[purpose]}</Tag>)}</>
@@ -165,6 +197,7 @@ function CostMetric({ agent }: { agent: DashboardAgentView }) {
 
 export function AssetsPage(props: AssetsPageProps) {
   const { message } = App.useApp()
+  const columnSettings = useAssetColumnSettings(`vpsmonitor.assets.columns.${props.accountKey}.${props.restrictedView ? 'area' : 'admin'}`)
   const [selected, setSelected] = useState<React.Key[]>([])
   const [purpose, setPurpose] = useState('')
   const [country, setCountry] = useState('')
@@ -232,6 +265,7 @@ export function AssetsPage(props: AssetsPageProps) {
       key: 'name',
       width: 210,
       fixed: 'left',
+      hideInSetting: true,
       render: (_, agent) => identity(agent),
       sorter: (a, b) => (a.agent_name || a.agent_id).localeCompare(b.agent_name || b.agent_id),
     },
@@ -432,10 +466,7 @@ export function AssetsPage(props: AssetsPageProps) {
           dataSource={agents}
           loading={props.loading}
           search={false}
-          columnsState={{
-            persistenceKey: `vpsmonitor.assets.columns.${props.accountKey}.${props.restrictedView ? 'area' : 'admin'}`,
-            persistenceType: 'localStorage',
-          }}
+          columnsState={columnSettings}
           options={{ reload: props.onRefresh, density: true, setting: true, fullScreen: false }}
           toolBarRender={() => [
             ...(canManageTags ? [<Button key="tags" icon={<TagsOutlined />} onClick={() => setTagManagerOpen(true)}>标签管理</Button>] : []),
@@ -443,7 +474,7 @@ export function AssetsPage(props: AssetsPageProps) {
               安装 Client
             </Button>] : []),
           ]}
-          rowSelection={{ selectedRowKeys: selected, onChange: setSelected }}
+          rowSelection={{ fixed: true, selectedRowKeys: selected, onChange: setSelected }}
           tableAlertRender={({ selectedRowKeys }) => (
             <Space wrap>
               已选择 {selectedRowKeys.length} 台

@@ -21,14 +21,14 @@ func TestCustomerMultiEntranceSharesXrayQuotaHistoryAndExpiry(t *testing.T) {
 	now := time.Now().UTC()
 	expiry := now.Add(24 * time.Hour).UnixMilli()
 	for _, item := range []struct {
-		id, target, name, purpose, routeType, city string
-		port, targetPort                           int
+		id, target, name, displayName, purpose, routeType, city string
+		port, targetPort                                        int
 	}{
-		{"gz", "ix", "CN-广州入口 - COX", "domestic_entry", "optimized", "", 20001, 15601},
-		{"hz", "ix", "浙江入口 - COX", "domestic_entry", "", "杭州市", 20002, 15601},
-		{"ix", "xray", "private relay", "ix_relay", "", "", 15601, 443},
-		{"xray", "", "HK relay", "xray_line", "", "", 0, 0},
-		{"cox", "", "COX落地", "residential_exit", "", "", 0, 0},
+		{"gz", "ix", "CN-广州入口 - COX", "广州入口", "domestic_entry", "optimized", "", 20001, 15601},
+		{"hz", "ix", "国内入口 - IX-HK / HK-SS - ATT", "杭州入口", "domestic_entry", "", "杭州市", 20002, 15601},
+		{"ix", "xray", "private relay", "private relay", "ix_relay", "", "", 15601, 443},
+		{"xray", "", "", "HK relay", "xray_line", "", "", 0, 0},
+		{"cox", "", "", "COX落地", "residential_exit", "", "", 0, 0},
 	} {
 		if _, err := testRegisterAgent(f.s, model.AgentRegisterRequest{AgentID: item.id}); err != nil {
 			t.Fatal(err)
@@ -40,7 +40,7 @@ func TestCustomerMultiEntranceSharesXrayQuotaHistoryAndExpiry(t *testing.T) {
 				CustomerRoute: model.CustomerRouteConfig{Name: item.name, Type: item.routeType},
 			}}}
 		}
-		if _, err := testUpdateAgentConfig(f.s, item.id, model.ManagedAgentConfig{AgentID: item.id, Entry: entry, CustomerDisplayName: item.name}); err != nil {
+		if _, err := testUpdateAgentConfig(f.s, item.id, model.ManagedAgentConfig{AgentID: item.id, Entry: entry, CustomerDisplayName: item.displayName}); err != nil {
 			t.Fatal(err)
 		}
 		if item.id != "ix" {
@@ -135,10 +135,10 @@ func TestCustomerMultiEntranceSharesXrayQuotaHistoryAndExpiry(t *testing.T) {
 		link.Steps[1].CountryCode != "US" || link.ExitType != "residential" {
 		t.Fatalf("expected the grouped topology to show HK and the named COX exit: %#v", link)
 	}
-	if link.ImportName != "杭州/广州-IEPL-COX" || link.EntryClientName != link.ImportName || link.Summary != link.ImportName {
+	if link.ImportName != "IEPL-杭州入口/广州入口-US-COX" || link.EntryClientName != link.ImportName || link.Summary != link.ImportName {
 		t.Fatalf("unexpected grouped IEPL title: %q", link.ImportName)
 	}
-	for index, expected := range []string{"杭州-IEPL-COX", "广州-IEPL-COX"} {
+	for index, expected := range []string{"IEPL-杭州入口-US-COX", "IEPL-广州入口-US-COX"} {
 		entry := link.Entrances[index]
 		if entry.Name != expected {
 			t.Fatalf("expected entrance %q, got %q", expected, entry.Name)
@@ -154,8 +154,8 @@ func TestCustomerMultiEntranceSharesXrayQuotaHistoryAndExpiry(t *testing.T) {
 	if !strings.Contains(subscription, "gz.example.com") || !strings.Contains(subscription, "hz.example.com") || strings.Contains(subscription, "ix.example.com") {
 		t.Fatalf("wrong subscription endpoints: %s", subscription)
 	}
-	assertContains(t, subscription, `name: "杭州-IEPL-COX"`)
-	assertContains(t, subscription, `name: "广州-IEPL-COX"`)
+	assertContains(t, subscription, `name: "IEPL-杭州入口-US-COX"`)
+	assertContains(t, subscription, `name: "IEPL-广州入口-US-COX"`)
 	token, _, err := f.s.CreateCustomerSession(customer.ID, time.Hour)
 	if err != nil {
 		t.Fatal(err)
@@ -186,12 +186,67 @@ func TestCustomerMultiEntranceSharesXrayQuotaHistoryAndExpiry(t *testing.T) {
 	}
 	steps := overview.Links[0].Steps
 	if len(steps) != 2 || steps[1].Label != "COX落地" || overview.Links[0].RouteType != model.CustomerRouteTypeIEPL ||
-		overview.Links[0].Entrances[0].Status != "disabled" || overview.Links[0].ImportName != "杭州/广州-IEPL-COX" {
+		overview.Links[0].Entrances[0].Status != "disabled" || overview.Links[0].ImportName != "IEPL-杭州入口/广州入口-US-COX" {
 		t.Fatalf("expected the disabled entrance to keep the shared exit and route type: %#v", overview.Links[0])
 	}
 	subscription = buildMihomoSubscription(customer.CustomerUser, overview.SubscriptionLinks)
-	if !strings.Contains(subscription, "gz.example.com") || strings.Contains(subscription, "hz.example.com") || strings.Contains(subscription, "杭州-IEPL-COX") {
+	if !strings.Contains(subscription, "gz.example.com") || strings.Contains(subscription, "hz.example.com") || strings.Contains(subscription, "IEPL-杭州入口-US-COX") {
 		t.Fatalf("disabled listener should not be in the subscription: %s", subscription)
+	}
+
+	hz.Entry.PortForwarding.Rules[0].Enabled = true
+	if _, err := testUpdateAgentConfig(f.s, "hz", hz); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, ok := f.s.GetLatest("xray")
+	if !ok {
+		t.Fatal("missing Xray snapshot")
+	}
+	const externalIP = "123.30.235.76"
+	const xrayIP = "47.239.135.242"
+	if err := f.s.SaveTopologyLookupCache(model.TopologyLookupCache{Geos: map[string]model.TopologyGeoCacheEntry{
+		externalIP: {Geo: model.IPGeoView{IP: externalIP, CountryCode: "VN"}, ExpiresAt: now.Add(time.Hour)},
+		xrayIP:     {Geo: model.IPGeoView{IP: xrayIP, CountryCode: "HK"}, ExpiresAt: now.Add(time.Hour)},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name, suffix, country string
+		outbound              map[string]any
+	}{
+		{"external landing", "VN200", "VN", map[string]any{"tag": "VN200", "protocol": "socks", "settings": map[string]any{
+			"servers": []map[string]any{{"address": externalIP, "port": 54401}},
+		}}},
+		{"direct exit uses Xray client name", "alice", "HK", map[string]any{"tag": "direct", "protocol": "freedom"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			snapshot.ReportedAt = snapshot.ReportedAt.Add(time.Minute)
+			snapshot.Summary.PublicIPv4 = xrayIP
+			snapshot.XUI.Outbounds = []map[string]any{test.outbound}
+			snapshot.XUI.RoutingRules[0]["outboundTag"] = test.outbound["tag"]
+			if err := f.s.SaveSnapshot(snapshot); err != nil {
+				t.Fatal(err)
+			}
+			f.app.clearCustomerOverviewCache()
+			overview, err := f.app.customerOverview(customer.CustomerUser)
+			if err != nil || len(overview.Links) != 1 || len(overview.SubscriptionLinks) != 2 {
+				t.Fatalf("expected both existing grants to stay grouped: %#v (%v)", overview, err)
+			}
+			link := overview.Links[0]
+			if link.RouteType != model.CustomerRouteTypeIEPL || link.ExitCountryCode != test.country || link.ImportName != "IEPL-杭州入口/广州入口-"+test.suffix {
+				t.Fatalf("unexpected IEPL title: type=%q exit=%q title=%q", link.RouteType, link.ExitCountryCode, link.ImportName)
+			}
+			subscription := buildMihomoSubscription(customer.CustomerUser, overview.SubscriptionLinks)
+			for index, entranceName := range []string{"杭州入口", "广州入口"} {
+				expected := "IEPL-" + entranceName + "-" + test.suffix
+				entry := link.Entrances[index]
+				importURL, err := url.Parse(entry.ImportURL)
+				if err != nil || entry.Name != expected || importURL.Fragment != expected {
+					t.Fatalf("expected %q in the entrance and import URL: %q (%v)", expected, entry.Name, err)
+				}
+				assertContains(t, subscription, `name: "`+expected+`"`)
+			}
+		})
 	}
 }
 

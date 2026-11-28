@@ -1,46 +1,31 @@
 package server
 
 import (
-	"regexp"
 	"slices"
 	"strings"
 
 	"bridge-core/internal/model"
 )
 
-var legacyCustomerEntranceCityPattern = regexp.MustCompile(`(?i)^(?:CN[-_\s]+)?([\p{Han}]{2,16})入口(?:$|[-_\s])`)
-
-func customerEntranceCity(agent model.DashboardAgentView, names ...string) string {
-	if classification := agent.Entry.Classification; classification != nil {
-		if city := strings.TrimSuffix(strings.TrimSpace(classification.City), "市"); city != "" {
-			return city
-		}
+func customerIEPLExitName(exit customerExitDetails, landing model.DashboardAgentView, client model.XUIClientView) string {
+	if exit.landingAgentID == "" {
+		return firstNonEmptyString(exit.name, client.Email, client.Comment, "出口")
 	}
-	for _, name := range names {
-		match := legacyCustomerEntranceCityPattern.FindStringSubmatch(strings.TrimSpace(name))
-		if len(match) == 0 {
-			continue
-		}
-		city := strings.TrimSuffix(match[1], "市")
-		switch city {
-		case "国内", "中国", "中国大陆", "专线":
-			continue
-		default:
-			return city
-		}
-	}
-	return ""
-}
-
-func customerIEPLExitName(name string) string {
-	name = strings.TrimSpace(name)
+	name := firstNonEmptyString(landing.CustomerDisplayName, landing.AgentName, exit.name, exit.landingAgentID)
 	name = strings.TrimSuffix(name, "落地")
 	name = strings.TrimSuffix(name, "出口")
-	return strings.TrimSpace(name)
+	name = firstNonEmptyString(name, exit.landingAgentID)
+	_, landingCode, landingCountry := customerGeoParts("", landing.Geo)
+	_, targetCode, targetCountry := customerGeoParts("", exit.landingTargetGeo)
+	country := firstNonEmptyString(exit.classifiedCountry, landingCode, targetCode, landingCountry, targetCountry)
+	if country == "" || strings.HasPrefix(strings.ToUpper(name), strings.ToUpper(country)+"-") {
+		return name
+	}
+	return country + "-" + name
 }
 
-func customerIEPLName(city, exit string) string {
-	return city + "-IEPL-" + exit
+func customerIEPLName(entry, exit string) string {
+	return "IEPL-" + entry + "-" + exit
 }
 
 func groupedCustomerIEPLName(entrances []model.CustomerLinkEntrance) string {
@@ -48,14 +33,14 @@ func groupedCustomerIEPLName(entrances []model.CustomerLinkEntrance) string {
 		return ""
 	}
 	exit := entrances[0].IEPLExit
-	cities := make([]string, 0, len(entrances))
+	names := make([]string, 0, len(entrances))
 	for _, entrance := range entrances {
-		if entrance.IEPLCity == "" || entrance.IEPLExit != exit {
+		if entrance.IEPLEntry == "" || entrance.IEPLExit != exit {
 			return ""
 		}
-		if !slices.Contains(cities, entrance.IEPLCity) {
-			cities = append(cities, entrance.IEPLCity)
+		if !slices.Contains(names, entrance.IEPLEntry) {
+			names = append(names, entrance.IEPLEntry)
 		}
 	}
-	return customerIEPLName(strings.Join(cities, "/"), exit)
+	return customerIEPLName(strings.Join(names, "/"), exit)
 }
